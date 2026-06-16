@@ -1,0 +1,49 @@
+# Build outputs
+bin/
+obj/
+dist/
+src/M365SecurityDashboard.Api/wwwroot/
+
+# Dependencies
+node_modules/
+.npm-cache/
+.nuget-packages/
+.dotnet-cli-home/
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+*.userprefs
+.idea/
+
+# Secrets — NEVER commit these
+appsettings.Production.json
+appsettings.*.json
+!appsettings.json
+secrets.json
+.env
+.env.*
+
+# Logs
+*.log
+dashboard.out.log
+dashboard.err.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code session files
+.claude/
+
+# Local tool files
+dotnet
+\#
+
+# Database files (local data only)
+*.db
+*.sqlite
+*.mdf
+*.ldf
