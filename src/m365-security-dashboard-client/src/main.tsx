@@ -157,97 +157,62 @@ interface TriggeredAlert {
   acknowledgedBy?: string;
 }
 
-const DEFAULT_POLICY_TEMPLATES: Omit<AlertPolicy, "id"|"enabled"|"notifyEmail"|"createdAt"|"triggerCount">[] = [
-  { name: "Critical Security Alerts", category: "identity", metric: "criticalAlertCount", threshold: 1, severity: "critical", condition: "Critical security alerts > 0" },
-  { name: "MFA Not Registered",       category: "identity", metric: "mfaMissingCount",    threshold: 5, severity: "high",     condition: "Users missing MFA > 5" },
-  { name: "Risky Users Detected",     category: "identity", metric: "riskyUsersCount",    threshold: 1, severity: "high",     condition: "Risky users > 0" },
-  { name: "Non-Compliant Devices",    category: "devices",  metric: "nonCompliantCount",  threshold: 1, severity: "medium",   condition: "Non-compliant devices > 0" },
-  { name: "High Priority Email Threats", category: "email", metric: "highAlertCount",     threshold: 3, severity: "high",     condition: "High priority email alerts > 3" },
-  { name: "License Nearing Expiry",   category: "licenses", metric: "expiredLicenseCount",threshold: 1, severity: "medium",   condition: "Expired/expiring licenses > 0" },
-];
-
-function loadPolicies(): AlertPolicy[] {
-  try {
-    const stored = JSON.parse(localStorage.getItem("alert_policies") ?? "null");
-    if (stored && stored.length > 0) return stored;
-  } catch { /* fallthrough */ }
-  // Seed defaults
-  const defaults: AlertPolicy[] = DEFAULT_POLICY_TEMPLATES.map(t => ({
-    ...t,
-    id: crypto.randomUUID(),
-    enabled: true,
-    notifyEmail: "",
-    createdAt: new Date().toISOString(),
-    triggerCount: 0,
-  }));
-  localStorage.setItem("alert_policies", JSON.stringify(defaults));
-  return defaults;
+interface NotificationSettings {
+  teamsEnabled: boolean; teamsWebhookUrl?: string;
+  emailEnabled: boolean; smtpHost?: string; smtpPort: number; smtpUseSsl: boolean;
+  smtpUsername?: string; smtpPassword?: string; hasSmtpPassword?: boolean;
+  fromAddress?: string; defaultRecipient?: string;
+  webhookEnabled: boolean; webhookUrl?: string;
+  minSeverity: string;
 }
 
-function savePolicies(policies: AlertPolicy[]) {
-  localStorage.setItem("alert_policies", JSON.stringify(policies));
-}
-
-function loadTriggeredAlerts(): TriggeredAlert[] {
-  try { return JSON.parse(localStorage.getItem("triggered_alerts") ?? "[]"); } catch { return []; }
-}
-
-function evaluatePolicies(data: {
-  alerts: SecurityAlert[];
-  identity: IdentityData | null;
-  devices: DevicesData | null;
-}, policies: AlertPolicy[]): AlertPolicy[] {
-  const metrics: Record<string, number> = {
-    criticalAlertCount: data.alerts.filter(a => a.severity === "Critical").length,
-    highAlertCount:     data.alerts.filter(a => a.severity === "High").length,
-    riskyUsersCount:    data.alerts.filter(a => a.alertType === "RiskyUser" && !a.isResolved).length,
-    mfaMissingCount:    data.alerts.filter(a => a.alertType === "MfaStatus" && !a.isResolved).length,
-    nonCompliantCount:  data.devices?.nonCompliant ?? 0,
-    staleDeviceCount:   data.devices?.notCheckedIn ?? 0,
-    expiredLicenseCount: 0,
-    alertCount:         data.alerts.length,
-  };
-
-  const existing = loadTriggeredAlerts();
-  const updated = [...existing];
-  const updatedPolicies = [...policies];
-
-  for (let pi = 0; pi < updatedPolicies.length; pi++) {
-    const policy = updatedPolicies[pi];
-    if (!policy.enabled) continue;
-    const value = metrics[policy.metric] ?? 0;
-    if (value >= policy.threshold) {
-      const recentTrigger = existing.find(t =>
-        t.policyId === policy.id &&
-        t.status === "new" &&
-        Date.now() - new Date(t.triggeredAt).getTime() < 3600000
-      );
-      if (!recentTrigger) {
-        updated.push({
-          id: crypto.randomUUID(),
-          policyId: policy.id,
-          policyName: policy.name,
-          severity: policy.severity,
-          category: policy.category,
-          condition: policy.condition,
-          metricValue: value,
-          threshold: policy.threshold,
-          triggeredAt: new Date().toISOString(),
-          status: "new",
-        });
-        updatedPolicies[pi] = {
-          ...policy,
-          lastTriggered: new Date().toISOString(),
-          triggerCount: policy.triggerCount + 1,
-        };
-      }
-    }
-  }
-  localStorage.setItem("triggered_alerts", JSON.stringify(updated.slice(-500)));
-  return updatedPolicies;
+interface NotificationLogEntry {
+  id: number; triggeredAlertId: string; policyName: string;
+  channel: string; target?: string; success: boolean; error?: string; sentAt: string;
 }
 
 const apiBase = import.meta.env.VITE_API_BASE ?? "";
+
+// ─── Alert Center API (server-side persistence + notification delivery) ────────
+const acApi = {
+  async getPolicies(): Promise<AlertPolicy[]> {
+    try { const r = await fetch(`${apiBase}/api/alert-policies`); return r.ok ? await r.json() : []; } catch { return []; }
+  },
+  async createPolicy(p: Partial<AlertPolicy>): Promise<AlertPolicy | null> {
+    try { const r = await fetch(`${apiBase}/api/alert-policies`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p) }); return r.ok ? await r.json() : null; } catch { return null; }
+  },
+  async updatePolicy(p: AlertPolicy): Promise<boolean> {
+    try { const r = await fetch(`${apiBase}/api/alert-policies/${p.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p) }); return r.ok; } catch { return false; }
+  },
+  async deletePolicy(id: string): Promise<boolean> {
+    try { const r = await fetch(`${apiBase}/api/alert-policies/${id}`, { method: "DELETE" }); return r.ok; } catch { return false; }
+  },
+  async getTriggered(): Promise<TriggeredAlert[]> {
+    try { const r = await fetch(`${apiBase}/api/triggered-alerts`); return r.ok ? await r.json() : []; } catch { return []; }
+  },
+  async acknowledge(id: string): Promise<boolean> {
+    try { const r = await fetch(`${apiBase}/api/triggered-alerts/${id}/acknowledge`, { method: "POST" }); return r.ok; } catch { return false; }
+  },
+  async resolve(id: string): Promise<boolean> {
+    try { const r = await fetch(`${apiBase}/api/triggered-alerts/${id}/resolve`, { method: "POST" }); return r.ok; } catch { return false; }
+  },
+  async evaluate(): Promise<number> {
+    try { const r = await fetch(`${apiBase}/api/alert-policies/evaluate`, { method: "POST" }); return r.ok ? (await r.json()).fired ?? 0 : 0; } catch { return 0; }
+  },
+  async getSettings(): Promise<NotificationSettings | null> {
+    try { const r = await fetch(`${apiBase}/api/notification-settings`); return r.ok ? await r.json() : null; } catch { return null; }
+  },
+  async saveSettings(s: NotificationSettings): Promise<boolean> {
+    try { const r = await fetch(`${apiBase}/api/notification-settings`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(s) }); return r.ok; } catch { return false; }
+  },
+  async testNotifications(): Promise<{ ok: boolean; results?: { channel: string; success: boolean; error?: string }[] }> {
+    try { const r = await fetch(`${apiBase}/api/notification-settings/test`, { method: "POST" }); return r.ok ? await r.json() : { ok: false }; } catch { return { ok: false }; }
+  },
+  async getLog(): Promise<NotificationLogEntry[]> {
+    try { const r = await fetch(`${apiBase}/api/notification-log`); return r.ok ? await r.json() : []; } catch { return []; }
+  },
+};
+
 const SEVERITIES: AlertSeverity[] = ["Critical", "High", "Medium", "Low", "Informational"];
 const SERVICES: ServiceArea[] = ["EntraId", "Intune", "DefenderXdr", "ExchangeOnline", "ServiceHealth"];
 const AUTO_REFRESH_SEC = 15 * 60; // 15 minutes
@@ -696,8 +661,8 @@ function ServiceHealthGrid({ issues }: { issues: { title: string }[] }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // OVERVIEW PAGE
 // ═══════════════════════════════════════════════════════════════════════════════
-function OverviewPage({ overview, secureScore, identity, devices, serviceHealth, alerts, defenderAlerts, securityIncidents, onAlertClick, onNavigateAlertCenter, alertPolicies }:
-  { overview:Overview|null; secureScore:SecureScore|null; identity:IdentityData|null; devices:DevicesData|null; serviceHealth:ServiceHealthData|null; alerts:SecurityAlert[]; defenderAlerts:DefenderAlertsData|null; securityIncidents:SecurityIncidentsData|null; onAlertClick:(a:SecurityAlert)=>void; onNavigateAlertCenter:()=>void; alertPolicies:AlertPolicy[] }) {
+function OverviewPage({ overview, secureScore, identity, devices, serviceHealth, alerts, defenderAlerts, securityIncidents, onAlertClick, onNavigateAlertCenter, alertPolicies, overviewTriggered }:
+  { overview:Overview|null; secureScore:SecureScore|null; identity:IdentityData|null; devices:DevicesData|null; serviceHealth:ServiceHealthData|null; alerts:SecurityAlert[]; defenderAlerts:DefenderAlertsData|null; securityIncidents:SecurityIncidentsData|null; onAlertClick:(a:SecurityAlert)=>void; onNavigateAlertCenter:()=>void; alertPolicies:AlertPolicy[]; overviewTriggered:TriggeredAlert[] }) {
 
   const trendData = useMemo(() =>
     (secureScore?.trend??[]).map(t => ({ date:t.date, value:t.maxScore>0?+(t.score/t.maxScore*100).toFixed(1):0 })), [secureScore]);
@@ -961,7 +926,7 @@ function OverviewPage({ overview, secureScore, identity, devices, serviceHealth,
           </div>
         </Card>
         {(() => {
-          const triggered = loadTriggeredAlerts();
+          const triggered = overviewTriggered;
           const enabledPolicies = alertPolicies.filter(p => p.enabled).length;
           const todayAlerts = triggered.filter(a => new Date(a.triggeredAt).toDateString() === new Date().toDateString()).length;
           const recent3 = [...triggered].sort((a,b)=>new Date(b.triggeredAt).getTime()-new Date(a.triggeredAt).getTime()).slice(0,3);
@@ -3431,7 +3396,7 @@ function SignInLocationsPage({ data }: { data: SignInLocationsData|null }) {
 // ALERT CENTER PAGE
 // ═══════════════════════════════════════════════════════════════════════════════
 
-type AcTab = "dashboard" | "alerts" | "policies" | "templates";
+type AcTab = "dashboard" | "alerts" | "policies" | "templates" | "notifications";
 
 const POLICY_TEMPLATES_CATALOG = [
   { name: "Critical Alerts Monitor",   desc: "Triggers when any critical security alert is detected",              metric: "criticalAlertCount", threshold: 1, severity: "critical" as const, category: "identity"   as const },
@@ -3549,12 +3514,124 @@ function PolicyModal({ policy, onSave, onClose }: {
   );
 }
 
-function AlertCenterPage({ policies, setPolicies }: {
+function NotificationSettingsTab() {
+  const [cfg, setCfg] = useState<NotificationSettings | null>(null);
+  const [log, setLog] = useState<NotificationLogEntry[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+
+  const reload = useCallback(async () => {
+    const [s, l] = await Promise.all([acApi.getSettings(), acApi.getLog()]);
+    setCfg(s ?? { teamsEnabled:false, emailEnabled:false, smtpPort:587, smtpUseSsl:true, webhookEnabled:false, minSeverity:"low" });
+    setLog(l);
+  }, []);
+  useEffect(() => { reload(); }, [reload]);
+
+  if (!cfg) return <Card title="Notification Channels"><EmptyState icon={<Bell size={28} color="#d1d5db"/>} message="Loading settings…"/></Card>;
+
+  const set = <K extends keyof NotificationSettings>(k: K, v: NotificationSettings[K]) => setCfg(c => c ? { ...c, [k]: v } : c);
+
+  const save = async () => {
+    setSaving(true);
+    const ok = await acApi.saveSettings(cfg);
+    setSaving(false);
+    showToast(ok ? "Notification settings saved" : "Failed to save", ok ? "success" : "error");
+    if (ok) reload();
+  };
+
+  const test = async () => {
+    setTesting(true);
+    const res = await acApi.testNotifications();
+    setTesting(false);
+    if (res.results?.length) {
+      const summary = res.results.map(r => `${r.channel}: ${r.success ? "✓" : "✗"}`).join("  ");
+      showToast(`Test sent — ${summary}`, res.ok ? "success" : "error");
+    } else {
+      showToast("No channels enabled to test", "error");
+    }
+    reload();
+  };
+
+  return (
+    <>
+      <div className="two-col">
+        <Card title="Microsoft Teams / Slack" badge={<label className="toggle-label"><input type="checkbox" checked={cfg.teamsEnabled} onChange={e=>set("teamsEnabled", e.target.checked)}/> Enabled</label>}>
+          <div className="policy-field">
+            <span className="policy-label">Incoming Webhook URL</span>
+            <input className="policy-input" placeholder="https://outlook.office.com/webhook/…" value={cfg.teamsWebhookUrl ?? ""} onChange={e=>set("teamsWebhookUrl", e.target.value)}/>
+          </div>
+          <p className="hdr-sub">Paste a Teams channel "Incoming Webhook" connector URL (or a Slack incoming webhook). A formatted alert card is posted on each trigger.</p>
+        </Card>
+
+        <Card title="Generic Webhook / SIEM" badge={<label className="toggle-label"><input type="checkbox" checked={cfg.webhookEnabled} onChange={e=>set("webhookEnabled", e.target.checked)}/> Enabled</label>}>
+          <div className="policy-field">
+            <span className="policy-label">Endpoint URL</span>
+            <input className="policy-input" placeholder="https://…  (Sentinel, Splunk HEC, Power Automate)" value={cfg.webhookUrl ?? ""} onChange={e=>set("webhookUrl", e.target.value)}/>
+          </div>
+          <p className="hdr-sub">Each alert is POSTed as JSON. Use for SIEM ingestion or custom automation.</p>
+        </Card>
+      </div>
+
+      <Card title="Email (SMTP)" badge={<label className="toggle-label"><input type="checkbox" checked={cfg.emailEnabled} onChange={e=>set("emailEnabled", e.target.checked)}/> Enabled</label>}>
+        <div className="settings-grid">
+          <div className="policy-field"><span className="policy-label">SMTP Host</span><input className="policy-input" placeholder="smtp.office365.com" value={cfg.smtpHost ?? ""} onChange={e=>set("smtpHost", e.target.value)}/></div>
+          <div className="policy-field"><span className="policy-label">Port</span><input className="policy-input" type="number" value={cfg.smtpPort} onChange={e=>set("smtpPort", Number(e.target.value))}/></div>
+          <div className="policy-field"><span className="policy-label">Use SSL/TLS</span><label className="toggle-label" style={{marginTop:8}}><input type="checkbox" checked={cfg.smtpUseSsl} onChange={e=>set("smtpUseSsl", e.target.checked)}/> Enabled</label></div>
+          <div className="policy-field"><span className="policy-label">Username</span><input className="policy-input" value={cfg.smtpUsername ?? ""} onChange={e=>set("smtpUsername", e.target.value)}/></div>
+          <div className="policy-field"><span className="policy-label">Password</span><input className="policy-input" type="password" placeholder={cfg.hasSmtpPassword ? "•••••• (unchanged)" : ""} value={cfg.smtpPassword ?? ""} onChange={e=>set("smtpPassword", e.target.value)}/></div>
+          <div className="policy-field"><span className="policy-label">From Address</span><input className="policy-input" placeholder="vigil365@yourdomain.com" value={cfg.fromAddress ?? ""} onChange={e=>set("fromAddress", e.target.value)}/></div>
+          <div className="policy-field"><span className="policy-label">Default Recipient</span><input className="policy-input" placeholder="secops@yourdomain.com" value={cfg.defaultRecipient ?? ""} onChange={e=>set("defaultRecipient", e.target.value)}/></div>
+        </div>
+      </Card>
+
+      <Card title="Delivery Rules" action={<div style={{display:"flex",gap:8}}>
+        <button className="btn-export" onClick={test} disabled={testing}>{testing ? "Testing…" : "Send test"}</button>
+        <button className="btn-run" style={{padding:"7px 18px",fontSize:13}} onClick={save} disabled={saving}>{saving ? "Saving…" : "Save settings"}</button>
+      </div>}>
+        <div className="policy-field" style={{maxWidth:280}}>
+          <span className="policy-label">Minimum severity to notify</span>
+          <select className="policy-input" value={cfg.minSeverity} onChange={e=>set("minSeverity", e.target.value)}>
+            <option value="low">Low and above</option>
+            <option value="medium">Medium and above</option>
+            <option value="high">High and above</option>
+            <option value="critical">Critical only</option>
+          </select>
+        </div>
+      </Card>
+
+      <Card title="Notification History" badge={<Badge label={`${log.length} sent`} tone="neutral"/>}>
+        {log.length === 0 ? (
+          <EmptyState icon={<Bell size={28} color="#d1d5db"/>} message="No notifications sent yet. They appear here once an alert fires with a channel enabled."/>
+        ) : (
+          <div className="tbl-wrap">
+            <table className="data-tbl">
+              <thead><tr><th>Status</th><th>Channel</th><th>Policy</th><th>Target</th><th>Sent</th><th>Detail</th></tr></thead>
+              <tbody>
+                {log.map(l => (
+                  <tr key={l.id}>
+                    <td><span className={`ctrl-status ${l.success ? "ctrl-pass" : "ctrl-fail"}`}>{l.success ? "Sent" : "Failed"}</span></td>
+                    <td style={{textTransform:"capitalize"}}>{l.channel}</td>
+                    <td className="trunc" title={l.policyName}>{l.policyName}</td>
+                    <td className="trunc" title={l.target}>{l.target}</td>
+                    <td>{relTime(l.sentAt)}</td>
+                    <td className="trunc" title={l.error}>{l.error ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </>
+  );
+}
+
+function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
   policies: AlertPolicy[];
-  setPolicies: (p: AlertPolicy[]) => void;
+  triggeredAlerts: TriggeredAlert[];
+  onChanged: () => void | Promise<void>;
 }) {
   const [tab, setTab] = useState<AcTab>("dashboard");
-  const [triggeredAlerts, setTriggeredAlerts] = useState<TriggeredAlert[]>(() => loadTriggeredAlerts());
   const [search, setSearch] = useState("");
   const [sevFilter, setSevFilter] = useState("");
   const [catFilter, setCatFilter] = useState("");
@@ -3563,10 +3640,7 @@ function AlertCenterPage({ policies, setPolicies }: {
   const [showModal, setShowModal] = useState(false);
   const [selectedTriggered, setSelectedTriggered] = useState<TriggeredAlert | null>(null);
 
-  const refresh = () => setTriggeredAlerts(loadTriggeredAlerts());
-
-  // Refresh triggered alerts whenever policies change (after evaluation)
-  useEffect(() => { refresh(); }, [policies]);
+  const refresh = () => { onChanged(); };
 
   // ── KPI ──────────────────────────────────────────────────────────────────
   const enabledCount = policies.filter(p => p.enabled).length;
@@ -3608,45 +3682,31 @@ function AlertCenterPage({ policies, setPolicies }: {
     return items.sort((a, b) => new Date(b.triggeredAt).getTime() - new Date(a.triggeredAt).getTime());
   }, [triggeredAlerts, search, sevFilter, catFilter, statusFilter]);
 
-  const acknowledge = (id: string) => {
-    const updated = triggeredAlerts.map(a => a.id === id
-      ? { ...a, status: "acknowledged" as const, acknowledgedAt: new Date().toISOString(), acknowledgedBy: "Current User" }
-      : a);
-    localStorage.setItem("triggered_alerts", JSON.stringify(updated));
-    setTriggeredAlerts(updated);
-    showToast("Alert acknowledged");
+  const acknowledge = async (id: string) => {
+    if (await acApi.acknowledge(id)) { showToast("Alert acknowledged"); await onChanged(); }
   };
 
-  const resolve = (id: string) => {
-    const updated = triggeredAlerts.map(a => a.id === id ? { ...a, status: "resolved" as const } : a);
-    localStorage.setItem("triggered_alerts", JSON.stringify(updated));
-    setTriggeredAlerts(updated);
-    showToast("Alert resolved");
+  const resolve = async (id: string) => {
+    if (await acApi.resolve(id)) { showToast("Alert resolved"); await onChanged(); }
   };
 
-  const handleSavePolicy = (p: AlertPolicy) => {
-    const exists = policies.findIndex(x => x.id === p.id);
-    const updated = exists >= 0
-      ? policies.map(x => x.id === p.id ? p : x)
-      : [...policies, p];
-    savePolicies(updated);
-    setPolicies(updated);
+  const handleSavePolicy = async (p: AlertPolicy) => {
+    const exists = policies.some(x => x.id === p.id);
+    const ok = exists ? await acApi.updatePolicy(p) : !!(await acApi.createPolicy(p));
     setShowModal(false);
-    showToast("Policy saved");
+    if (ok) { showToast("Policy saved"); await onChanged(); }
+    else showToast("Failed to save policy", "error");
   };
 
-  const handleDeletePolicy = (id: string) => {
+  const handleDeletePolicy = async (id: string) => {
     if (!confirm("Delete this policy?")) return;
-    const updated = policies.filter(p => p.id !== id);
-    savePolicies(updated);
-    setPolicies(updated);
-    showToast("Policy deleted");
+    if (await acApi.deletePolicy(id)) { showToast("Policy deleted"); await onChanged(); }
   };
 
-  const togglePolicy = (id: string) => {
-    const updated = policies.map(p => p.id === id ? { ...p, enabled: !p.enabled } : p);
-    savePolicies(updated);
-    setPolicies(updated);
+  const togglePolicy = async (id: string) => {
+    const p = policies.find(x => x.id === id);
+    if (!p) return;
+    if (await acApi.updatePolicy({ ...p, enabled: !p.enabled })) await onChanged();
   };
 
   const useTemplate = (t: typeof POLICY_TEMPLATES_CATALOG[0]) => {
@@ -3701,12 +3761,15 @@ function AlertCenterPage({ policies, setPolicies }: {
 
       {/* Tabs */}
       <div className="ac-tabs">
-        {(["dashboard","alerts","policies","templates"] as AcTab[]).map(t => (
+        {(["dashboard","alerts","policies","templates","notifications"] as AcTab[]).map(t => (
           <button key={t} className={`ac-tab${tab===t?" active":""}`} onClick={() => { setTab(t); if (t === "alerts" || t === "dashboard") refresh(); }}>
-            {t === "dashboard" ? "Dashboard" : t === "alerts" ? "Active Alerts" : t === "policies" ? "Policies" : "Templates"}
+            {t === "dashboard" ? "Dashboard" : t === "alerts" ? "Active Alerts" : t === "policies" ? "Policies" : t === "templates" ? "Templates" : "Notifications"}
           </button>
         ))}
       </div>
+
+      {/* ── TAB: Notifications ── */}
+      {tab === "notifications" && <NotificationSettingsTab/>}
 
       {/* ── TAB: Dashboard ── */}
       {tab === "dashboard" && (
@@ -4047,7 +4110,8 @@ function App() {
   const [riskDetections, setRiskDetections] = useState<RiskDetectionsData|null>(null);
   const [identityHealth, setIdentityHealth] = useState<IdentityHealthData|null>(null);
   const [attackSimulation, setAttackSimulation] = useState<AttackSimulationData|null>(null);
-  const [alertPolicies, setAlertPolicies] = useState<AlertPolicy[]>(() => loadPolicies());
+  const [alertPolicies, setAlertPolicies] = useState<AlertPolicy[]>([]);
+  const [triggeredAlerts, setTriggeredAlerts] = useState<TriggeredAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [lastRefresh, setLastRefresh] = useState(new Date());
@@ -4140,14 +4204,24 @@ function App() {
   // Initial load + re-fetch whenever refreshKey increments
   useEffect(() => { load(); return () => abortRef.current?.abort(); }, [load, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Evaluate policies whenever data changes
+  // Pull alert policies + triggered alerts from the backend
+  const refreshAlertCenter = useCallback(async () => {
+    const [pol, trig] = await Promise.all([acApi.getPolicies(), acApi.getTriggered()]);
+    setAlertPolicies(pol);
+    setTriggeredAlerts(trig);
+  }, []);
+
+  // After each data load, ask the backend to evaluate policies, then refresh.
+  // The backend also evaluates on its own 15-min cycle (works with no browser open).
   useEffect(() => {
     if (loading) return;
-    const updated = evaluatePolicies({ alerts: allAlerts, identity, devices }, alertPolicies);
-    // Only update state if trigger counts changed to avoid infinite loop
-    const changed = updated.some((p, i) => p.triggerCount !== alertPolicies[i]?.triggerCount);
-    if (changed) { savePolicies(updated); setAlertPolicies(updated); }
-  }, [loading, allAlerts, identity, devices]); // eslint-disable-line react-hooks/exhaustive-deps
+    let cancelled = false;
+    (async () => {
+      await acApi.evaluate();
+      if (!cancelled) await refreshAlertCenter();
+    })();
+    return () => { cancelled = true; };
+  }, [loading, refreshKey, refreshAlertCenter]);
 
   // 15-minute auto-refresh + countdown ticker
   useEffect(() => {
@@ -4160,7 +4234,7 @@ function App() {
     return () => clearInterval(ticker);
   }, []);
 
-  const newTriggeredCount = useMemo(() => loadTriggeredAlerts().filter(a => a.status === "new").length, [alertPolicies]);
+  const newTriggeredCount = useMemo(() => triggeredAlerts.filter(a => a.status === "new").length, [triggeredAlerts]);
 
   const alertCounts = useMemo(() => ({
     identity: allAlerts.filter(a=>a.service==="EntraId").length + (mdiAlerts?.total??0) + (riskDetections?.total??0) + (identityHealth?.total??0),
@@ -4240,12 +4314,12 @@ function App() {
             </div>
           </div>
         )}
-        {page==="overview"&&<OverviewPage overview={overview} secureScore={secureScore} identity={identity} devices={devices} serviceHealth={serviceHealth} alerts={allAlerts} defenderAlerts={defenderAlerts} securityIncidents={securityIncidents} onAlertClick={setSelectedAlert} onNavigateAlertCenter={()=>setPage("alertcenter")} alertPolicies={alertPolicies}/>}
+        {page==="overview"&&<OverviewPage overview={overview} secureScore={secureScore} identity={identity} devices={devices} serviceHealth={serviceHealth} alerts={allAlerts} defenderAlerts={defenderAlerts} securityIncidents={securityIncidents} onAlertClick={setSelectedAlert} onNavigateAlertCenter={()=>setPage("alertcenter")} alertPolicies={alertPolicies} overviewTriggered={triggeredAlerts}/>}
         {page==="identity"&&<IdentityPage identity={identity} alerts={allAlerts} privilegedRoles={privilegedRoles} pimData={pimData} mdiAlerts={mdiAlerts} riskDetections={riskDetections} identityHealth={identityHealth} onAlertClick={setSelectedAlert}/>}
         {page==="devices"&&<DevicesPage devices={devices} alerts={allAlerts} mdeVulnerabilities={mdeVulnerabilities} onAlertClick={setSelectedAlert}/>}
         {page==="email"&&<EmailPage alerts={allAlerts} emailProtection={emailProtection} onAlertClick={setSelectedAlert}/>}
         {page==="incidents"&&<IncidentsPage alerts={allAlerts} serviceHealth={serviceHealth} defenderAlerts={defenderAlerts} securityIncidents={securityIncidents} onAlertClick={setSelectedAlert}/>}
-        {page==="alertcenter"&&<AlertCenterPage policies={alertPolicies} setPolicies={p => { savePolicies(p); setAlertPolicies(p); }}/>}
+        {page==="alertcenter"&&<AlertCenterPage policies={alertPolicies} triggeredAlerts={triggeredAlerts} onChanged={refreshAlertCenter}/>}
         {page==="compliance"&&<CompliancePage secureScore={secureScore} overview={overview} dlpAlerts={dlpAlerts} purview={purview} mcasAlerts={mcasAlerts} insiderRisk={insiderRisk} attackSimulation={attackSimulation}/>}
         {page==="servicehealth"&&<ServiceHealthPage serviceHealth={serviceHealth}/>}
         {page==="network"&&<NetworkPage serviceHealth={serviceHealth} signInLocations={signInLocations}/>}

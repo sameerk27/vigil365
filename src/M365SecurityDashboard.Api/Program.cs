@@ -13,7 +13,10 @@ builder.Services.Configure<GraphOptions>(builder.Configuration.GetSection("Graph
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 builder.Services.AddHttpClient<GraphApiClient>();
+builder.Services.AddHttpClient();
 builder.Services.AddScoped<GraphCollector>();
+builder.Services.AddScoped<NotificationSender>();
+builder.Services.AddScoped<AlertEvaluator>();
 builder.Services.AddHostedService<GraphCollectionWorker>();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
@@ -31,6 +34,10 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.EnsureCreated();
+    // EnsureCreated() does not add tables to a pre-existing database, so create
+    // the alerting tables idempotently for installs that predate this feature.
+    db.Database.ExecuteSqlRaw(AlertingSchema.EnsureTablesSql);
+    AlertingSchema.SeedDefaultPolicies(db);
 }
 
 app.UseDefaultFiles();
@@ -972,6 +979,145 @@ app.MapGet("/api/dashboard/attack-simulation", async (
     }
     catch (Exception ex) { return Results.Ok(new { configured = true, error = ex.Message, total = 0, simulations = Array.Empty<object>() }); }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Alert Center — server-side policies, triggered alerts, notifications
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Policies CRUD
+app.MapGet("/api/alert-policies", async (AppDbContext db, CancellationToken ct) =>
+    Results.Ok(await db.AlertPolicies.OrderByDescending(p => p.CreatedAt).ToListAsync(ct)));
+
+app.MapPost("/api/alert-policies", async (AppDbContext db, AlertPolicy input, CancellationToken ct) =>
+{
+    input.Id = input.Id == Guid.Empty ? Guid.NewGuid() : input.Id;
+    input.CreatedAt = DateTimeOffset.UtcNow;
+    input.TriggerCount = 0;
+    if (input.SuppressionMinutes <= 0) input.SuppressionMinutes = 60;
+    db.AlertPolicies.Add(input);
+    await db.SaveChangesAsync(ct);
+    return Results.Ok(input);
+});
+
+app.MapPut("/api/alert-policies/{id:guid}", async (AppDbContext db, Guid id, AlertPolicy input, CancellationToken ct) =>
+{
+    var p = await db.AlertPolicies.FindAsync([id], ct);
+    if (p is null) return Results.NotFound();
+    p.Name = input.Name;
+    p.Enabled = input.Enabled;
+    p.Category = input.Category;
+    p.Condition = input.Condition;
+    p.Metric = input.Metric;
+    p.Threshold = input.Threshold;
+    p.Severity = input.Severity;
+    p.NotifyEmail = input.NotifyEmail;
+    p.SuppressionMinutes = input.SuppressionMinutes <= 0 ? 60 : input.SuppressionMinutes;
+    await db.SaveChangesAsync(ct);
+    return Results.Ok(p);
+});
+
+app.MapDelete("/api/alert-policies/{id:guid}", async (AppDbContext db, Guid id, CancellationToken ct) =>
+{
+    var p = await db.AlertPolicies.FindAsync([id], ct);
+    if (p is null) return Results.NotFound();
+    db.AlertPolicies.Remove(p);
+    await db.SaveChangesAsync(ct);
+    return Results.NoContent();
+});
+
+// Triggered alerts
+app.MapGet("/api/triggered-alerts", async (AppDbContext db, CancellationToken ct) =>
+    Results.Ok(await db.TriggeredAlerts.OrderByDescending(t => t.TriggeredAt).Take(500).ToListAsync(ct)));
+
+app.MapPost("/api/triggered-alerts/{id:guid}/acknowledge", async (AppDbContext db, Guid id, CancellationToken ct) =>
+{
+    var t = await db.TriggeredAlerts.FindAsync([id], ct);
+    if (t is null) return Results.NotFound();
+    t.Status = "acknowledged";
+    t.AcknowledgedAt = DateTimeOffset.UtcNow;
+    t.AcknowledgedBy = "dashboard";
+    await db.SaveChangesAsync(ct);
+    return Results.Ok(t);
+});
+
+app.MapPost("/api/triggered-alerts/{id:guid}/resolve", async (AppDbContext db, Guid id, CancellationToken ct) =>
+{
+    var t = await db.TriggeredAlerts.FindAsync([id], ct);
+    if (t is null) return Results.NotFound();
+    t.Status = "resolved";
+    await db.SaveChangesAsync(ct);
+    return Results.Ok(t);
+});
+
+// Manually run an evaluation pass (used by the dashboard "refresh" + on-demand check)
+app.MapPost("/api/alert-policies/evaluate", async (AlertEvaluator evaluator, CancellationToken ct) =>
+{
+    var fired = await evaluator.EvaluateAsync(ct);
+    return Results.Ok(new { fired });
+});
+
+// Notification settings (single row). Password is write-only — never returned.
+app.MapGet("/api/notification-settings", async (AppDbContext db, CancellationToken ct) =>
+{
+    var s = await db.NotificationSettings.FirstOrDefaultAsync(ct) ?? new NotificationSettings { Id = 1 };
+    return Results.Ok(new
+    {
+        s.TeamsEnabled, s.TeamsWebhookUrl,
+        s.EmailEnabled, s.SmtpHost, s.SmtpPort, s.SmtpUseSsl, s.SmtpUsername,
+        hasSmtpPassword = !string.IsNullOrEmpty(s.SmtpPassword),
+        s.FromAddress, s.DefaultRecipient,
+        s.WebhookEnabled, s.WebhookUrl,
+        s.MinSeverity,
+    });
+});
+
+app.MapPut("/api/notification-settings", async (AppDbContext db, NotificationSettings input, CancellationToken ct) =>
+{
+    var s = await db.NotificationSettings.FirstOrDefaultAsync(ct);
+    if (s is null) { s = new NotificationSettings { Id = 1 }; db.NotificationSettings.Add(s); }
+    s.TeamsEnabled = input.TeamsEnabled;
+    s.TeamsWebhookUrl = input.TeamsWebhookUrl;
+    s.EmailEnabled = input.EmailEnabled;
+    s.SmtpHost = input.SmtpHost;
+    s.SmtpPort = input.SmtpPort <= 0 ? 587 : input.SmtpPort;
+    s.SmtpUseSsl = input.SmtpUseSsl;
+    s.SmtpUsername = input.SmtpUsername;
+    if (!string.IsNullOrEmpty(input.SmtpPassword)) s.SmtpPassword = input.SmtpPassword; // keep existing if blank
+    s.FromAddress = input.FromAddress;
+    s.DefaultRecipient = input.DefaultRecipient;
+    s.WebhookEnabled = input.WebhookEnabled;
+    s.WebhookUrl = input.WebhookUrl;
+    s.MinSeverity = string.IsNullOrWhiteSpace(input.MinSeverity) ? "low" : input.MinSeverity;
+    await db.SaveChangesAsync(ct);
+    return Results.Ok(new { ok = true });
+});
+
+// Send a test notification through all enabled channels
+app.MapPost("/api/notification-settings/test", async (AppDbContext db, NotificationSender sender, CancellationToken ct) =>
+{
+    var cfg = await db.NotificationSettings.FirstOrDefaultAsync(ct);
+    if (cfg is null) return Results.Ok(new { ok = false, message = "No settings configured" });
+    var test = new TriggeredAlert
+    {
+        Id = Guid.NewGuid(),
+        PolicyName = "Test Notification",
+        Severity = "high",
+        Category = "test",
+        Condition = "Manual test from Vigil365 settings",
+        MetricValue = 1,
+        Threshold = 1,
+        TriggeredAt = DateTimeOffset.UtcNow,
+        Status = "new",
+    };
+    await sender.DispatchAsync(db, cfg, test, ct);
+    await db.SaveChangesAsync(ct);
+    var logs = await db.NotificationLogs.Where(l => l.TriggeredAlertId == test.Id).ToListAsync(ct);
+    return Results.Ok(new { ok = logs.Any(l => l.Success), results = logs.Select(l => new { l.Channel, l.Success, l.Error }) });
+});
+
+// Notification delivery history
+app.MapGet("/api/notification-log", async (AppDbContext db, CancellationToken ct) =>
+    Results.Ok(await db.NotificationLogs.OrderByDescending(l => l.SentAt).Take(200).ToListAsync(ct)));
 
 app.MapFallbackToFile("index.html");
 

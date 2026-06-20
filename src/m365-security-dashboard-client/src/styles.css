@@ -408,6 +408,9 @@ select, input { font: inherit; }
 
 /* ── Two-col layout ──────────────────────────────────────────────────────── */
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.settings-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+@media (max-width: 900px) { .settings-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 600px) { .settings-grid { grid-template-columns: 1fr; } }
 
 /* ── Nav badge ───────────────────────────────────────────────────────────── */
 .nav-badge {

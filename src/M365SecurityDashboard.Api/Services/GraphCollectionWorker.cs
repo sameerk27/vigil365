@@ -25,6 +25,18 @@ public sealed class GraphCollectionWorker(
                     logger.LogInformation(
                         "Collection run {RunId} completed: {Upserted} alerts, {Failures} source failures",
                         run.Id, run.AlertsUpserted, run.SourceFailures);
+
+                    // Evaluate alert policies against the freshly collected data and
+                    // dispatch notifications — runs even when no browser is open.
+                    try
+                    {
+                        var evaluator = scope.ServiceProvider.GetRequiredService<AlertEvaluator>();
+                        await evaluator.EvaluateAsync(stoppingToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogError(ex, "Alert policy evaluation failed");
+                    }
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
