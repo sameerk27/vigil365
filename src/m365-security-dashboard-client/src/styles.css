@@ -459,7 +459,11 @@ select, input { font: inherit; }
 .al-clickable { cursor: pointer; border-radius: 5px; padding: 3px 4px; transition: background .12s; }
 .al-clickable:hover { background: #f0f7ff; }
 .al-body { flex: 1; min-width: 0; }
-.sev-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+.sev-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; background: #6b7280; }
+.sev-dot.sev-critical { background: #dc2626; }
+.sev-dot.sev-high     { background: #ea580c; }
+.sev-dot.sev-medium   { background: #d97706; }
+.sev-dot.sev-low      { background: #2563eb; }
 .more-link { font-size: 12px; color: #3b82f6; margin-top: 6px; cursor: pointer; }
 .more-link:hover { text-decoration: underline; }
 

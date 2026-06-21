@@ -137,6 +137,7 @@ interface AlertPolicy {
   threshold: number;
   severity: "critical" | "high" | "medium" | "low";
   notifyEmail: string;
+  suppressionMinutes?: number;
   createdAt: string;
   lastTriggered?: string;
   triggerCount: number;
@@ -244,7 +245,8 @@ function fmtShort(iso?: string) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 function sevColor(s: string) {
-  return ({ Critical: "#dc2626", High: "#ea580c", Medium: "#d97706", Low: "#2563eb", Informational: "#6b7280" } as Record<string, string>)[s] ?? "#6b7280";
+  const key = s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+  return ({ Critical: "#dc2626", High: "#ea580c", Medium: "#d97706", Low: "#2563eb", Informational: "#6b7280" } as Record<string, string>)[key] ?? "#6b7280";
 }
 function pctTone(p: number, goodThresh = 90, warnThresh = 70): Tone {
   return p >= goodThresh ? "good" : p >= warnThresh ? "warning" : p > 0 ? "error" : "neutral";
@@ -3501,7 +3503,7 @@ function PolicyModal({ policy, onSave, onClose }: {
             </select>
           </div>
           <div className="policy-field">
-            <label className="policy-label">Notify Email (display only — no email sent)</label>
+            <label className="policy-label">Notify Email (overrides global SMTP recipient for this policy)</label>
             <input className="policy-input" type="email" value={form.notifyEmail ?? ""} onChange={e => set("notifyEmail", e.target.value)} placeholder="admin@contoso.com"/>
           </div>
         </div>
