@@ -182,6 +182,9 @@ public sealed class GraphCollector(
         var current = e;
         foreach (var part in path)
         {
+            // TryGetProperty throws on non-object elements (e.g. an array),
+            // so guard the kind before traversing into nested paths.
+            if (current.ValueKind != JsonValueKind.Object) return null;
             if (!current.TryGetProperty(part, out current)) return null;
         }
 
