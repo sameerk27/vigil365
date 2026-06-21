@@ -13,6 +13,7 @@ namespace M365SecurityDashboard.Api.Services;
 /// </summary>
 public sealed class NotificationSender(
     IHttpClientFactory httpFactory,
+    SecretProtector protector,
     ILogger<NotificationSender> logger)
 {
     private static readonly Dictionary<string, int> SeverityRank = new(StringComparer.OrdinalIgnoreCase)
@@ -28,11 +29,16 @@ public sealed class NotificationSender(
         if (Rank(alert.Severity) < Rank(cfg.MinSeverity))
             return; // below the configured minimum severity — skip
 
-        if (cfg.TeamsEnabled && !string.IsNullOrWhiteSpace(cfg.TeamsWebhookUrl))
-            await SendTeamsAsync(db, cfg.TeamsWebhookUrl!, alert, ct);
+        // Sensitive fields are stored DPAPI-encrypted at rest — decrypt for use only.
+        var teamsUrl = protector.Unprotect(cfg.TeamsWebhookUrl);
+        var webhookUrl = protector.Unprotect(cfg.WebhookUrl);
+        var smtpPassword = protector.Unprotect(cfg.SmtpPassword);
 
-        if (cfg.WebhookEnabled && !string.IsNullOrWhiteSpace(cfg.WebhookUrl))
-            await SendWebhookAsync(db, cfg.WebhookUrl!, alert, ct);
+        if (cfg.TeamsEnabled && !string.IsNullOrWhiteSpace(teamsUrl))
+            await SendTeamsAsync(db, teamsUrl!, alert, ct);
+
+        if (cfg.WebhookEnabled && !string.IsNullOrWhiteSpace(webhookUrl))
+            await SendWebhookAsync(db, webhookUrl!, alert, ct);
 
         if (cfg.EmailEnabled && !string.IsNullOrWhiteSpace(cfg.SmtpHost))
         {
@@ -40,7 +46,7 @@ public sealed class NotificationSender(
                 ? (FirstNonEmpty(cfg.DefaultRecipient) ?? cfg.FromAddress)
                 : cfg.DefaultRecipient;
             if (!string.IsNullOrWhiteSpace(to))
-                await SendEmailAsync(db, cfg, to!, alert, ct);
+                await SendEmailAsync(db, cfg, smtpPassword, to!, alert, ct);
         }
     }
 
@@ -126,7 +132,7 @@ public sealed class NotificationSender(
         db.NotificationLogs.Add(log);
     }
 
-    private async Task SendEmailAsync(AppDbContext db, NotificationSettings cfg, string to, TriggeredAlert a, CancellationToken ct)
+    private async Task SendEmailAsync(AppDbContext db, NotificationSettings cfg, string? smtpPassword, string to, TriggeredAlert a, CancellationToken ct)
     {
         var log = new NotificationLog { TriggeredAlertId = a.Id, PolicyName = a.PolicyName, Channel = "email", Target = Truncate(to, 120) };
         try
@@ -157,7 +163,7 @@ public sealed class NotificationSender(
                 EnableSsl = cfg.SmtpUseSsl,
                 Credentials = string.IsNullOrWhiteSpace(cfg.SmtpUsername)
                     ? CredentialCache.DefaultNetworkCredentials
-                    : new NetworkCredential(cfg.SmtpUsername, cfg.SmtpPassword),
+                    : new NetworkCredential(cfg.SmtpUsername, smtpPassword),
             };
             await client.SendMailAsync(msg, ct);
             log.Success = true;

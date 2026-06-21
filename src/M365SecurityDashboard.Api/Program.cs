@@ -14,6 +14,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 builder.Services.AddHttpClient<GraphApiClient>();
 builder.Services.AddHttpClient();
+builder.Services.AddSingleton<SecretProtector>();
 builder.Services.AddScoped<GraphCollector>();
 builder.Services.AddScoped<NotificationSender>();
 builder.Services.AddScoped<AlertEvaluator>();
@@ -1057,36 +1058,36 @@ app.MapPost("/api/alert-policies/evaluate", async (AlertEvaluator evaluator, Can
 });
 
 // Notification settings (single row). Password is write-only — never returned.
-app.MapGet("/api/notification-settings", async (AppDbContext db, CancellationToken ct) =>
+app.MapGet("/api/notification-settings", async (AppDbContext db, SecretProtector protector, CancellationToken ct) =>
 {
     var s = await db.NotificationSettings.FirstOrDefaultAsync(ct) ?? new NotificationSettings { Id = 1 };
     return Results.Ok(new
     {
-        s.TeamsEnabled, s.TeamsWebhookUrl,
+        s.TeamsEnabled, TeamsWebhookUrl = protector.Unprotect(s.TeamsWebhookUrl),
         s.EmailEnabled, s.SmtpHost, s.SmtpPort, s.SmtpUseSsl, s.SmtpUsername,
         hasSmtpPassword = !string.IsNullOrEmpty(s.SmtpPassword),
         s.FromAddress, s.DefaultRecipient,
-        s.WebhookEnabled, s.WebhookUrl,
+        s.WebhookEnabled, WebhookUrl = protector.Unprotect(s.WebhookUrl),
         s.MinSeverity,
     });
 });
 
-app.MapPut("/api/notification-settings", async (AppDbContext db, NotificationSettings input, CancellationToken ct) =>
+app.MapPut("/api/notification-settings", async (AppDbContext db, SecretProtector protector, NotificationSettings input, CancellationToken ct) =>
 {
     var s = await db.NotificationSettings.FirstOrDefaultAsync(ct);
     if (s is null) { s = new NotificationSettings { Id = 1 }; db.NotificationSettings.Add(s); }
     s.TeamsEnabled = input.TeamsEnabled;
-    s.TeamsWebhookUrl = input.TeamsWebhookUrl;
+    s.TeamsWebhookUrl = protector.Protect(input.TeamsWebhookUrl);
     s.EmailEnabled = input.EmailEnabled;
     s.SmtpHost = input.SmtpHost;
     s.SmtpPort = input.SmtpPort <= 0 ? 587 : input.SmtpPort;
     s.SmtpUseSsl = input.SmtpUseSsl;
     s.SmtpUsername = input.SmtpUsername;
-    if (!string.IsNullOrEmpty(input.SmtpPassword)) s.SmtpPassword = input.SmtpPassword; // keep existing if blank
+    if (!string.IsNullOrEmpty(input.SmtpPassword)) s.SmtpPassword = protector.Protect(input.SmtpPassword); // keep existing if blank
     s.FromAddress = input.FromAddress;
     s.DefaultRecipient = input.DefaultRecipient;
     s.WebhookEnabled = input.WebhookEnabled;
-    s.WebhookUrl = input.WebhookUrl;
+    s.WebhookUrl = protector.Protect(input.WebhookUrl);
     s.MinSeverity = string.IsNullOrWhiteSpace(input.MinSeverity) ? "low" : input.MinSeverity;
     await db.SaveChangesAsync(ct);
     return Results.Ok(new { ok = true });

@@ -233,13 +233,42 @@ sc.exe start M365SecurityDashboard
 
 ---
 
-## Security Notes
+## Security & Maturity
 
-- Credentials are never stored in source code — use .NET User Secrets (dev) or `appsettings.Production.json` (prod, gitignored)
-- The app uses **application permissions** (app-only) — no user sign-in required
-- All Graph calls use short-lived bearer tokens via `ClientSecretCredential` (MSAL)
-- Rate limiting is handled automatically (429 retry-after respected)
-- Failed individual Graph sources do not stop the entire collection run
+> **Read this before relying on Vigil365.** This is an open-source **read-only visibility aggregator**, currently **beta**. It surfaces signals that already exist across your Microsoft 365 admin centers in one place. It is **not** a replacement for native Microsoft security tooling (Defender XDR, Entra ID Protection, Purview), and it does **not** make security decisions or change configuration for you. Treat its output as a convenience view, verify findings in the source portal before acting, and do your own review of the code before deploying it in a sensitive environment.
+
+### What is in scope by design
+
+- **Read-only, least privilege.** Every Graph permission requested is `*.Read.All`. The app **cannot modify** users, devices, policies, or tenant settings even if the host is compromised.
+- **No remediation automation.** "View in M365 Portal →" links only deep-link you to the correct blade. The app never tells you what to change and never makes changes — remediation stays in Microsoft's tooling where it belongs.
+- **No inbound exposure by default.** The API binds to `localhost`. Remote access requires you to deliberately open a firewall port (and you should front it with TLS + auth if you do).
+- **App-only client-credentials flow** via MSAL (`Azure.Identity`). Standard Microsoft auth, not a homegrown scheme. All Graph traffic is HTTPS/TLS.
+
+### How credentials and secrets are handled
+
+- The Graph client secret is **never** committed to source. Use .NET User Secrets (dev) or `appsettings.Production.json` / environment variables (prod, both gitignored).
+- Notification secrets stored in the database (SMTP password, Teams/Slack & generic webhook URLs) are **encrypted at rest with the Windows Data Protection API (DPAPI), machine scope** — a leaked database row cannot be decrypted on another machine. Secrets are decrypted only in memory at send time and the SMTP password is never returned by the API.
+- **Recommended:** use **certificate-based authentication** instead of a client secret for production (planned/optional). A non-exportable certificate in the Windows cert store removes the plaintext shared secret entirely. _(Not yet wired into the app — track this in Issues.)_
+
+### Host hardening checklist (your responsibility)
+
+The security of this app is only as good as the box it runs on. Before production use:
+
+- [ ] Run on a **dedicated, patched, hardened** Windows host — not a shared workstation or a machine that handles untrusted input
+- [ ] Run the service under a **dedicated low-privilege service account**, not an admin or your own login
+- [ ] Enable **BitLocker / full-disk encryption** so the database and secrets are protected at rest
+- [ ] Keep the host **off the public internet**; access the dashboard over the LAN/VPN only
+- [ ] If you must expose it, put it behind a **reverse proxy with TLS and authentication**
+- [ ] Ensure the host has **endpoint protection** and is **monitored** — a compromised host can read tokens in memory while the app runs
+- [ ] **Rotate the Graph secret/certificate** on a schedule and immediately if the host is ever suspected compromised
+- [ ] Restrict who can read `appsettings.Production.json` and the SQL database with NTFS/SQL permissions
+
+### Operational resilience
+
+- Rate limiting is handled automatically (429 `Retry-After` respected).
+- A failed individual Graph source does not stop the whole collection run; each card degrades independently.
+
+> Found a security issue? See [SECURITY.md](SECURITY.md) — please report privately, not in a public issue.
 
 ---
 
