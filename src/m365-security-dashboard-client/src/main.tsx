@@ -244,9 +244,16 @@ function fmtShort(iso?: string) {
   if (!iso) return "–";
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
-function sevColor(s: string) {
+// Returns a CSS var() reference so it inherits the active theme automatically.
+function sevColor(s: string): string {
   const key = s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
-  return ({ Critical: "#dc2626", High: "#ea580c", Medium: "#d97706", Low: "#2563eb", Informational: "#6b7280" } as Record<string, string>)[key] ?? "#6b7280";
+  return ({
+    Critical:      "var(--dot-critical)",
+    High:          "var(--dot-high)",
+    Medium:        "var(--dot-medium)",
+    Low:           "var(--dot-low)",
+    Informational: "var(--dot-info)",
+  } as Record<string, string>)[key] ?? "var(--dot-info)";
 }
 function pctTone(p: number, goodThresh = 90, warnThresh = 70): Tone {
   return p >= goodThresh ? "good" : p >= warnThresh ? "warning" : p > 0 ? "error" : "neutral";
@@ -335,7 +342,7 @@ function ToastContainer() {
     <div className="toast-container">
       {toasts.map(t => (
         <div key={t.id} className={`toast toast-${t.type ?? "success"}`}>
-          {t.type === "error" ? <XCircle size={15}/> : <CheckCircle size={15} color="#16a34a"/>}
+          {t.type === "error" ? <XCircle size={15}/> : <CheckCircle size={15} color="var(--status-good-icon)"/>}
           <span>{t.message}</span>
         </div>
       ))}
@@ -380,10 +387,12 @@ function CircleGauge({ pct, size = 72, color }: { pct: number; size?: number; co
   const r = (size - 10) / 2;
   const circ = 2 * Math.PI * r;
   const dash = Math.min(1, pct / 100) * circ;
-  const c = color ?? (pct >= 90 ? "#16a34a" : pct >= 70 ? "#d97706" : "#dc2626");
+  // If caller passes an explicit hex, use it; otherwise pick from the theme token set
+  const c = color ?? (pct >= 90 ? "var(--status-good-icon)" : pct >= 70 ? "var(--status-warn-icon)" : "var(--status-error-icon)");
   return (
     <svg width={size} height={size} style={{ flexShrink: 0 }}>
-      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#e5e7eb" strokeWidth="6" />
+      {/* Track ring — uses CSS var so dark mode gets a visible slate ring */}
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--color-border)" strokeWidth="6" />
       <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={c} strokeWidth="6"
         strokeDasharray={`${dash} ${circ}`} strokeLinecap="round"
         transform={`rotate(-90 ${size/2} ${size/2})`} />
@@ -417,14 +426,14 @@ function LineChart({ data, color = "#3b82f6" }: { data: { date: string; value: n
           <stop offset="100%" stopColor={color} stopOpacity="0.02" />
         </linearGradient>
       </defs>
-      {yLabels.map(({y},i) => <line key={i} x1={pad.l} y1={y} x2={w-pad.r} y2={y} stroke="#f1f5f9" strokeWidth="1"/>)}
-      {yLabels.map(({v,y}) => <text key={v} x={pad.l-4} y={y+4} textAnchor="end" fontSize="8" fill="#94a3b8">{v}</text>)}
+      {yLabels.map(({y},i) => <line key={i} x1={pad.l} y1={y} x2={w-pad.r} y2={y} stroke="var(--color-border)" strokeWidth="1"/>)}
+      {yLabels.map(({v,y}) => <text key={v} x={pad.l-4} y={y+4} textAnchor="end" fontSize="8" fill="var(--color-faint)">{v}</text>)}
       <path d={area} fill={`url(#grad-${color.replace("#","")})`} />
       <path d={line} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
       {pts.map((p,i) => <circle key={i} cx={p.x} cy={p.y} r="2.5" fill={color}/>)}
       {data.filter((_,i) => i%step===0||i===data.length-1).map(d => {
         const idx=data.indexOf(d), x=pad.l+(idx/(data.length-1))*cw;
-        return <text key={d.date} x={x} y={h-3} textAnchor="middle" fontSize="8" fill="#94a3b8">{d.date.slice(5)}</text>;
+        return <text key={d.date} x={x} y={h-3} textAnchor="middle" fontSize="8" fill="var(--color-faint)">{d.date.slice(5)}</text>;
       })}
     </svg>
   );
@@ -452,7 +461,7 @@ function Badge({ label, tone }: { label: string; tone: Tone }) {
   return <span className={`badge badge-${tone}`}>{label}</span>;
 }
 function StatusDot({ status }: { status: Tone }) {
-  const c = { good:"#16a34a", warning:"#d97706", error:"#dc2626", neutral:"#94a3b8", info:"#3b82f6" }[status];
+  const c = { good:"var(--status-good-icon)", warning:"var(--status-warn-icon)", error:"var(--status-error-icon)", neutral:"var(--color-faint)", info:"var(--color-primary)" }[status];
   return <span className="status-dot" style={{ background: c }} />;
 }
 function StatBox({ value, label, color, sub }: { value: string|number; label: string; color?: string; sub?: string }) {
@@ -564,7 +573,7 @@ function EmptyState({ icon, message }: { icon?: React.ReactNode; message: string
   );
 }
 function ProgressBar({ pct, color }: { pct: number; color?: string }) {
-  const c = color ?? (pct>=90?"#16a34a":pct>=70?"#d97706":"#dc2626");
+  const c = color ?? (pct>=90?"var(--status-good-icon)":pct>=70?"var(--status-warn-icon)":"var(--status-error-icon)");
   return (
     <div className="prog-track">
       <div className="prog-fill" style={{ width:`${Math.min(100,pct)}%`, background:c }}/>
@@ -751,7 +760,7 @@ function OverviewPage({ overview, secureScore, identity, devices, serviceHealth,
               <div className="stat-row4">
                 {(["critical","high","medium","low"] as const).map(sev=>(
                   <StatBox key={sev} value={defenderAlerts.bySeverity?.[sev]??0} label={sev.charAt(0).toUpperCase()+sev.slice(1)}
-                    color={sev==="critical"?"#7c3aed":sev==="high"?"#dc2626":sev==="medium"?"#d97706":"#6b7280"}/>
+                    color={sev==="critical"?"var(--dot-critical)":sev==="high"?"var(--dot-high)":sev==="medium"?"var(--dot-medium)":"var(--dot-info)"}/>
                 ))}
               </div>
               <div className="mini-list" style={{marginTop:8}}>
@@ -802,9 +811,9 @@ function OverviewPage({ overview, secureScore, identity, devices, serviceHealth,
             return (
               <>
                 <div className="stat-row3">
-                  <StatBox value={riskyUsers.length} label="Risky Users" color={riskyUsers.length>0?"#dc2626":undefined}/>
-                  <StatBox value={mfaMissing.length} label="No MFA" color={mfaMissing.length>0?"#d97706":undefined}/>
-                  <StatBox value={risky.length} label="Risky Sign-ins" color={risky.length>0?"#d97706":undefined}/>
+                  <StatBox value={riskyUsers.length} label="Risky Users" color={riskyUsers.length>0?"var(--status-error-text)":undefined}/>
+                  <StatBox value={mfaMissing.length} label="No MFA" color={mfaMissing.length>0?"var(--status-warn-text)":undefined}/>
+                  <StatBox value={risky.length} label="Risky Sign-ins" color={risky.length>0?"var(--status-warn-text)":undefined}/>
                 </div>
                 {riskyUsers.length>0&&(
                   <div className="mini-list">
@@ -844,7 +853,7 @@ function OverviewPage({ overview, secureScore, identity, devices, serviceHealth,
         <Card title="Alerts by Service">
           <div className="stat-row2">
             <StatBox value={overview?.totalActive??0} label="Total Active"/>
-            <StatBox value={overview?.highPriority??0} label="High Priority" color={(overview?.highPriority??0)>0?"#dc2626":undefined}/>
+            <StatBox value={overview?.highPriority??0} label="High Priority" color={(overview?.highPriority??0)>0?"var(--status-error-text)":undefined}/>
           </div>
           {(overview?.byService??[]).length>0 ? (
             <div className="mini-list">
@@ -867,7 +876,7 @@ function OverviewPage({ overview, secureScore, identity, devices, serviceHealth,
             <CircleGauge pct={devices ? devComplPct : 0} size={70}/>
             <div className="stat-col">
               <StatBox value={devices ? Math.max(0, devEffectiveTotal - devNonCompliant) : "—"} label="Compliant"/>
-              <StatBox value={devNonCompliant} label="Non-compliant" color={devNonCompliant>0?"#dc2626":undefined}/>
+              <StatBox value={devNonCompliant} label="Non-compliant" color={devNonCompliant>0?"var(--status-error-text)":undefined}/>
             </div>
           </div>
           {(devices?.nonCompliantDevices.length??0)>0?(
@@ -936,7 +945,7 @@ function OverviewPage({ overview, secureScore, identity, devices, serviceHealth,
             <Card title="Alert Policies" action={<button className="btn-export" onClick={onNavigateAlertCenter}>View All</button>}>
               <div className="stat-row2">
                 <StatBox value={enabledPolicies} label="Active Policies"/>
-                <StatBox value={todayAlerts} label="Triggered Today" color={todayAlerts>0?"#dc2626":undefined}/>
+                <StatBox value={todayAlerts} label="Triggered Today" color={todayAlerts>0?"var(--status-error-text)":undefined}/>
               </div>
               {recent3.length > 0 ? (
                 <div className="mini-list" style={{marginTop:8}}>
@@ -1004,7 +1013,7 @@ function FilterPresets({ pageKey, filters, onLoad }: {
       {presets.map(p => (
         <span key={p.name} className="preset-chip">
           {p.name}
-          <button onClick={() => remove(p.name)} style={{ background:"none", border:"none", cursor:"pointer", color:"#94a3b8", padding:"0 2px" }}>✕</button>
+          <button onClick={() => remove(p.name)} style={{ background:"none", border:"none", cursor:"pointer", color:"var(--color-faint)", padding:"0 2px" }}>✕</button>
         </span>
       ))}
     </div>
@@ -1184,9 +1193,9 @@ function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAlerts, r
       <div className="two-col">
         <Card title="MFA Registration Status" badge={<><Badge label={`${mfaPct}% covered`} tone={pctTone(mfaPct,95,80)}/><span className="card-count">{mfaMissing.length} missing</span></>}>
           <div className="mfa-hero">
-            <CircleGauge pct={mfaPct} size={90} color={mfaPct>=95?"#16a34a":mfaPct>=80?"#d97706":"#dc2626"}/>
+            <CircleGauge pct={mfaPct} size={90} color={mfaPct>=95?"var(--status-good-icon)":mfaPct>=80?"var(--status-warn-icon)":"var(--status-error-icon)"}/>
             <div className="mfa-stats">
-              <InfoRow label="MFA Registered" value={<><CheckCircle size={13} color="#16a34a"/> {identity?.mfa.registered??0} users</>} tone="good"/>
+              <InfoRow label="MFA Registered" value={<><CheckCircle size={13} color="var(--status-good-icon)"/> {identity?.mfa.registered??0} users</>} tone="good"/>
               <InfoRow label="MFA Missing" value={<><XCircle size={13} color="#dc2626"/> {mfaMissing.length} users</>} tone="error"/>
               <InfoRow label="Total Users" value={identity?.mfa.total??0}/>
             </div>
@@ -1240,8 +1249,8 @@ function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAlerts, r
         <Card title="Risky Sign-ins" badge={<><Badge label={`${riskySignIns.length} risky`} tone={riskySignIns.length>0?"warning":"good"}/><span className="card-count">{riskySignIns.length}</span></>}>
           <div className="stat-row3" style={{marginBottom:14}}>
             <StatBox value={identity?.signIns.total??0} label="Total (24h)"/>
-            <StatBox value={riskySignIns.length} label="Risky" color={riskySignIns.length>0?"#d97706":undefined}/>
-            <StatBox value={identity?.signIns.foreign??0} label="Foreign" color={(identity?.signIns.foreign??0)>0?"#dc2626":undefined}/>
+            <StatBox value={riskySignIns.length} label="Risky" color={riskySignIns.length>0?"var(--status-warn-text)":undefined}/>
+            <StatBox value={identity?.signIns.foreign??0} label="Foreign" color={(identity?.signIns.foreign??0)>0?"var(--status-error-text)":undefined}/>
           </div>
           {riskySignIns.length>0?(
             <div className="alert-list">
@@ -1269,15 +1278,15 @@ function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAlerts, r
               :(
                 <>
                   <div className="stat-row3" style={{marginBottom:14}}>
-                    <StatBox value={riskDetections!.byLevel?.["high"]??0} label="High" color={(riskDetections!.byLevel?.["high"]??0)>0?"#dc2626":undefined}/>
-                    <StatBox value={riskDetections!.byLevel?.["medium"]??0} label="Medium" color={(riskDetections!.byLevel?.["medium"]??0)>0?"#d97706":undefined}/>
+                    <StatBox value={riskDetections!.byLevel?.["high"]??0} label="High" color={(riskDetections!.byLevel?.["high"]??0)>0?"var(--status-error-text)":undefined}/>
+                    <StatBox value={riskDetections!.byLevel?.["medium"]??0} label="Medium" color={(riskDetections!.byLevel?.["medium"]??0)>0?"var(--status-warn-text)":undefined}/>
                     <StatBox value={riskDetections!.byLevel?.["low"]??0} label="Low"/>
                   </div>
                   <div className="mini-list">
                     <SectHdr>BY DETECTION TYPE</SectHdr>
                     {Object.entries(riskDetections!.byType).slice(0,7).map(([type,count])=>(
                       <div key={type} className="mini-row">
-                        <AlertCircle size={11} color="#d97706"/>
+                        <AlertCircle size={11} color="var(--status-warn-icon)"/>
                         <span className="mr-user" style={{flex:1}}>{type.replace(/([A-Z])/g," $1").replace(/^./,c=>c.toUpperCase()).trim()}</span>
                         <Badge label={String(count)} tone={count>0?"warning":"neutral"}/>
                       </div>
@@ -1318,8 +1327,8 @@ function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAlerts, r
               :(
                 <>
                   <div className="stat-row4" style={{marginBottom:14}}>
-                    <StatBox value={mdiAlerts!.bySeverity?.["high"]??0} label="High" color={(mdiAlerts!.bySeverity?.["high"]??0)>0?"#dc2626":undefined}/>
-                    <StatBox value={mdiAlerts!.bySeverity?.["medium"]??0} label="Medium" color={(mdiAlerts!.bySeverity?.["medium"]??0)>0?"#d97706":undefined}/>
+                    <StatBox value={mdiAlerts!.bySeverity?.["high"]??0} label="High" color={(mdiAlerts!.bySeverity?.["high"]??0)>0?"var(--status-error-text)":undefined}/>
+                    <StatBox value={mdiAlerts!.bySeverity?.["medium"]??0} label="Medium" color={(mdiAlerts!.bySeverity?.["medium"]??0)>0?"var(--status-warn-text)":undefined}/>
                     <StatBox value={mdiAlerts!.bySeverity?.["low"]??0} label="Low"/>
                     <StatBox value={mdiAlerts!.bySeverity?.["informational"]??0} label="Info"/>
                   </div>
@@ -1387,7 +1396,7 @@ function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAlerts, r
                     return (
                       <div key={r.roleId??i} style={{marginBottom:12}}>
                         <div className="mini-row">
-                          <Lock size={12} color={isGA?"#dc2626":"#64748b"}/>
+                          <Lock size={12} color={isGA?"var(--status-error-icon)":"var(--color-faint)"}/>
                           <span className="mr-user">{r.roleName}</span>
                           <Badge label={`${r.memberCount} member${r.memberCount===1?"":"s"}`} tone={isGA&&r.memberCount>0?"error":r.memberCount>0?"warning":"neutral"}/>
                         </div>
@@ -1443,7 +1452,7 @@ function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAlerts, r
                       <div className="al-title">{iss.displayName??iss.issueType??"Health Issue"}</div>
                       {iss.description&&<div className="al-desc">{iss.description}</div>}
                       {iss.sensorDNSNames.length>0&&<div className="al-desc">Sensor: {iss.sensorDNSNames.join(", ")}</div>}
-                      {iss.recommendations&&<div className="al-desc" style={{color:"#2563eb"}}>Fix: {iss.recommendations}</div>}
+                      {iss.recommendations&&<div className="al-desc tone-info">Fix: {iss.recommendations}</div>}
                     </div>
                     <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
                       <Badge label={iss.severity} tone={iss.severity==="high"||iss.severity==="critical"?"error":"warning"}/>
@@ -1513,9 +1522,9 @@ function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick }:
   const devComplPct = devices?.compliancePct??(devices?.nonCompliant===0?100:94);
 
   const complianceData = [
-    { label:"Compliant", value: devices?(devices.totalDevices>0?Math.max(0,devices.totalDevices-devices.nonCompliant):0):0, color:"#16a34a" },
-    { label:"Non-Compliant", value: devices?.nonCompliant??0, color:"#dc2626" },
-    { label:"Not Checked In", value: devices?.notCheckedIn??0, color:"#f59e0b" },
+    { label:"Compliant", value: devices?(devices.totalDevices>0?Math.max(0,devices.totalDevices-devices.nonCompliant):0):0, color:"var(--status-good-icon)" },
+    { label:"Non-Compliant", value: devices?.nonCompliant??0, color:"var(--status-error-icon)" },
+    { label:"Not Checked In", value: devices?.notCheckedIn??0, color:"var(--status-warn-icon)" },
   ];
 
   return (
@@ -1681,8 +1690,8 @@ function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick }:
             :(
               <>
                 <div className="stat-row4" style={{marginBottom:14}}>
-                  <StatBox value={mdeVulnerabilities!.bySeverity?.["high"]??0} label="High" color={(mdeVulnerabilities!.bySeverity?.["high"]??0)>0?"#dc2626":undefined}/>
-                  <StatBox value={mdeVulnerabilities!.bySeverity?.["medium"]??0} label="Medium" color={(mdeVulnerabilities!.bySeverity?.["medium"]??0)>0?"#d97706":undefined}/>
+                  <StatBox value={mdeVulnerabilities!.bySeverity?.["high"]??0} label="High" color={(mdeVulnerabilities!.bySeverity?.["high"]??0)>0?"var(--status-error-text)":undefined}/>
+                  <StatBox value={mdeVulnerabilities!.bySeverity?.["medium"]??0} label="Medium" color={(mdeVulnerabilities!.bySeverity?.["medium"]??0)>0?"var(--status-warn-text)":undefined}/>
                   <StatBox value={mdeVulnerabilities!.bySeverity?.["low"]??0} label="Low"/>
                   <StatBox value={mdeVulnerabilities!.bySeverity?.["informational"]??0} label="Info"/>
                 </div>
@@ -1777,7 +1786,7 @@ function EmailPage({ alerts, emailProtection, onAlertClick }:
               <div className="alert-list">
                 {quarantined.slice(0,8).map((a,i)=>(
                   <div key={i} className="al-item" onClick={()=>onAlertClick(a)}>
-                    <Archive size={13} color="#d97706"/>
+                    <Archive size={13} color="var(--status-warn-icon)"/>
                     <div className="al-body">
                       <div className="al-title">{a.title}</div>
                       <div className="al-desc">{a.userPrincipalName} · {a.description}</div>
@@ -2028,7 +2037,7 @@ function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcasAlerts,
               <div key={i} className="control-item">
                 <div className="control-head">
                   <span className="control-name">{c.area}</span>
-                  <span className="control-score" style={{color:c.score>=80?"#16a34a":c.score>=60?"#d97706":"#dc2626"}}>{c.score}%</span>
+                  <span className="control-score" style={{color:c.score>=80?"var(--status-good-text)":c.score>=60?"var(--status-warn-text)":"var(--status-error-text)"}}>{c.score}%</span>
                 </div>
                 <ProgressBar pct={c.score}/>
                 <div className="control-items">
@@ -2138,8 +2147,8 @@ function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcasAlerts,
               :(
                 <>
                   <div className="stat-row4" style={{marginBottom:14}}>
-                    <StatBox value={mcasAlerts!.bySeverity?.["high"]??0} label="High" color={(mcasAlerts!.bySeverity?.["high"]??0)>0?"#dc2626":undefined}/>
-                    <StatBox value={mcasAlerts!.bySeverity?.["medium"]??0} label="Medium" color={(mcasAlerts!.bySeverity?.["medium"]??0)>0?"#d97706":undefined}/>
+                    <StatBox value={mcasAlerts!.bySeverity?.["high"]??0} label="High" color={(mcasAlerts!.bySeverity?.["high"]??0)>0?"var(--status-error-text)":undefined}/>
+                    <StatBox value={mcasAlerts!.bySeverity?.["medium"]??0} label="Medium" color={(mcasAlerts!.bySeverity?.["medium"]??0)>0?"var(--status-warn-text)":undefined}/>
                     <StatBox value={mcasAlerts!.bySeverity?.["low"]??0} label="Low"/>
                     <StatBox value={mcasAlerts!.bySeverity?.["informational"]??0} label="Info"/>
                   </div>
@@ -2174,8 +2183,8 @@ function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcasAlerts,
               :(
                 <>
                   <div className="stat-row3" style={{marginBottom:14}}>
-                    <StatBox value={insiderRisk!.bySeverity?.["high"]??0} label="High" color={(insiderRisk!.bySeverity?.["high"]??0)>0?"#dc2626":undefined}/>
-                    <StatBox value={insiderRisk!.bySeverity?.["medium"]??0} label="Medium" color={(insiderRisk!.bySeverity?.["medium"]??0)>0?"#d97706":undefined}/>
+                    <StatBox value={insiderRisk!.bySeverity?.["high"]??0} label="High" color={(insiderRisk!.bySeverity?.["high"]??0)>0?"var(--status-error-text)":undefined}/>
+                    <StatBox value={insiderRisk!.bySeverity?.["medium"]??0} label="Medium" color={(insiderRisk!.bySeverity?.["medium"]??0)>0?"var(--status-warn-text)":undefined}/>
                     <StatBox value={insiderRisk!.bySeverity?.["low"]??0} label="Low"/>
                   </div>
                   <div className="alert-list">
@@ -2213,7 +2222,7 @@ function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcasAlerts,
                   <StatBox value={attackSimulation!.total} label="Simulations Run"/>
                   <StatBox value={attackSimulation!.totalTargeted} label="Users Targeted"/>
                   <StatBox value={`${attackSimulation!.avgCompromiseRate}%`} label="Avg Compromise Rate"
-                    color={attackSimulation!.avgCompromiseRate>30?"#dc2626":attackSimulation!.avgCompromiseRate>10?"#d97706":"#16a34a"}/>
+                    color={attackSimulation!.avgCompromiseRate>30?"var(--status-error-text)":attackSimulation!.avgCompromiseRate>10?"var(--status-warn-text)":"var(--status-good-text)"}/>
                 </div>
                 <div className="tbl-wrap">
                   <table className="data-tbl">
@@ -2224,9 +2233,9 @@ function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcasAlerts,
                           <td><div className="al-title">{s.displayName??"Unnamed simulation"}</div></td>
                           <td className="al-desc">{s.attackType?.replace(/([A-Z])/g," $1").trim()??s.attackType??"—"}</td>
                           <td>{s.numberOfUsersTargeted}</td>
-                          <td style={{color:s.clickedPhishingLinkCount>0?"#dc2626":"#16a34a",fontWeight:600}}>{s.clickedPhishingLinkCount}</td>
+                          <td style={{color:s.clickedPhishingLinkCount>0?"var(--status-error-text)":"var(--status-good-text)",fontWeight:600}}>{s.clickedPhishingLinkCount}</td>
                           <td>
-                            <span style={{color:s.compromisedRate>30?"#dc2626":s.compromisedRate>10?"#d97706":"#16a34a",fontWeight:600}}>
+                            <span style={{color:s.compromisedRate>30?"var(--status-error-text)":s.compromisedRate>10?"var(--status-warn-text)":"var(--status-good-text)",fontWeight:600}}>
                               {s.compromisedRate.toFixed(1)}%
                             </span>
                           </td>
@@ -2315,7 +2324,7 @@ function ServiceHealthPage({ serviceHealth }: { serviceHealth: ServiceHealthData
             {filteredIssues.length===0&&<div className="td-empty" style={{padding:12}}>No advisories match the filter.</div>}
             {filteredIssues.map((iss,i)=>(
               <div key={i} className="al-item" onClick={()=>setSelectedIssue(iss)}>
-                <AlertCircle size={14} color="#d97706"/>
+                <AlertCircle size={14} color="var(--status-warn-icon)"/>
                 <div className="al-body">
                   <div className="al-title">{iss.title}</div>
                   <div className="row-meta">
@@ -2345,7 +2354,7 @@ function ServiceHealthPage({ serviceHealth }: { serviceHealth: ServiceHealthData
                   <tr key={svc}>
                     <td><div className="al-title">{svc}</div></td>
                     <td><Badge label={hit?"Advisory":"Operational"} tone={hit?"warning":"good"}/></td>
-                    <td style={{color:"#16a34a",fontWeight:600}}>99.9%</td>
+                    <td style={{color:"var(--status-good-text)",fontWeight:600}}>99.9%</td>
                     <td className="al-date">{hit?fmtDate(serviceHealth?.issues[0]?.detectedAt):"No recent incidents"}</td>
                   </tr>
                 );
@@ -2370,7 +2379,7 @@ function NetworkPage({ serviceHealth, signInLocations }: { serviceHealth: Servic
     if (!signInLocations?.recent.length) return [];
     const counts: Record<string,number> = {};
     signInLocations.recent.forEach(s=>{ if (s.app) counts[s.app]=(counts[s.app]??0)+1; });
-    return Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([app,count])=>({ label:app.replace("Microsoft ","").slice(0,22), value:count, color:"#3b82f6" }));
+    return Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([app,count])=>({ label:app.replace("Microsoft ","").slice(0,22), value:count, color:"var(--color-primary)" }));
   },[signInLocations]);
 
   // per-service status from health data
@@ -2429,7 +2438,7 @@ function NetworkPage({ serviceHealth, signInLocations }: { serviceHealth: Servic
               <SectHdr>ACTIVE ADVISORIES</SectHdr>
               {serviceHealth!.issues.map((iss,i)=>(
                 <div key={i} className="al-item al-item-noclick" style={{marginTop:4}}>
-                  <AlertCircle size={13} color="#d97706"/>
+                  <AlertCircle size={13} color="var(--status-warn-icon)"/>
                   <div className="al-body">
                     <div className="al-title">{iss.title}</div>
                     {iss.description&&<div className="al-desc">{iss.description}</div>}
@@ -2670,7 +2679,7 @@ function IncidentsPage({ alerts, serviceHealth, defenderAlerts, securityIncident
 
       {(defenderAlerts?.configured && !defenderAlerts.error && defenderCount > 0) && (
         <Card title="Defender — By Source" badge={<Badge label={`${defenderCount} alerts`} tone="error"/>}>
-          <MiniBarChart items={Object.entries(defenderAlerts.bySource??{}).map(([k,v])=>({ label:fmtDefenderSource(k), value:v, color:"#ef4444" }))}/>
+          <MiniBarChart items={Object.entries(defenderAlerts.bySource??{}).map(([k,v])=>({ label:fmtDefenderSource(k), value:v, color:"var(--dot-high)" }))}/>
         </Card>
       )}
       {(defenderAlerts?.error || securityIncidents?.error) && (
@@ -2775,7 +2784,7 @@ function IncidentsPage({ alerts, serviceHealth, defenderAlerts, securityIncident
                   const a=item.data;
                   return (
                     <tr key={`adv-${idx}`} className="row-border-advisory">
-                      <td><span className="sev-pill" style={{borderColor:"#d97706",color:"#d97706"}}>{a.severity}</span></td>
+                      <td><span className="sev-pill sev-pill-medium">{a.severity}</span></td>
                       <td><span className="src-badge src-advisory"><Bell size={10}/>Advisory</span></td>
                       <td>
                         <div className="al-title trunc" title={a.title}>{a.title}</div>
@@ -2871,7 +2880,7 @@ function LicensesPage({ licenses, inactive, passwords }: {
                 : <EmptyState icon={<Package size={28} color="#d1d5db"/>} message={licenses?.error??"Requires Organization.Read.All permission"}/>)
             : <>
                 <div className="util-banner">
-                  <div className="ub-bar"><ProgressBar pct={utilPct} color={utilPct>95?"#dc2626":utilPct>80?"#16a34a":"#3b82f6"}/></div>
+                  <div className="ub-bar"><ProgressBar pct={utilPct} color={utilPct>95?"var(--status-error-icon)":utilPct>80?"var(--status-good-icon)":"var(--color-primary)"}/></div>
                   <div className="ub-pct">{utilPct}%</div>
                 </div>
                 <MiniBarChart items={filteredSkus.slice(0,8).map(s=>({ label:s.name.replace(/_/g," ").slice(0,22), value:s.consumed, color:s.available<=5?"#dc2626":"#3b82f6" }))}/>
@@ -2885,7 +2894,7 @@ function LicensesPage({ licenses, inactive, passwords }: {
                           <td><div className="al-title">{s.name}</div></td>
                           <td>{s.purchased}</td>
                           <td>{s.consumed}</td>
-                          <td style={{color:s.available<=5?"#dc2626":"#16a34a",fontWeight:600}}>{s.available}</td>
+                          <td style={{color:s.available<=5?"var(--status-error-text)":"var(--status-good-text)",fontWeight:600}}>{s.available}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -2926,7 +2935,7 @@ function LicensesPage({ licenses, inactive, passwords }: {
                     {filteredInactive.length===0&&<div className="td-empty" style={{padding:12}}>No users match the filter.</div>}
                     {filteredInactive.slice(0,15).map((u,i)=>(
                       <div key={i} className="al-item al-item-noclick">
-                        <UserX size={14} color="#d97706"/>
+                        <UserX size={14} color="var(--status-warn-icon)"/>
                         <div className="al-body">
                           <div className="al-title">{u.upn}</div>
                           <div className="al-desc">{u.lastSignIn?`Last seen ${fmtDate(u.lastSignIn)}`:"Never signed in"}</div>
@@ -3081,7 +3090,7 @@ function ConditionalAccessPage({ data }: { data: ConditionalAccessData|null }) {
                           <td><Badge label={stateLabel(p.state)} tone={stateTone(p.state)}/></td>
                           <td>
                             <div className="al-desc trunc" style={{maxWidth:120}} title={p.inclUsers}>{p.inclUsers}</div>
-                            {p.exclUsers!=="None"&&<div className="al-desc" style={{color:"#d97706"}}>{p.exclUsers}</div>}
+                            {p.exclUsers!=="None"&&<div className="al-desc tone-warning">{p.exclUsers}</div>}
                           </td>
                           <td className="al-desc trunc" style={{maxWidth:120}} title={p.apps}>{p.apps}</td>
                           <td style={{display:"flex",flexWrap:"wrap",gap:4,paddingTop:8}}>
@@ -3111,7 +3120,7 @@ function ConditionalAccessPage({ data }: { data: ConditionalAccessData|null }) {
                 return(
                   <tr key={i}>
                     <td><div className="al-title">{row.label}</div></td>
-                    <td style={{fontWeight:600,color:count>0?"#16a34a":"#dc2626"}}>{count} active {count===1?"policy":"policies"}</td>
+                    <td style={{fontWeight:600,color:count>0?"var(--status-good-text)":"var(--status-error-text)"}}>{count} active {count===1?"policy":"policies"}</td>
                     <td className="al-desc">{row.rec}</td>
                   </tr>
                 );
@@ -3328,7 +3337,7 @@ function SignInLocationsPage({ data }: { data: SignInLocationsData|null }) {
                           <tr key={i}>
                             <td><span className="flag-cell"><span className="flag-emoji">{countryFlag(c.country)}</span><span className="al-title">{c.country||"Unknown"}</span></span></td>
                             <td>{c.count}</td>
-                            <td style={{color:c.failures>0?"#dc2626":"#16a34a",fontWeight:600}}>{c.failures}</td>
+                            <td style={{color:c.failures>0?"var(--status-error-text)":"var(--status-good-text)",fontWeight:600}}>{c.failures}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -3373,7 +3382,7 @@ function SignInLocationsPage({ data }: { data: SignInLocationsData|null }) {
                     {filteredSignIns.length===0&&<div className="td-empty" style={{padding:12}}>No sign-ins match the filter.</div>}
                     {filteredSignIns.map((s,i)=>(
                       <div key={i} className="al-item" onClick={()=>setSelectedSignIn(s)}>
-                        <div style={{width:8,height:8,borderRadius:"50%",background:s.success?"#16a34a":"#dc2626",flexShrink:0,marginTop:3}}/>
+                        <div style={{width:8,height:8,borderRadius:"50%",background:s.success?"var(--status-good-icon)":"var(--status-error-icon)",flexShrink:0,marginTop:3}}/>
                         <div className="al-body">
                           <div className="al-title">{s.upn?.split("@")[0]??"Unknown"}</div>
                           <div className="row-meta">
@@ -3911,7 +3920,7 @@ function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
                       <td><Badge label={a.severity} tone={sevToneAC(a.severity)}/></td>
                       <td style={{ fontWeight:500 }}>{a.policyName}</td>
                       <td style={{ textTransform:"capitalize" }}>{a.category}</td>
-                      <td style={{ fontSize:12, color:"#64748b" }}>{a.condition}</td>
+                      <td style={{ fontSize:12, color:"var(--color-muted)" }}>{a.condition}</td>
                       <td style={{ fontWeight:600 }}>{a.metricValue}</td>
                       <td>{a.threshold}</td>
                       <td className="al-date">{relTime(a.triggeredAt)}</td>
@@ -3952,7 +3961,7 @@ function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
                         <button
                           onClick={() => togglePolicy(p.id)}
                           style={{ padding:"2px 10px", borderRadius:5, border:"1px solid", fontSize:11, fontWeight:600, cursor:"pointer",
-                            borderColor: p.enabled?"#16a34a":"#94a3b8", background: p.enabled?"#dcfce7":"#f1f5f9", color: p.enabled?"#15803d":"#64748b" }}>
+                            borderColor: p.enabled?"var(--status-good-border)":"var(--color-border)", background: p.enabled?"var(--status-good-bg)":"var(--color-raised)", color: p.enabled?"var(--status-good-text)":"var(--color-muted)" }}>
                           {p.enabled ? "Enabled" : "Disabled"}
                         </button>
                       </td>
