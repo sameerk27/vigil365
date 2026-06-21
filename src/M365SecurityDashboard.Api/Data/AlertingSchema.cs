@@ -73,6 +73,9 @@ public static class AlertingSchema
             [Error] nvarchar(1000) NULL,
             [SentAt] datetimeoffset NOT NULL
         );
+
+        IF COL_LENGTH(N'[CollectionRuns]', 'SourceFailureDetails') IS NULL
+        ALTER TABLE [CollectionRuns] ADD [SourceFailureDetails] nvarchar(max) NULL;
         """;
 
     private static readonly (string Name, string Category, string Metric, int Threshold, string Severity, string Condition)[] Defaults =

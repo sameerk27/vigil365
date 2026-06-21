@@ -27,6 +27,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         {
             entity.HasIndex(r => r.StartedAt);
             entity.Property(r => r.Error).HasMaxLength(4000);
+            entity.Property(r => r.SourceFailureDetails).HasColumnType("nvarchar(max)");
         });
 
         modelBuilder.Entity<AlertPolicy>(entity =>

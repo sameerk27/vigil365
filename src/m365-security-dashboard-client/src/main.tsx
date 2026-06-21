@@ -670,10 +670,92 @@ function ServiceHealthGrid({ issues }: { issues: { title: string }[] }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// COLLECTION HEALTH — surfaces background collector status & per-source failures
+// ═══════════════════════════════════════════════════════════════════════════════
+interface CollectionRunInfo {
+  id: number;
+  startedAt: string;
+  completedAt: string | null;
+  status: string; // Started | Completed | Failed
+  alertsUpserted: number;
+  sourceFailures: number;
+  error?: string | null;
+  sourceFailureDetails?: string | null;
+}
+
+function CollectionHealthCard({ refreshKey }: { refreshKey: number }) {
+  const [runs, setRuns] = useState<CollectionRunInfo[] | null>(null);
+  const [err, setErr] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setErr(false);
+    fetch(`${apiBase}/api/collector/runs`)
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then((d: CollectionRunInfo[]) => { if (!cancelled) setRuns(d); })
+      .catch(() => { if (!cancelled) setErr(true); });
+    return () => { cancelled = true; };
+  }, [refreshKey]);
+
+  // Latest finished run (ignore in-flight "Started" entries for status display)
+  const finished = (runs ?? []).filter(r => r.status !== "Started");
+  const last = finished[0];
+  const failures: { source: string; error: string }[] = (() => {
+    if (!last?.sourceFailureDetails) return [];
+    try { return JSON.parse(last.sourceFailureDetails); } catch { return []; }
+  })();
+  const durationMs = last?.completedAt ? new Date(last.completedAt).getTime() - new Date(last.startedAt).getTime() : 0;
+  const healthy = !!last && last.sourceFailures === 0 && last.status === "Completed";
+  const tone: "good"|"warning"|"error" = !last ? "warning" : last.status === "Failed" ? "error" : last.sourceFailures > 0 ? "warning" : "good";
+
+  return (
+    <Card title="Collection Health"
+      badge={<Badge label={!last ? "No runs" : healthy ? "Healthy" : last.status === "Failed" ? "Failed" : `${last.sourceFailures} source issue${last.sourceFailures!==1?"s":""}`} tone={tone}/>}>
+      {err ? (
+        <EmptyState message="Could not load collection status"/>
+      ) : !runs ? (
+        <EmptyState message="Loading collection status…"/>
+      ) : !last ? (
+        <EmptyState icon={<Database size={22} color="#d1d5db"/>} message="No collection has run yet"/>
+      ) : (
+        <>
+          <div className="stat-row3">
+            <StatBox value={last.alertsUpserted} label="Alerts Collected"/>
+            <StatBox value={`${(durationMs/1000).toFixed(1)}s`} label="Duration"/>
+            <StatBox value={last.sourceFailures} label="Source Failures" color={last.sourceFailures>0?"var(--status-error-text)":undefined}/>
+          </div>
+          <div className="mini-row" style={{marginTop:10, justifyContent:"space-between"}}>
+            <span className="mr-date">Last run {relTime(last.completedAt ?? last.startedAt)}</span>
+            <Badge label={`${finished.length} recent run${finished.length!==1?"s":""}`} tone="neutral"/>
+          </div>
+          {failures.length > 0 ? (
+            <div className="mini-list" style={{marginTop:8}}>
+              <SectHdr>FAILING SOURCES</SectHdr>
+              {failures.map((f,i)=>(
+                <div key={i} className="mini-row" title={f.error}>
+                  <AlertTriangle size={11} color="var(--sev-high-icon)"/>
+                  <span className="mr-user">{f.source}</span>
+                  <span className="mr-date trunc" style={{maxWidth:140}}>{f.error}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mini-row" style={{marginTop:8, color:"var(--status-good-text)"}}>
+              <CheckCircle size={13}/>
+              <span style={{fontSize:12}}>All {12} data sources collecting normally</span>
+            </div>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // OVERVIEW PAGE
 // ═══════════════════════════════════════════════════════════════════════════════
-function OverviewPage({ overview, secureScore, identity, devices, serviceHealth, alerts, defenderAlerts, securityIncidents, onAlertClick, onNavigateAlertCenter, alertPolicies, overviewTriggered }:
-  { overview:Overview|null; secureScore:SecureScore|null; identity:IdentityData|null; devices:DevicesData|null; serviceHealth:ServiceHealthData|null; alerts:SecurityAlert[]; defenderAlerts:DefenderAlertsData|null; securityIncidents:SecurityIncidentsData|null; onAlertClick:(a:SecurityAlert)=>void; onNavigateAlertCenter:()=>void; alertPolicies:AlertPolicy[]; overviewTriggered:TriggeredAlert[] }) {
+function OverviewPage({ overview, secureScore, identity, devices, serviceHealth, alerts, defenderAlerts, securityIncidents, onAlertClick, onNavigateAlertCenter, alertPolicies, overviewTriggered, healthRefreshKey }:
+  { overview:Overview|null; secureScore:SecureScore|null; identity:IdentityData|null; devices:DevicesData|null; serviceHealth:ServiceHealthData|null; alerts:SecurityAlert[]; defenderAlerts:DefenderAlertsData|null; securityIncidents:SecurityIncidentsData|null; onAlertClick:(a:SecurityAlert)=>void; onNavigateAlertCenter:()=>void; alertPolicies:AlertPolicy[]; overviewTriggered:TriggeredAlert[]; healthRefreshKey:number }) {
 
   const trendData = useMemo(() =>
     (secureScore?.trend??[]).map(t => ({ date:t.date, value:t.maxScore>0?+(t.score/t.maxScore*100).toFixed(1):0 })), [secureScore]);
@@ -964,6 +1046,7 @@ function OverviewPage({ overview, secureScore, identity, devices, serviceHealth,
             </Card>
           );
         })()}
+        <CollectionHealthCard refreshKey={healthRefreshKey}/>
       </div>
     </div>
   );
@@ -4325,7 +4408,7 @@ function App() {
             </div>
           </div>
         )}
-        {page==="overview"&&<OverviewPage overview={overview} secureScore={secureScore} identity={identity} devices={devices} serviceHealth={serviceHealth} alerts={allAlerts} defenderAlerts={defenderAlerts} securityIncidents={securityIncidents} onAlertClick={setSelectedAlert} onNavigateAlertCenter={()=>setPage("alertcenter")} alertPolicies={alertPolicies} overviewTriggered={triggeredAlerts}/>}
+        {page==="overview"&&<OverviewPage overview={overview} secureScore={secureScore} identity={identity} devices={devices} serviceHealth={serviceHealth} alerts={allAlerts} defenderAlerts={defenderAlerts} securityIncidents={securityIncidents} onAlertClick={setSelectedAlert} onNavigateAlertCenter={()=>setPage("alertcenter")} alertPolicies={alertPolicies} overviewTriggered={triggeredAlerts} healthRefreshKey={refreshKey}/>}
         {page==="identity"&&<IdentityPage identity={identity} alerts={allAlerts} privilegedRoles={privilegedRoles} pimData={pimData} mdiAlerts={mdiAlerts} riskDetections={riskDetections} identityHealth={identityHealth} onAlertClick={setSelectedAlert}/>}
         {page==="devices"&&<DevicesPage devices={devices} alerts={allAlerts} mdeVulnerabilities={mdeVulnerabilities} onAlertClick={setSelectedAlert}/>}
         {page==="email"&&<EmailPage alerts={allAlerts} emailProtection={emailProtection} onAlertClick={setSelectedAlert}/>}

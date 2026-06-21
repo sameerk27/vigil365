@@ -9,4 +9,7 @@ public sealed class CollectionRun
     public int AlertsUpserted { get; set; }
     public int SourceFailures { get; set; }
     public string? Error { get; set; }
+
+    /// <summary>JSON array of { source, error } for each source that failed this run.</summary>
+    public string? SourceFailureDetails { get; set; }
 }

@@ -23,6 +23,7 @@ public sealed class GraphCollector(
         try
         {
             var sources = BuildSources();
+            var failures = new List<object>();
             foreach (var source in sources)
             {
                 try
@@ -37,10 +38,12 @@ public sealed class GraphCollector(
                 catch (Exception ex)
                 {
                     run.SourceFailures++;
+                    failures.Add(new { source = source.Name, error = Trim(ex.Message, 300) });
                     logger.LogWarning(ex, "Graph source {SourceName} failed", source.Name);
                 }
             }
 
+            run.SourceFailureDetails = failures.Count > 0 ? JsonSerializer.Serialize(failures) : null;
             run.Status = run.SourceFailures == sources.Count ? CollectionStatus.Failed : CollectionStatus.Completed;
             run.CompletedAt = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync(ct);
@@ -232,6 +235,8 @@ public sealed class GraphCollector(
     private static bool IsClosed(string? value) =>
         value?.Equals("resolved", StringComparison.OrdinalIgnoreCase) == true ||
         value?.Equals("closed", StringComparison.OrdinalIgnoreCase) == true;
+
+    private static string Trim(string s, int max) => s.Length <= max ? s : s[..max];
 
     private sealed record GraphSource(string Name, string Path, Func<JsonElement, SecurityAlert> Map);
 }
