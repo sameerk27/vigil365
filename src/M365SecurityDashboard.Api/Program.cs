@@ -3,6 +3,7 @@ using M365SecurityDashboard.Api.Models;
 using M365SecurityDashboard.Api.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Microsoft.Identity.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -11,6 +12,15 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseWindowsService();
 builder.Services.Configure<GraphOptions>(builder.Configuration.GetSection("Graph"));
 builder.Services.Configure<AlertingOptions>(builder.Configuration.GetSection("Alerting"));
+
+// ── Authentication ─────────────────────────────────────────────────────────────
+// Validates Bearer tokens issued by Entra ID for this tenant.
+// The frontend (MSAL) acquires the token; the backend verifies it on every request.
+builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration, "AzureAd");
+builder.Services.AddAuthorization(o =>
+    o.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build());
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 builder.Services.AddHttpClient<GraphApiClient>();
@@ -47,6 +57,8 @@ using (var scope = app.Services.CreateScope())
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseCors();
+app.UseAuthentication();
+app.UseAuthorization();
 
 // Security headers
 app.Use(async (ctx, next) =>
@@ -62,6 +74,14 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+
+// Public endpoint — returns only the non-secret config needed to initialise MSAL in the browser
+app.MapGet("/api/auth/config", (IConfiguration config) => Results.Ok(new
+{
+    clientId = config["Graph:ClientId"] ?? "",
+    tenantId = config["Graph:TenantId"] ?? "",
+    redirectUri = config["Auth:RedirectUri"] ?? "http://localhost:5173"
+})).AllowAnonymous();
 
 app.MapGet("/api/dashboard/overview", async (AppDbContext db, CancellationToken ct) =>
 {
@@ -181,7 +201,7 @@ app.MapGet("/api/dashboard/securescore", async (
     }
     catch (Exception ex)
     {
-        return Results.Ok(new { configured = true, error = ex.Message, currentScore = 0.0, maxScore = 100.0, percentage = 0.0, trend = Array.Empty<object>() });
+        return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", currentScore = 0.0, maxScore = 100.0, percentage = 0.0, trend = Array.Empty<object>() });
     }
 });
 

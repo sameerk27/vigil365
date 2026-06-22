@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
+import { PublicClientApplication, type AccountInfo, type Configuration } from "@azure/msal-browser";
 import {
   Shield, Home, Users, Monitor, Mail, Database, AlertTriangle,
   CheckSquare, Activity, Wifi, RefreshCw, Settings, Lock,
@@ -178,43 +179,66 @@ interface NotificationLogEntry {
 
 const apiBase = import.meta.env.VITE_API_BASE ?? "";
 
+// ─── Auth token store ─────────────────────────────────────────────────────────
+let _msalInstance: PublicClientApplication | null = null;
+let _msalScopes: string[] = [];
+
+async function getAccessToken(): Promise<string | null> {
+  if (!_msalInstance) return null;
+  const account = _msalInstance.getActiveAccount() ?? _msalInstance.getAllAccounts()[0];
+  if (!account) return null;
+  try {
+    const result = await _msalInstance.acquireTokenSilent({ scopes: _msalScopes, account });
+    return result.accessToken;
+  } catch {
+    return null;
+  }
+}
+
+async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
+  const token = await getAccessToken();
+  const headers = new Headers(init?.headers);
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  return fetch(url, { ...init, headers });
+}
+
 // ─── Alert Center API (server-side persistence + notification delivery) ────────
 const acApi = {
   async getPolicies(): Promise<AlertPolicy[]> {
-    try { const r = await fetch(`${apiBase}/api/alert-policies`); return r.ok ? await r.json() : []; } catch { return []; }
+    try { const r = await apiFetch(`${apiBase}/api/alert-policies`); return r.ok ? await r.json() : []; } catch { return []; }
   },
   async createPolicy(p: Partial<AlertPolicy>): Promise<AlertPolicy | null> {
-    try { const r = await fetch(`${apiBase}/api/alert-policies`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p) }); return r.ok ? await r.json() : null; } catch { return null; }
+    try { const r = await apiFetch(`${apiBase}/api/alert-policies`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p) }); return r.ok ? await r.json() : null; } catch { return null; }
   },
   async updatePolicy(p: AlertPolicy): Promise<boolean> {
-    try { const r = await fetch(`${apiBase}/api/alert-policies/${p.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p) }); return r.ok; } catch { return false; }
+    try { const r = await apiFetch(`${apiBase}/api/alert-policies/${p.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p) }); return r.ok; } catch { return false; }
   },
   async deletePolicy(id: string): Promise<boolean> {
-    try { const r = await fetch(`${apiBase}/api/alert-policies/${id}`, { method: "DELETE" }); return r.ok; } catch { return false; }
+    try { const r = await apiFetch(`${apiBase}/api/alert-policies/${id}`, { method: "DELETE" }); return r.ok; } catch { return false; }
   },
   async getTriggered(): Promise<TriggeredAlert[]> {
-    try { const r = await fetch(`${apiBase}/api/triggered-alerts`); return r.ok ? await r.json() : []; } catch { return []; }
+    try { const r = await apiFetch(`${apiBase}/api/triggered-alerts`); return r.ok ? await r.json() : []; } catch { return []; }
   },
   async acknowledge(id: string): Promise<boolean> {
-    try { const r = await fetch(`${apiBase}/api/triggered-alerts/${id}/acknowledge`, { method: "POST" }); return r.ok; } catch { return false; }
+    try { const r = await apiFetch(`${apiBase}/api/triggered-alerts/${id}/acknowledge`, { method: "POST" }); return r.ok; } catch { return false; }
   },
   async resolve(id: string): Promise<boolean> {
-    try { const r = await fetch(`${apiBase}/api/triggered-alerts/${id}/resolve`, { method: "POST" }); return r.ok; } catch { return false; }
+    try { const r = await apiFetch(`${apiBase}/api/triggered-alerts/${id}/resolve`, { method: "POST" }); return r.ok; } catch { return false; }
   },
   async evaluate(): Promise<number> {
-    try { const r = await fetch(`${apiBase}/api/alert-policies/evaluate`, { method: "POST" }); return r.ok ? (await r.json()).fired ?? 0 : 0; } catch { return 0; }
+    try { const r = await apiFetch(`${apiBase}/api/alert-policies/evaluate`, { method: "POST" }); return r.ok ? (await r.json()).fired ?? 0 : 0; } catch { return 0; }
   },
   async getSettings(): Promise<NotificationSettings | null> {
-    try { const r = await fetch(`${apiBase}/api/notification-settings`); return r.ok ? await r.json() : null; } catch { return null; }
+    try { const r = await apiFetch(`${apiBase}/api/notification-settings`); return r.ok ? await r.json() : null; } catch { return null; }
   },
   async saveSettings(s: NotificationSettings): Promise<boolean> {
-    try { const r = await fetch(`${apiBase}/api/notification-settings`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(s) }); return r.ok; } catch { return false; }
+    try { const r = await apiFetch(`${apiBase}/api/notification-settings`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(s) }); return r.ok; } catch { return false; }
   },
   async testNotifications(): Promise<{ ok: boolean; results?: { channel: string; success: boolean; error?: string }[] }> {
-    try { const r = await fetch(`${apiBase}/api/notification-settings/test`, { method: "POST" }); return r.ok ? await r.json() : { ok: false }; } catch { return { ok: false }; }
+    try { const r = await apiFetch(`${apiBase}/api/notification-settings/test`, { method: "POST" }); return r.ok ? await r.json() : { ok: false }; } catch { return { ok: false }; }
   },
   async getLog(): Promise<NotificationLogEntry[]> {
-    try { const r = await fetch(`${apiBase}/api/notification-log`); return r.ok ? await r.json() : []; } catch { return []; }
+    try { const r = await apiFetch(`${apiBase}/api/notification-log`); return r.ok ? await r.json() : []; } catch { return []; }
   },
   async snooze(id: string, durationHours: 4 | 24 | 168): Promise<boolean> {
     try { const r = await fetch(`${apiBase}/api/triggered-alerts/${id}/snooze`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ durationHours }) }); return r.ok; } catch { return false; }
@@ -4211,9 +4235,10 @@ function Sidebar({ page, setPage, alertCounts, collapsed, onToggleCollapse }: {
 // ═══════════════════════════════════════════════════════════════════════════════
 // APP
 // ═══════════════════════════════════════════════════════════════════════════════
-function App() {
+function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?: () => void }) {
   const [page, setPage] = useState<NavPage>("overview");
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem("m365-theme") === "dark");
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false); // false = expanded
   // Track the alert count at the time the user last visited each page.
   // Badge = current count − seen count (only new items show as unread).
@@ -4333,7 +4358,7 @@ function App() {
   const runCollection = useCallback(async () => {
     setRunning(true);
     try {
-      const res = await fetch(`${apiBase}/api/collector/run`, { method: "POST" });
+      const res = await apiFetch(`${apiBase}/api/collector/run`, { method: "POST" });
       if (!res.ok) throw new Error(await res.text());
       setRefreshKey(k => k + 1);
     } catch(e: unknown) {
@@ -4447,6 +4472,39 @@ function App() {
             <button className="theme-toggle" onClick={() => setDarkMode(d => !d)} aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"} title={darkMode ? "Light mode" : "Dark mode"}>
               {darkMode ? <Sun size={15}/> : <Moon size={15}/>}
             </button>
+            {account && (
+              <div style={{ position: "relative" }}>
+                <button
+                  className="btn-icon"
+                  onClick={() => setUserMenuOpen(o => !o)}
+                  title={account.username}
+                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 8px", borderRadius: 6 }}
+                >
+                  <div style={{ width: 26, height: 26, borderRadius: "50%", background: "#2563eb", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                    {(account.name ?? account.username).charAt(0).toUpperCase()}
+                  </div>
+                  <span style={{ fontSize: 12, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} className="mr-user">
+                    {account.name ?? account.username}
+                  </span>
+                </button>
+                {userMenuOpen && (
+                  <div style={{ position: "absolute", right: 0, top: "calc(100% + 6px)", background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.15)", minWidth: 220, zIndex: 200 }}>
+                    <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--color-border)" }}>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>{account.name}</div>
+                      <div style={{ fontSize: 11, color: "var(--color-muted)", marginTop: 2 }}>{account.username}</div>
+                    </div>
+                    <button
+                      onClick={() => { setUserMenuOpen(false); onSignOut?.(); }}
+                      style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "10px 16px", background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "var(--color-text)", borderRadius: "0 0 8px 8px" }}
+                      onMouseEnter={e => (e.currentTarget.style.background = "var(--color-raised)")}
+                      onMouseLeave={e => (e.currentTarget.style.background = "none")}
+                    >
+                      <LogIn size={14} style={{ transform: "rotate(180deg)" }}/> Sign out
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </header>
         {loading&&<div className="loading-bar"><div className="loading-bar-fill"/></div>}
@@ -4478,4 +4536,150 @@ function App() {
   );
 }
 
-createRoot(document.getElementById("root")!).render(<App/>);
+// ─── Auth bootstrap ────────────────────────────────────────────────────────────
+function AuthGate() {
+  const [authReady, setAuthReady] = useState(false);
+  const [account, setAccount] = useState<AccountInfo | null>(null);
+  const [authEnabled, setAuthEnabled] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`${apiBase}/api/auth/config`);
+        if (!res.ok) { setAuthReady(true); return; }
+        const cfg: { clientId: string; tenantId: string; redirectUri: string } = await res.json();
+        if (!cfg.clientId || !cfg.tenantId) { setAuthReady(true); return; }
+
+        setAuthEnabled(true);
+        const msalConfig: Configuration = {
+          auth: { clientId: cfg.clientId, authority: `https://login.microsoftonline.com/${cfg.tenantId}`, redirectUri: cfg.redirectUri },
+          cache: { cacheLocation: "sessionStorage" },
+        };
+        const pca = new PublicClientApplication(msalConfig);
+        await pca.initialize();
+
+        // Handle redirect response (after login redirect comes back)
+        await pca.handleRedirectPromise();
+
+        _msalInstance = pca;
+        _msalScopes = [`api://${cfg.clientId}/access_as_user`];
+
+        const accounts = pca.getAllAccounts();
+        if (accounts.length > 0) {
+          pca.setActiveAccount(accounts[0]);
+          setAccount(accounts[0]);
+        }
+      } catch (e) {
+        console.error("Auth init error", e);
+      }
+      setAuthReady(true);
+    })();
+  }, []);
+
+  const handleLogin = async () => {
+    if (!_msalInstance) return;
+    setLoginError(null);
+    try {
+      await _msalInstance.loginRedirect({ scopes: _msalScopes });
+    } catch (e: unknown) {
+      setLoginError(e instanceof Error ? e.message : "Login failed");
+    }
+  };
+
+  if (!authReady) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "var(--color-bg, #0f172a)" }}>
+        <div style={{ color: "#94a3b8", fontSize: 14 }}>Loading…</div>
+      </div>
+    );
+  }
+
+  if (authEnabled && !account) {
+    return (
+      <div style={{ display: "flex", height: "100vh", background: "#0f172a", fontFamily: "system-ui, -apple-system, sans-serif" }}>
+        {/* Left panel — branding */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-between", padding: "48px 56px", background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)", borderRight: "1px solid #1e293b" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: "linear-gradient(135deg, #2563eb, #1d4ed8)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 20px rgba(37,99,235,0.4)" }}>
+              <Shield size={22} color="#fff" />
+            </div>
+            <span style={{ fontSize: 22, fontWeight: 700, color: "#f1f5f9", letterSpacing: "-0.3px" }}>Vigil365</span>
+          </div>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
+              <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e", boxShadow: "0 0 8px #22c55e" }} />
+              <span style={{ fontSize: 12, color: "#94a3b8", letterSpacing: "0.08em", textTransform: "uppercase" }}>Live Security Monitoring</span>
+            </div>
+            <h1 style={{ fontSize: 38, fontWeight: 800, color: "#f8fafc", lineHeight: 1.15, margin: "0 0 16px", letterSpacing: "-0.5px" }}>
+              Microsoft 365<br />Security Operations
+            </h1>
+            <p style={{ fontSize: 15, color: "#cbd5e1", lineHeight: 1.7, margin: 0, maxWidth: 380 }}>
+              Real-time visibility across identity, devices, email, and compliance — all in one self-hosted dashboard.
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 40 }}>
+              {[
+                { icon: <Users size={14}/>, label: "Identity & Access Monitoring" },
+                { icon: <Monitor size={14}/>, label: "Device Compliance & Intune" },
+                { icon: <ShieldAlert size={14}/>, label: "Defender XDR & Threat Detection" },
+                { icon: <Activity size={14}/>, label: "Alert Policies & Notifications" },
+              ].map((f, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, color: "#94a3b8", fontSize: 13 }}>
+                  <div style={{ color: "#60a5fa" }}>{f.icon}</div>
+                  {f.label}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div style={{ fontSize: 12, color: "#64748b" }}>
+            Open source · Self-hosted · MIT License
+          </div>
+        </div>
+
+        {/* Right panel — login form */}
+        <div style={{ width: 460, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 56px", background: "#0f172a" }}>
+          <div style={{ width: "100%", maxWidth: 340 }}>
+            <h2 style={{ fontSize: 24, fontWeight: 700, color: "#f8fafc", margin: "0 0 8px", letterSpacing: "-0.3px" }}>Sign in</h2>
+            <p style={{ fontSize: 13, color: "#94a3b8", margin: "0 0 36px" }}>Use your Microsoft 365 account to access the security dashboard.</p>
+
+            {loginError && (
+              <div style={{ background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 8, padding: "10px 14px", marginBottom: 20, fontSize: 13, color: "#fca5a5", display: "flex", alignItems: "center", gap: 8 }}>
+                <AlertTriangle size={14}/> {loginError}
+              </div>
+            )}
+
+            <button
+              onClick={handleLogin}
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, width: "100%", padding: "13px 20px", background: "#2563eb", color: "#fff", border: "none", borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: "pointer", boxShadow: "0 4px 14px rgba(37,99,235,0.4)", transition: "background 0.15s" }}
+              onMouseEnter={e => (e.currentTarget.style.background = "#1d4ed8")}
+              onMouseLeave={e => (e.currentTarget.style.background = "#2563eb")}
+            >
+              <svg width="18" height="18" viewBox="0 0 21 21" fill="none">
+                <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+                <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+                <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+                <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+              </svg>
+              Sign in with Microsoft
+            </button>
+
+            <div style={{ marginTop: 24, padding: "14px 16px", background: "#1e293b", borderRadius: 8, border: "1px solid #334155" }}>
+              <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6 }}>
+                🔒 Access is restricted to your Microsoft 365 organisation. Only users in your tenant can sign in.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const handleSignOut = async () => {
+    if (!_msalInstance) return;
+    await _msalInstance.logoutRedirect({ postLogoutRedirectUri: window.location.origin });
+  };
+
+  return <App account={account} onSignOut={handleSignOut} />;
+}
+
+createRoot(document.getElementById("root")!).render(<AuthGate />);
