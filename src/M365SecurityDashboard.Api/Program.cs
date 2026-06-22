@@ -10,6 +10,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseWindowsService();
 builder.Services.Configure<GraphOptions>(builder.Configuration.GetSection("Graph"));
+builder.Services.Configure<AlertingOptions>(builder.Configuration.GetSection("Alerting"));
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 builder.Services.AddHttpClient<GraphApiClient>();
@@ -1077,6 +1078,35 @@ app.MapPost("/api/triggered-alerts/{id:guid}/resolve", async (AppDbContext db, G
     return Results.Ok(t);
 });
 
+// Per-alert snooze. Body: { "until": "2026-06-22T18:00:00Z" } or { "durationHours": 4|24|168 }.
+// Until wins if both are supplied; durationHours defaults to 24 if neither is supplied.
+app.MapPost("/api/triggered-alerts/{id:guid}/snooze", async (
+    AppDbContext db, Guid id, SnoozeRequest input, CancellationToken ct) =>
+{
+    var t = await db.TriggeredAlerts.FindAsync([id], ct);
+    if (t is null) return Results.NotFound();
+    if (t.Status is "resolved" or "auto_resolved")
+        return Results.BadRequest(new { error = "Cannot snooze a terminal alert." });
+
+    var until = input.Until
+        ?? (input.DurationHours is { } h ? DateTimeOffset.UtcNow.AddHours(h) : DateTimeOffset.UtcNow.AddHours(24));
+    t.SnoozedUntil = until;
+    t.SnoozedBy = "dashboard";
+    await db.SaveChangesAsync(ct);
+    return Results.Ok(t);
+});
+
+app.MapPost("/api/triggered-alerts/{id:guid}/unsnooze", async (
+    AppDbContext db, Guid id, CancellationToken ct) =>
+{
+    var t = await db.TriggeredAlerts.FindAsync([id], ct);
+    if (t is null) return Results.NotFound();
+    t.SnoozedUntil = null;
+    t.SnoozedBy = null;
+    await db.SaveChangesAsync(ct);
+    return Results.Ok(t);
+});
+
 // Manually run an evaluation pass (used by the dashboard "refresh" + on-demand check)
 app.MapPost("/api/alert-policies/evaluate", async (AlertEvaluator evaluator, CancellationToken ct) =>
 {
@@ -1150,3 +1180,6 @@ app.MapGet("/api/notification-log", async (AppDbContext db, CancellationToken ct
 app.MapFallbackToFile("index.html");
 
 app.Run();
+
+/// <summary>Body shape for POST /api/triggered-alerts/{id}/snooze.</summary>
+public sealed record SnoozeRequest(DateTimeOffset? Until, int? DurationHours);
