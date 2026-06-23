@@ -13,6 +13,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<NotificationLog> NotificationLogs => Set<NotificationLog>();
     public DbSet<AppUser> AppUsers => Set<AppUser>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
+    public DbSet<GraphConfig> GraphConfig => Set<GraphConfig>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -68,5 +69,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.HasKey(a => a.Id);
             entity.HasIndex(a => a.Timestamp);
         });
+
+        modelBuilder.Entity<GraphConfig>(entity => entity.HasKey(g => g.Id));
     }
 }

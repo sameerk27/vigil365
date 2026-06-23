@@ -66,6 +66,21 @@ using (var scope = app.Services.CreateScope())
     // the alerting tables idempotently for installs that predate this feature.
     db.Database.ExecuteSqlRaw(AlertingSchema.EnsureTablesSql);
     AlertingSchema.SeedDefaultPolicies(db);
+
+    // Apply Graph credentials saved via the setup wizard over the GraphOptions
+    // singleton. Because IOptions<GraphOptions>.Value is a singleton, mutating it
+    // here makes every consumer (and IsConfigured()) see the wizard-entered values
+    // without any config file. DB values win over appsettings when present.
+    var graphOpts = scope.ServiceProvider.GetRequiredService<IOptions<GraphOptions>>().Value;
+    var protector = scope.ServiceProvider.GetRequiredService<SecretProtector>();
+    var saved = db.GraphConfig.FirstOrDefault(g => g.Id == 1);
+    if (saved is not null && !string.IsNullOrWhiteSpace(saved.TenantId))
+    {
+        graphOpts.TenantId = saved.TenantId;
+        graphOpts.ClientId = saved.ClientId;
+        var secret = protector.Unprotect(saved.ClientSecret);
+        if (!string.IsNullOrWhiteSpace(secret)) graphOpts.ClientSecret = secret;
+    }
 }
 
 // Enforce TLS outside Development. In production the app should be reached over
@@ -252,6 +267,62 @@ app.MapDelete("/api/admin/users/{email}", async (
 app.MapGet("/api/admin/audit-log", async (AppDbContext db, CancellationToken ct) =>
     Results.Ok(await db.AuditEntries.AsNoTracking().OrderByDescending(a => a.Timestamp).Take(200).ToListAsync(ct)))
     .RequireAuthorization("RequireAdmin");
+
+// ── First-run setup wizard (Admin only) ──────────────────────────────────────────
+// Lets an Admin enter Graph credentials in the browser instead of editing JSON.
+// Current config status + non-secret values (never returns the secret).
+app.MapGet("/api/setup/graph", (IOptions<GraphOptions> opts) =>
+{
+    var o = opts.Value;
+    return Results.Ok(new
+    {
+        configured = o.IsConfigured(),
+        tenantId = o.IsConfigured() ? o.TenantId : "",
+        clientId = o.IsConfigured() ? o.ClientId : "",
+        hasSecret = !string.IsNullOrWhiteSpace(o.ClientSecret) && o.ClientSecret != "YOUR_APP_CLIENT_SECRET",
+    });
+}).RequireAuthorization("RequireAdmin");
+
+// Save + apply Graph credentials, then test the connection. Persists encrypted and
+// mutates the live GraphOptions singleton so collection works without a restart.
+app.MapPost("/api/setup/graph", async (
+    GraphSetupRequest input, AppDbContext db, SecretProtector protector, AuditLogger audit,
+    IOptions<GraphOptions> opts, IServiceProvider services, CancellationToken ct) =>
+{
+    var tenantId = (input.TenantId ?? "").Trim();
+    var clientId = (input.ClientId ?? "").Trim();
+    var clientSecret = (input.ClientSecret ?? "").Trim();
+    if (tenantId == "" || clientId == "")
+        return Results.BadRequest(new { error = "Tenant ID and Client ID are required." });
+
+    var row = await db.GraphConfig.FirstOrDefaultAsync(g => g.Id == 1, ct);
+    if (row is null) { row = new GraphConfig { Id = 1 }; db.GraphConfig.Add(row); }
+    row.TenantId = tenantId;
+    row.ClientId = clientId;
+    // Keep the existing secret if the field was left blank (e.g. editing tenant only).
+    if (clientSecret != "") row.ClientSecret = protector.Protect(clientSecret);
+    row.UpdatedAt = DateTimeOffset.UtcNow;
+    await db.SaveChangesAsync(ct);
+
+    // Apply over the live singleton so new GraphApiClient instances use it immediately.
+    var o = opts.Value;
+    o.TenantId = tenantId;
+    o.ClientId = clientId;
+    if (clientSecret != "") o.ClientSecret = clientSecret;
+
+    await audit.WriteAsync("setup.graph", "settings", "graph", "Graph credentials updated", ct);
+
+    // Test the connection with a fresh client (reads the just-mutated options).
+    string? testError = null;
+    try
+    {
+        var graph = services.GetRequiredService<GraphApiClient>();
+        await graph.GetSinglePageAsync("/v1.0/organization", ct);
+    }
+    catch (Exception ex) { testError = ex.Message; }
+
+    return Results.Ok(new { saved = true, testOk = testError is null, testError });
+}).RequireAuthorization("RequireAdmin");
 
 app.MapGet("/api/dashboard/overview", async (AppDbContext db, CancellationToken ct) =>
 {
@@ -1378,6 +1449,9 @@ public sealed record SnoozeRequest(DateTimeOffset? Until, int? DurationHours);
 
 /// <summary>Body shape for PUT /api/admin/users/{email}/role.</summary>
 public sealed record RoleChangeRequest(string Role);
+
+/// <summary>Body shape for POST /api/setup/graph (first-run wizard).</summary>
+public sealed record GraphSetupRequest(string TenantId, string ClientId, string? ClientSecret);
 
 /// <summary>Body shape for POST /api/admin/users (pre-provision a user).</summary>
 public sealed record AddUserRequest(string Email, string Role, string? DisplayName, bool SendInvite = false);

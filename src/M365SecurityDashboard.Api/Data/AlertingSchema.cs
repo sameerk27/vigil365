@@ -111,6 +111,15 @@ public static class AlertingSchema
         IF OBJECT_ID(N'[AuditEntries]', N'U') IS NOT NULL
            AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_AuditEntries_Timestamp')
         CREATE INDEX [IX_AuditEntries_Timestamp] ON [AuditEntries]([Timestamp]);
+
+        IF OBJECT_ID(N'[GraphConfig]', N'U') IS NULL
+        CREATE TABLE [GraphConfig] (
+            [Id] int NOT NULL PRIMARY KEY,
+            [TenantId] nvarchar(100) NOT NULL,
+            [ClientId] nvarchar(100) NOT NULL,
+            [ClientSecret] nvarchar(1024) NULL,
+            [UpdatedAt] datetimeoffset NOT NULL
+        );
         """;
 
     private static readonly (string Name, string Category, string Metric, int Threshold, string Severity, string Condition)[] Defaults =
