@@ -153,9 +153,13 @@ interface TriggeredAlert {
   metricValue: number;
   threshold: number;
   triggeredAt: string;
-  status: "new" | "acknowledged" | "resolved";
+  status: "new" | "acknowledged" | "snoozed" | "auto_resolved" | "resolved";
   acknowledgedAt?: string;
   acknowledgedBy?: string;
+  snoozedUntil?: string;
+  snoozedBy?: string;
+  belowThresholdStreakCount?: number;
+  lastEvaluatedAt?: string;
 }
 
 interface NotificationSettings {
@@ -211,6 +215,12 @@ const acApi = {
   },
   async getLog(): Promise<NotificationLogEntry[]> {
     try { const r = await fetch(`${apiBase}/api/notification-log`); return r.ok ? await r.json() : []; } catch { return []; }
+  },
+  async snooze(id: string, durationHours: 4 | 24 | 168): Promise<boolean> {
+    try { const r = await fetch(`${apiBase}/api/triggered-alerts/${id}/snooze`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ durationHours }) }); return r.ok; } catch { return false; }
+  },
+  async unsnooze(id: string): Promise<boolean> {
+    try { const r = await fetch(`${apiBase}/api/triggered-alerts/${id}/unsnooze`, { method: "POST" }); return r.ok; } catch { return false; }
   },
 };
 
@@ -3508,7 +3518,11 @@ function sevToneAC(s: string): Tone {
   return s === "critical" ? "error" : s === "high" ? "error" : s === "medium" ? "warning" : "info";
 }
 function statusTone(s: string): Tone {
-  return s === "new" ? "error" : s === "acknowledged" ? "warning" : "good";
+  return s === "new" ? "error"
+    : s === "acknowledged" ? "warning"
+    : s === "snoozed" ? "neutral"
+    : s === "auto_resolved" ? "info"
+    : "good"; // resolved
 }
 
 function PolicyModal({ policy, onSave, onClose }: {
@@ -3784,6 +3798,14 @@ function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
     if (await acApi.resolve(id)) { showToast("Alert resolved"); await onChanged(); }
   };
 
+  const snooze = async (id: string, durationHours: 4 | 24 | 168) => {
+    if (await acApi.snooze(id, durationHours)) { showToast(`Snoozed for ${durationHours}h`); await onChanged(); }
+  };
+
+  const unsnooze = async (id: string) => {
+    if (await acApi.unsnooze(id)) { showToast("Snooze cleared"); await onChanged(); }
+  };
+
   const handleSavePolicy = async (p: AlertPolicy) => {
     const exists = policies.some(x => x.id === p.id);
     const ok = exists ? await acApi.updatePolicy(p) : !!(await acApi.createPolicy(p));
@@ -3845,6 +3867,8 @@ function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
               <DetailField label="Status" value={selectedTriggered.status}/>
               <DetailField label="Triggered" value={fmtDate(selectedTriggered.triggeredAt)}/>
               {selectedTriggered.acknowledgedAt && <DetailField label="Acknowledged" value={fmtDate(selectedTriggered.acknowledgedAt)}/>}
+              {selectedTriggered.snoozedUntil && <DetailField label="Snoozed until" value={fmtDate(selectedTriggered.snoozedUntil)}/>}
+              {selectedTriggered.lastEvaluatedAt && <DetailField label="Last evaluated" value={fmtDate(selectedTriggered.lastEvaluatedAt)}/>}
             </div>
             <div className="detail-modal-footer">
               <button className="dm-close-btn" onClick={() => setSelectedTriggered(null)}>Close</button>
@@ -3946,6 +3970,9 @@ function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
                       <span className={`sev-dot sev-${a.severity}`}/>
                       <span className="mr-user" style={{ flex:1 }}>{a.policyName}</span>
                       <Badge label={a.status} tone={statusTone(a.status)}/>
+                      {a.snoozedUntil && new Date(a.snoozedUntil) > new Date() && (
+                        <span style={{ fontSize:10, color:"var(--color-muted)" }}>Z until {relTime(a.snoozedUntil)}</span>
+                      )}
                       <span className="mr-date">{relTime(a.triggeredAt)}</span>
                       {a.status === "new" && (
                         <button className="btn-ack" onClick={e => { e.stopPropagation(); acknowledge(a.id); }}>Ack</button>
@@ -3980,6 +4007,8 @@ function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
                 <option value="">All statuses</option>
                 <option value="new">New</option>
                 <option value="acknowledged">Acknowledged</option>
+                <option value="snoozed">Snoozed</option>
+                <option value="auto_resolved">Auto-resolved</option>
                 <option value="resolved">Resolved</option>
               </select>
               <ExportDropdown rows={filteredTA.map(a=>({ Policy:a.policyName, Severity:a.severity, Category:a.category, Condition:a.condition, MetricValue:a.metricValue, Threshold:a.threshold, Triggered:a.triggeredAt, Status:a.status }))} filename="triggered-alerts.csv"/>
@@ -4007,10 +4036,29 @@ function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
                       <td style={{ fontWeight:600 }}>{a.metricValue}</td>
                       <td>{a.threshold}</td>
                       <td className="al-date">{relTime(a.triggeredAt)}</td>
-                      <td><Badge label={a.status} tone={statusTone(a.status)}/></td>
-                      <td onClick={e=>e.stopPropagation()} style={{ display:"flex", gap:4, alignItems:"center" }}>
+                      <td><Badge label={a.status} tone={statusTone(a.status)}/>
+                        {a.snoozedUntil && new Date(a.snoozedUntil) > new Date() && (
+                          <div style={{ fontSize:10, color:"var(--color-muted)", marginTop:2 }}>snoozed until {relTime(a.snoozedUntil)}</div>
+                        )}
+                      </td>
+                      <td onClick={e=>e.stopPropagation()} style={{ display:"flex", gap:4, alignItems:"center", flexWrap:"wrap" }}>
                         {a.status === "new" && <button className="btn-ack" onClick={()=>acknowledge(a.id)}>Acknowledge</button>}
-                        {a.status !== "resolved" && <button className="btn-resolve" onClick={()=>resolve(a.id)}>Resolve</button>}
+                        {a.status !== "resolved" && a.status !== "auto_resolved" && (
+                          <select className="filter-sel" style={{ padding:"3px 6px", fontSize:11 }} defaultValue=""
+                            onChange={e => { const h = Number(e.target.value); if (h) snooze(a.id, h as 4|24|168); e.currentTarget.value = ""; }}
+                            title="Snooze for…">
+                            <option value="" disabled>Snooze…</option>
+                            <option value="4">4h</option>
+                            <option value="24">24h</option>
+                            <option value="168">7d</option>
+                          </select>
+                        )}
+                        {a.snoozedUntil && new Date(a.snoozedUntil) > new Date() && (
+                          <button className="btn-apply" style={{ padding:"3px 8px", fontSize:11 }}
+                            onClick={() => unsnooze(a.id)}
+                            title={`Snoozed until ${a.snoozedUntil}`}>Unsnooze</button>
+                        )}
+                        {a.status !== "resolved" && a.status !== "auto_resolved" && <button className="btn-resolve" onClick={()=>resolve(a.id)}>Resolve</button>}
                       </td>
                     </tr>
                   ))}

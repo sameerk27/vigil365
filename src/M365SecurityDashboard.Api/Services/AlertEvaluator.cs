@@ -1,6 +1,7 @@
 using M365SecurityDashboard.Api.Data;
 using M365SecurityDashboard.Api.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace M365SecurityDashboard.Api.Services;
 
@@ -8,10 +9,12 @@ namespace M365SecurityDashboard.Api.Services;
 /// Evaluates all enabled <see cref="AlertPolicy"/> rows against the latest
 /// collected data and persists new <see cref="TriggeredAlert"/> rows. Runs
 /// server-side after every collection cycle so alerts fire without a browser.
+/// Also auto-resolves stale alerts whose underlying metric has recovered.
 /// </summary>
 public sealed class AlertEvaluator(
     AppDbContext db,
     NotificationSender sender,
+    IOptions<AlertingOptions> options,
     ILogger<AlertEvaluator> logger)
 {
     public async Task<int> EvaluateAsync(CancellationToken ct)
@@ -25,6 +28,10 @@ public sealed class AlertEvaluator(
 
         var now = DateTimeOffset.UtcNow;
         var fired = 0;
+
+        // Map PolicyId -> Metric key so the auto-resolve loop below can look up
+        // each open alert's current metric without re-querying the policy table.
+        var policyMetricById = policies.ToDictionary(p => p.Id, p => p.Metric);
 
         foreach (var policy in policies)
         {
@@ -67,10 +74,41 @@ public sealed class AlertEvaluator(
             }
         }
 
-        if (fired > 0)
+        // Auto-resolve: scan non-terminal alerts and update streak counters.
+        // Resolves silently — no notification dispatch, no NotificationLog write.
+        var streakTarget = Math.Max(1, options.Value.AutoResolveDebounceCycles);
+        var openAlerts = await db.TriggeredAlerts
+            .Where(t => t.Status != "resolved" && t.Status != "auto_resolved")
+            .ToListAsync(ct);
+        var autoResolved = 0;
+        foreach (var alert in openAlerts)
+        {
+            if (!policyMetricById.TryGetValue(alert.PolicyId, out var metricKey)) continue;
+            var current = metrics.GetValueOrDefault(metricKey, 0);
+
+            if (current < alert.Threshold)
+            {
+                alert.BelowThresholdStreakCount++;
+                if (alert.BelowThresholdStreakCount >= streakTarget)
+                {
+                    alert.Status = "auto_resolved";
+                    autoResolved++;
+                }
+            }
+            else if (alert.BelowThresholdStreakCount != 0)
+            {
+                alert.BelowThresholdStreakCount = 0;
+            }
+            alert.LastEvaluatedAt = now;
+        }
+
+        if (fired > 0 || autoResolved > 0)
         {
             await db.SaveChangesAsync(ct);
-            logger.LogInformation("Alert evaluation fired {Count} new alert(s)", fired);
+            if (fired > 0)
+                logger.LogInformation("Alert evaluation fired {Count} new alert(s)", fired);
+            if (autoResolved > 0)
+                logger.LogInformation("Auto-resolved {Count} alert(s) after metric recovery", autoResolved);
         }
         return fired;
     }

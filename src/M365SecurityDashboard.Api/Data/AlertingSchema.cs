@@ -76,6 +76,18 @@ public static class AlertingSchema
 
         IF COL_LENGTH(N'[CollectionRuns]', 'SourceFailureDetails') IS NULL
         ALTER TABLE [CollectionRuns] ADD [SourceFailureDetails] nvarchar(max) NULL;
+
+        IF COL_LENGTH(N'[TriggeredAlerts]', 'SnoozedUntil') IS NULL
+        ALTER TABLE [TriggeredAlerts] ADD [SnoozedUntil] datetimeoffset NULL;
+
+        IF COL_LENGTH(N'[TriggeredAlerts]', 'SnoozedBy') IS NULL
+        ALTER TABLE [TriggeredAlerts] ADD [SnoozedBy] nvarchar(120) NULL;
+
+        IF COL_LENGTH(N'[TriggeredAlerts]', 'BelowThresholdStreakCount') IS NULL
+        ALTER TABLE [TriggeredAlerts] ADD [BelowThresholdStreakCount] int NOT NULL CONSTRAINT [DF_TriggeredAlerts_Streak] DEFAULT 0;
+
+        IF COL_LENGTH(N'[TriggeredAlerts]', 'LastEvaluatedAt') IS NULL
+        ALTER TABLE [TriggeredAlerts] ADD [LastEvaluatedAt] datetimeoffset NULL;
         """;
 
     private static readonly (string Name, string Category, string Metric, int Threshold, string Severity, string Condition)[] Defaults =

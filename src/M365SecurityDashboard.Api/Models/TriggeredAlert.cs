@@ -39,4 +39,17 @@ public sealed class TriggeredAlert
 
     /// <summary>Whether outbound notifications were dispatched for this alert.</summary>
     public bool Notified { get; set; }
+
+    /// <summary>If set, the alert is silenced until this timestamp. Status remains "new" or "acknowledged".</summary>
+    public DateTimeOffset? SnoozedUntil { get; set; }
+
+    /// <summary>Identity of the actor who snoozed this alert. Placeholder string ("dashboard") until auth lands.</summary>
+    [MaxLength(120)]
+    public string? SnoozedBy { get; set; }
+
+    /// <summary>Number of consecutive evaluation cycles the underlying metric has been below this alert's threshold. Reset on any above-threshold observation.</summary>
+    public int BelowThresholdStreakCount { get; set; }
+
+    /// <summary>When the evaluator last inspected this alert (used for diagnostics and the auto-resolve debounce).</summary>
+    public DateTimeOffset? LastEvaluatedAt { get; set; }
 }
