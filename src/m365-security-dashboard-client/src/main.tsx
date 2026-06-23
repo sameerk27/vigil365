@@ -4267,9 +4267,20 @@ interface ManagedUser {
   lastSeenAt: string;
 }
 
+interface AuditRow {
+  id: number;
+  timestamp: string;
+  actorEmail: string;
+  action: string;
+  targetType: string;
+  targetId?: string;
+  details?: string;
+}
+
 function UserManagementPage() {
   const { email: myEmail } = useAuth();
   const [users, setUsers] = useState<ManagedUser[] | null>(null);
+  const [audit, setAudit] = useState<AuditRow[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [addEmail, setAddEmail] = useState("");
@@ -4283,6 +4294,10 @@ function UserManagementPage() {
       const r = await apiFetch(`${apiBase}/api/admin/users`);
       if (r.ok) setUsers(await r.json()); else setUsers([]);
     } catch { setUsers([]); }
+    try {
+      const a = await apiFetch(`${apiBase}/api/admin/audit-log`);
+      if (a.ok) setAudit(await a.json()); else setAudit([]);
+    } catch { setAudit([]); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -4410,6 +4425,37 @@ function UserManagementPage() {
                             disabled={busy===u.email} onClick={() => removeUser(u)} title="Remove user">Remove</button>
                         )}
                       </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+      </Card>
+
+      <Card title="Activity Log"
+        badge={<Badge label={audit ? `${audit.length} events` : "—"} tone="neutral"/>}>
+        <div style={{ fontSize:12, color:"var(--color-muted)", padding:"0 0 12px", lineHeight:1.6 }}>
+          Append-only audit trail of security-relevant actions (user changes, role changes, settings).
+        </div>
+        {audit === null
+          ? <EmptyState message="Loading activity…"/>
+          : audit.length === 0
+          ? <EmptyState message="No activity recorded yet."/>
+          : (
+            <div className="tbl-wrap">
+              <table className="data-tbl">
+                <thead>
+                  <tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Details</th></tr>
+                </thead>
+                <tbody>
+                  {audit.map(a => (
+                    <tr key={a.id}>
+                      <td className="al-date">{relTime(a.timestamp) || fmtDate(a.timestamp)}</td>
+                      <td className="al-date">{a.actorEmail}</td>
+                      <td><Badge label={a.action} tone="neutral"/></td>
+                      <td className="al-date">{a.targetId || a.targetType}</td>
+                      <td style={{ fontSize:12, color:"var(--color-muted)" }}>{a.details}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -97,6 +97,20 @@ public static class AlertingSchema
             [CreatedAt] datetimeoffset NOT NULL,
             [LastSeenAt] datetimeoffset NOT NULL
         );
+
+        IF OBJECT_ID(N'[AuditEntries]', N'U') IS NULL
+        CREATE TABLE [AuditEntries] (
+            [Id] bigint IDENTITY(1,1) NOT NULL PRIMARY KEY,
+            [Timestamp] datetimeoffset NOT NULL,
+            [ActorEmail] nvarchar(320) NOT NULL,
+            [Action] nvarchar(60) NOT NULL,
+            [TargetType] nvarchar(40) NOT NULL,
+            [TargetId] nvarchar(320) NULL,
+            [Details] nvarchar(500) NULL
+        );
+        IF OBJECT_ID(N'[AuditEntries]', N'U') IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_AuditEntries_Timestamp')
+        CREATE INDEX [IX_AuditEntries_Timestamp] ON [AuditEntries]([Timestamp]);
         """;
 
     private static readonly (string Name, string Category, string Metric, int Threshold, string Severity, string Condition)[] Defaults =

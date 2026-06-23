@@ -41,6 +41,8 @@ builder.Services.AddSingleton<SecretProtector>();
 builder.Services.AddScoped<GraphCollector>();
 builder.Services.AddScoped<NotificationSender>();
 builder.Services.AddScoped<AlertEvaluator>();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<AuditLogger>();
 builder.Services.AddHostedService<GraphCollectionWorker>();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
@@ -139,7 +141,7 @@ app.MapGet("/api/admin/users", async (AppDbContext db, CancellationToken ct) =>
 // Pre-provision (invite) a user by email + role before they ever sign in.
 // LastSeenAt = DateTimeOffset.MinValue marks "invited, not yet signed in".
 app.MapPost("/api/admin/users", async (
-    AddUserRequest input, AppDbContext db, NotificationSender sender, IConfiguration config, CancellationToken ct) =>
+    AddUserRequest input, AppDbContext db, NotificationSender sender, AuditLogger audit, IConfiguration config, CancellationToken ct) =>
 {
     var email = (input.Email ?? "").Trim().ToLowerInvariant();
     if (string.IsNullOrEmpty(email) || !email.Contains('@'))
@@ -161,6 +163,7 @@ app.MapPost("/api/admin/users", async (
     };
     db.AppUsers.Add(user);
     await db.SaveChangesAsync(ct);
+    await audit.WriteAsync("user.add", "user", email, $"added with role {user.Role}", ct);
 
     string? inviteError = null;
     if (input.SendInvite)
@@ -175,7 +178,7 @@ app.MapPost("/api/admin/users", async (
 
 // (Re)send the access-notification email to a pre-provisioned/existing user.
 app.MapPost("/api/admin/users/{email}/invite", async (
-    string email, AppDbContext db, NotificationSender sender, IConfiguration config, CancellationToken ct) =>
+    string email, AppDbContext db, NotificationSender sender, AuditLogger audit, IConfiguration config, CancellationToken ct) =>
 {
     email = email.Trim().ToLowerInvariant();
     var user = await db.AppUsers.FirstOrDefaultAsync(u => u.Email == email, ct);
@@ -184,11 +187,12 @@ app.MapPost("/api/admin/users/{email}/invite", async (
     var cfg = await db.NotificationSettings.FirstOrDefaultAsync(ct) ?? new NotificationSettings { Id = 1 };
     var url = config["Auth:RedirectUri"] ?? "http://localhost:5000";
     var (ok, error) = await sender.SendInviteEmailAsync(cfg, email, user.Role, url, ct);
+    if (ok) await audit.WriteAsync("user.invite", "user", email, "invite email sent", ct);
     return ok ? Results.Ok(new { ok = true }) : Results.BadRequest(new { error });
 }).RequireAuthorization("RequireAdmin");
 
 app.MapPut("/api/admin/users/{email}/role", async (
-    string email, RoleChangeRequest input, AppDbContext db,
+    string email, RoleChangeRequest input, AppDbContext db, AuditLogger audit,
     System.Security.Claims.ClaimsPrincipal caller, CancellationToken ct) =>
 {
     if (!AppRoles.IsValid(input.Role))
@@ -206,13 +210,15 @@ app.MapPut("/api/admin/users/{email}/role", async (
             return Results.BadRequest(new { error = "Cannot demote the last Admin. Promote another user to Admin first." });
     }
 
+    var oldRole = user.Role;
     user.Role = input.Role;
     await db.SaveChangesAsync(ct);
+    await audit.WriteAsync("user.role_change", "user", email, $"role {oldRole} -> {input.Role}", ct);
     return Results.Ok(user);
 }).RequireAuthorization("RequireAdmin");
 
 app.MapDelete("/api/admin/users/{email}", async (
-    string email, AppDbContext db,
+    string email, AppDbContext db, AuditLogger audit,
     System.Security.Claims.ClaimsPrincipal caller, CancellationToken ct) =>
 {
     email = email.Trim().ToLowerInvariant();
@@ -225,10 +231,17 @@ app.MapDelete("/api/admin/users/{email}", async (
     if (user.Role == AppRoles.Admin && await db.AppUsers.CountAsync(u => u.Role == AppRoles.Admin, ct) <= 1)
         return Results.BadRequest(new { error = "Cannot remove the last Admin." });
 
+    var removedRole = user.Role;
     db.AppUsers.Remove(user);
     await db.SaveChangesAsync(ct);
+    await audit.WriteAsync("user.remove", "user", email, $"removed (was {removedRole})", ct);
     return Results.NoContent();
 }).RequireAuthorization("RequireAdmin");
+
+// Audit trail of security-relevant actions (Admin only).
+app.MapGet("/api/admin/audit-log", async (AppDbContext db, CancellationToken ct) =>
+    Results.Ok(await db.AuditEntries.AsNoTracking().OrderByDescending(a => a.Timestamp).Take(200).ToListAsync(ct)))
+    .RequireAuthorization("RequireAdmin");
 
 app.MapGet("/api/dashboard/overview", async (AppDbContext db, CancellationToken ct) =>
 {
@@ -1297,7 +1310,7 @@ app.MapGet("/api/notification-settings", async (AppDbContext db, SecretProtector
     });
 });
 
-app.MapPut("/api/notification-settings", async (AppDbContext db, SecretProtector protector, NotificationSettings input, CancellationToken ct) =>
+app.MapPut("/api/notification-settings", async (AppDbContext db, SecretProtector protector, AuditLogger audit, NotificationSettings input, CancellationToken ct) =>
 {
     var s = await db.NotificationSettings.FirstOrDefaultAsync(ct);
     if (s is null) { s = new NotificationSettings { Id = 1 }; db.NotificationSettings.Add(s); }
@@ -1315,6 +1328,7 @@ app.MapPut("/api/notification-settings", async (AppDbContext db, SecretProtector
     s.WebhookUrl = protector.Protect(input.WebhookUrl);
     s.MinSeverity = string.IsNullOrWhiteSpace(input.MinSeverity) ? "low" : input.MinSeverity;
     await db.SaveChangesAsync(ct);
+    await audit.WriteAsync("settings.update", "settings", "notifications", "notification settings updated", ct);
     return Results.Ok(new { ok = true });
 }).RequireAuthorization("RequireAdmin");
 
