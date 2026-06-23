@@ -13,14 +13,26 @@ builder.Host.UseWindowsService();
 builder.Services.Configure<GraphOptions>(builder.Configuration.GetSection("Graph"));
 builder.Services.Configure<AlertingOptions>(builder.Configuration.GetSection("Alerting"));
 
-// ── Authentication ─────────────────────────────────────────────────────────────
-// Validates Bearer tokens issued by Entra ID for this tenant.
-// The frontend (MSAL) acquires the token; the backend verifies it on every request.
+// ── Authentication & Authorization ──────────────────────────────────────────────
+// Validates Entra ID Bearer tokens. The SPA (MSAL) acquires a token for the
+// scope api://{clientId}/access_as_user, so the token audience is api://{clientId}.
+// AzureAd:Audience in config must match that, or validation fails with 401.
+// Role claims ("Admin"/"Analyst"/"Viewer") come from Entra ID App Roles.
 builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration, "AzureAd");
-builder.Services.AddAuthorization(o =>
-    o.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
+// Attaches each user's in-app role (from AppUsers table) as a role claim after
+// token validation. Scoped so it can use the request-scoped AppDbContext.
+builder.Services.AddScoped<Microsoft.AspNetCore.Authentication.IClaimsTransformation, RoleClaimsTransformation>();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("RequireAdmin", p => p.RequireRole("Admin"));
+    options.AddPolicy("RequireAnalyst", p => p.RequireRole("Admin", "Analyst"));
+    // Every endpoint requires a valid token by default. Read endpoints inherit
+    // this (any authenticated user); mutating endpoints layer role policies on
+    // top; /api/auth/config and the SPA fallback opt out via .AllowAnonymous().
+    options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
         .RequireAuthenticatedUser()
-        .Build());
+        .Build();
+});
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 builder.Services.AddHttpClient<GraphApiClient>();
@@ -82,6 +94,118 @@ app.MapGet("/api/auth/config", (IConfiguration config) => Results.Ok(new
     tenantId = config["Graph:TenantId"] ?? "",
     redirectUri = config["Auth:RedirectUri"] ?? "http://localhost:5173"
 })).AllowAnonymous();
+
+// Returns the signed-in user's identity and role, and upserts their AppUsers row.
+// Bootstrap: if Auth:BootstrapAdminEmail is configured, only that email becomes
+// Admin on first sign-in; otherwise the first user to ever sign in becomes Admin.
+// Everyone else defaults to Viewer until an Admin promotes them.
+app.MapGet("/api/auth/me", async (
+    System.Security.Claims.ClaimsPrincipal principal, AppDbContext db, IConfiguration config, CancellationToken ct) =>
+{
+    var email = AuthHelpers.GetEmail(principal);
+    var displayName = AuthHelpers.GetDisplayName(principal);
+    if (string.IsNullOrEmpty(email)) return Results.BadRequest(new { error = "Token has no email claim." });
+
+    var now = DateTimeOffset.UtcNow;
+    var user = await db.AppUsers.FirstOrDefaultAsync(u => u.Email == email, ct);
+    if (user is null)
+    {
+        var bootstrapEmail = (config["Auth:BootstrapAdminEmail"] ?? "").Trim().ToLowerInvariant();
+        string role;
+        if (!string.IsNullOrEmpty(bootstrapEmail))
+            role = email == bootstrapEmail ? AppRoles.Admin : AppRoles.Viewer;
+        else
+            role = await db.AppUsers.AnyAsync(ct) ? AppRoles.Viewer : AppRoles.Admin;
+
+        user = new AppUser { Email = email, DisplayName = displayName, Role = role, CreatedAt = now, LastSeenAt = now };
+        db.AppUsers.Add(user);
+    }
+    else
+    {
+        user.LastSeenAt = now;
+        if (!string.IsNullOrEmpty(displayName)) user.DisplayName = displayName;
+    }
+    await db.SaveChangesAsync(ct);
+
+    return Results.Ok(new { name = user.DisplayName ?? "", email = user.Email, role = user.Role });
+});
+
+// ── User management (Admin only) ─────────────────────────────────────────────────
+// Roles are managed entirely in-app — no Entra App Roles, no Graph write permission.
+app.MapGet("/api/admin/users", async (AppDbContext db, CancellationToken ct) =>
+    Results.Ok(await db.AppUsers.OrderBy(u => u.Email).ToListAsync(ct)))
+    .RequireAuthorization("RequireAdmin");
+
+// Pre-provision (invite) a user by email + role before they ever sign in.
+// LastSeenAt = DateTimeOffset.MinValue marks "invited, not yet signed in".
+app.MapPost("/api/admin/users", async (
+    AddUserRequest input, AppDbContext db, CancellationToken ct) =>
+{
+    var email = (input.Email ?? "").Trim().ToLowerInvariant();
+    if (string.IsNullOrEmpty(email) || !email.Contains('@'))
+        return Results.BadRequest(new { error = "A valid email address is required." });
+
+    if (!AppRoles.IsValid(input.Role))
+        return Results.BadRequest(new { error = "Invalid role. Must be Admin, Analyst, or Viewer." });
+
+    if (await db.AppUsers.AnyAsync(u => u.Email == email, ct))
+        return Results.Conflict(new { error = $"A user with email '{email}' already exists." });
+
+    var user = new AppUser
+    {
+        Email = email,
+        DisplayName = string.IsNullOrWhiteSpace(input.DisplayName) ? null : input.DisplayName.Trim(),
+        Role = input.Role,
+        CreatedAt = DateTimeOffset.UtcNow,
+        LastSeenAt = DateTimeOffset.MinValue
+    };
+    db.AppUsers.Add(user);
+    await db.SaveChangesAsync(ct);
+    return Results.Ok(user);
+}).RequireAuthorization("RequireAdmin");
+
+app.MapPut("/api/admin/users/{email}/role", async (
+    string email, RoleChangeRequest input, AppDbContext db,
+    System.Security.Claims.ClaimsPrincipal caller, CancellationToken ct) =>
+{
+    if (!AppRoles.IsValid(input.Role))
+        return Results.BadRequest(new { error = "Invalid role. Must be Admin, Analyst, or Viewer." });
+
+    email = email.Trim().ToLowerInvariant();
+    var user = await db.AppUsers.FirstOrDefaultAsync(u => u.Email == email, ct);
+    if (user is null) return Results.NotFound();
+
+    // Lockout guard: don't allow demoting the last remaining Admin.
+    if (user.Role == AppRoles.Admin && input.Role != AppRoles.Admin)
+    {
+        var adminCount = await db.AppUsers.CountAsync(u => u.Role == AppRoles.Admin, ct);
+        if (adminCount <= 1)
+            return Results.BadRequest(new { error = "Cannot demote the last Admin. Promote another user to Admin first." });
+    }
+
+    user.Role = input.Role;
+    await db.SaveChangesAsync(ct);
+    return Results.Ok(user);
+}).RequireAuthorization("RequireAdmin");
+
+app.MapDelete("/api/admin/users/{email}", async (
+    string email, AppDbContext db,
+    System.Security.Claims.ClaimsPrincipal caller, CancellationToken ct) =>
+{
+    email = email.Trim().ToLowerInvariant();
+    var user = await db.AppUsers.FirstOrDefaultAsync(u => u.Email == email, ct);
+    if (user is null) return Results.NotFound();
+
+    // Don't allow removing yourself or the last Admin.
+    if (email == AuthHelpers.GetEmail(caller))
+        return Results.BadRequest(new { error = "You cannot remove your own account." });
+    if (user.Role == AppRoles.Admin && await db.AppUsers.CountAsync(u => u.Role == AppRoles.Admin, ct) <= 1)
+        return Results.BadRequest(new { error = "Cannot remove the last Admin." });
+
+    db.AppUsers.Remove(user);
+    await db.SaveChangesAsync(ct);
+    return Results.NoContent();
+}).RequireAuthorization("RequireAdmin");
 
 app.MapGet("/api/dashboard/overview", async (AppDbContext db, CancellationToken ct) =>
 {
@@ -166,7 +290,7 @@ app.MapPost("/api/collector/run", async (
     var collector = services.GetRequiredService<GraphCollector>();
     var run = await collector.CollectAsync(ct);
     return Results.Ok(run);
-});
+}).RequireAuthorization("RequireAdmin");
 
 // ── New dashboard endpoints ────────────────────────────────────────────────
 
@@ -1046,7 +1170,7 @@ app.MapPost("/api/alert-policies", async (AppDbContext db, AlertPolicy input, Ca
     db.AlertPolicies.Add(input);
     await db.SaveChangesAsync(ct);
     return Results.Ok(input);
-});
+}).RequireAuthorization("RequireAnalyst");
 
 app.MapPut("/api/alert-policies/{id:guid}", async (AppDbContext db, Guid id, AlertPolicy input, CancellationToken ct) =>
 {
@@ -1063,7 +1187,7 @@ app.MapPut("/api/alert-policies/{id:guid}", async (AppDbContext db, Guid id, Ale
     p.SuppressionMinutes = input.SuppressionMinutes <= 0 ? 60 : input.SuppressionMinutes;
     await db.SaveChangesAsync(ct);
     return Results.Ok(p);
-});
+}).RequireAuthorization("RequireAnalyst");
 
 app.MapDelete("/api/alert-policies/{id:guid}", async (AppDbContext db, Guid id, CancellationToken ct) =>
 {
@@ -1072,22 +1196,23 @@ app.MapDelete("/api/alert-policies/{id:guid}", async (AppDbContext db, Guid id, 
     db.AlertPolicies.Remove(p);
     await db.SaveChangesAsync(ct);
     return Results.NoContent();
-});
+}).RequireAuthorization("RequireAnalyst");
 
 // Triggered alerts
 app.MapGet("/api/triggered-alerts", async (AppDbContext db, CancellationToken ct) =>
     Results.Ok(await db.TriggeredAlerts.OrderByDescending(t => t.TriggeredAt).Take(500).ToListAsync(ct)));
 
-app.MapPost("/api/triggered-alerts/{id:guid}/acknowledge", async (AppDbContext db, Guid id, CancellationToken ct) =>
+app.MapPost("/api/triggered-alerts/{id:guid}/acknowledge", async (
+    AppDbContext db, Guid id, System.Security.Claims.ClaimsPrincipal caller, CancellationToken ct) =>
 {
     var t = await db.TriggeredAlerts.FindAsync([id], ct);
     if (t is null) return Results.NotFound();
     t.Status = "acknowledged";
     t.AcknowledgedAt = DateTimeOffset.UtcNow;
-    t.AcknowledgedBy = "dashboard";
+    t.AcknowledgedBy = AuthHelpers.GetEmail(caller);
     await db.SaveChangesAsync(ct);
     return Results.Ok(t);
-});
+}).RequireAuthorization("RequireAnalyst");
 
 app.MapPost("/api/triggered-alerts/{id:guid}/resolve", async (AppDbContext db, Guid id, CancellationToken ct) =>
 {
@@ -1096,12 +1221,12 @@ app.MapPost("/api/triggered-alerts/{id:guid}/resolve", async (AppDbContext db, G
     t.Status = "resolved";
     await db.SaveChangesAsync(ct);
     return Results.Ok(t);
-});
+}).RequireAuthorization("RequireAnalyst");
 
 // Per-alert snooze. Body: { "until": "2026-06-22T18:00:00Z" } or { "durationHours": 4|24|168 }.
 // Until wins if both are supplied; durationHours defaults to 24 if neither is supplied.
 app.MapPost("/api/triggered-alerts/{id:guid}/snooze", async (
-    AppDbContext db, Guid id, SnoozeRequest input, CancellationToken ct) =>
+    AppDbContext db, Guid id, SnoozeRequest input, System.Security.Claims.ClaimsPrincipal caller, CancellationToken ct) =>
 {
     var t = await db.TriggeredAlerts.FindAsync([id], ct);
     if (t is null) return Results.NotFound();
@@ -1109,12 +1234,12 @@ app.MapPost("/api/triggered-alerts/{id:guid}/snooze", async (
         return Results.BadRequest(new { error = "Cannot snooze a terminal alert." });
 
     var until = input.Until
-        ?? (input.DurationHours is { } h ? DateTimeOffset.UtcNow.AddHours(h) : DateTimeOffset.UtcNow.AddHours(24));
+        ?? (input.DurationHours is { } h ? DateTimeOffset.UtcNow.AddHours(Math.Clamp(h, 1, 8760)) : DateTimeOffset.UtcNow.AddHours(24));
     t.SnoozedUntil = until;
-    t.SnoozedBy = "dashboard";
+    t.SnoozedBy = AuthHelpers.GetEmail(caller);
     await db.SaveChangesAsync(ct);
     return Results.Ok(t);
-});
+}).RequireAuthorization("RequireAnalyst");
 
 app.MapPost("/api/triggered-alerts/{id:guid}/unsnooze", async (
     AppDbContext db, Guid id, CancellationToken ct) =>
@@ -1125,7 +1250,7 @@ app.MapPost("/api/triggered-alerts/{id:guid}/unsnooze", async (
     t.SnoozedBy = null;
     await db.SaveChangesAsync(ct);
     return Results.Ok(t);
-});
+}).RequireAuthorization("RequireAnalyst");
 
 // Manually run an evaluation pass (used by the dashboard "refresh" + on-demand check)
 app.MapPost("/api/alert-policies/evaluate", async (AlertEvaluator evaluator, CancellationToken ct) =>
@@ -1168,7 +1293,7 @@ app.MapPut("/api/notification-settings", async (AppDbContext db, SecretProtector
     s.MinSeverity = string.IsNullOrWhiteSpace(input.MinSeverity) ? "low" : input.MinSeverity;
     await db.SaveChangesAsync(ct);
     return Results.Ok(new { ok = true });
-});
+}).RequireAuthorization("RequireAdmin");
 
 // Send a test notification through all enabled channels
 app.MapPost("/api/notification-settings/test", async (AppDbContext db, NotificationSender sender, CancellationToken ct) =>
@@ -1191,15 +1316,21 @@ app.MapPost("/api/notification-settings/test", async (AppDbContext db, Notificat
     await db.SaveChangesAsync(ct);
     var logs = await db.NotificationLogs.Where(l => l.TriggeredAlertId == test.Id).ToListAsync(ct);
     return Results.Ok(new { ok = logs.Any(l => l.Success), results = logs.Select(l => new { l.Channel, l.Success, l.Error }) });
-});
+}).RequireAuthorization("RequireAdmin");
 
 // Notification delivery history
 app.MapGet("/api/notification-log", async (AppDbContext db, CancellationToken ct) =>
     Results.Ok(await db.NotificationLogs.OrderByDescending(l => l.SentAt).Take(200).ToListAsync(ct)));
 
-app.MapFallbackToFile("index.html");
+app.MapFallbackToFile("index.html").AllowAnonymous();
 
 app.Run();
 
 /// <summary>Body shape for POST /api/triggered-alerts/{id}/snooze.</summary>
 public sealed record SnoozeRequest(DateTimeOffset? Until, int? DurationHours);
+
+/// <summary>Body shape for PUT /api/admin/users/{email}/role.</summary>
+public sealed record RoleChangeRequest(string Role);
+
+/// <summary>Body shape for POST /api/admin/users (pre-provision a user).</summary>
+public sealed record AddUserRequest(string Email, string Role, string? DisplayName);

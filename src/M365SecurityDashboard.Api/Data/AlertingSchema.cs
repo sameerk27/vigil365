@@ -88,6 +88,15 @@ public static class AlertingSchema
 
         IF COL_LENGTH(N'[TriggeredAlerts]', 'LastEvaluatedAt') IS NULL
         ALTER TABLE [TriggeredAlerts] ADD [LastEvaluatedAt] datetimeoffset NULL;
+
+        IF OBJECT_ID(N'[AppUsers]', N'U') IS NULL
+        CREATE TABLE [AppUsers] (
+            [Email] nvarchar(320) NOT NULL PRIMARY KEY,
+            [DisplayName] nvarchar(200) NULL,
+            [Role] nvarchar(20) NOT NULL,
+            [CreatedAt] datetimeoffset NOT NULL,
+            [LastSeenAt] datetimeoffset NOT NULL
+        );
         """;
 
     private static readonly (string Name, string Category, string Metric, int Threshold, string Severity, string Condition)[] Defaults =

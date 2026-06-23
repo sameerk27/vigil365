@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import React, { useEffect, useState, useMemo, useCallback, useRef, createContext, useContext } from "react";
 import { createRoot } from "react-dom/client";
 import { PublicClientApplication, type AccountInfo, type Configuration } from "@azure/msal-browser";
 import {
@@ -16,7 +16,7 @@ import "./styles.css";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type NavPage = "overview" | "identity" | "devices" | "email" | "incidents" | "alertcenter" | "compliance" | "servicehealth" | "network" | "licenses" | "conditionalaccess" | "auditlog" | "signinmap";
+type NavPage = "overview" | "identity" | "devices" | "email" | "incidents" | "alertcenter" | "compliance" | "servicehealth" | "network" | "licenses" | "conditionalaccess" | "auditlog" | "signinmap" | "users";
 type AlertSeverity = "Informational" | "Low" | "Medium" | "High" | "Critical";
 type ServiceArea = "EntraId" | "Intune" | "DefenderXdr" | "ExchangeOnline" | "ServiceHealth";
 type Tone = "good" | "warning" | "error" | "neutral" | "info";
@@ -190,7 +190,8 @@ async function getAccessToken(): Promise<string | null> {
   try {
     const result = await _msalInstance.acquireTokenSilent({ scopes: _msalScopes, account });
     return result.accessToken;
-  } catch {
+  } catch (e) {
+    console.warn("acquireTokenSilent failed:", e);
     return null;
   }
 }
@@ -200,6 +201,24 @@ async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
   const headers = new Headers(init?.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
   return fetch(url, { ...init, headers });
+}
+
+// ─── Auth/role context ─────────────────────────────────────────────────────────
+// Identity comes from the Microsoft token; the role (Admin/Analyst/Viewer) is
+// managed in-app and returned by GET /api/auth/me.
+type AppRole = "Admin" | "Analyst" | "Viewer";
+interface AuthInfo {
+  email: string;
+  name: string;
+  role: AppRole;
+  isAdmin: boolean;
+  canMutate: boolean; // Admin or Analyst — may acknowledge/snooze/resolve/edit policies
+}
+const AuthContext = createContext<AuthInfo>({
+  email: "", name: "", role: "Viewer", isAdmin: false, canMutate: false,
+});
+function useAuth(): AuthInfo {
+  return useContext(AuthContext);
 }
 
 // ─── Alert Center API (server-side persistence + notification delivery) ────────
@@ -241,10 +260,10 @@ const acApi = {
     try { const r = await apiFetch(`${apiBase}/api/notification-log`); return r.ok ? await r.json() : []; } catch { return []; }
   },
   async snooze(id: string, durationHours: 4 | 24 | 168): Promise<boolean> {
-    try { const r = await fetch(`${apiBase}/api/triggered-alerts/${id}/snooze`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ durationHours }) }); return r.ok; } catch { return false; }
+    try { const r = await apiFetch(`${apiBase}/api/triggered-alerts/${id}/snooze`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ durationHours }) }); return r.ok; } catch { return false; }
   },
   async unsnooze(id: string): Promise<boolean> {
-    try { const r = await fetch(`${apiBase}/api/triggered-alerts/${id}/unsnooze`, { method: "POST" }); return r.ok; } catch { return false; }
+    try { const r = await apiFetch(`${apiBase}/api/triggered-alerts/${id}/unsnooze`, { method: "POST" }); return r.ok; } catch { return false; }
   },
 };
 
@@ -724,7 +743,7 @@ function CollectionHealthCard({ refreshKey }: { refreshKey: number }) {
   useEffect(() => {
     let cancelled = false;
     setErr(false);
-    fetch(`${apiBase}/api/collector/runs`)
+    apiFetch(`${apiBase}/api/collector/runs`)
       .then(r => r.ok ? r.json() : Promise.reject())
       .then((d: CollectionRunInfo[]) => { if (!cancelled) setRuns(d); })
       .catch(() => { if (!cancelled) setErr(true); });
@@ -3763,6 +3782,7 @@ function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
   triggeredAlerts: TriggeredAlert[];
   onChanged: () => void | Promise<void>;
 }) {
+  const { canMutate } = useAuth();
   const [tab, setTab] = useState<AcTab>("dashboard");
   const [search, setSearch] = useState("");
   const [sevFilter, setSevFilter] = useState("");
@@ -3995,10 +4015,10 @@ function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
                       <span className="mr-user" style={{ flex:1 }}>{a.policyName}</span>
                       <Badge label={a.status} tone={statusTone(a.status)}/>
                       {a.snoozedUntil && new Date(a.snoozedUntil) > new Date() && (
-                        <span style={{ fontSize:10, color:"var(--color-muted)" }}>Z until {relTime(a.snoozedUntil)}</span>
+                        <span style={{ fontSize:10, color:"var(--color-muted)" }}>snoozed until {relTime(a.snoozedUntil)}</span>
                       )}
                       <span className="mr-date">{relTime(a.triggeredAt)}</span>
-                      {a.status === "new" && (
+                      {canMutate && a.status === "new" && (
                         <button className="btn-ack" onClick={e => { e.stopPropagation(); acknowledge(a.id); }}>Ack</button>
                       )}
                     </div>
@@ -4066,8 +4086,9 @@ function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
                         )}
                       </td>
                       <td onClick={e=>e.stopPropagation()} style={{ display:"flex", gap:4, alignItems:"center", flexWrap:"wrap" }}>
-                        {a.status === "new" && <button className="btn-ack" onClick={()=>acknowledge(a.id)}>Acknowledge</button>}
-                        {a.status !== "resolved" && a.status !== "auto_resolved" && (
+                        {!canMutate && <span style={{ fontSize:11, color:"var(--color-muted)" }}>—</span>}
+                        {canMutate && a.status === "new" && <button className="btn-ack" onClick={()=>acknowledge(a.id)}>Acknowledge</button>}
+                        {canMutate && a.status !== "resolved" && a.status !== "auto_resolved" && (
                           <select className="filter-sel" style={{ padding:"3px 6px", fontSize:11 }} defaultValue=""
                             onChange={e => { const h = Number(e.target.value); if (h) snooze(a.id, h as 4|24|168); e.currentTarget.value = ""; }}
                             title="Snooze for…">
@@ -4077,12 +4098,12 @@ function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
                             <option value="168">7d</option>
                           </select>
                         )}
-                        {a.snoozedUntil && new Date(a.snoozedUntil) > new Date() && (
+                        {canMutate && a.snoozedUntil && new Date(a.snoozedUntil) > new Date() && (
                           <button className="btn-apply" style={{ padding:"3px 8px", fontSize:11 }}
                             onClick={() => unsnooze(a.id)}
                             title={`Snoozed until ${a.snoozedUntil}`}>Unsnooze</button>
                         )}
-                        {a.status !== "resolved" && a.status !== "auto_resolved" && <button className="btn-resolve" onClick={()=>resolve(a.id)}>Resolve</button>}
+                        {canMutate && a.status !== "resolved" && a.status !== "auto_resolved" && <button className="btn-resolve" onClick={()=>resolve(a.id)}>Resolve</button>}
                       </td>
                     </tr>
                   ))}
@@ -4162,7 +4183,7 @@ function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SIDEBAR
 // ═══════════════════════════════════════════════════════════════════════════════
-const NAV: { id: NavPage; label: string; icon: React.ReactNode; group?: string }[] = [
+const NAV: { id: NavPage; label: string; icon: React.ReactNode; group?: string; adminOnly?: boolean }[] = [
   { id:"overview",         label:"Overview",             icon:<Home size={17}/> },
   { id:"identity",         label:"Identity",             icon:<Users size={17}/> },
   { id:"devices",          label:"Devices",              icon:<Monitor size={17}/> },
@@ -4176,12 +4197,15 @@ const NAV: { id: NavPage; label: string; icon: React.ReactNode; group?: string }
   { id:"conditionalaccess",label:"Conditional Access",   icon:<ShieldCheck size={17}/>, group:"Enterprise" },
   { id:"auditlog",         label:"Audit Log",            icon:<BookOpen size={17}/>, group:"Enterprise" },
   { id:"signinmap",        label:"Sign-in Locations",    icon:<MapPin size={17}/>, group:"Enterprise" },
+  { id:"users",            label:"User Management",      icon:<UserCheck size={17}/>, group:"Administration", adminOnly:true },
 ];
 
 function Sidebar({ page, setPage, alertCounts, collapsed, onToggleCollapse }: {
   page:NavPage; setPage:(p:NavPage)=>void; alertCounts: Record<string,number>;
   collapsed: boolean; onToggleCollapse: () => void;
 }) {
+  const { isAdmin } = useAuth();
+  const items = NAV.filter(n => !n.adminOnly || isAdmin);
   return (
     <aside className={`sidebar ${collapsed ? "" : "expanded"}`}>
       <div className="sb-logo">
@@ -4199,9 +4223,9 @@ function Sidebar({ page, setPage, alertCounts, collapsed, onToggleCollapse }: {
         )}
       </div>
       <nav className="sb-nav">
-        {NAV.map((n,i)=>(
+        {items.map((n,i)=>(
           <React.Fragment key={n.id}>
-            {!collapsed && n.group && (i===0 || NAV[i-1].group!==n.group) && (
+            {!collapsed && n.group && (i===0 || items[i-1].group!==n.group) && (
               <div className="nav-group-label">{n.group}</div>
             )}
             <button
@@ -4233,9 +4257,153 @@ function Sidebar({ page, setPage, alertCounts, collapsed, onToggleCollapse }: {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// USER MANAGEMENT (Admin only)
+// ═══════════════════════════════════════════════════════════════════════════════
+interface ManagedUser {
+  email: string;
+  displayName?: string;
+  role: AppRole;
+  createdAt: string;
+  lastSeenAt: string;
+}
+
+function UserManagementPage() {
+  const { email: myEmail } = useAuth();
+  const [users, setUsers] = useState<ManagedUser[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [addEmail, setAddEmail] = useState("");
+  const [addRole, setAddRole] = useState<AppRole>("Viewer");
+  const [addName, setAddName] = useState("");
+  const [adding, setAdding] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const r = await apiFetch(`${apiBase}/api/admin/users`);
+      if (r.ok) setUsers(await r.json()); else setUsers([]);
+    } catch { setUsers([]); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const changeRole = async (u: ManagedUser, role: AppRole) => {
+    if (role === u.role) return;
+    setBusy(u.email);
+    try {
+      const r = await apiFetch(`${apiBase}/api/admin/users/${encodeURIComponent(u.email)}/role`, {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role }),
+      });
+      if (r.ok) { showToast(`${u.email} is now ${role}`); await load(); }
+      else { const e = await r.json().catch(() => ({})); showToast(e.error ?? "Could not change role"); }
+    } finally { setBusy(null); }
+  };
+
+  const removeUser = async (u: ManagedUser) => {
+    setBusy(u.email);
+    try {
+      const r = await apiFetch(`${apiBase}/api/admin/users/${encodeURIComponent(u.email)}`, { method: "DELETE" });
+      if (r.ok) { showToast(`Removed ${u.email}`); await load(); }
+      else { const e = await r.json().catch(() => ({})); showToast(e.error ?? "Could not remove user"); }
+    } finally { setBusy(null); }
+  };
+
+  const addUser = async () => {
+    const email = addEmail.trim().toLowerCase();
+    if (!email || !email.includes("@")) { showToast("Enter a valid email address"); return; }
+    setAdding(true);
+    try {
+      const r = await apiFetch(`${apiBase}/api/admin/users`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, role: addRole, displayName: addName.trim() || null }),
+      });
+      if (r.ok) {
+        showToast(`Added ${email} as ${addRole}`);
+        setAddEmail(""); setAddName(""); setAddRole("Viewer"); setShowAdd(false);
+        await load();
+      } else {
+        const e = await r.json().catch(() => ({}));
+        showToast(e.error ?? "Could not add user");
+      }
+    } finally { setAdding(false); }
+  };
+
+  const roleTone = (r: string): Tone => r === "Admin" ? "info" : r === "Analyst" ? "good" : "neutral";
+
+  return (
+    <div className="page">
+      <Card title={`Users${users ? ` (${users.length})` : ""}`}
+        badge={<Badge label="Admin only" tone="info"/>}
+        action={<button className="btn-export" onClick={() => setShowAdd(s => !s)}>{showAdd ? "Cancel" : "Add User"}</button>}>
+        <div style={{ fontSize:12, color:"var(--color-muted)", padding:"0 0 12px", lineHeight:1.6 }}>
+          Assign roles to people who have signed in. Roles are stored in Vigil365 — no Entra ID changes needed.
+          <strong> Admin</strong> = full access · <strong>Analyst</strong> = acknowledge/snooze/resolve · <strong>Viewer</strong> = read-only.
+        </div>
+        {showAdd && (
+          <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap", padding:"0 0 16px" }}>
+            <input className="search-input" type="email" placeholder="user@domain.com"
+              value={addEmail} onChange={e => setAddEmail(e.target.value)} style={{ minWidth:220 }} />
+            <input className="search-input" type="text" placeholder="Display name (optional)"
+              value={addName} onChange={e => setAddName(e.target.value)} style={{ minWidth:180 }} />
+            <select className="filter-sel" value={addRole} onChange={e => setAddRole(e.target.value as AppRole)}>
+              <option value="Admin">Admin</option>
+              <option value="Analyst">Analyst</option>
+              <option value="Viewer">Viewer</option>
+            </select>
+            <button className="btn-export" disabled={adding} onClick={addUser}>{adding ? "Adding…" : "Add"}</button>
+            <button className="btn-apply" style={{ padding:"5px 10px", fontSize:12 }} onClick={() => setShowAdd(false)}>Cancel</button>
+          </div>
+        )}
+        {users === null
+          ? <EmptyState message="Loading users…"/>
+          : users.length === 0
+          ? <EmptyState message="No users yet."/>
+          : (
+            <div className="tbl-wrap">
+              <table className="data-tbl">
+                <thead>
+                  <tr><th>User</th><th>Email</th><th>Role</th><th>Last seen</th><th>Actions</th></tr>
+                </thead>
+                <tbody>
+                  {users.map(u => (
+                    <tr key={u.email}>
+                      <td style={{ fontWeight:600 }}>
+                        {u.displayName || "—"}
+                        {u.email === myEmail && <span style={{ fontSize:10, color:"var(--color-muted)", marginLeft:6 }}>(you)</span>}
+                      </td>
+                      <td className="al-date">{u.email}</td>
+                      <td><Badge label={u.role} tone={roleTone(u.role)}/></td>
+                      <td className="al-date">{new Date(u.lastSeenAt).getFullYear() <= 1 ? "Never" : (relTime(u.lastSeenAt) || fmtDate(u.lastSeenAt))}</td>
+                      <td style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+                        <select
+                          className="filter-sel" style={{ padding:"3px 6px", fontSize:12 }}
+                          value={u.role} disabled={busy===u.email}
+                          onChange={e => changeRole(u, e.target.value as AppRole)}
+                        >
+                          <option value="Admin">Admin</option>
+                          <option value="Analyst">Analyst</option>
+                          <option value="Viewer">Viewer</option>
+                        </select>
+                        {u.email !== myEmail && (
+                          <button className="btn-resolve" style={{ padding:"3px 8px", fontSize:11 }}
+                            disabled={busy===u.email} onClick={() => removeUser(u)} title="Remove user">Remove</button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+      </Card>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // APP
 // ═══════════════════════════════════════════════════════════════════════════════
 function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?: () => void }) {
+  const auth = useAuth();
   const [page, setPage] = useState<NavPage>("overview");
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem("m365-theme") === "dark");
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -4305,7 +4473,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
       const combinedSig = (AbortSignal as { any?: (sigs: AbortSignal[]) => AbortSignal }).any
         ? (AbortSignal as { any: (sigs: AbortSignal[]) => AbortSignal }).any([sig, timeoutSig])
         : sig;
-      return fetch(url, { signal: combinedSig })
+      return apiFetch(url, { signal: combinedSig })
         .then(safeJson)
         .then((v: T) => {
           if (!ctrl.signal.aborted && v != null)
@@ -4462,10 +4630,12 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
             {overview?.lastRun&&(
               <Badge label={`Last run: ${fmtDate(overview.lastRun.completedAt??overview.lastRun.startedAt)}`} tone="neutral"/>
             )}
-            <button className={`btn-run${(!overview&&!running&&!loading)?" btn-run-pulse":""}`} onClick={runCollection} disabled={running||loading} title="Run Graph collection now">
-              <RefreshCw size={13} className={running?"spin":""}/>
-              {running?"Collecting…":"Run Collection"}
-            </button>
+            {auth.isAdmin && (
+              <button className={`btn-run${(!overview&&!running&&!loading)?" btn-run-pulse":""}`} onClick={runCollection} disabled={running||loading} title="Run Graph collection now">
+                <RefreshCw size={13} className={running?"spin":""}/>
+                {running?"Collecting…":"Run Collection"}
+              </button>
+            )}
             <button className="btn-icon" onClick={() => setRefreshKey(k => k + 1)} title="Refresh data" disabled={loading||running} aria-label="Refresh data">
               <RefreshCw size={15} className={loading?"spin":""}/>
             </button>
@@ -4492,6 +4662,9 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
                     <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--color-border)" }}>
                       <div style={{ fontWeight: 600, fontSize: 13 }}>{account.name}</div>
                       <div style={{ fontSize: 11, color: "var(--color-muted)", marginTop: 2 }}>{account.username}</div>
+                      <div style={{ marginTop: 6 }}>
+                        <Badge label={auth.role} tone={auth.isAdmin ? "info" : auth.canMutate ? "good" : "neutral"}/>
+                      </div>
                     </div>
                     <button
                       onClick={() => { setUserMenuOpen(false); onSignOut?.(); }}
@@ -4529,6 +4702,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
         {page==="conditionalaccess"&&<ConditionalAccessPage data={conditionalAccess}/>}
         {page==="auditlog"&&<AuditLogPage data={auditLog}/>}
         {page==="signinmap"&&<SignInLocationsPage data={signInLocations}/>}
+        {page==="users"&&<UserManagementPage/>}
       </div>
       {selectedAlert&&<AlertDetailModal alert={selectedAlert} onClose={()=>setSelectedAlert(null)}/>}
       <ToastContainer/>
@@ -4542,6 +4716,18 @@ function AuthGate() {
   const [account, setAccount] = useState<AccountInfo | null>(null);
   const [authEnabled, setAuthEnabled] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [me, setMe] = useState<{ email: string; name: string; role: AppRole } | null>(null);
+
+  // Once signed in, fetch the in-app role (Admin/Analyst/Viewer).
+  useEffect(() => {
+    if (!account) { setMe(null); return; }
+    (async () => {
+      try {
+        const r = await apiFetch(`${apiBase}/api/auth/me`);
+        if (r.ok) setMe(await r.json());
+      } catch { /* leave null — treated as Viewer */ }
+    })();
+  }, [account]);
 
   useEffect(() => {
     (async () => {
@@ -4559,16 +4745,20 @@ function AuthGate() {
         const pca = new PublicClientApplication(msalConfig);
         await pca.initialize();
 
-        // Handle redirect response (after login redirect comes back)
-        await pca.handleRedirectPromise();
-
         _msalInstance = pca;
         _msalScopes = [`api://${cfg.clientId}/access_as_user`];
 
-        const accounts = pca.getAllAccounts();
-        if (accounts.length > 0) {
-          pca.setActiveAccount(accounts[0]);
-          setAccount(accounts[0]);
+        // Handle redirect response — must be called before getAllAccounts()
+        const redirectResult = await pca.handleRedirectPromise();
+        if (redirectResult?.account) {
+          pca.setActiveAccount(redirectResult.account);
+          setAccount(redirectResult.account);
+        } else {
+          const accounts = pca.getAllAccounts();
+          if (accounts.length > 0) {
+            pca.setActiveAccount(accounts[0]);
+            setAccount(accounts[0]);
+          }
         }
       } catch (e) {
         console.error("Auth init error", e);
@@ -4679,7 +4869,20 @@ function AuthGate() {
     await _msalInstance.logoutRedirect({ postLogoutRedirectUri: window.location.origin });
   };
 
-  return <App account={account} onSignOut={handleSignOut} />;
+  const role: AppRole = me?.role ?? "Viewer";
+  const auth: AuthInfo = {
+    email: me?.email ?? "",
+    name: me?.name ?? account?.name ?? "",
+    role,
+    isAdmin: role === "Admin",
+    canMutate: role === "Admin" || role === "Analyst",
+  };
+
+  return (
+    <AuthContext.Provider value={auth}>
+      <App account={account} onSignOut={handleSignOut} />
+    </AuthContext.Provider>
+  );
 }
 
 createRoot(document.getElementById("root")!).render(<AuthGate />);
