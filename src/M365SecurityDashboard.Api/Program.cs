@@ -1089,7 +1089,7 @@ app.MapPost("/api/triggered-alerts/{id:guid}/snooze", async (
         return Results.BadRequest(new { error = "Cannot snooze a terminal alert." });
 
     var until = input.Until
-        ?? (input.DurationHours is { } h ? DateTimeOffset.UtcNow.AddHours(h) : DateTimeOffset.UtcNow.AddHours(24));
+        ?? (input.DurationHours is { } h ? DateTimeOffset.UtcNow.AddHours(Math.Clamp(h, 1, 8760)) : DateTimeOffset.UtcNow.AddHours(24));
     t.SnoozedUntil = until;
     t.SnoozedBy = "dashboard";
     await db.SaveChangesAsync(ct);

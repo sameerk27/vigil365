@@ -77,8 +77,10 @@ public sealed class AlertEvaluator(
         // Auto-resolve: scan non-terminal alerts and update streak counters.
         // Resolves silently — no notification dispatch, no NotificationLog write.
         var streakTarget = Math.Max(1, options.Value.AutoResolveDebounceCycles);
+        var knownPolicyIds = policyMetricById.Keys.ToList();
         var openAlerts = await db.TriggeredAlerts
-            .Where(t => t.Status != "resolved" && t.Status != "auto_resolved")
+            .Where(t => t.Status != "resolved" && t.Status != "auto_resolved"
+                        && knownPolicyIds.Contains(t.PolicyId))
             .ToListAsync(ct);
         var autoResolved = 0;
         foreach (var alert in openAlerts)

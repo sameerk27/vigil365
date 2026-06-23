@@ -3971,7 +3971,7 @@ function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
                       <span className="mr-user" style={{ flex:1 }}>{a.policyName}</span>
                       <Badge label={a.status} tone={statusTone(a.status)}/>
                       {a.snoozedUntil && new Date(a.snoozedUntil) > new Date() && (
-                        <span style={{ fontSize:10, color:"var(--color-muted)" }}>Z until {relTime(a.snoozedUntil)}</span>
+                        <span style={{ fontSize:10, color:"var(--color-muted)" }}>snoozed until {relTime(a.snoozedUntil)}</span>
                       )}
                       <span className="mr-date">{relTime(a.triggeredAt)}</span>
                       {a.status === "new" && (
