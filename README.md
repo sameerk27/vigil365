@@ -192,7 +192,7 @@ sc.exe start M365SecurityDashboard
 ```json
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Server=.\\SQLEXPRESS;Database=M365SecurityDashboard;Trusted_Connection=True;Encrypt=False"
+    "DefaultConnection": "Server=.\\SQLEXPRESS;Database=M365SecurityDashboard;Trusted_Connection=True;Encrypt=True;TrustServerCertificate=True"
   },
   "Graph": {
     "TenantId": "YOUR_TENANT_ID",
@@ -201,9 +201,65 @@ sc.exe start M365SecurityDashboard
     "CollectionIntervalMinutes": 15,
     "DevicesNotCheckedInDays": 7,
     "SignInLookbackHours": 24
+  },
+  "AzureAd": {
+    "Instance": "https://login.microsoftonline.com/",
+    "TenantId": "YOUR_TENANT_ID",
+    "ClientId": "YOUR_CLIENT_ID",
+    "Audience": "api://YOUR_CLIENT_ID"
+  },
+  "Auth": {
+    "RedirectUri": "https://vigil365.yourcompany.com",
+    "BootstrapAdminEmail": "you@yourcompany.com"
   }
 }
 ```
+
+---
+
+## HTTPS / TLS (required for production)
+
+Outside Development the app enforces HTTPS (HSTS + redirect). Plain HTTP is only
+for local development. Two supported ways to serve TLS:
+
+### Option A — Reverse proxy (recommended)
+
+Terminate TLS at IIS / Nginx / Caddy and proxy to the app on localhost. Example
+Caddy config:
+
+```
+vigil365.yourcompany.com {
+    reverse_proxy localhost:8080
+}
+```
+
+Run the app bound to localhost only (`--urls http://localhost:8080`) so it is
+never directly exposed; the proxy handles certs (e.g. automatic Let's Encrypt).
+
+### Option B — Kestrel with a certificate
+
+Let the app terminate TLS directly by configuring a Kestrel HTTPS endpoint in
+`appsettings.Production.json` (Kestrel reads this automatically — no code change):
+
+```json
+{
+  "Kestrel": {
+    "Endpoints": {
+      "Https": {
+        "Url": "https://0.0.0.0:443",
+        "Certificate": { "Path": "C:\\certs\\vigil365.pfx", "Password": "YOUR_PFX_PASSWORD" }
+      }
+    }
+  }
+}
+```
+
+Set the Azure App Registration **SPA redirect URI** and `Auth:RedirectUri` to the
+HTTPS URL (e.g. `https://vigil365.yourcompany.com`).
+
+> **Credential hygiene:** prefer **certificate auth** for Graph over a client
+> secret, store secrets in a vault or environment variables (never in committed
+> files), and rotate any secret that has ever been exposed.
 
 ---
 

@@ -68,6 +68,16 @@ using (var scope = app.Services.CreateScope())
     AlertingSchema.SeedDefaultPolicies(db);
 }
 
+// Enforce TLS outside Development. In production the app should be reached over
+// HTTPS (either Kestrel with a configured certificate, or a reverse proxy doing
+// TLS termination). HSTS tells browsers to refuse plain HTTP for a year.
+// Development stays HTTP so the local flow works without a dev certificate.
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+    app.UseHttpsRedirection();
+}
+
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseCors();
