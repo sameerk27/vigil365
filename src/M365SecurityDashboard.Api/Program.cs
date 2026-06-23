@@ -139,7 +139,7 @@ app.MapGet("/api/admin/users", async (AppDbContext db, CancellationToken ct) =>
 // Pre-provision (invite) a user by email + role before they ever sign in.
 // LastSeenAt = DateTimeOffset.MinValue marks "invited, not yet signed in".
 app.MapPost("/api/admin/users", async (
-    AddUserRequest input, AppDbContext db, CancellationToken ct) =>
+    AddUserRequest input, AppDbContext db, NotificationSender sender, IConfiguration config, CancellationToken ct) =>
 {
     var email = (input.Email ?? "").Trim().ToLowerInvariant();
     if (string.IsNullOrEmpty(email) || !email.Contains('@'))
@@ -161,7 +161,30 @@ app.MapPost("/api/admin/users", async (
     };
     db.AppUsers.Add(user);
     await db.SaveChangesAsync(ct);
-    return Results.Ok(user);
+
+    string? inviteError = null;
+    if (input.SendInvite)
+    {
+        var cfg = await db.NotificationSettings.FirstOrDefaultAsync(ct) ?? new NotificationSettings { Id = 1 };
+        var url = config["Auth:RedirectUri"] ?? "http://localhost:5000";
+        var (ok, error) = await sender.SendInviteEmailAsync(cfg, email, user.Role, url, ct);
+        if (!ok) inviteError = error;
+    }
+    return Results.Ok(new { user, inviteSent = input.SendInvite && inviteError is null, inviteError });
+}).RequireAuthorization("RequireAdmin");
+
+// (Re)send the access-notification email to a pre-provisioned/existing user.
+app.MapPost("/api/admin/users/{email}/invite", async (
+    string email, AppDbContext db, NotificationSender sender, IConfiguration config, CancellationToken ct) =>
+{
+    email = email.Trim().ToLowerInvariant();
+    var user = await db.AppUsers.FirstOrDefaultAsync(u => u.Email == email, ct);
+    if (user is null) return Results.NotFound();
+
+    var cfg = await db.NotificationSettings.FirstOrDefaultAsync(ct) ?? new NotificationSettings { Id = 1 };
+    var url = config["Auth:RedirectUri"] ?? "http://localhost:5000";
+    var (ok, error) = await sender.SendInviteEmailAsync(cfg, email, user.Role, url, ct);
+    return ok ? Results.Ok(new { ok = true }) : Results.BadRequest(new { error });
 }).RequireAuthorization("RequireAdmin");
 
 app.MapPut("/api/admin/users/{email}/role", async (
@@ -1333,4 +1356,4 @@ public sealed record SnoozeRequest(DateTimeOffset? Until, int? DurationHours);
 public sealed record RoleChangeRequest(string Role);
 
 /// <summary>Body shape for POST /api/admin/users (pre-provision a user).</summary>
-public sealed record AddUserRequest(string Email, string Role, string? DisplayName);
+public sealed record AddUserRequest(string Email, string Role, string? DisplayName, bool SendInvite = false);

@@ -4275,6 +4275,7 @@ function UserManagementPage() {
   const [addEmail, setAddEmail] = useState("");
   const [addRole, setAddRole] = useState<AppRole>("Viewer");
   const [addName, setAddName] = useState("");
+  const [addInvite, setAddInvite] = useState(false);
   const [adding, setAdding] = useState(false);
 
   const load = useCallback(async () => {
@@ -4314,17 +4315,29 @@ function UserManagementPage() {
     try {
       const r = await apiFetch(`${apiBase}/api/admin/users`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, role: addRole, displayName: addName.trim() || null }),
+        body: JSON.stringify({ email, role: addRole, displayName: addName.trim() || null, sendInvite: addInvite }),
       });
       if (r.ok) {
-        showToast(`Added ${email} as ${addRole}`);
-        setAddEmail(""); setAddName(""); setAddRole("Viewer"); setShowAdd(false);
+        const d = await r.json().catch(() => ({}));
+        if (addInvite && d.inviteError) showToast(`Added ${email}, but email failed: ${d.inviteError}`);
+        else if (addInvite && d.inviteSent) showToast(`Added ${email} as ${addRole} — invite sent`);
+        else showToast(`Added ${email} as ${addRole}`);
+        setAddEmail(""); setAddName(""); setAddRole("Viewer"); setAddInvite(false); setShowAdd(false);
         await load();
       } else {
         const e = await r.json().catch(() => ({}));
         showToast(e.error ?? "Could not add user");
       }
     } finally { setAdding(false); }
+  };
+
+  const sendInvite = async (u: ManagedUser) => {
+    setBusy(u.email);
+    try {
+      const r = await apiFetch(`${apiBase}/api/admin/users/${encodeURIComponent(u.email)}/invite`, { method: "POST" });
+      if (r.ok) showToast(`Invite email sent to ${u.email}`);
+      else { const e = await r.json().catch(() => ({})); showToast(e.error ?? "Could not send invite"); }
+    } finally { setBusy(null); }
   };
 
   const roleTone = (r: string): Tone => r === "Admin" ? "info" : r === "Analyst" ? "good" : "neutral";
@@ -4349,6 +4362,10 @@ function UserManagementPage() {
               <option value="Analyst">Analyst</option>
               <option value="Viewer">Viewer</option>
             </select>
+            <label style={{ display:"flex", alignItems:"center", gap:5, fontSize:12, color:"var(--color-text)", cursor:"pointer" }} title="Sends a sign-in link via the SMTP server configured in Settings">
+              <input type="checkbox" checked={addInvite} onChange={e => setAddInvite(e.target.checked)} />
+              Send invite email
+            </label>
             <button className="btn-export" disabled={adding} onClick={addUser}>{adding ? "Adding…" : "Add"}</button>
             <button className="btn-apply" style={{ padding:"5px 10px", fontSize:12 }} onClick={() => setShowAdd(false)}>Cancel</button>
           </div>
@@ -4383,6 +4400,11 @@ function UserManagementPage() {
                           <option value="Analyst">Analyst</option>
                           <option value="Viewer">Viewer</option>
                         </select>
+                        <button className="btn-apply" style={{ padding:"3px 8px", fontSize:11 }}
+                          disabled={busy===u.email} onClick={() => sendInvite(u)}
+                          title="Email this user a sign-in link (requires SMTP configured in Settings)">
+                          {new Date(u.lastSeenAt).getFullYear() <= 1 ? "Send invite" : "Resend invite"}
+                        </button>
                         {u.email !== myEmail && (
                           <button className="btn-resolve" style={{ padding:"3px 8px", fontSize:11 }}
                             disabled={busy===u.email} onClick={() => removeUser(u)} title="Remove user">Remove</button>

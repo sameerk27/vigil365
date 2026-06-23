@@ -53,6 +53,67 @@ public sealed class NotificationSender(
     private static string? FirstNonEmpty(params string?[] vals)
         => vals.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
 
+    /// <summary>
+    /// Sends a one-off access-notification ("invite") email to a pre-provisioned user,
+    /// reusing the configured SMTP settings. These are internal tenant users who already
+    /// have Microsoft accounts — this is a courtesy notice + sign-in link, not an account
+    /// creation. Returns (ok, error) rather than writing a NotificationLog row (those are
+    /// keyed to triggered alerts).
+    /// </summary>
+    public async Task<(bool ok, string? error)> SendInviteEmailAsync(
+        NotificationSettings cfg, string toEmail, string role, string dashboardUrl, CancellationToken ct)
+    {
+        if (!cfg.EmailEnabled || string.IsNullOrWhiteSpace(cfg.SmtpHost))
+            return (false, "SMTP email is not configured. Set it up in Settings → Notifications first.");
+
+        var smtpPassword = protector.Unprotect(cfg.SmtpPassword);
+        try
+        {
+            using var msg = new MailMessage
+            {
+                From = new MailAddress(cfg.FromAddress ?? cfg.SmtpUsername ?? "vigil365@localhost"),
+                Subject = "You've been granted access to Vigil365",
+                IsBodyHtml = true,
+                Body = $"""
+                    <div style="font-family:Segoe UI,Arial,sans-serif;max-width:480px">
+                      <h2 style="color:#2563eb;margin:0 0 8px">Vigil365 — Access Granted</h2>
+                      <p style="margin:0 0 12px;color:#475569">
+                        You've been granted <b>{WebUtility.HtmlEncode(role)}</b> access to the
+                        Vigil365 Microsoft 365 security dashboard.
+                      </p>
+                      <p style="margin:0 0 16px;color:#475569">
+                        Sign in with your Microsoft 365 account to get started:
+                      </p>
+                      <p style="margin:0 0 20px">
+                        <a href="{WebUtility.HtmlEncode(dashboardUrl)}"
+                           style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;
+                                  padding:10px 20px;border-radius:8px;font-weight:600">Open Vigil365</a>
+                      </p>
+                      <p style="margin:0;color:#94a3b8;font-size:12px">
+                        Access is restricted to your organisation. If you didn't expect this, you can ignore this email.
+                      </p>
+                    </div>
+                    """,
+            };
+            msg.To.Add(toEmail);
+
+            using var client = new SmtpClient(cfg.SmtpHost, cfg.SmtpPort)
+            {
+                EnableSsl = cfg.SmtpUseSsl,
+                Credentials = string.IsNullOrWhiteSpace(cfg.SmtpUsername)
+                    ? CredentialCache.DefaultNetworkCredentials
+                    : new NetworkCredential(cfg.SmtpUsername, smtpPassword),
+            };
+            await client.SendMailAsync(msg, ct);
+            return (true, null);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Invite email to {Email} failed", toEmail);
+            return (false, ex.Message);
+        }
+    }
+
     private static string SevColor(string sev) => sev?.ToLowerInvariant() switch
     {
         "critical" => "dc2626",
