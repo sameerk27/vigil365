@@ -138,13 +138,25 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// Public endpoint — returns only the non-secret config needed to initialise MSAL in the browser
-app.MapGet("/api/auth/config", (IConfiguration config) => Results.Ok(new
+// Public endpoint — returns only the non-secret config needed to initialise MSAL in the browser.
+// The login identity comes from AzureAd (set in appsettings.Production.json / user secrets);
+// fall back to Graph for older single-section setups.
+app.MapGet("/api/auth/config", (IConfiguration config) =>
 {
-    clientId = config["Graph:ClientId"] ?? "",
-    tenantId = config["Graph:TenantId"] ?? "",
-    redirectUri = config["Auth:RedirectUri"] ?? "http://localhost:5173"
-})).AllowAnonymous();
+    string Pick(string azureAdKey, string graphKey)
+    {
+        var v = config[azureAdKey];
+        if (!string.IsNullOrWhiteSpace(v) && !v.StartsWith("YOUR_", StringComparison.OrdinalIgnoreCase)) return v;
+        var g = config[graphKey];
+        return (!string.IsNullOrWhiteSpace(g) && !g.StartsWith("YOUR_", StringComparison.OrdinalIgnoreCase)) ? g : "";
+    }
+    return Results.Ok(new
+    {
+        clientId = Pick("AzureAd:ClientId", "Graph:ClientId"),
+        tenantId = Pick("AzureAd:TenantId", "Graph:TenantId"),
+        redirectUri = config["Auth:RedirectUri"] ?? "http://localhost:5173"
+    });
+}).AllowAnonymous();
 
 // Returns the signed-in user's identity and role, and upserts their AppUsers row.
 // Bootstrap: if Auth:BootstrapAdminEmail is configured, only that email becomes
