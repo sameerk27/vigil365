@@ -47,3 +47,5 @@ dotnet
 *.sqlite
 *.mdf
 *.ldf
+publish/
+keys/

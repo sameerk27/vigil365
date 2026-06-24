@@ -1,0 +1,22 @@
+# Build outputs and deps — rebuilt inside the image
+**/bin
+**/obj
+**/node_modules
+**/dist
+publish/
+
+# Local config & secrets — never bake into the image
+**/appsettings.Production.json
+**/appsettings.*.local.json
+.env
+
+# Source control / IDE / docs
+.git
+.gitignore
+.vs
+.vscode
+*.md
+docs/
+
+# Data Protection keys / runtime artifacts
+keys/

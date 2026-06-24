@@ -1,6 +1,7 @@
 using M365SecurityDashboard.Api.Data;
 using M365SecurityDashboard.Api.Models;
 using M365SecurityDashboard.Api.Services;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.Identity.Web;
@@ -37,6 +38,15 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 builder.Services.AddHttpClient<GraphApiClient>();
 builder.Services.AddHttpClient();
+
+// Cross-platform secret encryption key ring. Persisted to disk so secrets survive
+// restarts; in Docker, mount DataProtection:KeyPath as a volume.
+var keyPath = builder.Configuration["DataProtection:KeyPath"]
+    ?? Path.Combine(AppContext.BaseDirectory, "keys");
+Directory.CreateDirectory(keyPath);
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(keyPath))
+    .SetApplicationName("Vigil365");
 builder.Services.AddSingleton<SecretProtector>();
 builder.Services.AddScoped<GraphCollector>();
 builder.Services.AddScoped<NotificationSender>();
@@ -61,7 +71,20 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.EnsureCreated();
+
+    // Wait for the database to accept connections — in Docker the SQL container
+    // may still be starting when the app boots. Retry for up to ~60s.
+    var dbLog = app.Services.GetRequiredService<ILogger<Program>>();
+    for (var attempt = 1; ; attempt++)
+    {
+        try { db.Database.EnsureCreated(); break; }
+        catch (Exception ex) when (attempt < 30)
+        {
+            dbLog.LogWarning("Database not ready (attempt {Attempt}): {Message}. Retrying in 2s…", attempt, ex.Message);
+            Thread.Sleep(2000);
+        }
+    }
+
     // EnsureCreated() does not add tables to a pre-existing database, so create
     // the alerting tables idempotently for installs that predate this feature.
     db.Database.ExecuteSqlRaw(AlertingSchema.EnsureTablesSql);
@@ -83,11 +106,12 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-// Enforce TLS outside Development. In production the app should be reached over
-// HTTPS (either Kestrel with a configured certificate, or a reverse proxy doing
-// TLS termination). HSTS tells browsers to refuse plain HTTP for a year.
-// Development stays HTTP so the local flow works without a dev certificate.
-if (!app.Environment.IsDevelopment())
+// Enforce TLS outside Development. The app should be reached over HTTPS — either
+// Kestrel with a certificate, or a reverse proxy terminating TLS. When a proxy
+// (or Docker) handles TLS and forwards plain HTTP to the app, set
+// Security:RequireHttps=false to avoid in-app redirect loops; the proxy enforces HTTPS.
+var requireHttps = builder.Configuration.GetValue("Security:RequireHttps", !app.Environment.IsDevelopment());
+if (requireHttps)
 {
     app.UseHsts();
     app.UseHttpsRedirection();
