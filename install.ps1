@@ -1,8 +1,8 @@
 <#
 .SYNOPSIS
-  One-shot installer for Vigil365 — builds the frontend, publishes the API, and
+  One-shot installer for Vigil365 - builds the frontend, publishes the API, and
   (optionally) installs it as a Windows Service. Graph credentials are entered
-  later in the browser via the first-run setup wizard — no JSON editing required.
+  later in the browser via the first-run setup wizard - no JSON editing required.
 
 .EXAMPLE
   # Build + publish to .\publish and run interactively:
@@ -13,15 +13,23 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$PublishPath = "$PSScriptRoot\publish",
+    [string]$PublishPath,
     [switch]$InstallService,
     [string]$Url = "http://localhost:8080",
     [string]$ServiceName = "Vigil365"
 )
 
 $ErrorActionPreference = "Stop"
-$api    = "$PSScriptRoot\src\M365SecurityDashboard.Api"
-$client = "$PSScriptRoot\src\m365-security-dashboard-client"
+
+# Resolve the repo root reliably. $PSScriptRoot is not always populated in the
+# param() block, so compute it here and fall back to the invocation path.
+$RepoRoot = $PSScriptRoot
+if (-not $RepoRoot) { $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path }
+$RepoRoot = (Resolve-Path $RepoRoot).Path
+
+if (-not $PublishPath) { $PublishPath = Join-Path $RepoRoot "publish" }
+$api    = Join-Path $RepoRoot "src\M365SecurityDashboard.Api"
+$client = Join-Path $RepoRoot "src\m365-security-dashboard-client"
 
 function Test-Tool($name, $hint) {
     if (-not (Get-Command $name -ErrorAction SilentlyContinue)) {
@@ -74,9 +82,12 @@ Write-Host "Next steps:" -ForegroundColor White
 Write-Host "  1. Make sure you have an Entra app registration (run register-app.ps1, or see README)."
 Write-Host "  2. Set ConnectionStrings + AzureAd in appsettings.Production.json (DB + login)."
 if (-not $InstallService) {
-    Write-Host "  3. Start the app:" -ForegroundColor White
-    Write-Host "       `$env:ASPNETCORE_ENVIRONMENT='Production'; & '$exe' --urls $Url" -ForegroundColor Gray
+    Write-Host "  3. Start the app from the publish folder (the working directory must be" -ForegroundColor White
+    Write-Host "     the publish folder so config + wwwroot resolve; the Windows service" -ForegroundColor White
+    Write-Host "     handles this automatically):" -ForegroundColor White
+    Write-Host "       cd '$PublishPath'" -ForegroundColor Gray
+    Write-Host "       `$env:ASPNETCORE_ENVIRONMENT='Production'; .\M365SecurityDashboard.Api.exe --urls $Url" -ForegroundColor Gray
 }
 Write-Host "  4. Open $Url, sign in (first user becomes Admin), then use the" -ForegroundColor White
-Write-Host "     in-app Setup wizard to enter your Graph credentials — no JSON editing." -ForegroundColor White
+Write-Host "     in-app Setup wizard to enter your Graph credentials - no JSON editing." -ForegroundColor White
 Write-Host ""
