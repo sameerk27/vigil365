@@ -1,0 +1,104 @@
+<svg width="680" height="548" viewBox="0 0 680 548" xmlns="http://www.w3.org/2000/svg">
+<rect x="0" y="0" width="680" height="548" fill="#0d1f3c"/>
+<rect x="0" y="0" width="680" height="4" fill="#2563eb"/>
+<g transform="translate(40,28) scale(1.5)">
+  <path d="M11 2L3 5.5V11C3 15.1 6.4 18.9 11 20C15.6 18.9 19 15.1 19 11V5.5L11 2Z" fill="#3b82f6" stroke="#60a5fa" stroke-width="0.8"/>
+  <path d="M5.5 11.5 L7.5 11.5 L9 9 L11 14 L13 10 L14.5 11.5 L16.5 11.5" stroke="#ffffff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</g>
+<text x="82" y="46" font-family="Segoe UI,system-ui,sans-serif" font-size="22" font-weight="600" fill="#f8fafc">Vigil365</text>
+<text x="83" y="64" font-family="Segoe UI,system-ui,sans-serif" font-size="11" fill="#94a3b8">Self-hosted M365 security operations</text>
+<rect x="430" y="30" width="118" height="22" rx="11" fill="#2a2410" stroke="#f59e0b" stroke-width="0.8"/>
+<polygon points="448,35.8 449.23,39.3 452.95,39.39 450,41.65 451.06,45.21 448,43.1 444.94,45.21 446,41.65 443.05,39.39 446.77,39.3" fill="#fbbf24"/>
+<text x="460" y="45" font-family="Segoe UI,system-ui,sans-serif" font-size="11" font-weight="600" fill="#fbbf24">153 stars</text>
+<rect x="556" y="30" width="84" height="22" rx="11" fill="#172a47" stroke="#2563eb" stroke-width="0.8"/>
+<text x="598" y="45" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif" font-size="11" font-weight="600" fill="#60a5fa">Roadmap</text>
+<line x1="40" y1="84" x2="640" y2="84" stroke="#1e293b" stroke-width="1"/>
+<text x="40" y="116" font-family="Segoe UI,system-ui,sans-serif" font-size="24" font-weight="600" fill="#f8fafc">The road ahead</text>
+<text x="40" y="137" font-family="Segoe UI,system-ui,sans-serif" font-size="13" fill="#94a3b8">From a personal dashboard to an organisation-ready platform</text>
+<rect x="40" y="152" width="600" height="192" rx="12" fill="#16243f" stroke="#243a5e" stroke-width="0.8"/>
+<circle cx="132" cy="248" r="58" fill="none" stroke="#243a5e" stroke-width="10"/>
+<path d="M132 190 A58 58 0 1 1 74.5 255.3" fill="none" stroke="#2563eb" stroke-width="10" stroke-linecap="round"/>
+<text x="132" y="246" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif" font-size="26" font-weight="600" fill="#f8fafc">73%</text>
+<text x="132" y="266" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif" font-size="11" fill="#94a3b8">Posture</text>
+<text x="132" y="326" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif" font-size="11" fill="#64748b">Secure score trend</text>
+<g font-family="Segoe UI,system-ui,sans-serif">
+  <rect x="238" y="170" width="182" height="74" rx="8" fill="#1b2c4d"/>
+  <text x="252" y="194" font-size="11" fill="#94a3b8">Risky users</text>
+  <text x="252" y="224" font-size="20" font-weight="600" fill="#f8fafc">1</text>
+  <polygon points="278,214 286,214 282,221" fill="#22c55e"/>
+  <polyline points="350,196 364,200 376,198 388,206 402,210" fill="none" stroke="#22c55e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="430" y="170" width="182" height="74" rx="8" fill="#1b2c4d"/>
+  <text x="444" y="194" font-size="11" fill="#94a3b8">MFA coverage</text>
+  <text x="444" y="224" font-size="20" font-weight="600" fill="#f8fafc">73%</text>
+  <polygon points="500,221 508,221 504,214" fill="#22c55e"/>
+  <polyline points="542,212 556,206 568,208 580,198 596,192" fill="none" stroke="#22c55e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="238" y="254" width="182" height="74" rx="8" fill="#1b2c4d"/>
+  <text x="252" y="278" font-size="11" fill="#94a3b8">Critical alerts</text>
+  <text x="252" y="308" font-size="20" font-weight="600" fill="#f8fafc">0</text>
+  <circle cx="282" cy="301" r="4" fill="#22c55e"/>
+  <polyline points="350,302 364,302 376,300 388,302 402,301" fill="none" stroke="#22c55e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="430" y="254" width="182" height="74" rx="8" fill="#1b2c4d"/>
+  <text x="444" y="278" font-size="11" fill="#94a3b8">Compliance</text>
+  <text x="444" y="308" font-size="20" font-weight="600" fill="#f8fafc">+12%</text>
+  <polygon points="512,305 520,305 516,298" fill="#60a5fa"/>
+  <polyline points="542,314 556,308 568,302 580,304 596,294" fill="none" stroke="#60a5fa" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<text x="40" y="378" font-family="Segoe UI,system-ui,sans-serif" font-size="14" font-weight="600" fill="#cbd5e1">Shipping over the coming weeks</text>
+<line x1="78" y1="440" x2="598" y2="440" stroke="#243a5e" stroke-width="2"/>
+<line x1="78" y1="440" x2="182" y2="440" stroke="#2563eb" stroke-width="2"/>
+<g font-family="Segoe UI,system-ui,sans-serif">
+  <g>
+    <rect x="63" y="402" width="30" height="30" rx="8" fill="#16243f" stroke="#2563eb" stroke-width="0.8"/>
+    <circle cx="78" cy="412" r="3" fill="none" stroke="#60a5fa" stroke-width="1.5"/>
+    <path d="M72 425 a6 6 0 0 1 12 0" fill="none" stroke="#60a5fa" stroke-width="1.5"/>
+    <circle cx="78" cy="440" r="7" fill="#2563eb" stroke="#0d1f3c" stroke-width="2"/>
+    <text x="78" y="462" text-anchor="middle" font-size="12.5" font-weight="600" fill="#f8fafc">Access</text>
+    <text x="78" y="477" text-anchor="middle" font-size="10.5" fill="#64748b">roles · audit</text>
+  </g>
+  <g>
+    <rect x="167" y="402" width="30" height="30" rx="8" fill="#16243f" stroke="#2563eb" stroke-width="0.8"/>
+    <polyline points="176,424 181,418 185,421 191,412" fill="none" stroke="#60a5fa" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="182" cy="440" r="7" fill="#2563eb" stroke="#0d1f3c" stroke-width="2"/>
+    <text x="182" y="462" text-anchor="middle" font-size="12.5" font-weight="600" fill="#f8fafc">Trends</text>
+    <text x="182" y="477" text-anchor="middle" font-size="10.5" fill="#64748b">over time</text>
+  </g>
+  <g>
+    <rect x="271" y="402" width="30" height="30" rx="8" fill="#16243f" stroke="#2563eb" stroke-width="0.8"/>
+    <path d="M286 409 l6 2 v4 c0 4 -3 6 -6 7 c-3 -1 -6 -3 -6 -7 v-4 z" fill="none" stroke="#60a5fa" stroke-width="1.4"/>
+    <path d="M283 417 l2.5 2.5 l4 -5" fill="none" stroke="#60a5fa" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="286" cy="440" r="7" fill="#2563eb" stroke="#0d1f3c" stroke-width="2"/>
+    <text x="286" y="462" text-anchor="middle" font-size="12.5" font-weight="600" fill="#f8fafc">Compliance</text>
+    <text x="286" y="477" text-anchor="middle" font-size="10.5" fill="#64748b">CIS · NIST · ZT</text>
+  </g>
+  <g>
+    <rect x="375" y="402" width="30" height="30" rx="8" fill="#16243f" stroke="#2563eb" stroke-width="0.8"/>
+    <circle cx="384" cy="411" r="2.4" fill="#60a5fa"/>
+    <circle cx="396" cy="417" r="2.4" fill="#60a5fa"/>
+    <circle cx="384" cy="424" r="2.4" fill="#60a5fa"/>
+    <line x1="384" y1="411" x2="396" y2="417" stroke="#60a5fa" stroke-width="1.2"/>
+    <line x1="384" y1="424" x2="396" y2="417" stroke="#60a5fa" stroke-width="1.2"/>
+    <circle cx="390" cy="440" r="7" fill="#2563eb" stroke="#0d1f3c" stroke-width="2"/>
+    <text x="390" y="462" text-anchor="middle" font-size="12.5" font-weight="600" fill="#f8fafc">Coverage</text>
+    <text x="390" y="477" text-anchor="middle" font-size="10.5" fill="#64748b">SP · OneDrive</text>
+  </g>
+  <g>
+    <rect x="479" y="402" width="30" height="30" rx="8" fill="#16243f" stroke="#2563eb" stroke-width="0.8"/>
+    <rect x="489" y="418" width="10" height="7" rx="1" fill="none" stroke="#60a5fa" stroke-width="1.5"/>
+    <path d="M491 418 v-2 a3 3 0 0 1 6 0 v2" fill="none" stroke="#60a5fa" stroke-width="1.5"/>
+    <circle cx="494" cy="440" r="7" fill="#2563eb" stroke="#0d1f3c" stroke-width="2"/>
+    <text x="494" y="462" text-anchor="middle" font-size="12.5" font-weight="600" fill="#f8fafc">Hardening</text>
+    <text x="494" y="477" text-anchor="middle" font-size="10.5" fill="#64748b">cert · audit · health</text>
+  </g>
+  <g>
+    <rect x="583" y="402" width="30" height="30" rx="8" fill="#16243f" stroke="#2563eb" stroke-width="0.8"/>
+    <rect x="592" y="412" width="12" height="10" rx="1.5" fill="none" stroke="#60a5fa" stroke-width="1.5"/>
+    <line x1="592" y1="416" x2="604" y2="416" stroke="#60a5fa" stroke-width="1.2"/>
+    <circle cx="598" cy="440" r="7" fill="#243a5e" stroke="#0d1f3c" stroke-width="2"/>
+    <text x="598" y="462" text-anchor="middle" font-size="12.5" font-weight="600" fill="#f8fafc">Deploy</text>
+    <text x="598" y="477" text-anchor="middle" font-size="10.5" fill="#64748b">Win · Docker</text>
+  </g>
+</g>
+<line x1="40" y1="504" x2="640" y2="504" stroke="#1e293b" stroke-width="1"/>
+<text x="40" y="528" font-family="Segoe UI,system-ui,sans-serif" font-size="12.5" fill="#cbd5e1">Free  ·  Open source  ·  Self-hosted  ·  Read-only</text>
+<text x="640" y="528" text-anchor="end" font-family="Segoe UI,system-ui,sans-serif" font-size="12.5" font-weight="600" fill="#60a5fa">github.com/sameerk27/vigil365</text>
+</svg>

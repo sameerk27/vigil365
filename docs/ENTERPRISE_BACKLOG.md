@@ -9,6 +9,27 @@ Legend: 🔴 high value · 🟡 medium · 🟢 polish · ✅ already done
 
 ---
 
+## 0. Perfect the existing tabs FIRST (before any new capability)
+
+Polish what's already there — make every tab/detail genuinely useful — before
+building new pages.
+
+- 🔴 **Alert detail must show the affected entity** — clicking a triggered alert
+  shows policy metadata (ID, condition, threshold) but **not which user/device
+  triggered it**. Root cause: the engine stores the aggregate count, not the
+  matching entities. Fix: at trigger time, capture the affected `SecurityAlert`
+  rows (UPN / device / sign-in) and store them with the triggered alert; render
+  them in the detail modal as a list with "view in M365 portal" deep links.
+- 🟡 **Every detail modal → drill to the real records** — audit each tab's detail
+  view so it shows the underlying entities, not just summary fields.
+- 🟡 **Consistent detail layout** — same field order, copy-to-clipboard on IDs,
+  human-readable IDs/labels, relative + absolute timestamps everywhere.
+- 🟡 **Cross-link** — from an alert → the user's/device's full record; from a KPI
+  tile → the filtered list behind it.
+- 🟢 **Per-tab audit pass** — walk every page (Identity, Devices, Email, Incidents,
+  Compliance, CA, Licenses, Audit, Sign-in map) and fix the small gaps: empty
+  columns, truncation, unclear labels, missing counts, broken/empty states.
+
 ## A. New capabilities (cross-cutting)
 
 - 🔴 **Trends & history** — snapshot key metrics each collection cycle (risky users,
@@ -20,6 +41,15 @@ Legend: 🔴 high value · 🟡 medium · 🟢 polish · ✅ already done
   "how to fix" guidance. (Biggest competitive differentiator.)
 - 🔴 **Recommendations layer** — every finding pairs with *why it matters*, *fix steps*,
   and a **deep link** to the right M365 portal blade. Guidance only, no actions.
+- 🔴 **Alert coverage gap analysis** — compare the tenant against a best-practice
+  alerting baseline and surface **what's NOT being watched**: e.g. no alert on
+  privileged-role changes, mailbox forwarding rules, impossible-travel sign-ins,
+  MFA-disabled admins, new OAuth app grants, sudden risky-user spikes. Two outputs:
+  (1) one-click create the missing **Vigil365 Alert Center** policy from a template
+  (in scope — app's own DB), and (2) recommend the missing **native** Defender /
+  Entra / Purview alert policy with a **deep link** to create it in M365 (read-only —
+  guidance, not an action). Extends the existing 9 alert templates into a coverage
+  scorecard ("12 of 20 recommended alerts in place").
 - 🟡 **Scheduled exec reports** — weekly/however email digest (PDF/HTML) summarising
   posture + trends, for leadership. Reuses SMTP.
 - 🟡 **Conditional Access gap analysis** — surface users/apps **not** covered by any CA
@@ -79,6 +109,43 @@ Legend: 🔴 high value · 🟡 medium · 🟢 polish · ✅ already done
 - 🟢 **Pagination/total counts** consistent across every list.
 - 🟢 **CSV export parity** — ensure every table's export matches the visible/filtered rows.
 - 🟢 **Deep-link correctness** — verify each "View in M365 portal" link resolves.
+
+## F. Gaps surfaced later (alerting depth, integrations, edge cases)
+
+**Alert workflow** (core to an alerting product)
+- 🔴 Assignment / ownership per alert.
+- 🟡 SLA tracking (time-to-ack / time-to-resolve) + escalation if unacked.
+- 🟡 Deduplication / correlation — group alerts with the same root cause.
+- 🟡 Comments / notes on an alert (collaboration).
+- 🟡 Maintenance windows / quiet hours (deferred from the snooze PR).
+
+**Notifications**
+- 🟡 More channels: native Slack, PagerDuty, ServiceNow, SIEM forward (Sentinel/Splunk).
+- 🟡 Daily/weekly digest mode (reduce per-alert noise).
+- 🟡 Per-user / per-role notification preferences.
+- 🟡 Alert on notification **delivery failure** (don't fail silently).
+
+**Sovereign / government clouds** 🔴
+- Graph + login endpoints are hardcoded to commercial cloud
+  (`graph.microsoft.com` / `login.microsoftonline.com`). GCC, GCC High, and
+  21Vianet use different endpoints — app won't run there. Make cloud-environment
+  configurable.
+
+**MSP / multi-tenant** (large audience — currently deferred)
+- 🟡 White-label / branding (org logo on dashboard + reports).
+- 🟢 Clear "single-tenant by design, MSP multi-tenant on the roadmap" stance.
+
+**Integration / openness**
+- 🟡 Read **API** for external consumption (other tools / dashboards).
+- 🟡 Config + policy **export/import** (portability + backup beyond the DB).
+
+**Supply-chain & release trust** (enterprises ask)
+- 🟡 **SBOM**, signed releases, dependency scanning.
+- 🟢 Versioned releases + semver + changelog.
+
+**Session & quality**
+- 🟡 Idle timeout / auto sign-out.
+- 🟢 In-app version + changelog; opt-in telemetry; i18n; formal WCAG audit.
 
 ## E. Enterprise plumbing (tracked, lower priority for this product pass)
 
