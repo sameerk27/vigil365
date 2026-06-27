@@ -105,8 +105,8 @@ Grant **admin consent** for all of these:
 ### 1. Clone and configure secrets
 
 ```powershell
-git clone https://github.com/YOUR_ORG/m365-security-dashboard.git
-cd m365-security-dashboard
+git clone https://github.com/sameerk27/vigil365.git
+cd vigil365
 
 cd src\M365SecurityDashboard.Api
 dotnet user-secrets init
@@ -131,8 +131,10 @@ sqlcmd -S .\SQLEXPRESS -E -I -i .\database\schema.sql
 cd src\m365-security-dashboard-client
 npm install
 npm run build
-Copy-Item -Recurse -Force .\dist\* ..\M365SecurityDashboard.Api\wwwroot\
 ```
+
+> `npm run build` outputs directly into `..\M365SecurityDashboard.Api\wwwroot`
+> (configured via Vite `outDir`) — no copy step needed.
 
 ### 4. Run the API
 
@@ -168,10 +170,9 @@ Frontend dev server: `http://localhost:5173` (proxies API calls to backend)
 ## Production Deployment (Windows Service)
 
 ```powershell
-# 1. Build frontend
+# 1. Build frontend (outputs straight into the API's wwwroot)
 cd src\m365-security-dashboard-client
 npm install && npm run build
-Copy-Item -Recurse -Force .\dist\* ..\M365SecurityDashboard.Api\wwwroot\
 
 # 2. Publish API
 cd ..\M365SecurityDashboard.Api
@@ -192,7 +193,7 @@ sc.exe start M365SecurityDashboard
 ```json
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Server=.\\SQLEXPRESS;Database=M365SecurityDashboard;Trusted_Connection=True;Encrypt=False"
+    "DefaultConnection": "Server=.\\SQLEXPRESS;Database=M365SecurityDashboard;Trusted_Connection=True;Encrypt=True;TrustServerCertificate=True"
   },
   "Graph": {
     "TenantId": "YOUR_TENANT_ID",
