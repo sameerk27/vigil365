@@ -57,24 +57,34 @@ A self-hosted, real-time Microsoft 365 security monitoring dashboard that aggreg
 
 ## Prerequisites
 
-1. Windows host (Windows 10/11 or Windows Server 2019+)
-2. [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) or ASP.NET Core 8 Hosting Bundle
+**Docker install (Option 1)** — just [Docker](https://docs.docker.com/get-docker/)
+(Windows, Linux, or macOS). Everything else runs in containers.
+
+**Windows / manual install (Options 2–3):**
+1. Windows 10/11 or Windows Server 2019+
+2. [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) (or ASP.NET Core 8 Hosting Bundle)
 3. [SQL Server Express](https://www.microsoft.com/en-us/sql-server/sql-server-downloads) (free)
 4. [Node.js 20+](https://nodejs.org/)
+5. [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) — only if you use `register-app.ps1`
+
+All paths also need a Microsoft 365 tenant where you can create an app registration.
 
 ---
 
 ## Microsoft Entra App Registration
 
+> **Tip:** `register-app.ps1` does all of this for you (permissions, redirect URI,
+> exposed scope, secret, admin consent). Do it manually only if you prefer.
+
 ### Create the app
 
 1. Go to [Entra admin center](https://entra.microsoft.com) → **App registrations** → **New registration**
-2. Name it (e.g. `M365SecurityDashboard`)
+2. Name it (e.g. `Vigil365`)
 3. Select **Accounts in this organizational directory only**
-4. No redirect URI needed
-5. Click **Register**
-6. Note the **Tenant ID** and **Application (client) ID**
-7. Go to **Certificates & secrets** → **New client secret** — note the secret value immediately
+4. Under **Redirect URI**, choose **Single-page application (SPA)** and enter the URL you'll serve the app on (e.g. `http://localhost:8080` for Docker, or `https://vigil365.yourco.local:5001`)
+5. Click **Register**, then note the **Tenant ID** and **Application (client) ID**
+6. **Certificates & secrets** → **New client secret** — copy the value immediately
+7. **Expose an API** → set Application ID URI to `api://<client-id>` → **Add a scope** named `access_as_user` (this is what the browser sign-in requests)
 
 ### Required API permissions (Application, not Delegated)
 
@@ -100,94 +110,92 @@ Grant **admin consent** for all of these:
 
 ---
 
-## Setup
+## Install
 
-### 1. Clone and configure secrets
-
-```powershell
-git clone https://github.com/YOUR_ORG/m365-security-dashboard.git
-cd m365-security-dashboard
-
-cd src\M365SecurityDashboard.Api
-dotnet user-secrets init
-dotnet user-secrets set "Graph:TenantId"     "YOUR_TENANT_ID"
-dotnet user-secrets set "Graph:ClientId"     "YOUR_CLIENT_ID"
-dotnet user-secrets set "Graph:ClientSecret" "YOUR_CLIENT_SECRET"
-```
-
-> **Never put real credentials in `appsettings.json`** — use User Secrets for development and environment variables or `appsettings.Production.json` (gitignored) for production.
-
-### 2. Set up the database
+You need **one** thing first: an **Entra app registration** (so Vigil365 can read
+your tenant via Graph). Script it with `register-app.ps1`, or create it manually
+(see [Microsoft Entra App Registration](#microsoft-entra-app-registration)).
 
 ```powershell
-# Option A: let the API auto-create on first run (requires db-create rights)
-# Option B: pre-create manually
-sqlcmd -S .\SQLEXPRESS -E -I -i .\database\schema.sql
+az login
+.\register-app.ps1 -RedirectUri http://localhost:8080
 ```
+This prints your **Tenant ID**, **Client ID**, and **Client Secret** — keep them for the steps below.
 
-### 3. Build the frontend
+Then pick the install that fits you. **You never edit a config file for Graph
+credentials** — you enter them in the in-app Setup wizard after first sign-in.
+
+### Option 1 — Docker (any OS, recommended)
+
+```bash
+git clone https://github.com/sameerk27/vigil365.git
+cd vigil365
+cp .env.example .env        # fill in TENANT_ID, CLIENT_ID, ADMIN_EMAIL
+docker compose up -d
+```
+Open **http://localhost:8080** → sign in (first user becomes Admin) → enter the
+client secret in **Setup**. Done. App + SQL Server both run in containers.
+
+### Option 2 — Windows, one script
 
 ```powershell
-cd src\m365-security-dashboard-client
-npm install
-npm run build
-Copy-Item -Recurse -Force .\dist\* ..\M365SecurityDashboard.Api\wwwroot\
+git clone https://github.com/sameerk27/vigil365.git
+cd vigil365
+.\deploy.ps1 -TenantId <tenant-id> -ClientId <client-id> -AdminEmail you@yourorg.com
 ```
+Builds the frontend, publishes the API, generates config, sets up HTTPS, and runs
+in Production. Add `-Hostname vigil365.local` for an internal hostname, or
+`-InstallService` to register a Windows Service. Then open the printed URL and
+finish in the Setup wizard.
 
-### 4. Run the API
+### Option 3 — Manual / development (advanced)
+
+<details><summary>Run from source with hot-reload</summary>
 
 ```powershell
-cd src\M365SecurityDashboard.Api
-$env:ASPNETCORE_ENVIRONMENT = "Development"
-dotnet run
-```
+git clone https://github.com/sameerk27/vigil365.git
+cd vigil365\src\M365SecurityDashboard.Api
+dotnet user-secrets set "AzureAd:TenantId"  "<tenant-id>"
+dotnet user-secrets set "AzureAd:ClientId"  "<client-id>"
+dotnet user-secrets set "AzureAd:Audience"  "api://<client-id>"
 
-Open **http://localhost:5000**
+# Terminal 1 — backend (auto-creates the DB on first run)
+$env:ASPNETCORE_ENVIRONMENT = "Development"; dotnet run
+
+# Terminal 2 — frontend hot-reload
+cd ..\m365-security-dashboard-client; npm install; npm run dev
+```
+Backend serves http://localhost:5000; the Vite dev server proxies to it on http://localhost:5173.
+Enter Graph credentials in the in-app Setup wizard.
+</details>
 
 ---
 
-## Development (hot-reload)
+## Production Deployment
 
-Run both simultaneously:
-
-```powershell
-# Terminal 1 — backend
-cd src\M365SecurityDashboard.Api
-$env:ASPNETCORE_ENVIRONMENT = "Development"
-dotnet watch run
-
-# Terminal 2 — frontend
-cd src\m365-security-dashboard-client
-npm run dev
-```
-
-Frontend dev server: `http://localhost:5173` (proxies API calls to backend)
-
----
-
-## Production Deployment (Windows Service)
+The simplest path is **Option 1 (Docker)** or **Option 2 (`deploy.ps1`)** above —
+both run in Production. To install as a **Windows Service** on a server:
 
 ```powershell
-# 1. Build frontend
-cd src\m365-security-dashboard-client
-npm install && npm run build
-Copy-Item -Recurse -Force .\dist\* ..\M365SecurityDashboard.Api\wwwroot\
-
-# 2. Publish API
-cd ..\M365SecurityDashboard.Api
-dotnet publish -c Release -o C:\Apps\M365SecurityDashboard
-
-# 3. Create appsettings.Production.json in publish folder
-# (see template below — this file is gitignored)
-
-# 4. Install as Windows Service
-sc.exe create M365SecurityDashboard `
-  binPath= "C:\Apps\M365SecurityDashboard\M365SecurityDashboard.Api.exe --environment Production --urls http://localhost:8080" `
-  start= auto
-sc.exe start M365SecurityDashboard
+.\deploy.ps1 -TenantId <id> -ClientId <id> -AdminEmail you@org.com -Hostname vigil365.yourco.local -InstallService
 ```
 
-**`appsettings.Production.json` template** (create this file manually, never commit it):
+This builds, publishes, generates `appsettings.Production.json`, sets up the
+certificate, and registers the service. See the **[HTTPS / TLS](#https--tls-required-for-production)**
+section for real-domain certificates (reverse proxy / Let's Encrypt).
+
+<details><summary>Manual publish (if you don't want the script)</summary>
+
+```powershell
+cd src\m365-security-dashboard-client; npm install; npm run build
+cd ..\M365SecurityDashboard.Api; dotnet publish -c Release -o C:\Apps\Vigil365
+# create appsettings.Production.json in the publish folder (template below), then:
+sc.exe create Vigil365 binPath= "C:\Apps\Vigil365\M365SecurityDashboard.Api.exe --environment Production --urls http://localhost:8080" start= auto
+sc.exe start Vigil365
+```
+</details>
+
+**`appsettings.Production.json` template** (only needed for the manual path — the scripts generate it):
 
 ```json
 {
