@@ -41,7 +41,8 @@ public static class AlertingSchema
             [Status] nvarchar(20) NOT NULL,
             [AcknowledgedAt] datetimeoffset NULL,
             [AcknowledgedBy] nvarchar(120) NULL,
-            [Notified] bit NOT NULL
+            [Notified] bit NOT NULL,
+            [AffectedEntities] nvarchar(max) NULL
         );
 
         IF OBJECT_ID(N'[NotificationSettings]', N'U') IS NULL
@@ -88,6 +89,25 @@ public static class AlertingSchema
 
         IF COL_LENGTH(N'[TriggeredAlerts]', 'LastEvaluatedAt') IS NULL
         ALTER TABLE [TriggeredAlerts] ADD [LastEvaluatedAt] datetimeoffset NULL;
+
+        IF COL_LENGTH(N'[TriggeredAlerts]', 'AffectedEntities') IS NULL
+        ALTER TABLE [TriggeredAlerts] ADD [AffectedEntities] nvarchar(max) NULL;
+
+        IF OBJECT_ID(N'[TrendSnapshots]', N'U') IS NULL
+        BEGIN
+            CREATE TABLE [TrendSnapshots] (
+                [Id] uniqueidentifier NOT NULL PRIMARY KEY,
+                [CapturedAt] datetimeoffset NOT NULL,
+                [RiskyUsersCount] int NOT NULL,
+                [MfaCoveragePct] float NOT NULL,
+                [NonCompliantDevicesCount] int NOT NULL,
+                [CriticalAlertsCount] int NOT NULL,
+                [HighAlertsCount] int NOT NULL,
+                [SecureScorePct] float NOT NULL,
+                [ComplianceIssuesCount] int NOT NULL
+            );
+            CREATE INDEX [IX_TrendSnapshots_CapturedAt] ON [TrendSnapshots] ([CapturedAt]);
+        END
 
         IF OBJECT_ID(N'[AppUsers]', N'U') IS NULL
         CREATE TABLE [AppUsers] (

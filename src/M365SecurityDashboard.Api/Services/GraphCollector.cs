@@ -46,6 +46,12 @@ public sealed class GraphCollector(
             run.SourceFailureDetails = failures.Count > 0 ? JsonSerializer.Serialize(failures) : null;
             run.Status = run.SourceFailures == sources.Count ? CollectionStatus.Failed : CollectionStatus.Completed;
             run.CompletedAt = DateTimeOffset.UtcNow;
+            
+            if (run.Status != CollectionStatus.Failed)
+            {
+                await CaptureTrendSnapshotAsync(ct);
+            }
+            
             await db.SaveChangesAsync(ct);
             return run;
         }
@@ -237,6 +243,72 @@ public sealed class GraphCollector(
         value?.Equals("closed", StringComparison.OrdinalIgnoreCase) == true;
 
     private static string Trim(string s, int max) => s.Length <= max ? s : s[..max];
+
+    private async Task CaptureTrendSnapshotAsync(CancellationToken ct)
+    {
+        var open = db.SecurityAlerts.Where(a => !a.IsResolved);
+        var riskyUsersCount = await open.CountAsync(a => a.AlertType == "RiskyUser", ct);
+        var mfaMissingCount = await open.CountAsync(a => a.AlertType == "MfaStatus", ct);
+        var nonCompliantCount = await open.CountAsync(a => a.AlertType == "NonCompliantDevice", ct);
+        
+        // Track open Critical & High alerts across all services (matching AlertEvaluator and Overview KPIs)
+        var criticalAlertsCount = await open.CountAsync(a => a.Severity == AlertSeverity.Critical, ct);
+        var highAlertsCount = await open.CountAsync(a => a.Severity == AlertSeverity.High, ct);
+        
+        // Microsoft Purview best practice: Track compliance operations findings (Quarantine, Mail flow, DLP)
+        var complianceIssuesCount = await open.CountAsync(a => a.Service == M365ServiceArea.ExchangeOnline, ct);
+
+        // Calculate Secure Score
+        double secureScorePct = 0;
+        if (_options.IsConfigured())
+        {
+            try
+            {
+                var items = await graph.GetCollectionAsync("/v1.0/security/secureScores?$top=1", ct);
+                if (items.Count > 0)
+                {
+                    var latest = items[0];
+                    var cs = latest.TryGetProperty("currentScore", out var cVal) && cVal.ValueKind == JsonValueKind.Number ? cVal.GetDouble() : 0;
+                    var ms = latest.TryGetProperty("maxScore", out var mVal) && mVal.ValueKind == JsonValueKind.Number ? mVal.GetDouble() : 100;
+                    if (ms == 0) ms = 100;
+                    secureScorePct = Math.Round(cs / ms * 100, 1);
+                }
+            }
+            catch { /* ignore */ }
+        }
+
+        // Calculate MFA Coverage Pct
+        double mfaCoveragePct = 0;
+        if (_options.IsConfigured())
+        {
+            try
+            {
+                var reg = await graph.GetCollectionAsync("/v1.0/reports/authenticationMethods/userRegistrationDetails", ct);
+                var mfaTotal = reg.Count;
+                if (mfaTotal > 0)
+                {
+                    var mfaRegistered = reg.Count(r => r.TryGetProperty("isMfaRegistered", out var p) && p.ValueKind == JsonValueKind.True);
+                    mfaCoveragePct = Math.Round((double)mfaRegistered / mfaTotal * 100, 1);
+                }
+            }
+            catch { /* ignore */ }
+        }
+
+        var snapshot = new TrendSnapshot
+        {
+            Id = Guid.NewGuid(),
+            CapturedAt = DateTimeOffset.UtcNow,
+            RiskyUsersCount = riskyUsersCount,
+            MfaCoveragePct = mfaCoveragePct,
+            NonCompliantDevicesCount = nonCompliantCount,
+            CriticalAlertsCount = criticalAlertsCount,
+            HighAlertsCount = highAlertsCount,
+            SecureScorePct = secureScorePct,
+            ComplianceIssuesCount = complianceIssuesCount
+        };
+
+        db.TrendSnapshots.Add(snapshot);
+    }
 
     private sealed record GraphSource(string Name, string Path, Func<JsonElement, SecurityAlert> Map);
 }

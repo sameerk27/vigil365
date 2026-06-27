@@ -11,6 +11,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<TriggeredAlert> TriggeredAlerts => Set<TriggeredAlert>();
     public DbSet<NotificationSettings> NotificationSettings => Set<NotificationSettings>();
     public DbSet<NotificationLog> NotificationLogs => Set<NotificationLog>();
+    public DbSet<TrendSnapshot> TrendSnapshots => Set<TrendSnapshot>();
     public DbSet<AppUser> AppUsers => Set<AppUser>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<GraphConfig> GraphConfig => Set<GraphConfig>();
@@ -56,6 +57,12 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         {
             entity.HasKey(l => l.Id);
             entity.HasIndex(l => l.SentAt);
+        });
+
+        modelBuilder.Entity<TrendSnapshot>(entity =>
+        {
+            entity.HasKey(t => t.Id);
+            entity.HasIndex(t => t.CapturedAt);
         });
 
         modelBuilder.Entity<AppUser>(entity =>

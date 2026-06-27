@@ -70,7 +70,12 @@ if ($useHttps -and $Hostname) {
     # Trust it for the current user so this machine's browsers accept it.
     $cerTmp = Join-Path $PublishPath "vigil365-host.cer"
     Export-Certificate -Cert $cert -FilePath $cerTmp | Out-Null
-    Import-Certificate -FilePath $cerTmp -CertStoreLocation "Cert:\CurrentUser\Root" | Out-Null
+    try {
+        Import-Certificate -FilePath $cerTmp -CertStoreLocation "Cert:\CurrentUser\Root" -ErrorAction Stop | Out-Null
+    } catch {
+        Write-Host "      Import-Certificate failed, falling back to certutil..." -ForegroundColor DarkYellow
+        certutil.exe -user -addstore Root $cerTmp | Out-Null
+    }
     Remove-Item $cerTmp -Force
     Write-Host "      Certificate created and trusted for the current user." -ForegroundColor Green
 

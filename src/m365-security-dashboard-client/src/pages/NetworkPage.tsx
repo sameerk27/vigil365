@@ -1,0 +1,139 @@
+import React, { useState, useMemo } from "react";
+import { Activity, LogIn, XCircle, Globe, AlertCircle, ExternalLink, BarChart2 } from "lucide-react";
+import { ServiceHealthData, SignInLocationsData, SignInEntry } from "../services/types";
+import { fmtDate, relTime, fmtShort, countryFlag } from "../services/utils";
+import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, StatusDot, SectHdr, MiniBarChart } from "../components/SharedComponents";
+import { M365_SVCS } from "./ServiceHealthPage";
+
+export function NetworkPage({ serviceHealth, signInLocations }: { serviceHealth: ServiceHealthData|null; signInLocations: SignInLocationsData|null }) {
+  const [selectedSignIn, setSelectedSignIn] = useState<SignInEntry|null>(null);
+  const svcIssues = serviceHealth?.total??0;
+
+  // top apps by sign-in count
+  const topApps = useMemo(()=>{
+    if (!signInLocations?.recent.length) return [];
+    const counts: Record<string,number> = {};
+    signInLocations.recent.forEach(s=>{ if (s.app) counts[s.app]=(counts[s.app]??0)+1; });
+    return Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([app,count])=>({ label:app.replace("Microsoft ","").slice(0,22), value:count, color:"var(--color-primary)" }));
+  },[signInLocations]);
+
+  // per-service status from health data
+  const svcStatus = M365_SVCS.map(svc=>{
+    const issue = serviceHealth?.issues.find(i=>
+      i.title.toLowerCase().includes(svc.split(" ")[0].toLowerCase())||
+      i.title.toLowerCase().includes(svc.split(" ").at(-1)!.toLowerCase()));
+    return { name:svc, issue, status:issue?"Advisory":"Operational" };
+  });
+
+  return (
+    <div className="page">
+      {selectedSignIn && (
+        <DetailModal
+          title={selectedSignIn.upn ?? "Sign-in Event"}
+          subtitle={`${selectedSignIn.success ? "Successful" : "Failed"} · ${[selectedSignIn.city, selectedSignIn.country].filter(Boolean).join(", ") || "Unknown"}`}
+          onClose={()=>setSelectedSignIn(null)}
+          portalUrl="https://entra.microsoft.com/#view/Microsoft_AAD_IAM/SignInEventsV3Blade"
+          portalLabel="View in Entra Sign-ins"
+        >
+          <DetailField label="User Principal Name" value={selectedSignIn.upn}/>
+          <DetailField label="Application" value={selectedSignIn.app}/>
+          <DetailField label="Result" value={selectedSignIn.success ? "Success" : "Failure"}/>
+          <DetailField label="City" value={selectedSignIn.city}/>
+          <DetailField label="Country" value={selectedSignIn.country}/>
+          <DetailField label="Date/Time" value={fmtDate(selectedSignIn.created)}/>
+        </DetailModal>
+      )}
+      <div className="kpi-row kpi-row-4">
+        <KpiTile icon={<Activity size={18}/>} label="M365 SERVICE STATUS"
+          value={svcIssues===0?"All Operational":`${svcIssues} Issue${svcIssues>1?"s":""}`}
+          sub={svcIssues===0?"No active advisories":"Check advisories below"}
+          tone={svcIssues===0?"good":svcIssues<=2?"warning":"error"}/>
+        <KpiTile icon={<LogIn size={18}/>} label="SIGN-IN EVENTS" value={signInLocations?.total??"—"}
+          sub="Last 100 sign-ins tracked" tone="neutral"/>
+        <KpiTile icon={<XCircle size={18}/>} label="SIGN-IN FAILURES" value={signInLocations?.failures??"—"}
+          sub="Auth failures in period" tone={(signInLocations?.failures??0)>10?"error":(signInLocations?.failures??0)>3?"warning":"good"}/>
+        <KpiTile icon={<Globe size={18}/>} label="COUNTRIES" value={signInLocations?.countries??"—"}
+          sub="Sign-in origin countries" tone={(signInLocations?.countries??0)>3?"warning":"good"}/>
+      </div>
+
+      <div className="two-col">
+        <Card title="M365 Service Endpoint Status"
+          badge={svcIssues>0?<Badge label={`${svcIssues} advisory`} tone="warning"/>:<Badge label="All operational" tone="good"/>}>
+          <div className="svc-grid">
+            {svcStatus.map(s=>(
+              <div key={s.name} className="svc-item">
+                <StatusDot status={s.issue?"warning":"good"}/>
+                <span className="svc-name">{s.name}</span>
+                <Badge label={s.status} tone={s.issue?"warning":"good"}/>
+              </div>
+            ))}
+          </div>
+          {svcIssues>0&&(
+            <div style={{marginTop:12}}>
+              <SectHdr>ACTIVE ADVISORIES</SectHdr>
+              {serviceHealth!.issues.map((iss,i)=>(
+                <div key={i} className="al-item al-item-noclick" style={{marginTop:4}}>
+                  <AlertCircle size={13} color="var(--status-warn-icon)"/>
+                  <div className="al-body">
+                    <div className="al-title">{iss.title}</div>
+                    {iss.description&&<div className="al-desc">{iss.description}</div>}
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4,minWidth:80}}>
+                    <Badge label={iss.severity} tone={iss.severity==="High"||iss.severity==="Critical"?"error":"warning"}/>
+                    <span className="al-date">{fmtShort(iss.detectedAt)}</span>
+                    {iss.portalUrl&&<a href={iss.portalUrl} target="_blank" rel="noopener noreferrer" className="portal-link" onClick={e=>e.stopPropagation()}><ExternalLink size={11}/> Portal</a>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <Card title="Top Apps Accessed" badge={<Badge label="From sign-in log" tone="neutral"/>}>
+          {topApps.length===0
+            ? <EmptyState icon={<BarChart2 size={28} color="#d1d5db"/>} message="No sign-in data available"/>
+            : <>
+                <MiniBarChart items={topApps}/>
+                <div className="tbl-wrap" style={{marginTop:12}}>
+                  <table className="data-tbl">
+                    <thead><tr><th>Application</th><th>Sign-in Events</th><th>Status</th></tr></thead>
+                    <tbody>
+                      {topApps.map((a,i)=>(
+                        <tr key={i}>
+                          <td><div className="al-title">{a.label}</div></td>
+                          <td style={{fontWeight:600}}>{a.value}</td>
+                          <td><Badge label="Reachable" tone="good"/></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+          }
+        </Card>
+      </div>
+
+      <Card title="Recent Sign-in Activity" badge={<Badge label={`${signInLocations?.total??0} events`} tone="neutral"/>}>
+        {!signInLocations?.configured||signInLocations.recent.length===0
+          ? <EmptyState icon={<LogIn size={28} color="#d1d5db"/>} message="No recent sign-in data"/>
+          : <div className="tbl-wrap">
+              <table className="data-tbl">
+                <thead><tr><th>User</th><th>App</th><th>Location</th><th>Time</th><th>Result</th></tr></thead>
+                <tbody>
+                  {signInLocations.recent.map((s,i)=>(
+                    <tr key={i} className="tbl-row-click" onClick={()=>setSelectedSignIn(s)}>
+                      <td><div className="al-title">{s.upn?.split("@")[0]??"Unknown"}</div></td>
+                      <td className="al-desc">{s.app??"—"}</td>
+                      <td className="al-desc">{countryFlag(s.country)} {[s.city,s.country].filter(Boolean).join(", ")||"Unknown"}</td>
+                      <td className="al-date">{relTime(s.created) || fmtDate(s.created)}</td>
+                      <td><Badge label={s.success?"Success":"Failed"} tone={s.success?"good":"error"}/></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+        }
+      </Card>
+    </div>
+  );
+}

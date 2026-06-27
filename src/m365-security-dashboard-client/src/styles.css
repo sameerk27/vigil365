@@ -186,10 +186,9 @@ select, input { font: inherit; }
   background: #0d1f3c;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
+  overflow: hidden;
   color: #fff;
   transition: width .2s ease;
-  overflow-x: hidden;
   position: relative;
 }
 .sidebar.expanded { width: 220px; }
@@ -202,6 +201,7 @@ select, input { font: inherit; }
   border-bottom: 1px solid rgba(255,255,255,0.07);
   white-space: nowrap;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .sb-mark {
@@ -216,7 +216,7 @@ select, input { font: inherit; }
 .sb-name { font-size: 13px; font-weight: 700; }
 .sb-sub  { font-size: 10px; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: .07em; }
 
-.sb-nav { padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; }
+.sb-nav { padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; overflow-y: auto; min-height: 0; }
 
 .nav-item {
   display: flex; align-items: center; gap: 9px;
@@ -256,10 +256,8 @@ select, input { font: inherit; }
 
 /* ── Sidebar collapse toggle ─────────────────────────────────────────────── */
 .sb-collapse-btn {
-  position: absolute;
-  bottom: 12px;
-  left: 50%;
-  transform: translateX(-50%);
+  flex-shrink: 0;
+  margin: 6px auto 12px;
   width: 28px; height: 28px;
   border-radius: 6px;
   border: 1px solid rgba(255,255,255,.15);
@@ -432,6 +430,11 @@ select, input { font: inherit; }
   transition: box-shadow .15s, transform .15s;
 }
 .kpi-tile:hover { box-shadow: var(--shadow-raised); transform: translateY(-1px); }
+.kpi-clickable { cursor: pointer; }
+.kpi-clickable:hover { border-color: var(--color-primary); }
+.kpi-clickable:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.kpi-active { border-color: var(--color-primary); box-shadow: 0 0 0 1px var(--color-primary) inset; }
+.copy-btn:hover { color: var(--color-primary) !important; }
 
 .kpi-icon {
   width: 36px; height: 36px;
@@ -1334,3 +1337,152 @@ select, input { font: inherit; }
 
 /* ── Focus visible ring — keyboard nav ───────────────────────────────────── */
 :focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; border-radius: 4px; }
+
+/* ── Unified State & Skeletons ───────────────────────────────────────────── */
+
+/* Unified StateMessage component */
+.state-message {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 40px 20px; text-align: center;
+  border: 1px dashed var(--color-border); border-radius: 8px;
+  background: var(--color-surface);
+}
+.state-message .sm-icon { margin-bottom: 12px; }
+.state-message.state-empty .sm-icon { color: var(--color-faint); }
+.state-message.state-error .sm-icon { color: var(--status-error-icon); }
+.state-message.state-permission .sm-icon { color: var(--status-warn-icon); }
+
+.state-message .sm-title { font-size: 14px; font-weight: 600; color: var(--color-text); margin-bottom: 4px; }
+.state-message .sm-body { font-size: 13px; color: var(--color-muted); max-width: 400px; line-height: 1.5; }
+.state-message .sm-action { margin-top: 16px; }
+.state-message .sm-action button {
+  background: var(--color-primary); color: #fff; border: none; padding: 6px 14px; border-radius: 4px;
+  font-size: 13px; font-weight: 500; cursor: pointer; transition: background 0.15s;
+}
+.state-message .sm-action button:hover { background: #2563eb; }
+
+/* Loading Skeletons */
+@keyframes skeleton-pulse {
+  0% { opacity: 0.6; }
+  50% { opacity: 0.3; }
+  100% { opacity: 0.6; }
+}
+
+.skeleton-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+.skeleton-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.skeleton-box {
+  background: var(--color-border);
+  border-radius: 4px;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+.skeleton-circle {
+  background: var(--color-border);
+  border-radius: 50%;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+/* ─── Trends & History Page ───────────────────────────────────────────── */
+.trends-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.trends-kpi-card {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 16px;
+  transition: box-shadow 0.2s, transform 0.15s;
+  cursor: default;
+}
+.trends-kpi-card:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+  transform: translateY(-1px);
+}
+.trends-hero-chart {
+  margin-bottom: 4px;
+}
+.trends-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 14px;
+  margin-bottom: 4px;
+}
+.trends-chart-card {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  overflow: hidden;
+  transition: box-shadow 0.2s;
+}
+.trends-chart-card:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+}
+.trends-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-alt);
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.trends-action-btn:hover {
+  background: var(--color-raised);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* ─── Print / PDF Styles ─────────────────────────────────────────────── */
+.print-only { display: none !important; }
+.no-print { }
+
+@media print {
+  /* Layout reset */
+  .sidebar, .nav-pane, .main-hdr, .loading-bar, .err-banner,
+  .sys-status-banner, .no-print, .trends-controls { display: none !important; }
+  .app-shell { display: block !important; }
+  .main-area { margin: 0 !important; padding: 0 !important; }
+  .app-layout { grid-template-columns: 1fr !important; }
+  body { background: white !important; color: #1a1a1a !important; font-size: 11px !important; }
+  .page { padding: 16px !important; background: white !important; box-shadow: none !important; }
+
+  /* Print-only sections */
+  .print-only { display: block !important; }
+  .trends-report-header { display: block !important; margin-bottom: 16px; border-bottom: 2px solid #2563eb; padding-bottom: 12px; }
+
+  /* Cards & Charts */
+  .card, .trends-kpi-card, .trends-chart-card {
+    break-inside: avoid;
+    box-shadow: none !important;
+    border: 1px solid #e2e8f0 !important;
+    page-break-inside: avoid;
+  }
+  .trends-kpi-grid { grid-template-columns: repeat(4, 1fr) !important; gap: 8px !important; }
+  .trends-chart-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 8px !important; }
+  .trends-kpi-card { padding: 10px !important; }
+  .trends-kpi-card:hover { box-shadow: none !important; transform: none !important; }
+
+  /* Tooltips and interactivity */
+  .chart-tooltip { display: none !important; }
+  button { display: none !important; }
+  .trends-action-btn { display: none !important; }
+
+  /* Table styles for print */
+  table { font-size: 9px !important; }
+  th, td { padding: 3px 6px !important; }
+}

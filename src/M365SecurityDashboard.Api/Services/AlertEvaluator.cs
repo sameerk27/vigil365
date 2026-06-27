@@ -1,3 +1,4 @@
+using System.Text.Json;
 using M365SecurityDashboard.Api.Data;
 using M365SecurityDashboard.Api.Models;
 using Microsoft.EntityFrameworkCore;
@@ -44,6 +45,7 @@ public sealed class AlertEvaluator(
                 t => t.PolicyId == policy.Id && t.Status == "new" && t.TriggeredAt >= window, ct);
             if (recent) continue;
 
+            var affectedEntitiesJson = await GetAffectedEntitiesJsonAsync(policy.Metric, ct);
             var alert = new TriggeredAlert
             {
                 Id = Guid.NewGuid(),
@@ -56,6 +58,7 @@ public sealed class AlertEvaluator(
                 Threshold = policy.Threshold,
                 TriggeredAt = now,
                 Status = "new",
+                AffectedEntities = affectedEntitiesJson
             };
             db.TriggeredAlerts.Add(alert);
 
@@ -141,5 +144,40 @@ public sealed class AlertEvaluator(
             ["expiredLicenseCount"] = 0,
             ["alertCount"] = alertCount,
         };
+    }
+
+    private async Task<string?> GetAffectedEntitiesJsonAsync(string metricKey, CancellationToken ct)
+    {
+        var open = db.SecurityAlerts.Where(a => !a.IsResolved);
+        IQueryable<SecurityAlert> query = metricKey.ToLowerInvariant() switch
+        {
+            "criticalalertcount" => open.Where(a => a.Severity == AlertSeverity.Critical),
+            "highalertcount" => open.Where(a => a.Severity == AlertSeverity.High),
+            "riskyuserscount" => open.Where(a => a.AlertType == "RiskyUser"),
+            "mfamissingcount" => open.Where(a => a.AlertType == "MfaStatus"),
+            "noncompliantcount" => open.Where(a => a.AlertType == "NonCompliantDevice"),
+            "staledevicecount" => open.Where(a => a.AlertType == "DeviceNotCheckedIn"),
+            "failedsignincount" => open.Where(a => a.AlertType == "FailedSignIn"),
+            "serviceissuecount" => open.Where(a => a.Service == M365ServiceArea.ServiceHealth),
+            "alertcount" => open,
+            _ => null
+        } ?? open.Where(a => false);
+
+        var entities = await query
+            .OrderByDescending(a => a.DetectedAt)
+            .Select(a => new
+            {
+                a.Id,
+                a.UserPrincipalName,
+                a.DeviceName,
+                a.Title,
+                a.PortalUrl,
+                a.DetectedAt,
+                a.ExternalId
+            })
+            .ToListAsync(ct);
+
+        if (entities.Count == 0) return null;
+        return JsonSerializer.Serialize(entities);
     }
 }

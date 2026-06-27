@@ -1,0 +1,730 @@
+import React, { useState, useMemo, useEffect, useCallback } from "react";
+import { X, Bell, AlertCircle, Clock, ShieldAlert, Activity, CheckCircle, Search, ExternalLink, ArrowRight } from "lucide-react";
+import { AlertPolicy, TriggeredAlert, NotificationSettings, NotificationLogEntry, Tone } from "../services/types";
+import { acApi, useAuth, crossNavigate } from "../services/api";
+import { showToast } from "../services/toast";
+import { DetailField, KpiTile, Card, Badge, EmptyState, MiniBarChart, ExportDropdown, ProgressBar, CopyButton } from "../components/SharedComponents";
+import { relTime, fmtDate } from "../services/utils";
+
+type AcTab = "dashboard" | "alerts" | "policies" | "templates" | "notifications";
+
+export const POLICY_TEMPLATES_CATALOG = [
+  { name: "Critical Alerts Monitor",   desc: "Triggers when any critical security alert is detected",              metric: "criticalAlertCount", threshold: 1, severity: "critical" as const, category: "identity"   as const },
+  { name: "MFA Coverage Drop",         desc: "Triggers when more than 5 users are missing MFA",                   metric: "mfaMissingCount",    threshold: 5, severity: "high"     as const, category: "identity"   as const },
+  { name: "Risky User Detected",       desc: "Triggers immediately when any user is marked as risky",             metric: "riskyUsersCount",    threshold: 1, severity: "high"     as const, category: "identity"   as const },
+  { name: "Device Compliance Breach",  desc: "Triggers when non-compliant devices are found",                     metric: "nonCompliantCount",  threshold: 1, severity: "medium"   as const, category: "devices"    as const },
+  { name: "Email Threat Surge",        desc: "Triggers when high-priority email alerts exceed threshold",          metric: "highAlertCount",     threshold: 3, severity: "high"     as const, category: "email"      as const },
+  { name: "Stale Device",             desc: "Triggers when devices haven't checked in for 30+ days",             metric: "staleDeviceCount",   threshold: 1, severity: "medium"   as const, category: "devices"    as const },
+  { name: "Sign-in Anomaly",          desc: "Triggers when failed sign-ins spike above threshold",               metric: "alertCount",         threshold: 10,severity: "high"     as const, category: "identity"   as const },
+  { name: "Insider Risk Alert",       desc: "Triggers on any insider risk management alert",                     metric: "alertCount",         threshold: 1, severity: "high"     as const, category: "compliance" as const },
+  { name: "Admin Role Change",        desc: "Tracks privileged role assignments via audit log",                  metric: "alertCount",         threshold: 1, severity: "medium"   as const, category: "identity"   as const },
+];
+
+function sevToneAC(s: string): Tone {
+  return s === "critical" ? "error" : s === "high" ? "error" : s === "medium" ? "warning" : "info";
+}
+
+function statusTone(s: string): Tone {
+  return s === "new" ? "error"
+    : s === "acknowledged" ? "warning"
+    : s === "snoozed" ? "neutral"
+    : s === "auto_resolved" ? "info"
+    : "good"; // resolved
+}
+
+function PolicyModal({ policy, onSave, onClose }: {
+  policy: Partial<AlertPolicy> | null;
+  onSave: (p: AlertPolicy) => void;
+  onClose: () => void;
+}) {
+  const [form, setForm] = useState<Partial<AlertPolicy>>(policy ?? { enabled: true, severity: "medium", category: "identity", threshold: 1, triggerCount: 0, notifyEmail: "" });
+  const set = (k: keyof AlertPolicy, v: unknown) => setForm(f => ({ ...f, [k]: v }));
+
+  const metricOptions: Record<string, { label: string; value: string }[]> = {
+    identity:   [{ label: "Critical alert count", value: "criticalAlertCount" }, { label: "Risky users", value: "riskyUsersCount" }, { label: "MFA missing count", value: "mfaMissingCount" }, { label: "High alert count", value: "highAlertCount" }],
+    devices:    [{ label: "Non-compliant count", value: "nonCompliantCount" }, { label: "Stale device count", value: "staleDeviceCount" }],
+    email:      [{ label: "High alert count", value: "highAlertCount" }, { label: "Critical alert count", value: "criticalAlertCount" }],
+    compliance: [{ label: "Alert count", value: "alertCount" }],
+    licenses:   [{ label: "Expired license count", value: "expiredLicenseCount" }],
+  };
+
+  const handleSave = () => {
+    if (!form.name?.trim()) { showToast("Policy name is required", "error"); return; }
+    const policy: AlertPolicy = {
+      id: form.id ?? crypto.randomUUID(),
+      name: form.name!.trim(),
+      enabled: form.enabled ?? true,
+      category: form.category ?? "identity",
+      condition: form.condition ?? `${form.metric} >= ${form.threshold}`,
+      metric: form.metric ?? "criticalAlertCount",
+      threshold: Number(form.threshold ?? 1),
+      severity: form.severity ?? "medium",
+      notifyEmail: form.notifyEmail ?? "",
+      createdAt: form.createdAt ?? new Date().toISOString(),
+      lastTriggered: form.lastTriggered,
+      triggerCount: form.triggerCount ?? 0,
+    };
+    onSave(policy);
+  };
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  return (
+    <div className="detail-modal-backdrop" onClick={onClose}>
+      <div className="detail-modal policy-modal" onClick={e => e.stopPropagation()}>
+        <div className="detail-modal-hdr">
+          <div className="dm-title">{form.id ? "Edit Policy" : "New Policy"}</div>
+          <button className="modal-close" onClick={onClose}><X size={16}/></button>
+        </div>
+        <div className="detail-modal-body">
+          <div className="policy-field">
+            <label className="policy-label">Policy Name</label>
+            <input className="policy-input" value={form.name ?? ""} onChange={e => set("name", e.target.value)} placeholder="e.g. Critical Alert Monitor"/>
+          </div>
+          <div className="policy-field">
+            <label className="policy-label">Category</label>
+            <select className="policy-input" value={form.category ?? "identity"} onChange={e => set("category", e.target.value)}>
+              <option value="identity">Identity</option>
+              <option value="devices">Devices</option>
+              <option value="email">Email</option>
+              <option value="compliance">Compliance</option>
+              <option value="licenses">Licenses</option>
+            </select>
+          </div>
+          <div className="policy-field">
+            <label className="policy-label">Metric to Watch</label>
+            <select className="policy-input" value={form.metric ?? ""} onChange={e => set("metric", e.target.value)}>
+              <option value="">Select metric…</option>
+              {(metricOptions[form.category ?? "identity"] ?? []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          <div className="policy-field">
+            <label className="policy-label">Threshold (trigger when metric &ge; this value)</label>
+            <input type="number" className="policy-input" min={1} value={form.threshold ?? 1} onChange={e => set("threshold", Number(e.target.value))}/>
+          </div>
+          <div className="policy-field">
+            <label className="policy-label">Severity</label>
+            <select className="policy-input" value={form.severity ?? "medium"} onChange={e => set("severity", e.target.value)}>
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+          <div className="policy-field">
+            <label className="policy-label">Notify Email (overrides global SMTP recipient for this policy)</label>
+            <input className="policy-input" type="email" value={form.notifyEmail ?? ""} onChange={e => set("notifyEmail", e.target.value)} placeholder="admin@contoso.com"/>
+          </div>
+        </div>
+        <div className="detail-modal-footer">
+          <button className="dm-close-btn" onClick={onClose}>Cancel</button>
+          <button className="btn-run" style={{ padding:"7px 18px", fontSize:13 }} onClick={handleSave}>Save Policy</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NotificationSettingsTab() {
+  const [cfg, setCfg] = useState<NotificationSettings | null>(null);
+  const [log, setLog] = useState<NotificationLogEntry[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+
+  const reload = useCallback(async () => {
+    const [s, l] = await Promise.all([acApi.getSettings(), acApi.getLog()]);
+    setCfg(s ?? { teamsEnabled:false, emailEnabled:false, smtpPort:587, smtpUseSsl:true, webhookEnabled:false, minSeverity:"low" });
+    setLog(l);
+  }, []);
+  useEffect(() => { reload(); }, [reload]);
+
+  if (!cfg) return <Card title="Notification Channels"><EmptyState icon={<Bell size={28} color="#d1d5db"/>} message="Loading settings…"/></Card>;
+
+  const set = <K extends keyof NotificationSettings>(k: K, v: NotificationSettings[K]) => setCfg(c => c ? { ...c, [k]: v } : c);
+
+  const save = async () => {
+    setSaving(true);
+    const ok = await acApi.saveSettings(cfg);
+    setSaving(false);
+    showToast(ok ? "Notification settings saved" : "Failed to save", ok ? "success" : "error");
+    if (ok) reload();
+  };
+
+  const test = async () => {
+    setTesting(true);
+    const res = await acApi.testNotifications();
+    setTesting(false);
+    if (res.results?.length) {
+      const summary = res.results.map(r => `${r.channel}: ${r.success ? "✓" : "✗"}`).join("  ");
+      showToast(`Test sent — ${summary}`, res.ok ? "success" : "error");
+    } else {
+      showToast("No channels enabled to test", "error");
+    }
+    reload();
+  };
+
+  return (
+    <>
+      <div className="two-col">
+        <Card title="Microsoft Teams / Slack" badge={<label className="toggle-label"><input type="checkbox" checked={cfg.teamsEnabled} onChange={e=>set("teamsEnabled", e.target.checked)}/> Enabled</label>}>
+          <div className="policy-field">
+            <span className="policy-label">Incoming Webhook URL</span>
+            <input className="policy-input" placeholder="https://outlook.office.com/webhook/…" value={cfg.teamsWebhookUrl ?? ""} onChange={e=>set("teamsWebhookUrl", e.target.value)}/>
+          </div>
+          <p className="hdr-sub">Paste a Teams channel "Incoming Webhook" connector URL (or a Slack incoming webhook). A formatted alert card is posted on each trigger.</p>
+        </Card>
+
+        <Card title="Generic Webhook / SIEM" badge={<label className="toggle-label"><input type="checkbox" checked={cfg.webhookEnabled} onChange={e=>set("webhookEnabled", e.target.checked)}/> Enabled</label>}>
+          <div className="policy-field">
+            <span className="policy-label">Endpoint URL</span>
+            <input className="policy-input" placeholder="https://…  (Sentinel, Splunk HEC, Power Automate)" value={cfg.webhookUrl ?? ""} onChange={e=>set("webhookUrl", e.target.value)}/>
+          </div>
+          <p className="hdr-sub">Each alert is POSTed as JSON. Use for SIEM ingestion or custom automation.</p>
+        </Card>
+      </div>
+
+      <Card title="Email (SMTP)" badge={<label className="toggle-label"><input type="checkbox" checked={cfg.emailEnabled} onChange={e=>set("emailEnabled", e.target.checked)}/> Enabled</label>}>
+        <div className="settings-grid">
+          <div className="policy-field"><span className="policy-label">SMTP Host</span><input className="policy-input" placeholder="smtp.office365.com" value={cfg.smtpHost ?? ""} onChange={e=>set("smtpHost", e.target.value)}/></div>
+          <div className="policy-field"><span className="policy-label">Port</span><input className="policy-input" type="number" value={cfg.smtpPort} onChange={e=>set("smtpPort", Number(e.target.value))}/></div>
+          <div className="policy-field"><span className="policy-label">Use SSL/TLS</span><label className="toggle-label" style={{marginTop:8}}><input type="checkbox" checked={cfg.smtpUseSsl} onChange={e=>set("smtpUseSsl", e.target.checked)}/> Enabled</label></div>
+          <div className="policy-field"><span className="policy-label">Username</span><input className="policy-input" value={cfg.smtpUsername ?? ""} onChange={e=>set("smtpUsername", e.target.value)}/></div>
+          <div className="policy-field"><span className="policy-label">Password</span><input className="policy-input" type="password" placeholder={cfg.hasSmtpPassword ? "•••••• (unchanged)" : ""} value={cfg.smtpPassword ?? ""} onChange={e=>set("smtpPassword", e.target.value)}/></div>
+          <div className="policy-field"><span className="policy-label">From Address</span><input className="policy-input" placeholder="vigil365@yourdomain.com" value={cfg.fromAddress ?? ""} onChange={e=>set("fromAddress", e.target.value)}/></div>
+          <div className="policy-field"><span className="policy-label">Default Recipient</span><input className="policy-input" placeholder="secops@yourdomain.com" value={cfg.defaultRecipient ?? ""} onChange={e=>set("defaultRecipient", e.target.value)}/></div>
+        </div>
+      </Card>
+
+      <Card title="Delivery Rules" action={<div style={{display:"flex",gap:8}}>
+        <button className="btn-export" onClick={test} disabled={testing}>{testing ? "Testing…" : "Send test"}</button>
+        <button className="btn-run" style={{padding:"7px 18px",fontSize:13}} onClick={save} disabled={saving}>{saving ? "Saving…" : "Save settings"}</button>
+      </div>}>
+        <div className="policy-field" style={{maxWidth:280}}>
+          <span className="policy-label">Minimum severity to notify</span>
+          <select className="policy-input" value={cfg.minSeverity} onChange={e=>set("minSeverity", e.target.value)}>
+            <option value="low">Low and above</option>
+            <option value="medium">Medium and above</option>
+            <option value="high">High and above</option>
+            <option value="critical">Critical only</option>
+          </select>
+        </div>
+      </Card>
+
+      <Card title="Notification History" badge={<Badge label={`${log.length} sent`} tone="neutral"/>}>
+        {log.length === 0 ? (
+          <EmptyState icon={<Bell size={28} color="#d1d5db"/>} message="No notifications sent yet. They appear here once an alert fires with a channel enabled."/>
+        ) : (
+          <div className="tbl-wrap">
+            <table className="data-tbl">
+              <thead><tr><th>Status</th><th>Channel</th><th>Policy</th><th>Target</th><th>Sent</th><th>Detail</th></tr></thead>
+              <tbody>
+                {log.map(l => (
+                  <tr key={l.id}>
+                    <td><span className={`ctrl-status ${l.success ? "ctrl-pass" : "ctrl-fail"}`}>{l.success ? "Sent" : "Failed"}</span></td>
+                    <td style={{textTransform:"capitalize"}}>{l.channel}</td>
+                    <td className="trunc" title={l.policyName}>{l.policyName}</td>
+                    <td className="trunc" title={l.target}>{l.target}</td>
+                    <td>{relTime(l.sentAt)}</td>
+                    <td className="trunc" title={l.error}>{l.error ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </>
+  );
+}
+
+export function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
+  policies: AlertPolicy[];
+  triggeredAlerts: TriggeredAlert[];
+  onChanged: () => void | Promise<void>;
+}) {
+  const { canMutate } = useAuth();
+  
+  const [tab, setTab] = useState<AcTab>("dashboard");
+  const [search, setSearch] = useState("");
+  const [sevFilter, setSevFilter] = useState("");
+  const [catFilter, setCatFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [dateFilter, setDateFilter] = useState<string>("");
+  const [editPolicy, setEditPolicy] = useState<Partial<AlertPolicy> | null>(null);
+  const [showModal, setShowModal] = useState(false);
+  const [selectedTriggered, setSelectedTriggered] = useState<TriggeredAlert | null>(null);
+
+  const refresh = () => { onChanged(); };
+
+  // ── KPI ──────────────────────────────────────────────────────────────────
+  const enabledCount = policies.filter(p => p.enabled).length;
+  const activeAlertsCount = triggeredAlerts.filter(a => a.status === "new").length;
+  const today = new Date().toDateString();
+  const triggeredToday = triggeredAlerts.filter(a => new Date(a.triggeredAt).toDateString() === today).length;
+  const criticalCount = triggeredAlerts.filter(a => a.severity === "critical" && a.status === "new").length;
+
+  // ── Bar chart: last 7 days ────────────────────────────────────────────────
+  const last7 = useMemo(() => {
+    const days: { date: string; count: number }[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      const label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      const ds = d.toDateString();
+      days.push({ date: label, count: triggeredAlerts.filter(a => new Date(a.triggeredAt).toDateString() === ds).length });
+    }
+    return days;
+  }, [triggeredAlerts]);
+
+  const barMax = Math.max(...last7.map(d => d.count), 1);
+
+  // ── Donut: by category ────────────────────────────────────────────────────
+  const catCounts = useMemo(() => {
+    const cats: Record<string, number> = {};
+    triggeredAlerts.forEach(a => { cats[a.category] = (cats[a.category] ?? 0) + 1; });
+    return Object.entries(cats).sort((a, b) => b[1] - a[1]);
+  }, [triggeredAlerts]);
+
+  const catColors: Record<string, string> = { identity: "#3b82f6", devices: "#8b5cf6", email: "#f59e0b", compliance: "#10b981", licenses: "#ec4899" };
+
+  // ── Active alerts filter ──────────────────────────────────────────────────
+  const filteredTA = useMemo(() => {
+    let items = triggeredAlerts;
+    if (search) { const q = search.toLowerCase(); items = items.filter(a => a.policyName.toLowerCase().includes(q) || a.condition.toLowerCase().includes(q)); }
+    if (sevFilter) items = items.filter(a => a.severity === sevFilter);
+    if (catFilter) items = items.filter(a => a.category === catFilter);
+    if (statusFilter) items = items.filter(a => a.status === statusFilter);
+    if (dateFilter) items = items.filter(a => a.triggeredAt.startsWith(dateFilter));
+    return items.sort((a, b) => new Date(b.triggeredAt).getTime() - new Date(a.triggeredAt).getTime());
+  }, [triggeredAlerts, search, sevFilter, catFilter, statusFilter, dateFilter]);
+
+  const acknowledge = async (id: string) => {
+    if (await acApi.acknowledge(id)) { showToast("Alert acknowledged"); await onChanged(); }
+  };
+
+  const resolve = async (id: string) => {
+    if (await acApi.resolve(id)) { showToast("Alert resolved"); await onChanged(); }
+  };
+
+  const snooze = async (id: string, durationHours: 4 | 24 | 168) => {
+    if (await acApi.snooze(id, durationHours)) { showToast(`Snoozed for ${durationHours}h`); await onChanged(); }
+  };
+
+  const unsnooze = async (id: string) => {
+    if (await acApi.unsnooze(id)) { showToast("Snooze cleared"); await onChanged(); }
+  };
+
+  const handleSavePolicy = async (p: AlertPolicy) => {
+    const exists = policies.some(x => x.id === p.id);
+    const ok = exists ? await acApi.updatePolicy(p) : !!(await acApi.createPolicy(p));
+    setShowModal(false);
+    if (ok) { showToast("Policy saved"); await onChanged(); }
+    else showToast("Failed to save policy", "error");
+  };
+
+  const handleDeletePolicy = async (id: string) => {
+    if (!confirm("Delete this policy?")) return;
+    if (await acApi.deletePolicy(id)) { showToast("Policy deleted"); await onChanged(); }
+  };
+
+  const togglePolicy = async (id: string) => {
+    const p = policies.find(x => x.id === id);
+    if (!p) return;
+    if (await acApi.updatePolicy({ ...p, enabled: !p.enabled })) await onChanged();
+  };
+
+  const useTemplate = (t: typeof POLICY_TEMPLATES_CATALOG[0]) => {
+    setEditPolicy({
+      name: t.name,
+      category: t.category,
+      metric: t.metric,
+      threshold: t.threshold,
+      severity: t.severity,
+      condition: t.desc,
+      enabled: true,
+      notifyEmail: "",
+      triggerCount: 0,
+    });
+    setShowModal(true);
+    setTab("policies");
+  };
+
+  return (
+    <div className="page">
+      {showModal && (
+        <PolicyModal
+          policy={editPolicy}
+          onSave={handleSavePolicy}
+          onClose={() => { setShowModal(false); setEditPolicy(null); }}
+        />
+      )}
+      {selectedTriggered && (
+        <div className="detail-modal-backdrop" onClick={() => setSelectedTriggered(null)}>
+          <div className="detail-modal" onClick={e => e.stopPropagation()}>
+            <div className="detail-modal-hdr">
+              <div className="dm-title">{selectedTriggered.policyName}</div>
+              <button className="modal-close" onClick={() => setSelectedTriggered(null)}><X size={16}/></button>
+            </div>
+            <div className="detail-modal-body">
+              <DetailField label="Policy ID" value={selectedTriggered.policyId} copy/>
+              <DetailField label="Severity" value={selectedTriggered.severity.charAt(0).toUpperCase() + selectedTriggered.severity.slice(1)}/>
+              <DetailField label="Category" value={selectedTriggered.category.charAt(0).toUpperCase() + selectedTriggered.category.slice(1)}/>
+              <DetailField label="Condition" value={selectedTriggered.condition}/>
+              <DetailField label="Metric Value" value={String(selectedTriggered.metricValue)}/>
+              <DetailField label="Threshold" value={String(selectedTriggered.threshold)}/>
+              <DetailField label="Status" value={selectedTriggered.status.replace(/_/g, " ").replace(/^./, c => c.toUpperCase())}/>
+              <DetailField label="Triggered" value={`${relTime(selectedTriggered.triggeredAt)} (${fmtDate(selectedTriggered.triggeredAt)})`} title={fmtDate(selectedTriggered.triggeredAt)}/>
+              {selectedTriggered.acknowledgedAt && <DetailField label="Acknowledged" value={`${relTime(selectedTriggered.acknowledgedAt)} (${fmtDate(selectedTriggered.acknowledgedAt)})`} title={fmtDate(selectedTriggered.acknowledgedAt)}/>}
+              {selectedTriggered.snoozedUntil && <DetailField label="Snoozed until" value={`${relTime(selectedTriggered.snoozedUntil)} (${fmtDate(selectedTriggered.snoozedUntil)})`} title={fmtDate(selectedTriggered.snoozedUntil)}/>}
+              {selectedTriggered.lastEvaluatedAt && <DetailField label="Last evaluated" value={`${relTime(selectedTriggered.lastEvaluatedAt)} (${fmtDate(selectedTriggered.lastEvaluatedAt)})`} title={fmtDate(selectedTriggered.lastEvaluatedAt)}/>}
+              {selectedTriggered.affectedEntities && (() => {
+                try {
+                  const entities = JSON.parse(selectedTriggered.affectedEntities) as {
+                    id: number;
+                    userPrincipalName?: string;
+                    deviceName?: string;
+                    title?: string;
+                    portalUrl?: string;
+                    detectedAt?: string;
+                    externalId?: string;
+                  }[];
+                  if (entities && entities.length > 0) {
+                    return (
+                      <div style={{ marginTop: 14 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, color: "var(--color-text)" }}>Affected Entities ({entities.length})</div>
+                        <div style={{ border: "1px solid var(--color-border)", borderRadius: 6, overflow: "hidden" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                            <thead>
+                              <tr style={{ background: "var(--color-raised)", borderBottom: "1px solid var(--color-border)", color: "var(--color-muted)", textAlign: "left" }}>
+                                <th style={{ padding: "8px 12px" }}>Entity</th>
+                                <th style={{ padding: "8px 12px" }}>Details</th>
+                                <th style={{ padding: "8px 12px" }}>Detected At</th>
+                                <th style={{ padding: "8px 12px", textAlign: "right" }}>Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {entities.map((e, idx) => {
+                                const name = e.userPrincipalName || e.deviceName || "System";
+                                const typeLabel = e.userPrincipalName ? "User" : e.deviceName ? "Device" : "Other";
+                                const isCopyable = !!(e.userPrincipalName || e.deviceName);
+                                return (
+                                  <tr key={e.id || idx} style={{ borderBottom: idx < entities.length - 1 ? "1px solid var(--color-border-subtle)" : "none" }}>
+                                    <td style={{ padding: "8px 12px" }}>
+                                      <div style={{ fontWeight: 500, color: "var(--color-text)", display: "flex", alignItems: "center", gap: 4 }}>
+                                        <span title={name} style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
+                                        {isCopyable && <CopyButton value={name} label={typeLabel} size={11}/>}
+                                      </div>
+                                      <div style={{ fontSize: 10, color: "var(--color-muted)" }}>
+                                        {typeLabel}
+                                        {e.externalId && <> · <span title={e.externalId}>{e.externalId.length > 16 ? e.externalId.slice(0, 16) + "…" : e.externalId}</span></>}
+                                      </div>
+                                    </td>
+                                    <td style={{ padding: "8px 12px", color: "var(--color-text)" }} title={e.title}>{e.title}</td>
+                                    <td style={{ padding: "8px 12px", color: "var(--color-muted)" }} title={e.detectedAt ? fmtDate(e.detectedAt) : undefined}>{e.detectedAt ? `${relTime(e.detectedAt)} (${fmtDate(e.detectedAt)})` : "N/A"}</td>
+                                    <td style={{ padding: "8px 12px", textAlign: "right", whiteSpace: "nowrap" }}>
+                                      {e.userPrincipalName && (
+                                        <button
+                                          onClick={() => { setSelectedTriggered(null); crossNavigate({ page: "identity", search: e.userPrincipalName! }); }}
+                                          title={`View ${e.userPrincipalName} in Identity`}
+                                          style={{ background: "none", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, color: "var(--color-primary)", fontSize: 11, fontWeight: 500, marginRight: 8 }}>
+                                          Identity <ArrowRight size={10}/>
+                                        </button>
+                                      )}
+                                      {!e.userPrincipalName && e.deviceName && (
+                                        <button
+                                          onClick={() => { setSelectedTriggered(null); crossNavigate({ page: "devices", search: e.deviceName! }); }}
+                                          title={`View ${e.deviceName} in Devices`}
+                                          style={{ background: "none", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, color: "var(--color-primary)", fontSize: 11, fontWeight: 500, marginRight: 8 }}>
+                                          Devices <ArrowRight size={10}/>
+                                        </button>
+                                      )}
+                                      {e.portalUrl && (
+                                        <a href={e.portalUrl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "var(--color-primary)", textDecoration: "none", fontSize: 11, fontWeight: 500 }}>
+                                          Portal <ExternalLink size={10}/>
+                                        </a>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  }
+                } catch (e) {
+                  console.error("Failed to parse affected entities", e);
+                }
+                return null;
+              })()}
+            </div>
+            <div className="detail-modal-footer">
+              <button className="dm-close-btn" onClick={() => setSelectedTriggered(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tabs */}
+      <div className="ac-tabs">
+        {(["dashboard","alerts","policies","templates","notifications"] as AcTab[]).map(t => (
+          <button key={t} className={`ac-tab${tab===t?" active":""}`} onClick={() => { setTab(t); if (t === "alerts" || t === "dashboard") refresh(); }}>
+            {t === "dashboard" ? "Dashboard" : t === "alerts" ? "Active Alerts" : t === "policies" ? "Policies" : t === "templates" ? "Templates" : "Notifications"}
+          </button>
+        ))}
+      </div>
+
+      {/* ── TAB: Notifications ── */}
+      {tab === "notifications" && <NotificationSettingsTab/>}
+
+      {/* ── TAB: Dashboard ── */}
+      {tab === "dashboard" && (
+        <>
+          <div className="kpi-row">
+            <KpiTile icon={<Bell size={18}/>}         label="ACTIVE POLICIES"   value={enabledCount}      sub={`${policies.length} total policies`}        tone={enabledCount>0?"good":"neutral"} onClick={() => setTab("policies")}/>
+            <KpiTile icon={<AlertCircle size={18}/>}  label="ACTIVE ALERTS"     value={activeAlertsCount} sub="Unacknowledged"                              tone={activeAlertsCount>0?"error":"good"} onClick={() => { setSevFilter(""); setDateFilter(""); setStatusFilter("new"); setTab("alerts"); }}/>
+            <KpiTile icon={<Clock size={18}/>}        label="TRIGGERED TODAY"   value={triggeredToday}    sub={today}                                       tone={triggeredToday>0?"warning":"good"} onClick={() => { setSevFilter(""); setStatusFilter(""); setDateFilter(new Date().toLocaleDateString("en-CA")); setTab("alerts"); }}/>
+            <KpiTile icon={<ShieldAlert size={18}/>}  label="CRITICAL ALERTS"   value={criticalCount}     sub="Severity: critical"                          tone={criticalCount>0?"error":"good"} onClick={() => { setDateFilter(""); setSevFilter("critical"); setStatusFilter("new"); setTab("alerts"); }}/>
+          </div>
+
+          <div className="mid-row">
+            <Card title="Alerts Triggered (Last 7 Days)" className="card-score">
+              {triggeredAlerts.length === 0 ? (
+                <EmptyState icon={<Bell size={28} color="#d1d5db"/>} message="No alerts triggered yet. Policies are monitoring the environment."/>
+              ) : (
+                <svg viewBox={`0 0 420 110`} style={{ width:"100%", height:110 }}>
+                  {last7.map((d, i) => {
+                    const barH = barMax > 0 ? Math.max(4, (d.count / barMax) * 80) : 4;
+                    const x = 10 + i * 58;
+                    return (
+                      <g key={d.date}>
+                        <rect x={x} y={90 - barH} width={42} height={barH} rx={4} fill="#3b82f6" opacity="0.8"/>
+                        {d.count > 0 && <text x={x+21} y={85-barH} textAnchor="middle" fontSize="10" fill="#3b82f6" fontWeight="600">{d.count}</text>}
+                        <text x={x+21} y={106} textAnchor="middle" fontSize="9" fill="#94a3b8">{d.date}</text>
+                      </g>
+                    );
+                  })}
+                </svg>
+              )}
+            </Card>
+
+            <Card title="Alerts by Category">
+              {catCounts.length === 0 ? (
+                <EmptyState icon={<Activity size={28} color="#d1d5db"/>} message="No triggered alerts yet"/>
+              ) : (
+                <div style={{ display:"flex", alignItems:"center", gap:16 }}>
+                  <svg viewBox="0 0 100 100" width={100} height={100} style={{ flexShrink:0 }}>
+                    {(() => {
+                      const total = catCounts.reduce((s,[,v]) => s+v, 0);
+                      let offset = 0;
+                      return catCounts.map(([cat, count]) => {
+                        const pct = count / total;
+                        const circ = 2 * Math.PI * 38;
+                        const dash = pct * circ;
+                        const el = (
+                          <circle key={cat} cx="50" cy="50" r="38" fill="none"
+                            stroke={catColors[cat] ?? "#94a3b8"} strokeWidth="18"
+                            strokeDasharray={`${dash} ${circ}`}
+                            strokeDashoffset={-offset * circ}
+                            transform="rotate(-90 50 50)"/>
+                        );
+                        offset += pct;
+                        return el;
+                      });
+                    })()}
+                    <circle cx="50" cy="50" r="29" fill="white"/>
+                    <text x="50" y="54" textAnchor="middle" fontSize="12" fontWeight="700" fill="#0f172a">{catCounts.reduce((s,[,v])=>s+v,0)}</text>
+                  </svg>
+                  <div style={{ flex:1 }}>
+                    {catCounts.map(([cat, count]) => (
+                      <div key={cat} style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
+                        <span style={{ width:10, height:10, borderRadius:"50%", background: catColors[cat]??"#94a3b8", flexShrink:0 }}/>
+                        <span style={{ fontSize:12, flex:1, textTransform:"capitalize" }}>{cat}</span>
+                        <span style={{ fontSize:12, fontWeight:600 }}>{count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </Card>
+
+            <Card title="Recent Alerts" action={<button className="btn-export" onClick={() => setTab("alerts")}>View All</button>}>
+              {triggeredAlerts.length === 0 ? (
+                <EmptyState icon={<CheckCircle size={24} color="#22c55e"/>} message="No alerts triggered yet"/>
+              ) : (
+                <div className="mini-list">
+                  {[...triggeredAlerts].sort((a,b) => new Date(b.triggeredAt).getTime()-new Date(a.triggeredAt).getTime()).slice(0,10).map((a,i) => (
+                    <div key={i} className="mini-row" style={{ cursor:"pointer" }} onClick={() => setSelectedTriggered(a)}>
+                      <span className={`sev-dot sev-${a.severity}`}/>
+                      <span className="mr-user" style={{ flex:1 }}>{a.policyName}</span>
+                      <Badge label={a.status} tone={statusTone(a.status)}/>
+                      {a.snoozedUntil && new Date(a.snoozedUntil) > new Date() && (
+                        <span style={{ fontSize:10, color:"var(--color-muted)" }}>snoozed until {relTime(a.snoozedUntil)}</span>
+                      )}
+                      <span className="mr-date">{relTime(a.triggeredAt)}</span>
+                      {canMutate && a.status === "new" && (
+                        <button className="btn-ack" onClick={e => { e.stopPropagation(); acknowledge(a.id); }}>Ack</button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </div>
+        </>
+      )}
+
+      {/* ── TAB: Active Alerts ── */}
+      {tab === "alerts" && (
+        <Card title="Active Alerts" badge={<Badge label={`${filteredTA.length} shown`} tone="neutral"/>}
+          action={
+            <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+              <label className="search-box">
+                <Search size={14} color="#94a3b8"/>
+                <input className="search-input" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search policy…"/>
+              </label>
+              <input type="date" className="filter-sel" value={dateFilter} onChange={e=>setDateFilter(e.target.value)} title="Filter by date"/>
+              <select className="filter-sel" value={sevFilter} onChange={e=>setSevFilter(e.target.value)}>
+                <option value="">All severities</option>
+                {["critical","high","medium","low"].map(s=><option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>)}
+              </select>
+              <select className="filter-sel" value={catFilter} onChange={e=>setCatFilter(e.target.value)}>
+                <option value="">All categories</option>
+                {["identity","devices","email","compliance","licenses"].map(c=><option key={c} value={c}>{c.charAt(0).toUpperCase()+c.slice(1)}</option>)}
+              </select>
+              <select className="filter-sel" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
+                <option value="">All statuses</option>
+                <option value="new">New</option>
+                <option value="acknowledged">Acknowledged</option>
+                <option value="snoozed">Snoozed</option>
+                <option value="auto_resolved">Auto-resolved</option>
+                <option value="resolved">Resolved</option>
+              </select>
+              <ExportDropdown rows={filteredTA.map(a=>({ Policy:a.policyName, Severity:a.severity, Category:a.category, Condition:a.condition, MetricValue:a.metricValue, Threshold:a.threshold, Triggered:a.triggeredAt, Status:a.status }))} filename="triggered-alerts.csv"/>
+              {(search||sevFilter||catFilter||statusFilter)&&<button className="btn-apply" style={{padding:"5px 10px",fontSize:12}} onClick={()=>{setSearch("");setSevFilter("");setCatFilter("");setStatusFilter("");}}>Clear</button>}
+            </div>
+          }>
+          {filteredTA.length === 0 ? (
+            <EmptyState icon={<CheckCircle size={28} color="#22c55e"/>} message="No alerts triggered yet. Your policies are monitoring the environment."/>
+          ) : (
+            <div className="tbl-wrap">
+              <table className="data-tbl">
+                <thead>
+                  <tr>
+                    <th>Severity</th><th>Policy Name</th><th>Category</th><th>Condition</th>
+                    <th>Value</th><th>Threshold</th><th>Triggered</th><th>Status</th><th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredTA.map(a => (
+                    <tr key={a.id} className="clickable" onClick={() => setSelectedTriggered(a)}>
+                      <td><Badge label={a.severity} tone={sevToneAC(a.severity)}/></td>
+                      <td style={{ fontWeight:500 }}>{a.policyName}</td>
+                      <td style={{ textTransform:"capitalize" }}>{a.category}</td>
+                      <td style={{ fontSize:12, color:"var(--color-muted)" }}>{a.condition}</td>
+                      <td style={{ fontWeight:600 }}>{a.metricValue}</td>
+                      <td>{a.threshold}</td>
+                      <td className="al-date">{relTime(a.triggeredAt)}</td>
+                      <td><Badge label={a.status} tone={statusTone(a.status)}/>
+                        {a.snoozedUntil && new Date(a.snoozedUntil) > new Date() && (
+                          <div style={{ fontSize:10, color:"var(--color-muted)", marginTop:2 }}>snoozed until {relTime(a.snoozedUntil)}</div>
+                        )}
+                      </td>
+                      <td onClick={e=>e.stopPropagation()} style={{ display:"flex", gap:4, alignItems:"center", flexWrap:"wrap" }}>
+                        {!canMutate && <span style={{ fontSize:11, color:"var(--color-muted)" }}>—</span>}
+                        {canMutate && a.status === "new" && <button className="btn-ack" onClick={()=>acknowledge(a.id)}>Acknowledge</button>}
+                        {canMutate && a.status !== "resolved" && a.status !== "auto_resolved" && (
+                          <select className="filter-sel" style={{ padding:"3px 6px", fontSize:11 }} defaultValue=""
+                            onChange={e => { const h = Number(e.target.value); if (h) snooze(a.id, h as 4|24|168); e.currentTarget.value = ""; }}
+                            title="Snooze for…">
+                            <option value="" disabled>Snooze…</option>
+                            <option value="4">4h</option>
+                            <option value="24">24h</option>
+                            <option value="168">7d</option>
+                          </select>
+                        )}
+                        {canMutate && a.snoozedUntil && new Date(a.snoozedUntil) > new Date() && (
+                          <button className="btn-apply" style={{ padding:"3px 8px", fontSize:11 }}
+                            onClick={() => unsnooze(a.id)}
+                            title={`Snoozed until ${a.snoozedUntil}`}>Unsnooze</button>
+                        )}
+                        {canMutate && a.status !== "resolved" && a.status !== "auto_resolved" && <button className="btn-resolve" onClick={()=>resolve(a.id)}>Resolve</button>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* ── TAB: Policies ── */}
+      {tab === "policies" && (
+        <Card title="Alert Policies" badge={<Badge label={`${policies.length} policies`} tone="neutral"/>}
+          action={<button className="btn-run" style={{ padding:"7px 14px", fontSize:13 }} onClick={() => { setEditPolicy(null); setShowModal(true); }}><Bell size={13}/> New Policy</button>}>
+          {policies.length === 0 ? (
+            <EmptyState icon={<Bell size={28} color="#d1d5db"/>} message="No policies yet. Create one or use a template."/>
+          ) : (
+            <div className="tbl-wrap">
+              <table className="data-tbl">
+                <thead>
+                  <tr><th>Name</th><th>Category</th><th>Condition</th><th>Severity</th><th>Status</th><th>Last Triggered</th><th>Count</th><th>Actions</th></tr>
+                </thead>
+                <tbody>
+                  {policies.map(p => (
+                    <tr key={p.id}>
+                      <td style={{ fontWeight:500 }}>{p.name}</td>
+                      <td style={{ textTransform:"capitalize" }}>{p.category}</td>
+                      <td style={{ fontSize:12, color:"#64748b" }}>{p.condition}</td>
+                      <td><Badge label={p.severity} tone={sevToneAC(p.severity)}/></td>
+                      <td>
+                        <button
+                          onClick={() => togglePolicy(p.id)}
+                          style={{ padding:"2px 10px", borderRadius:5, border:"1px solid", fontSize:11, fontWeight:600, cursor:"pointer",
+                            borderColor: p.enabled?"var(--status-good-border)":"var(--color-border)", background: p.enabled?"var(--status-good-bg)":"var(--color-raised)", color: p.enabled?"var(--status-good-text)":"var(--color-muted)" }}>
+                          {p.enabled ? "Enabled" : "Disabled"}
+                        </button>
+                      </td>
+                      <td className="al-date">{p.lastTriggered ? relTime(p.lastTriggered) : "Never"}</td>
+                      <td style={{ fontWeight:600 }}>{p.triggerCount}</td>
+                      <td style={{ display:"flex", gap:4 }}>
+                        <button className="btn-export" style={{ padding:"3px 8px" }} onClick={() => { setEditPolicy(p); setShowModal(true); }}>Edit</button>
+                        <button className="btn-ack" onClick={() => handleDeletePolicy(p.id)}>Delete</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* ── TAB: Templates ── */}
+      {tab === "templates" && (
+        <Card title="Policy Templates" badge={<Badge label={`${POLICY_TEMPLATES_CATALOG.length} templates`} tone="neutral"/>}>
+          <div className="template-grid">
+            {POLICY_TEMPLATES_CATALOG.map((t, i) => (
+              <div key={i} className="template-card">
+                <div className="template-card-title">{t.name}</div>
+                <div className="template-card-desc">{t.desc}</div>
+                <div className="template-card-footer">
+                  <div style={{ display:"flex", gap:4 }}>
+                    <Badge label={t.severity} tone={sevToneAC(t.severity)}/>
+                    <Badge label={t.category} tone="neutral"/>
+                  </div>
+                  <button className="btn-run" style={{ padding:"4px 12px", fontSize:12 }} onClick={() => useTemplate(t)}>Use Template</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}

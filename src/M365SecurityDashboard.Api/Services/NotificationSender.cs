@@ -125,32 +125,57 @@ public sealed class NotificationSender(
 
     private async Task SendTeamsAsync(AppDbContext db, string url, TriggeredAlert a, CancellationToken ct)
     {
-        // MessageCard format — works for both Teams incoming webhooks and (loosely) Slack.
-        var card = new
+        var cardColor = a.Severity.ToLowerInvariant() switch
         {
-            @type = "MessageCard",
-            @context = "http://schema.org/extensions",
-            themeColor = SevColor(a.Severity),
-            summary = $"Vigil365 alert: {a.PolicyName}",
-            title = $"🛡️ {a.PolicyName}",
-            sections = new[]
+            "critical" or "high" => "Attention",
+            "medium" => "Warning",
+            "low" => "Accent",
+            _ => "Default"
+        };
+
+        // Modern Adaptive Card structure compatible with Teams Workflows / Incoming Webhooks
+        var cardPayload = new
+        {
+            type = "message",
+            attachments = new[]
             {
                 new
                 {
-                    activityTitle = $"Severity: {a.Severity.ToUpperInvariant()}",
-                    facts = new[]
+                    contentType = "application/vnd.microsoft.card.adaptive",
+                    content = new
                     {
-                        new { name = "Condition", value = a.Condition },
-                        new { name = "Observed value", value = a.MetricValue.ToString() },
-                        new { name = "Threshold", value = a.Threshold.ToString() },
-                        new { name = "Category", value = a.Category },
-                        new { name = "Triggered", value = a.TriggeredAt.ToString("u") },
-                    },
-                    markdown = true,
-                },
-            },
+                        type = "AdaptiveCard",
+                        version = "1.4",
+                        body = new object[]
+                        {
+                            new
+                            {
+                                type = "TextBlock",
+                                text = $"🛡️ Vigil365: {a.PolicyName}",
+                                weight = "Bolder",
+                                size = "Medium",
+                                color = cardColor
+                            },
+                            new
+                            {
+                                type = "FactSet",
+                                facts = new[]
+                                {
+                                    new { title = "Severity", value = a.Severity.ToUpperInvariant() },
+                                    new { title = "Condition", value = a.Condition },
+                                    new { title = "Observed Value", value = a.MetricValue.ToString() },
+                                    new { title = "Threshold", value = a.Threshold.ToString() },
+                                    new { title = "Category", value = a.Category },
+                                    new { title = "Triggered At", value = a.TriggeredAt.ToString("u") }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         };
-        await PostJsonAsync(db, "teams", url, JsonSerializer.Serialize(card), a, ct);
+
+        await PostJsonAsync(db, "teams", url, JsonSerializer.Serialize(cardPayload), a, ct);
     }
 
     private async Task SendWebhookAsync(AppDbContext db, string url, TriggeredAlert a, CancellationToken ct)

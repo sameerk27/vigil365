@@ -52,4 +52,7 @@ public sealed class TriggeredAlert
 
     /// <summary>When the evaluator last inspected this alert (used for diagnostics and the auto-resolve debounce).</summary>
     public DateTimeOffset? LastEvaluatedAt { get; set; }
+
+    /// <summary>JSON serialized list of matching SecurityAlert entity rows at trigger time.</summary>
+    public string? AffectedEntities { get; set; }
 }

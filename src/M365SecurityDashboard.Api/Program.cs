@@ -128,7 +128,9 @@ app.Use(async (ctx, next) =>
 {
     ctx.Response.Headers["X-Frame-Options"] = "DENY";
     ctx.Response.Headers["X-Content-Type-Options"] = "nosniff";
-    ctx.Response.Headers["Referrer-Policy"] = "no-referrer";
+    ctx.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    ctx.Response.Headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://login.microsoftonline.com wss:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';";
+    ctx.Response.Headers["Permissions-Policy"] = "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()";
     await next();
 });
 
@@ -449,7 +451,7 @@ app.MapPost("/api/collector/run", async (
 
 // Secure Score trend (direct Graph call)
 app.MapGet("/api/dashboard/securescore", async (
-    IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
+    IServiceProvider services, IOptions<GraphOptions> options, ILogger<Program> logger, CancellationToken ct) =>
 {
     if (!options.Value.IsConfigured())
         return Results.Ok(new { configured = false, currentScore = 0.0, maxScore = 100.0, percentage = 0.0, trend = Array.Empty<object>() });
@@ -478,8 +480,32 @@ app.MapGet("/api/dashboard/securescore", async (
     }
     catch (Exception ex)
     {
+        logger.LogError(ex, "Failed to retrieve secure score trend from Graph.");
         return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", currentScore = 0.0, maxScore = 100.0, percentage = 0.0, trend = Array.Empty<object>() });
     }
+});
+
+app.MapGet("/api/dashboard/trends", async (AppDbContext db, CancellationToken ct) =>
+{
+    var cutoff = DateTimeOffset.UtcNow.AddDays(-90);
+    var snapshots = await db.TrendSnapshots.AsNoTracking()
+        .Where(t => t.CapturedAt >= cutoff)
+        .OrderBy(t => t.CapturedAt)
+        .Select(t => new
+        {
+            t.Id,
+            CapturedAt = t.CapturedAt.ToString("o"),
+            t.RiskyUsersCount,
+            t.MfaCoveragePct,
+            t.NonCompliantDevicesCount,
+            t.CriticalAlertsCount,
+            t.HighAlertsCount,
+            t.SecureScorePct,
+            t.ComplianceIssuesCount
+        })
+        .ToListAsync(ct);
+
+    return Results.Ok(snapshots);
 });
 
 // Identity summary: MFA from DB + guests & admin activity from Graph
@@ -1314,7 +1340,7 @@ app.MapGet("/api/dashboard/attack-simulation", async (
 app.MapGet("/api/alert-policies", async (AppDbContext db, CancellationToken ct) =>
     Results.Ok(await db.AlertPolicies.OrderByDescending(p => p.CreatedAt).ToListAsync(ct)));
 
-app.MapPost("/api/alert-policies", async (AppDbContext db, AlertPolicy input, CancellationToken ct) =>
+app.MapPost("/api/alert-policies", async (AppDbContext db, AlertPolicy input, AuditLogger audit, CancellationToken ct) =>
 {
     input.Id = input.Id == Guid.Empty ? Guid.NewGuid() : input.Id;
     input.CreatedAt = DateTimeOffset.UtcNow;
@@ -1322,10 +1348,11 @@ app.MapPost("/api/alert-policies", async (AppDbContext db, AlertPolicy input, Ca
     if (input.SuppressionMinutes <= 0) input.SuppressionMinutes = 60;
     db.AlertPolicies.Add(input);
     await db.SaveChangesAsync(ct);
+    await audit.WriteAsync("policy.create", "policy", input.Id.ToString(), $"Created policy {input.Name} ({input.Category})", ct);
     return Results.Ok(input);
 }).RequireAuthorization("RequireAnalyst");
 
-app.MapPut("/api/alert-policies/{id:guid}", async (AppDbContext db, Guid id, AlertPolicy input, CancellationToken ct) =>
+app.MapPut("/api/alert-policies/{id:guid}", async (AppDbContext db, Guid id, AlertPolicy input, AuditLogger audit, CancellationToken ct) =>
 {
     var p = await db.AlertPolicies.FindAsync([id], ct);
     if (p is null) return Results.NotFound();
@@ -1339,15 +1366,17 @@ app.MapPut("/api/alert-policies/{id:guid}", async (AppDbContext db, Guid id, Ale
     p.NotifyEmail = input.NotifyEmail;
     p.SuppressionMinutes = input.SuppressionMinutes <= 0 ? 60 : input.SuppressionMinutes;
     await db.SaveChangesAsync(ct);
+    await audit.WriteAsync("policy.update", "policy", id.ToString(), $"Updated policy {p.Name}", ct);
     return Results.Ok(p);
 }).RequireAuthorization("RequireAnalyst");
 
-app.MapDelete("/api/alert-policies/{id:guid}", async (AppDbContext db, Guid id, CancellationToken ct) =>
+app.MapDelete("/api/alert-policies/{id:guid}", async (AppDbContext db, Guid id, AuditLogger audit, CancellationToken ct) =>
 {
     var p = await db.AlertPolicies.FindAsync([id], ct);
     if (p is null) return Results.NotFound();
     db.AlertPolicies.Remove(p);
     await db.SaveChangesAsync(ct);
+    await audit.WriteAsync("policy.delete", "policy", id.ToString(), $"Deleted policy {p.Name}", ct);
     return Results.NoContent();
 }).RequireAuthorization("RequireAnalyst");
 
@@ -1356,7 +1385,7 @@ app.MapGet("/api/triggered-alerts", async (AppDbContext db, CancellationToken ct
     Results.Ok(await db.TriggeredAlerts.OrderByDescending(t => t.TriggeredAt).Take(500).ToListAsync(ct)));
 
 app.MapPost("/api/triggered-alerts/{id:guid}/acknowledge", async (
-    AppDbContext db, Guid id, System.Security.Claims.ClaimsPrincipal caller, CancellationToken ct) =>
+    AppDbContext db, Guid id, System.Security.Claims.ClaimsPrincipal caller, AuditLogger audit, CancellationToken ct) =>
 {
     var t = await db.TriggeredAlerts.FindAsync([id], ct);
     if (t is null) return Results.NotFound();
@@ -1364,22 +1393,24 @@ app.MapPost("/api/triggered-alerts/{id:guid}/acknowledge", async (
     t.AcknowledgedAt = DateTimeOffset.UtcNow;
     t.AcknowledgedBy = AuthHelpers.GetEmail(caller);
     await db.SaveChangesAsync(ct);
+    await audit.WriteAsync("alert.acknowledge", "triggered_alert", id.ToString(), $"Acknowledged alert for policy {t.PolicyName}", ct);
     return Results.Ok(t);
 }).RequireAuthorization("RequireAnalyst");
 
-app.MapPost("/api/triggered-alerts/{id:guid}/resolve", async (AppDbContext db, Guid id, CancellationToken ct) =>
+app.MapPost("/api/triggered-alerts/{id:guid}/resolve", async (AppDbContext db, Guid id, AuditLogger audit, CancellationToken ct) =>
 {
     var t = await db.TriggeredAlerts.FindAsync([id], ct);
     if (t is null) return Results.NotFound();
     t.Status = "resolved";
     await db.SaveChangesAsync(ct);
+    await audit.WriteAsync("alert.resolve", "triggered_alert", id.ToString(), $"Resolved alert for policy {t.PolicyName}", ct);
     return Results.Ok(t);
 }).RequireAuthorization("RequireAnalyst");
 
 // Per-alert snooze. Body: { "until": "2026-06-22T18:00:00Z" } or { "durationHours": 4|24|168 }.
 // Until wins if both are supplied; durationHours defaults to 24 if neither is supplied.
 app.MapPost("/api/triggered-alerts/{id:guid}/snooze", async (
-    AppDbContext db, Guid id, SnoozeRequest input, System.Security.Claims.ClaimsPrincipal caller, CancellationToken ct) =>
+    AppDbContext db, Guid id, SnoozeRequest input, System.Security.Claims.ClaimsPrincipal caller, AuditLogger audit, CancellationToken ct) =>
 {
     var t = await db.TriggeredAlerts.FindAsync([id], ct);
     if (t is null) return Results.NotFound();
@@ -1391,17 +1422,19 @@ app.MapPost("/api/triggered-alerts/{id:guid}/snooze", async (
     t.SnoozedUntil = until;
     t.SnoozedBy = AuthHelpers.GetEmail(caller);
     await db.SaveChangesAsync(ct);
+    await audit.WriteAsync("alert.snooze", "triggered_alert", id.ToString(), $"Snoozed alert for policy {t.PolicyName} until {until:u}", ct);
     return Results.Ok(t);
 }).RequireAuthorization("RequireAnalyst");
 
 app.MapPost("/api/triggered-alerts/{id:guid}/unsnooze", async (
-    AppDbContext db, Guid id, CancellationToken ct) =>
+    AppDbContext db, Guid id, AuditLogger audit, CancellationToken ct) =>
 {
     var t = await db.TriggeredAlerts.FindAsync([id], ct);
     if (t is null) return Results.NotFound();
     t.SnoozedUntil = null;
     t.SnoozedBy = null;
     await db.SaveChangesAsync(ct);
+    await audit.WriteAsync("alert.unsnooze", "triggered_alert", id.ToString(), $"Unsnoozed alert for policy {t.PolicyName}", ct);
     return Results.Ok(t);
 }).RequireAuthorization("RequireAnalyst");
 
@@ -1425,7 +1458,7 @@ app.MapGet("/api/notification-settings", async (AppDbContext db, SecretProtector
         s.WebhookEnabled, WebhookUrl = protector.Unprotect(s.WebhookUrl),
         s.MinSeverity,
     });
-});
+}).RequireAuthorization("RequireAdmin");
 
 app.MapPut("/api/notification-settings", async (AppDbContext db, SecretProtector protector, AuditLogger audit, NotificationSettings input, CancellationToken ct) =>
 {
@@ -1474,7 +1507,8 @@ app.MapPost("/api/notification-settings/test", async (AppDbContext db, Notificat
 
 // Notification delivery history
 app.MapGet("/api/notification-log", async (AppDbContext db, CancellationToken ct) =>
-    Results.Ok(await db.NotificationLogs.OrderByDescending(l => l.SentAt).Take(200).ToListAsync(ct)));
+    Results.Ok(await db.NotificationLogs.OrderByDescending(l => l.SentAt).Take(200).ToListAsync(ct)))
+    .RequireAuthorization("RequireAnalyst");
 
 app.MapFallbackToFile("index.html").AllowAnonymous();
 

@@ -14,12 +14,8 @@ Legend: 🔴 high value · 🟡 medium · 🟢 polish · ✅ already done
 Polish what's already there — make every tab/detail genuinely useful — before
 building new pages.
 
-- 🔴 **Alert detail must show the affected entity** — clicking a triggered alert
-  shows policy metadata (ID, condition, threshold) but **not which user/device
-  triggered it**. Root cause: the engine stores the aggregate count, not the
-  matching entities. Fix: at trigger time, capture the affected `SecurityAlert`
-  rows (UPN / device / sign-in) and store them with the triggered alert; render
-  them in the detail modal as a list with "view in M365 portal" deep links.
+- ✅ **Alert detail must show the affected entity** — clicking a triggered alert
+  shows affected entity list (UPN / device / detected at) with deep links. (Completed)
 - 🟡 **Every detail modal → drill to the real records** — audit each tab's detail
   view so it shows the underlying entities, not just summary fields.
 - 🟡 **Consistent detail layout** — same field order, copy-to-clipboard on IDs,
@@ -32,13 +28,10 @@ building new pages.
 
 ## A. New capabilities (cross-cutting)
 
-- 🔴 **Trends & history** — snapshot key metrics each collection cycle (risky users,
+- ✅ **Trends & history** — snapshot key metrics each collection cycle (risky users,
   MFA coverage, non-compliant devices, open critical/high, secure score, compliance
-  issues). New page with line charts + per-metric **up/down/flat chip** and a plain-
-  language readout ("Risky users ↓ 40% over 30 days"). Also feeds Overview trend cards.
-- 🔴 **Compliance framework scoring** — map collected signals to **CIS / NIST CSF /
-  ISO 27001 / GDPR** controls; show a score per framework + pass/fail per control +
-  "how to fix" guidance. (Biggest competitive differentiator.)
+  issues). Dedicated page with executive KPI tiles, hero charts, insights, and clean PDF output. (Completed)
+- ✅ **Compliance framework scoring** — map collected signals dynamically to **CIS Controls v8 / NIST CSF 2.0 / ISO 27001 / GDPR Art. 32** controls; live calculated posture scorecard with control breakdown modal + deep jump links. (Completed)
 - 🔴 **Recommendations layer** — every finding pairs with *why it matters*, *fix steps*,
   and a **deep link** to the right M365 portal blade. Guidance only, no actions.
 - 🔴 **Alert coverage gap analysis** — compare the tenant against a best-practice
