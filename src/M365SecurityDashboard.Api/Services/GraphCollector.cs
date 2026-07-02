@@ -14,7 +14,25 @@ public sealed class GraphCollector(
 {
     private readonly GraphOptions _options = options.Value;
 
+    // One collection at a time per process: the manual endpoint and the background
+    // worker would otherwise race the (Service, AlertType, ExternalId) unique index.
+    private static readonly SemaphoreSlim CollectionGate = new(1, 1);
+
     public async Task<CollectionRun> CollectAsync(CancellationToken ct)
+    {
+        if (!await CollectionGate.WaitAsync(TimeSpan.Zero, ct))
+            throw new InvalidOperationException("A collection run is already in progress.");
+        try
+        {
+            return await CollectCoreAsync(ct);
+        }
+        finally
+        {
+            CollectionGate.Release();
+        }
+    }
+
+    private async Task<CollectionRun> CollectCoreAsync(CancellationToken ct)
     {
         var run = new CollectionRun { StartedAt = DateTimeOffset.UtcNow, Status = CollectionStatus.Started };
         db.CollectionRuns.Add(run);

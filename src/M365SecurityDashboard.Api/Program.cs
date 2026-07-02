@@ -43,9 +43,16 @@ builder.Services.AddMemoryCache();
 builder.Services.AddScoped<Microsoft.AspNetCore.Authentication.IClaimsTransformation, RoleClaimsTransformation>();
 builder.Services.AddAuthorization(options =>
 {
-    options.AddPolicy("RequireAdmin", p => p.RequireAssertion(_ => true));
-    options.AddPolicy("RequireAnalyst", p => p.RequireAssertion(_ => true));
-    options.FallbackPolicy = null;
+    // Role claims come from RoleClaimsTransformation (AppUsers table). Analyst
+    // actions are also allowed for Admins. Viewer needs no policy — the fallback
+    // (any authenticated user) covers read access.
+    options.AddPolicy("RequireAdmin", p => p.RequireAuthenticatedUser().RequireRole(AppRoles.Admin));
+    options.AddPolicy("RequireAnalyst", p => p.RequireAuthenticatedUser().RequireRole(AppRoles.Admin, AppRoles.Analyst));
+    // Deny-by-default: every endpoint requires a validated token unless it opts
+    // out with AllowAnonymous (/health, /api/auth/config, SPA fallback).
+    options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
 });
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
@@ -104,7 +111,40 @@ using (var scope = app.Services.CreateScope())
     db.Database.ExecuteSqlRaw(AlertingSchema.EnsureTablesSql);
     AlertingSchema.SeedDefaultPolicies(db);
 
-    if (!db.SecurityAlerts.Any())
+    // Apply Graph credentials saved via the setup wizard over the GraphOptions
+    // singleton. Because IOptions<GraphOptions>.Value is a singleton, mutating it
+    // here makes every consumer (and IsConfigured()) see the wizard-entered values
+    // without any config file. DB values win over appsettings when present.
+    // Loaded BEFORE any demo seeding so a configured install never gets sample data.
+    var graphOpts = scope.ServiceProvider.GetRequiredService<IOptions<GraphOptions>>().Value;
+    var protector = scope.ServiceProvider.GetRequiredService<SecretProtector>();
+    var saved = db.GraphConfig.FirstOrDefault(g => g.Id == 1);
+    if (saved is not null && !string.IsNullOrWhiteSpace(saved.TenantId))
+    {
+        graphOpts.TenantId = saved.TenantId;
+        graphOpts.ClientId = saved.ClientId;
+        var secret = protector.Unprotect(saved.ClientSecret);
+        if (!string.IsNullOrWhiteSpace(secret)) graphOpts.ClientSecret = secret;
+    }
+
+    if (graphOpts.IsConfigured())
+    {
+        // One-time cleanup: purge demo/sample alerts (identified by the seed
+        // ExternalId prefixes) so they never commingle with real tenant data.
+        // Installs that seeded before configuring Graph carry these forever
+        // otherwise — the collector never matches their ExternalIds.
+        var purged = db.SecurityAlerts
+            .Where(a => a.ExternalId != null && (
+                a.ExternalId.StartsWith("def-crit-") || a.ExternalId.StartsWith("def-high-") ||
+                a.ExternalId.StartsWith("def-med-") || a.ExternalId.StartsWith("entra-risk-") ||
+                a.ExternalId.StartsWith("entra-signin-") || a.ExternalId.StartsWith("intune-nc-") ||
+                a.ExternalId.StartsWith("intune-nia-") || a.ExternalId.StartsWith("mfa-ok-") ||
+                a.ExternalId.StartsWith("mfa-miss-")))
+            .ExecuteDelete();
+        if (purged > 0)
+            dbLog.LogInformation("Purged {Count} demo/sample alerts now that Graph is configured.", purged);
+    }
+    else if (builder.Configuration.GetValue("Seed:DemoData", false) && !db.SecurityAlerts.Any())
     {
         db.CollectionRuns.Add(new CollectionRun
         {
@@ -152,21 +192,6 @@ using (var scope = app.Services.CreateScope())
         }
 
         db.SaveChanges();
-    }
-
-    // Apply Graph credentials saved via the setup wizard over the GraphOptions
-    // singleton. Because IOptions<GraphOptions>.Value is a singleton, mutating it
-    // here makes every consumer (and IsConfigured()) see the wizard-entered values
-    // without any config file. DB values win over appsettings when present.
-    var graphOpts = scope.ServiceProvider.GetRequiredService<IOptions<GraphOptions>>().Value;
-    var protector = scope.ServiceProvider.GetRequiredService<SecretProtector>();
-    var saved = db.GraphConfig.FirstOrDefault(g => g.Id == 1);
-    if (saved is not null && !string.IsNullOrWhiteSpace(saved.TenantId))
-    {
-        graphOpts.TenantId = saved.TenantId;
-        graphOpts.ClientId = saved.ClientId;
-        var secret = protector.Unprotect(saved.ClientSecret);
-        if (!string.IsNullOrWhiteSpace(secret)) graphOpts.ClientSecret = secret;
     }
 }
 
@@ -673,24 +698,19 @@ app.MapPost("/api/collector/run", async (
     CancellationToken ct) =>
 {
     if (!options.Value.IsConfigured())
-    {
-        var db = services.GetRequiredService<AppDbContext>();
-        var simRun = new CollectionRun
-        {
-            StartedAt = DateTimeOffset.UtcNow.AddSeconds(-2),
-            CompletedAt = DateTimeOffset.UtcNow,
-            Status = CollectionStatus.Completed,
-            AlertsUpserted = 14
-        };
-        db.CollectionRuns.Add(simRun);
-        await db.SaveChangesAsync(ct);
-        return Results.Ok(simRun);
-    }
+        return Results.BadRequest(new { error = "Microsoft Graph is not configured. Complete the setup wizard first." });
 
     var collector = services.GetRequiredService<GraphCollector>();
-    var run = await collector.CollectAsync(ct);
-    return Results.Ok(run);
-}).AllowAnonymous();
+    try
+    {
+        var run = await collector.CollectAsync(ct);
+        return Results.Ok(run);
+    }
+    catch (InvalidOperationException ex) when (ex.Message.Contains("already in progress"))
+    {
+        return Results.Conflict(new { error = "A collection run is already in progress." });
+    }
+}).RequireAuthorization("RequireAnalyst");
 
 // ── New dashboard endpoints ────────────────────────────────────────────────
 
@@ -699,11 +719,7 @@ app.MapGet("/api/dashboard/securescore", async (
     IServiceProvider services, IOptions<GraphOptions> options, ILogger<Program> logger, CancellationToken ct) =>
 {
     if (!options.Value.IsConfigured())
-    {
-        var now = DateTime.UtcNow;
-        var trendList = Enumerable.Range(0, 14).Select(i => new { date = now.AddDays(-13 + i).ToString("yyyy-MM-ddTHH:mm:ssZ"), score = Math.Round(380.0 + ((i % 4) * 1.5), 1), maxScore = 500.0 }).ToArray();
-        return Results.Ok(new { configured = true, currentScore = 384.0, maxScore = 500.0, percentage = 76.8, trend = trendList });
-    }
+        return Results.Ok(new { configured = false, currentScore = 0.0, maxScore = 100.0, percentage = 0.0, trend = Array.Empty<object>() });
     try
     {
         var graph = services.GetRequiredService<GraphApiClient>();
@@ -1101,27 +1117,7 @@ app.MapGet("/api/dashboard/defender-alerts", async (
     IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
 {
     if (!options.Value.IsConfigured())
-    {
-        var db = services.GetRequiredService<AppDbContext>();
-        var dbAlerts = await db.SecurityAlerts.AsNoTracking().Where(a => a.Service == M365ServiceArea.DefenderXdr && !a.IsResolved).OrderByDescending(a => a.DetectedAt).ToListAsync(ct);
-        var simAlerts = dbAlerts.Select(a => (object)new
-        {
-            id = a.ExternalId ?? a.Id.ToString(),
-            title = a.Title,
-            description = a.Description ?? "Detected by Defender XDR behavioral monitoring.",
-            severity = a.Severity.ToString().ToLower(),
-            status = "newAlert",
-            classification = "truePositive",
-            serviceSource = "microsoftDefenderForEndpoint",
-            category = "Malware",
-            createdDateTime = a.DetectedAt.ToString("yyyy-MM-ddTHH:mm:ssZ"),
-            actorDisplayName = a.UserPrincipalName,
-            threatDisplayName = a.Title
-        }).ToList();
-        var bySev = dbAlerts.GroupBy(a => a.Severity.ToString().ToLower()).ToDictionary(g => g.Key, g => g.Count());
-        var bySrc = new Dictionary<string, int> { ["microsoftDefenderForEndpoint"] = simAlerts.Count };
-        return Results.Ok(new { configured = true, total = simAlerts.Count, bySeverity = bySev, bySource = bySrc, alerts = simAlerts });
-    }
+        return Results.Ok(new { configured = false, total = 0, bySeverity = new Dictionary<string, int>(), bySource = new Dictionary<string, int>(), alerts = Array.Empty<object>() });
     try
     {
         var graph = services.GetRequiredService<GraphApiClient>();
@@ -1164,17 +1160,7 @@ app.MapGet("/api/dashboard/security-incidents", async (
     IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
 {
     if (!options.Value.IsConfigured())
-    {
-        var simIncidents = new object[]
-        {
-            new { id = "INC-1042", displayName = "Multi-stage compromise involving executive identity", severity = "critical", status = "active", createdDateTime = DateTimeOffset.UtcNow.AddHours(-2).ToString("yyyy-MM-ddTHH:mm:ssZ"), assignedTo = "SEC-OPS-1", description = "Correlated impossible travel and suspicious script execution." },
-            new { id = "INC-1041", displayName = "Anomalous email forwarding and mailbox persistence", severity = "high", status = "active", createdDateTime = DateTimeOffset.UtcNow.AddHours(-5).ToString("yyyy-MM-ddTHH:mm:ssZ"), assignedTo = "SEC-OPS-2", description = "Inward inbox rule creation following credential phishing." },
-            new { id = "INC-1039", displayName = "Mass data exfiltration from restricted SharePoint site", severity = "high", status = "active", createdDateTime = DateTimeOffset.UtcNow.AddHours(-12).ToString("yyyy-MM-ddTHH:mm:ssZ"), assignedTo = "Unassigned", description = "Abnormal download volume detected." },
-            new { id = "INC-1035", displayName = "Suspicious endpoint discovery activity", severity = "medium", status = "active", createdDateTime = DateTimeOffset.UtcNow.AddDays(-1).ToString("yyyy-MM-ddTHH:mm:ssZ"), assignedTo = "Unassigned", description = "Network scanning tools executed on workstation." }
-        };
-        var bySev = new Dictionary<string, int> { ["critical"] = 1, ["high"] = 2, ["medium"] = 1 };
-        return Results.Ok(new { configured = true, total = simIncidents.Length, bySeverity = bySev, incidents = simIncidents });
-    }
+        return Results.Ok(new { configured = false, total = 0, bySeverity = new Dictionary<string, int>(), incidents = Array.Empty<object>() });
     try
     {
         var graph = services.GetRequiredService<GraphApiClient>();
@@ -1735,12 +1721,13 @@ app.MapPost("/api/triggered-alerts/{id:guid}/unsnooze", async (
     return Results.Ok(t);
 }).RequireAuthorization("RequireAnalyst");
 
-// Manually run an evaluation pass (used by the dashboard "refresh" + on-demand check)
+// Manually run an evaluation pass (used by the dashboard "refresh" + on-demand check).
+// Analyst+: evaluation dispatches real notifications, so it must not be open to abuse.
 app.MapPost("/api/alert-policies/evaluate", async (AlertEvaluator evaluator, CancellationToken ct) =>
 {
     var fired = await evaluator.EvaluateAsync(ct);
     return Results.Ok(new { fired });
-});
+}).RequireAuthorization("RequireAnalyst");
 
 // Notification settings (single row). Password is write-only — never returned.
 app.MapGet("/api/notification-settings", async (AppDbContext db, SecretProtector protector, CancellationToken ct) =>
