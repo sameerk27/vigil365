@@ -265,10 +265,10 @@ function CoverageScorecardTab({ onChanged }: { onChanged: () => void | Promise<v
       const updated = await recApi.enableCoverageRule(rule.id);
       if (updated) {
         setData(updated);
-        showToast("success", `Enabled rule: ${rule.title}`);
+        showToast(`Enabled rule: ${rule.title}`);
         onChanged();
       } else {
-        showToast("error", "Failed to enable rule via API");
+        showToast("Failed to enable rule via API", "error");
       }
     } finally {
       setEnablingId(null);

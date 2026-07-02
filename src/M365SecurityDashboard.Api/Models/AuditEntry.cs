@@ -32,4 +32,21 @@ public sealed class AuditEntry
     /// <summary>Human-readable summary of what changed, e.g. "role Viewer -> Admin".</summary>
     [MaxLength(500)]
     public string? Details { get; set; }
+
+    /// <summary>Client IP the request came from (first X-Forwarded-For hop behind a proxy).</summary>
+    [MaxLength(45)]
+    public string? IpAddress { get; set; }
+
+    /// <summary>User-Agent header of the request, truncated.</summary>
+    [MaxLength(300)]
+    public string? UserAgent { get; set; }
+
+    /// <summary>EntryHash of the previous audit row — forms a tamper-evident chain.</summary>
+    [MaxLength(64)]
+    public string? PrevHash { get; set; }
+
+    /// <summary>SHA-256 over this row's fields + PrevHash. Editing or deleting any
+    /// historical row breaks every later hash, which /verify detects.</summary>
+    [MaxLength(64)]
+    public string? EntryHash { get; set; }
 }

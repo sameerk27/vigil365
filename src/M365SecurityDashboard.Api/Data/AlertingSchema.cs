@@ -132,6 +132,18 @@ public static class AlertingSchema
            AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_AuditEntries_Timestamp')
         CREATE INDEX [IX_AuditEntries_Timestamp] ON [AuditEntries]([Timestamp]);
 
+        IF COL_LENGTH(N'[AuditEntries]', 'IpAddress') IS NULL
+        ALTER TABLE [AuditEntries] ADD [IpAddress] nvarchar(45) NULL;
+
+        IF COL_LENGTH(N'[AuditEntries]', 'UserAgent') IS NULL
+        ALTER TABLE [AuditEntries] ADD [UserAgent] nvarchar(300) NULL;
+
+        IF COL_LENGTH(N'[AuditEntries]', 'PrevHash') IS NULL
+        ALTER TABLE [AuditEntries] ADD [PrevHash] nvarchar(64) NULL;
+
+        IF COL_LENGTH(N'[AuditEntries]', 'EntryHash') IS NULL
+        ALTER TABLE [AuditEntries] ADD [EntryHash] nvarchar(64) NULL;
+
         IF OBJECT_ID(N'[GraphConfig]', N'U') IS NULL
         CREATE TABLE [GraphConfig] (
             [Id] int NOT NULL PRIMARY KEY,

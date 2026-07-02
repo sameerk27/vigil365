@@ -22,6 +22,17 @@ export interface AuditRow {
   targetType: string;
   targetId?: string;
   details?: string;
+  ipAddress?: string;
+  userAgent?: string;
+  entryHash?: string;
+}
+
+interface VerifyResult {
+  valid: boolean;
+  total: number;
+  verified: number;
+  legacyUnhashed: number;
+  firstBrokenId?: number;
 }
 
 export function UserManagementPage() {
@@ -104,6 +115,41 @@ export function UserManagementPage() {
 
   const roleTone = (r: string): Tone => r === "Admin" ? "info" : r === "Analyst" ? "good" : "neutral";
 
+  const [verify, setVerify] = useState<VerifyResult | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  const exportAudit = async () => {
+    setExporting(true);
+    try {
+      const r = await apiFetch(`${apiBase}/api/admin/audit-log/export`);
+      if (!r.ok) { showToast("Export failed"); return; }
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `vigil365-audit-log-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast("Audit log exported");
+    } catch { showToast("Export failed"); }
+    finally { setExporting(false); }
+  };
+
+  const verifyChain = async () => {
+    setVerifying(true);
+    try {
+      const r = await apiFetch(`${apiBase}/api/admin/audit-log/verify`);
+      if (!r.ok) { showToast("Verification request failed"); return; }
+      const d: VerifyResult = await r.json();
+      setVerify(d);
+      showToast(d.valid
+        ? `Chain intact — ${d.verified} entries verified`
+        : `Tampering detected at entry #${d.firstBrokenId}`);
+    } catch { showToast("Verification request failed"); }
+    finally { setVerifying(false); }
+  };
+
   return (
     <div className="page">
       <Card title={`Users${users ? ` (${users.length})` : ""}`}
@@ -181,9 +227,33 @@ export function UserManagementPage() {
       </Card>
 
       <Card title="Activity Log"
-        badge={<Badge label={audit ? `${audit.length} events` : "—"} tone="neutral"/>}>
+        badge={verify
+          ? <Badge label={verify.valid ? "Chain verified" : "TAMPERED"} tone={verify.valid ? "good" : "error"}/>
+          : <Badge label={audit ? `${audit.length} events` : "—"} tone="neutral"/>}
+        action={
+          <div style={{ display:"flex", gap:6 }}>
+            <button className="btn-apply" style={{ padding:"5px 10px", fontSize:12 }}
+              disabled={verifying} onClick={verifyChain}
+              title="Recompute the SHA-256 hash chain over every entry to prove the log hasn't been edited or truncated">
+              {verifying ? "Verifying…" : "Verify integrity"}
+            </button>
+            <button className="btn-export" disabled={exporting} onClick={exportAudit}
+              title="Download the full audit trail as CSV (the export itself is audited)">
+              {exporting ? "Exporting…" : "Export CSV"}
+            </button>
+          </div>
+        }>
         <div style={{ fontSize:12, color:"var(--color-muted)", padding:"0 0 12px", lineHeight:1.6 }}>
-          Append-only audit trail of security-relevant actions (user changes, role changes, settings).
+          Append-only audit trail of security-relevant actions (sign-ins, user and role changes, settings).
+          Entries are hash-chained — each row's hash covers the previous row's, so any tampering is detectable.
+          {verify && !verify.valid && (
+            <span style={{ color:"var(--sev-critical-text)", fontWeight:600 }}>
+              {" "}Integrity check failed at entry #{verify.firstBrokenId}. Investigate immediately.
+            </span>
+          )}
+          {verify && verify.valid && verify.legacyUnhashed > 0 && (
+            <span> Verified {verify.verified} hashed entries ({verify.legacyUnhashed} predate hashing).</span>
+          )}
         </div>
         {audit === null
           ? <LoadingSkeleton type="table"/>
@@ -193,7 +263,7 @@ export function UserManagementPage() {
             <div className="tbl-wrap">
               <table className="data-tbl">
                 <thead>
-                  <tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Details</th></tr>
+                  <tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Details</th><th>IP</th></tr>
                 </thead>
                 <tbody>
                   {audit.map(a => (
@@ -203,6 +273,7 @@ export function UserManagementPage() {
                       <td><Badge label={a.action} tone="neutral"/></td>
                       <td className="al-date">{a.targetId || a.targetType}</td>
                       <td style={{ fontSize:12, color:"var(--color-muted)" }}>{a.details}</td>
+                      <td className="al-date" title={a.userAgent || undefined}>{a.ipAddress || "—"}</td>
                     </tr>
                   ))}
                 </tbody>

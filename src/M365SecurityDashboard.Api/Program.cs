@@ -11,8 +11,24 @@ using System.Text.Json.Serialization;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseWindowsService();
+
+// Structured logging: single-line JSON to stdout outside Development so log
+// shippers (Docker, journald, Splunk/Sentinel forwarders) can parse without
+// multi-line heuristics. Scopes carry the per-request correlation id.
+// Set Logging:Json=false to fall back to human-readable console output.
+if (builder.Configuration.GetValue("Logging:Json", !builder.Environment.IsDevelopment()))
+{
+    builder.Logging.ClearProviders();
+    builder.Logging.AddJsonConsole(o =>
+    {
+        o.IncludeScopes = true;
+        o.UseUtcTimestamp = true;
+        o.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ";
+    });
+}
 builder.Services.Configure<GraphOptions>(builder.Configuration.GetSection("Graph"));
 builder.Services.Configure<AlertingOptions>(builder.Configuration.GetSection("Alerting"));
+builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection("Retention"));
 
 // ── Authentication & Authorization ──────────────────────────────────────────────
 // Validates Entra ID Bearer tokens. The SPA (MSAL) acquires a token for the
@@ -22,6 +38,8 @@ builder.Services.Configure<AlertingOptions>(builder.Configuration.GetSection("Al
 builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration, "AzureAd");
 // Attaches each user's in-app role (from AppUsers table) as a role claim after
 // token validation. Scoped so it can use the request-scoped AppDbContext.
+// Roles are memory-cached (short TTL) so hot paths skip the per-request DB lookup.
+builder.Services.AddMemoryCache();
 builder.Services.AddScoped<Microsoft.AspNetCore.Authentication.IClaimsTransformation, RoleClaimsTransformation>();
 builder.Services.AddAuthorization(options =>
 {
@@ -49,6 +67,7 @@ builder.Services.AddScoped<AlertEvaluator>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<AuditLogger>();
 builder.Services.AddHostedService<GraphCollectionWorker>();
+builder.Services.AddHostedService<DataRetentionWorker>();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddEndpointsApiExplorer();
@@ -162,6 +181,30 @@ if (requireHttps)
     app.UseHttpsRedirection();
 }
 
+// Correlation id: honour an inbound X-Correlation-Id (from a proxy or caller),
+// otherwise generate one. Echoed on the response and pushed as a logging scope
+// so every log line for the request can be tied together across services.
+app.Use(async (ctx, next) =>
+{
+    var correlationId = ctx.Request.Headers["X-Correlation-Id"].ToString();
+    if (string.IsNullOrWhiteSpace(correlationId) || correlationId.Length > 64)
+        correlationId = Guid.NewGuid().ToString("N")[..16];
+    ctx.TraceIdentifier = correlationId;
+    ctx.Response.Headers["X-Correlation-Id"] = correlationId;
+
+    var loggerFactory = ctx.RequestServices.GetRequiredService<ILoggerFactory>();
+    var reqLogger = loggerFactory.CreateLogger("Vigil365.Request");
+    using (reqLogger.BeginScope(new Dictionary<string, object> { ["CorrelationId"] = correlationId }))
+    {
+        await next();
+        // One structured line per API request; static assets and /health probes
+        // (which fire every few seconds from orchestrators) stay quiet.
+        if (ctx.Request.Path.StartsWithSegments("/api"))
+            reqLogger.LogInformation("{Method} {Path} => {StatusCode}",
+                ctx.Request.Method, ctx.Request.Path.Value, ctx.Response.StatusCode);
+    }
+});
+
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseCors();
@@ -184,6 +227,60 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+
+// Health endpoint for monitoring / orchestration (Docker HEALTHCHECK, k8s probes,
+// uptime monitors). Reports DB connectivity, Graph configuration, and freshness of
+// the last collection run. No Graph call is made — probes fire frequently and must
+// stay cheap. 200 = healthy/degraded (app can serve traffic), 503 = DB unreachable.
+app.MapGet("/health", async (AppDbContext db, IOptions<GraphOptions> options, CancellationToken ct) =>
+{
+    var dbOk = false;
+    string? dbError = null;
+    object? lastCollection = null;
+    var collectionFresh = (bool?)null;
+
+    try
+    {
+        dbOk = await db.Database.CanConnectAsync(ct);
+        if (dbOk)
+        {
+            var lastRun = await db.CollectionRuns.AsNoTracking()
+                .OrderByDescending(r => r.StartedAt).FirstOrDefaultAsync(ct);
+            if (lastRun is not null)
+            {
+                var staleAfter = TimeSpan.FromMinutes(Math.Max(options.Value.CollectionIntervalMinutes, 1) * 2);
+                collectionFresh = DateTimeOffset.UtcNow - lastRun.StartedAt <= staleAfter;
+                lastCollection = new
+                {
+                    startedAt = lastRun.StartedAt,
+                    status = lastRun.Status.ToString(),
+                    alertsUpserted = lastRun.AlertsUpserted,
+                    fresh = collectionFresh
+                };
+            }
+        }
+    }
+    catch (Exception ex) { dbError = ex.Message; }
+
+    var graphConfigured = options.Value.IsConfigured();
+    var status = !dbOk ? "unhealthy"
+        : !graphConfigured || collectionFresh == false ? "degraded"
+        : "healthy";
+
+    var body = new
+    {
+        status,
+        version = typeof(Program).Assembly.GetName().Version?.ToString(3),
+        checks = new
+        {
+            database = new { ok = dbOk, error = dbError },
+            graph = new { configured = graphConfigured },
+            collection = lastCollection
+        },
+        checkedAt = DateTimeOffset.UtcNow
+    };
+    return dbOk ? Results.Ok(body) : Results.Json(body, statusCode: StatusCodes.Status503ServiceUnavailable);
+}).AllowAnonymous();
 
 // Public endpoint — returns only the non-secret config needed to initialise MSAL in the browser.
 // The login identity comes from AzureAd (set in appsettings.Production.json / user secrets);
@@ -210,7 +307,8 @@ app.MapGet("/api/auth/config", (IConfiguration config) =>
 // Admin on first sign-in; otherwise the first user to ever sign in becomes Admin.
 // Everyone else defaults to Viewer until an Admin promotes them.
 app.MapGet("/api/auth/me", async (
-    System.Security.Claims.ClaimsPrincipal principal, AppDbContext db, IConfiguration config, CancellationToken ct) =>
+    System.Security.Claims.ClaimsPrincipal principal, AppDbContext db, IConfiguration config,
+    Microsoft.Extensions.Caching.Memory.IMemoryCache cache, AuditLogger audit, CancellationToken ct) =>
 {
     var email = AuthHelpers.GetEmail(principal);
     var displayName = AuthHelpers.GetDisplayName(principal);
@@ -218,6 +316,8 @@ app.MapGet("/api/auth/me", async (
 
     var now = DateTimeOffset.UtcNow;
     var user = await db.AppUsers.FirstOrDefaultAsync(u => u.Email == email, ct);
+    var isFirstSignIn = false;
+    var isNewSession = false;
     if (user is null)
     {
         var bootstrapEmail = (config["Auth:BootstrapAdminEmail"] ?? "").Trim().ToLowerInvariant();
@@ -229,13 +329,25 @@ app.MapGet("/api/auth/me", async (
 
         user = new AppUser { Email = email, DisplayName = displayName, Role = role, CreatedAt = now, LastSeenAt = now };
         db.AppUsers.Add(user);
+        isFirstSignIn = true;
+        // The claims transformation may have cached the default Viewer role for
+        // this email before the row existed — evict so the real role applies now.
+        cache.Remove(RoleClaimsTransformation.RoleCacheKey(email));
     }
     else
     {
+        // Treat a gap of > 1h since the last request as a new sign-in session so
+        // the audit trail covers sign-ins without logging every page load.
+        isNewSession = now - user.LastSeenAt > TimeSpan.FromHours(1);
         user.LastSeenAt = now;
         if (!string.IsNullOrEmpty(displayName)) user.DisplayName = displayName;
     }
     await db.SaveChangesAsync(ct);
+
+    if (isFirstSignIn)
+        await audit.WriteAsync("auth.first_signin", "user", email, $"first sign-in, role {user.Role}", ct);
+    else if (isNewSession)
+        await audit.WriteAsync("auth.signin", "user", email, $"signed in as {user.Role}", ct);
 
     return Results.Ok(new { name = user.DisplayName ?? "", email = user.Email, role = user.Role });
 });
@@ -301,6 +413,7 @@ app.MapPost("/api/admin/users/{email}/invite", async (
 
 app.MapPut("/api/admin/users/{email}/role", async (
     string email, RoleChangeRequest input, AppDbContext db, AuditLogger audit,
+    Microsoft.Extensions.Caching.Memory.IMemoryCache cache,
     System.Security.Claims.ClaimsPrincipal caller, CancellationToken ct) =>
 {
     if (!AppRoles.IsValid(input.Role))
@@ -321,12 +434,14 @@ app.MapPut("/api/admin/users/{email}/role", async (
     var oldRole = user.Role;
     user.Role = input.Role;
     await db.SaveChangesAsync(ct);
+    cache.Remove(RoleClaimsTransformation.RoleCacheKey(email));
     await audit.WriteAsync("user.role_change", "user", email, $"role {oldRole} -> {input.Role}", ct);
     return Results.Ok(user);
 }).RequireAuthorization("RequireAdmin");
 
 app.MapDelete("/api/admin/users/{email}", async (
     string email, AppDbContext db, AuditLogger audit,
+    Microsoft.Extensions.Caching.Memory.IMemoryCache cache,
     System.Security.Claims.ClaimsPrincipal caller, CancellationToken ct) =>
 {
     email = email.Trim().ToLowerInvariant();
@@ -342,6 +457,7 @@ app.MapDelete("/api/admin/users/{email}", async (
     var removedRole = user.Role;
     db.AppUsers.Remove(user);
     await db.SaveChangesAsync(ct);
+    cache.Remove(RoleClaimsTransformation.RoleCacheKey(email));
     await audit.WriteAsync("user.remove", "user", email, $"removed (was {removedRole})", ct);
     return Results.NoContent();
 }).RequireAuthorization("RequireAdmin");
@@ -350,6 +466,80 @@ app.MapDelete("/api/admin/users/{email}", async (
 app.MapGet("/api/admin/audit-log", async (AppDbContext db, CancellationToken ct) =>
     Results.Ok(await db.AuditEntries.AsNoTracking().OrderByDescending(a => a.Timestamp).Take(200).ToListAsync(ct)))
     .RequireAuthorization("RequireAdmin");
+
+// Full audit trail as CSV (Admin only). The export itself is audited.
+app.MapGet("/api/admin/audit-log/export", async (AppDbContext db, AuditLogger audit, CancellationToken ct) =>
+{
+    var entries = await db.AuditEntries.AsNoTracking()
+        .OrderBy(a => a.Id)
+        .Take(100_000)
+        .ToListAsync(ct);
+
+    static string Csv(string? v)
+    {
+        if (string.IsNullOrEmpty(v)) return "";
+        return v.Contains(',') || v.Contains('"') || v.Contains('\n') || v.Contains('\r')
+            ? '"' + v.Replace("\"", "\"\"") + '"'
+            : v;
+    }
+
+    var sb = new System.Text.StringBuilder();
+    sb.AppendLine("Id,TimestampUtc,ActorEmail,Action,TargetType,TargetId,Details,IpAddress,UserAgent,PrevHash,EntryHash");
+    foreach (var e in entries)
+        sb.AppendLine(string.Join(',',
+            e.Id,
+            e.Timestamp.UtcDateTime.ToString("O"),
+            Csv(e.ActorEmail), Csv(e.Action), Csv(e.TargetType), Csv(e.TargetId),
+            Csv(e.Details), Csv(e.IpAddress), Csv(e.UserAgent), Csv(e.PrevHash), Csv(e.EntryHash)));
+
+    await audit.WriteAsync("audit.export", "audit_log", null, $"exported {entries.Count} entries as CSV", ct);
+    return Results.File(
+        System.Text.Encoding.UTF8.GetBytes(sb.ToString()),
+        "text/csv",
+        $"vigil365-audit-log-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}.csv");
+}).RequireAuthorization("RequireAdmin");
+
+// Verify the tamper-evident hash chain (Admin only). Recomputes every entry's
+// hash and checks the PrevHash linkage in Id order. Entries written before the
+// hash chain existed (EntryHash NULL) are counted as "legacy" and skipped —
+// verification starts from the first hashed entry.
+app.MapGet("/api/admin/audit-log/verify", async (AppDbContext db, CancellationToken ct) =>
+{
+    var entries = await db.AuditEntries.AsNoTracking().OrderBy(a => a.Id).ToListAsync(ct);
+
+    var legacy = 0; var checked_ = 0;
+    long? firstBrokenId = null;
+    string? expectedPrev = null; var chainStarted = false;
+
+    foreach (var e in entries)
+    {
+        if (e.EntryHash is null) // pre-hash-chain row
+        {
+            legacy++;
+            if (chainStarted && firstBrokenId is null) firstBrokenId = e.Id; // gap inside the chain
+            continue;
+        }
+
+        if (chainStarted && e.PrevHash != expectedPrev && firstBrokenId is null)
+            firstBrokenId = e.Id;
+        if (AuditLogger.ComputeHash(e) != e.EntryHash && firstBrokenId is null)
+            firstBrokenId = e.Id;
+
+        expectedPrev = e.EntryHash;
+        chainStarted = true;
+        checked_++;
+    }
+
+    return Results.Ok(new
+    {
+        valid = firstBrokenId is null,
+        total = entries.Count,
+        verified = checked_,
+        legacyUnhashed = legacy,
+        firstBrokenId,
+        verifiedAt = DateTimeOffset.UtcNow
+    });
+}).RequireAuthorization("RequireAdmin");
 
 // ── First-run setup wizard (Admin only) ──────────────────────────────────────────
 // Lets an Admin enter Graph credentials in the browser instead of editing JSON.

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { ShieldAlert, ExternalLink, Lightbulb, CheckCircle2, AlertTriangle, ChevronRight, Layers, ArrowRight, ShieldCheck, Filter, RefreshCw } from "lucide-react";
-import { SecurityRecommendation } from "../services/types";
+import { SecurityRecommendation, Tone } from "../services/types";
 import { recApi } from "../services/api";
 import { Card, KpiTile, Badge, EmptyState, SectHdr } from "../components/SharedComponents";
 
@@ -43,12 +43,12 @@ export function RecommendationsPage() {
   const highCount = useMemo(() => recommendations.filter(r => r.severity === "high").length, [recommendations]);
   const totalAffected = useMemo(() => recommendations.reduce((acc, r) => acc + r.affectedCount, 0), [recommendations]);
 
-  const sevTone = (sev: string) => {
+  const sevTone = (sev: string): Tone => {
     switch (sev.toLowerCase()) {
-      case "critical": return "danger";
-      case "high": return "warn";
+      case "critical": return "error";
+      case "high": return "warning";
       case "medium": return "info";
-      default: return "success";
+      default: return "good";
     }
   };
 
@@ -87,29 +87,29 @@ export function RecommendationsPage() {
         <KpiTile
           label="Active Recommendations"
           value={recommendations.length}
-          icon={Layers}
+          icon={<Layers size={20} />}
           tone="info"
           sub="Evaluated against active telemetry"
         />
         <KpiTile
           label="Critical Priority"
           value={criticalCount}
-          icon={ShieldAlert}
-          tone="danger"
+          icon={<ShieldAlert size={20} />}
+          tone="error"
           sub="Immediate action required"
         />
         <KpiTile
           label="High Priority"
           value={highCount}
-          icon={AlertTriangle}
-          tone="warn"
+          icon={<AlertTriangle size={20} />}
+          tone="warning"
           sub="Schedule remediation within 48h"
         />
         <KpiTile
           label="Total Entities Affected"
           value={totalAffected}
-          icon={ShieldCheck}
-          tone={totalAffected > 0 ? "warn" : "success"}
+          icon={<ShieldCheck size={20} />}
+          tone={totalAffected > 0 ? "warning" : "good"}
           sub="Users, devices & mailboxes"
         />
       </div>
@@ -142,7 +142,7 @@ export function RecommendationsPage() {
           Analyzing tenant telemetry and building guidance cards...
         </div>
       ) : filtered.length === 0 ? (
-        <EmptyState icon={CheckCircle2} title="No Recommendations Found" sub="Your tenant matches all baseline criteria in this category." />
+        <EmptyState icon={<CheckCircle2 size={28} />} message="No recommendations found — your tenant matches all baseline criteria in this category." />
       ) : (
         <div className="grid grid-cols-1 gap-4">
           {filtered.map(item => {
@@ -172,9 +172,7 @@ export function RecommendationsPage() {
                     </div>
                     <div>
                       <div className="flex flex-wrap items-center gap-2 mb-1">
-                        <Badge tone={sevTone(item.severity) as any}>
-                          {item.severity.toUpperCase()}
-                        </Badge>
+                        <Badge label={item.severity.toUpperCase()} tone={sevTone(item.severity)} />
                         <span className="text-xs font-semibold text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700/60">
                           {item.category}
                         </span>
