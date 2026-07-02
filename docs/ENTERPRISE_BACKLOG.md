@@ -19,12 +19,15 @@ Ship-the-edition gate — these must all be true to call it "Enterprise":
 **Done ✅** — Microsoft sign-in + token validation · RBAC (Admin/Analyst/Viewer) +
 in-app user management + invites · audit trail · HTTPS + encryption at rest ·
 one-command install + Setup wizard · Trends & history · Compliance framework scoring
-(configurable) · affected-entity on alerts · 24 automated tests · CSP header · finish §0 (perfect the tabs).
+(configurable) · affected-entity on alerts · CSP header · finish §0 (perfect the tabs) ·
+audit hardening (IP/UA + SHA-256 hash chain + CSV export + verify + sign-in events) ·
+`/health` endpoint (DB/Graph/collection freshness) · structured JSON logging +
+correlation IDs · role-claim caching (60s TTL + eviction) · data retention/pruning
+(nightly worker, configurable) · favicon + meta · 34 automated tests.
 
 **Required to ship 🔴** — certificate auth for Graph (replace client secret) ·
-audit hardening (IP + tamper-evidence + export) · `/health` endpoint ·
-structured logging · EF Core migrations (versioned upgrades) · role-claim caching ·
-data retention/pruning · accessibility pass · favicon/meta · **rotate the exposed client secret** *(owner action)*.
+EF Core migrations (versioned upgrades) · accessibility pass ·
+**rotate the exposed client secret** *(owner action)*.
 
 Everything else below is post-ship (v.next). Detail follows.
 
@@ -104,9 +107,8 @@ building new pages.
   distinct visuals (no data / failed to load+retry / needs Graph permission).
 - 🟡 **Large-list performance** — long tables render all rows; add virtualization or
   server paging for big tenants.
-- 🟢 **Favicon + tab branding** — no favicon today; add icon, theme-color meta,
-  apple-touch-icon.
-- 🟢 **index.html meta** — add description / Open Graph / `<meta name=theme-color>`.
+- ✅ **Favicon + tab branding** — shield SVG favicon, theme-color, apple-touch-icon. (Completed)
+- ✅ **index.html meta** — description / Open Graph / theme-color. (Completed)
 - 🟢 **Consistent number/date formatting** — thousands separators, consistent relative
   vs absolute time, explicit timezone label (UTC vs local) on every timestamp.
 - 🟢 **Toasts** — make dismissible, stack, `aria-live=polite`, auto-expire consistently.
@@ -163,13 +165,17 @@ building new pages.
 
 ## E. Enterprise plumbing (tracked, lower priority for this product pass)
 
-- 🔴 **Audit hardening** — capture IP/user-agent, cover sign-in + alert + collection
-  events, tamper-evident hash chain, CSV export, retention. (Compliance through-line.)
-- 🟡 **/health endpoint** (DB + Graph + last-collection) for monitoring/orchestration.
-- 🟡 **Role-claim caching** (short TTL) — stop per-request DB lookups.
+- ✅ **Audit hardening** — IP/user-agent capture, sign-in + alert events, tamper-evident
+  SHA-256 hash chain, CSV export + verify endpoint, retention. (Completed; collection
+  history lives in CollectionRuns rather than the audit trail to avoid 15-min noise.)
+- ✅ **/health endpoint** (DB + Graph + last-collection freshness; 503 when DB down). (Completed)
+- ✅ **Role-claim caching** (60s TTL, evicted on role change/removal). (Completed)
 - 🟡 **Setup permission verification** — check each required Graph permission is granted
   (fixes ambiguous "Needs permission" on Secure Score).
-- 🟢 **Structured logging + correlation IDs**, basic rate limiting.
+- ✅ **Structured logging + correlation IDs** (JSON console outside Dev, X-Correlation-Id
+  echo + logging scope). Basic rate limiting still open. (Completed)
+- ✅ **Data retention/pruning** — nightly worker, per-dataset day windows in the
+  `Retention` config section; open alerts never pruned. (Completed)
 - 🟢 **EF migrations** instead of EnsureCreated + raw DDL for versioned upgrades.
 
 ---
