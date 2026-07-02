@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { Inbox, AlertTriangle, ShieldAlert, CheckCircle, Archive, Send, XCircle, Filter, ShieldCheck, Search, Flag } from "lucide-react";
 import { SecurityAlert, EmailProtectionData, EmailProtectionAlert, Tone } from "../services/types";
-import { fmtDate, relTime } from "../services/utils";
+import { fmtDate, relTime, fmtFullTime } from "../services/utils";
+import { consumeNavSeed } from "../services/api";
 import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, ExportDropdown, SectHdr } from "../components/SharedComponents";
 
 export function EmailPage({ alerts, emailProtection, onAlertClick }:
@@ -11,10 +12,26 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
   const [sevFilter, setSevFilter] = useState("");
   const [catFilter, setCatFilter] = useState("");
 
-  const emailAlerts = alerts.filter(a => a.service==="ExchangeOnline");
-  const quarantined = emailAlerts.filter(a => a.alertType==="QuarantinedMessage");
-  const mailFlow = emailAlerts.filter(a => a.alertType==="MailFlowIssue");
-  const malware = alerts.filter(a => a.alertType==="MalwareDetection");
+  useEffect(() => {
+    const checkSeed = () => {
+      const seed = consumeNavSeed("email");
+      if (seed) { setSearch(seed); }
+    };
+    checkSeed();
+    const listener = (e: any) => {
+      if (e.detail?.page === "email" && e.detail?.search) {
+        setSearch(e.detail.search);
+      }
+    };
+    window.addEventListener("nav-seed-update", listener);
+    return () => window.removeEventListener("nav-seed-update", listener);
+  }, []);
+
+  const q = search.toLowerCase();
+  const emailAlerts = useMemo(() => alerts.filter(a => a.service==="ExchangeOnline" || a.alertType==="MalwareDetection" || a.alertType==="QuarantinedMessage" || a.alertType==="MailFlowIssue"), [alerts]);
+  const quarantined = useMemo(() => emailAlerts.filter(a => a.alertType==="QuarantinedMessage" && (!q || (a.title+a.description+(a.userPrincipalName||"")).toLowerCase().includes(q))), [emailAlerts, q]);
+  const mailFlow = useMemo(() => emailAlerts.filter(a => a.alertType==="MailFlowIssue" && (!q || (a.title+a.description).toLowerCase().includes(q))), [emailAlerts, q]);
+  const malware = useMemo(() => emailAlerts.filter(a => a.alertType==="MalwareDetection" && (!q || (a.title+a.description).toLowerCase().includes(q))), [emailAlerts, q]);
 
   const mdoCategories = useMemo(()=>
     [...new Set((emailProtection?.alerts??[]).map(a=>a.category).filter((c):c is string=>!!c))].sort(),
@@ -39,22 +56,27 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
           portalLabel="View in Defender XDR"
         >
           <DetailField label="Alert ID" value={selectedMdo.id} copy/>
+          {selectedMdo.alertWebUrl && <DetailField label="Portal URL" value="Open in Defender XDR" onNavigate={()=>window.open(selectedMdo.alertWebUrl, "_blank")} navLabel="Open →"/>}
           <DetailField label="Severity" value={selectedMdo.severity}/>
           <DetailField label="Status" value={selectedMdo.status}/>
           <DetailField label="Category" value={selectedMdo.category}/>
-          <DetailField label="Detected" value={selectedMdo.createdDateTime ? `${relTime(selectedMdo.createdDateTime)} (${fmtDate(selectedMdo.createdDateTime)})` : undefined} title={fmtDate(selectedMdo.createdDateTime)}/>
+          <DetailField label="Detected" value={fmtFullTime(selectedMdo.createdDateTime)} title={fmtDate(selectedMdo.createdDateTime)}/>
           {selectedMdo.description && <><div className="dm-section-hdr">Description</div><div className="dm-desc-block">{selectedMdo.description}</div></>}
         </DetailModal>
       )}
       <div className="kpi-row kpi-row-4">
         <KpiTile icon={<Inbox size={18}/>} label="QUARANTINED" value={quarantined.length}
-          sub="Messages held in quarantine" tone={quarantined.length===0?"good":quarantined.length<=5?"warning":"error"}/>
+          sub="Messages held in quarantine" tone={quarantined.length===0?"good":quarantined.length<=5?"warning":"error"}
+          onClick={() => setSearch("quarantined")}/>
         <KpiTile icon={<AlertTriangle size={18}/>} label="MAIL FLOW ISSUES" value={mailFlow.length}
-          sub="Active delivery problems" tone={mailFlow.length===0?"good":"error"}/>
+          sub="Active delivery problems" tone={mailFlow.length===0?"good":"error"}
+          onClick={() => setSearch("mailflow")}/>
         <KpiTile icon={<ShieldAlert size={18}/>} label="MALWARE DETECTED" value={malware.length}
-          sub="Email-borne threats" tone={malware.length===0?"good":"error"}/>
+          sub="Email-borne threats" tone={malware.length===0?"good":"error"}
+          onClick={() => setSearch("malware")}/>
         <KpiTile icon={<CheckCircle size={18}/>} label="DEFENDER STATUS" value={mailFlow.length===0?"Active":"Degraded"}
-          sub="Office 365 Defender" tone={mailFlow.length===0?"good":"warning"}/>
+          sub="Office 365 Defender" tone={mailFlow.length===0?"good":"warning"}
+          onClick={() => setSearch("")}/>
       </div>
 
       <div className="two-col">
@@ -70,7 +92,7 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
                       <div className="al-title">{a.title}</div>
                       <div className="al-desc">{a.userPrincipalName} · {a.description}</div>
                     </div>
-                    <span className="al-date" title={fmtDate(a.detectedAt)}>{relTime(a.detectedAt)}</span>
+                    <span className="al-date">{fmtFullTime(a.detectedAt)}</span>
                   </div>
                 ))}
               </div>
@@ -90,6 +112,7 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
                       <div className="al-title">{a.title}</div>
                       <div className="al-desc">{a.description}</div>
                     </div>
+                    <span className="al-date">{fmtFullTime(a.detectedAt)}</span>
                     <Badge label={a.severity} tone={a.severity==="High"||a.severity==="Critical"?"error":"warning"}/>
                   </div>
                 ))}
@@ -98,6 +121,23 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
           }
         </Card>
       </div>
+
+      {malware.length > 0 && (
+        <Card title="Malware Detections" badge={<Badge label={`${malware.length} threats`} tone="error"/>}>
+          <div className="alert-list">
+            {malware.map((a, i) => (
+              <div key={i} className="al-item" onClick={() => onAlertClick(a)}>
+                <ShieldAlert size={14} color="#dc2626" />
+                <div className="al-body">
+                  <div className="al-title">{a.title}</div>
+                  <div className="al-desc">{a.userPrincipalName ? `${a.userPrincipalName} · ` : ""}{a.description}</div>
+                </div>
+                <span className="al-date">{fmtFullTime(a.detectedAt)}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <Card title="Email Threat Summary">
         <div className="threat-grid">
@@ -173,7 +213,7 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
                         <div className="row-meta">
                           {a.category&&<span className="row-meta-item">{a.category}</span>}
                           <Badge label={a.status} tone={a.status==="resolved"?"good":"warning"}/>
-                          <span className="row-meta-item">{relTime(a.createdDateTime)}</span>
+                          <span className="row-meta-item">{fmtFullTime(a.createdDateTime)}</span>
                         </div>
                       </div>
                       <Badge label={a.severity} tone={a.severity==="high"||a.severity==="High"?"error":"warning"}/>

@@ -49,3 +49,6 @@ dotnet
 *.ldf
 publish/
 keys/
+
+*.pfx
+vigil365.pfx

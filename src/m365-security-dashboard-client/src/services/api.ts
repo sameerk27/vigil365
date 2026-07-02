@@ -85,6 +85,18 @@ export const acApi = {
   },
 };
 
+export const recApi = {
+  async getRecommendations(): Promise<import("./types").SecurityRecommendation[]> {
+    try { const r = await apiFetch(`${apiBase}/api/recommendations`); return r.ok ? await r.json() : []; } catch { return []; }
+  },
+  async getAlertCoverage(): Promise<import("./types").AlertCoverageScorecard | null> {
+    try { const r = await apiFetch(`${apiBase}/api/alert-coverage`); return r.ok ? await r.json() : null; } catch { return null; }
+  },
+  async enableCoverageRule(id: string): Promise<import("./types").AlertCoverageScorecard | null> {
+    try { const r = await apiFetch(`${apiBase}/api/alert-coverage/enable/${id}`, { method: "POST" }); return r.ok ? await r.json() : null; } catch { return null; }
+  },
+};
+
 // ─── In-app cross-navigation ────────────────────────────────────────────────────
 // Lets one page deep-link into another with a search/filter seed (e.g. Alert Center
 // "view user in Identity"). App registers the page-setter; pages read & consume the
@@ -101,6 +113,9 @@ export function registerNavHandler(handler: (target: CrossNavTarget) => void): (
 export function crossNavigate(target: CrossNavTarget): void {
   if (target.search != null) _pendingSeed[target.page] = target.search;
   _navHandler?.(target);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("nav-seed-update", { detail: target }));
+  }
 }
 
 // A page calls this on mount to pick up (and clear) any seed left for it.

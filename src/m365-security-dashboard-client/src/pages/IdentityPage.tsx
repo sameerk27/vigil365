@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { Key, UserX, Globe, Users, Search, CheckCircle, XCircle, UserCheck, ShieldCheck, AlertCircle, AlertTriangle, Clock, User, Lock, ShieldAlert } from "lucide-react";
 import { IdentityData, SecurityAlert, PrivilegedRolesData, PimData, MdiAlertsData, RiskDetectionsData, IdentityHealthData, MdiAlert, RiskDetection, Tone } from "../services/types";
-import { pctTone, fmtDate, sevColor, relTime } from "../services/utils";
-import { consumeNavSeed } from "../services/api";
+import { pctTone, fmtDate, sevColor, relTime, fmtFullTime } from "../services/utils";
+import { consumeNavSeed, crossNavigate } from "../services/api";
 import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, InfoRow, ProgressBar, ExportDropdown, CircleGauge, StatBox, SectHdr } from "../components/SharedComponents";
 import { FilterPresets } from "../components/FilterPresets";
 
@@ -18,16 +18,30 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
   const [showResolved, setShowResolved] = useState(true); // default ON so nothing is hidden
 
   // Pick up a deep-link seed (e.g. Alert Center → "view user in Identity")
-  useEffect(() => { const seed = consumeNavSeed("identity"); if (seed) { setSearch(seed); setShowResolved(true); } }, []);
+  useEffect(() => {
+    const checkSeed = () => {
+      const seed = consumeNavSeed("identity");
+      if (seed) { setSearch(seed); setShowResolved(true); }
+    };
+    checkSeed();
+    const listener = (e: any) => {
+      if (e.detail?.page === "identity" && e.detail?.search) {
+        setSearch(e.detail.search);
+        setShowResolved(true);
+      }
+    };
+    window.addEventListener("nav-seed-update", listener);
+    return () => window.removeEventListener("nav-seed-update", listener);
+  }, []);
 
   const identityAlerts = useMemo(() => alerts.filter(a => a.service==="EntraId"), [alerts]);
   const q = search.toLowerCase();
 
   const mfaMissing = useMemo(() => {
-    let items = identityAlerts.filter(a => a.alertType==="MfaStatus" && !a.isResolved);
+    let items = identityAlerts.filter(a => a.alertType==="MfaStatus" && (!showResolved ? !a.isResolved : true));
     if (search) items = items.filter(a => a.userPrincipalName?.toLowerCase().includes(q) || a.title.toLowerCase().includes(q));
     return items;
-  }, [identityAlerts, search, q]);
+  }, [identityAlerts, search, showResolved, q]);
 
   const riskySignIns = useMemo(() => {
     let items = identityAlerts.filter(a => a.alertType==="RiskySignIn");
@@ -94,10 +108,11 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
           portalLabel="View in Defender XDR"
         >
           <DetailField label="Alert ID" value={selectedMdi.id} copy/>
+          {selectedMdi.alertWebUrl && <DetailField label="Portal URL" value="Open in Defender XDR" onNavigate={()=>window.open(selectedMdi.alertWebUrl, "_blank")} navLabel="Open →"/>}
           <DetailField label="Severity" value={selectedMdi.severity}/>
           <DetailField label="Status" value={selectedMdi.status}/>
           <DetailField label="Category" value={selectedMdi.category}/>
-          <DetailField label="Created" value={selectedMdi.createdDateTime ? `${relTime(selectedMdi.createdDateTime)} (${fmtDate(selectedMdi.createdDateTime)})` : undefined} title={fmtDate(selectedMdi.createdDateTime)}/>
+          <DetailField label="Created" value={fmtFullTime(selectedMdi.createdDateTime)} title={fmtDate(selectedMdi.createdDateTime)}/>
           {selectedMdi.description && <><div className="dm-section-hdr">Description</div><div className="dm-desc-block">{selectedMdi.description}</div></>}
           {(selectedMdi.mitreTechniques?.length ?? 0) > 0 && (
             <><div className="dm-section-hdr">MITRE Techniques</div>
@@ -114,27 +129,30 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
           portalLabel="View in Entra ID Protection"
         >
           <DetailField label="User Display Name" value={selectedDetection.userDisplayName}/>
-          <DetailField label="User Principal Name" value={selectedDetection.userPrincipalName} copy={!!selectedDetection.userPrincipalName}/>
+          <DetailField label="User Principal Name" value={selectedDetection.userPrincipalName} copy={!!selectedDetection.userPrincipalName} onNavigate={selectedDetection.userPrincipalName ? () => { setSelectedDetection(null); setSearch(selectedDetection.userPrincipalName!); } : undefined} navLabel="Filter user"/>
           <DetailField label="Detection ID" value={selectedDetection.id} copy={!!selectedDetection.id}/>
           <DetailField label="Risk Event Type" value={selectedDetection.riskEventType?.replace(/([A-Z])/g," $1").trim()}/>
           <DetailField label="Risk Level" value={selectedDetection.riskLevel}/>
           <DetailField label="Risk State" value={selectedDetection.riskState}/>
           <DetailField label="IP Address" value={selectedDetection.ipAddress} copy={!!selectedDetection.ipAddress}/>
           <DetailField label="Location" value={[selectedDetection.city, selectedDetection.country].filter(Boolean).join(", ")||null}/>
-          <DetailField label="Activity DateTime" value={selectedDetection.activityDateTime ? `${relTime(selectedDetection.activityDateTime)} (${fmtDate(selectedDetection.activityDateTime)})` : undefined} title={fmtDate(selectedDetection.activityDateTime)}/>
-          <DetailField label="Last Updated" value={selectedDetection.lastUpdatedDateTime ? `${relTime(selectedDetection.lastUpdatedDateTime)} (${fmtDate(selectedDetection.lastUpdatedDateTime)})` : undefined} title={fmtDate(selectedDetection.lastUpdatedDateTime)}/>
+          <DetailField label="Activity DateTime" value={fmtFullTime(selectedDetection.activityDateTime)} title={fmtDate(selectedDetection.activityDateTime)}/>
+          <DetailField label="Last Updated" value={fmtFullTime(selectedDetection.lastUpdatedDateTime)} title={fmtDate(selectedDetection.lastUpdatedDateTime)}/>
         </DetailModal>
       )}
       <div className="kpi-row kpi-row-4">
         <KpiTile icon={<Key size={18}/>} label="MFA COVERAGE" value={`${mfaPct}%`}
-          sub={`${identity?.mfa.registered??0} of ${identity?.mfa.total??0} users`} tone={pctTone(mfaPct,95,80)}/>
+          sub={`${identity?.mfa.registered??0} of ${identity?.mfa.total??0} users`} tone={pctTone(mfaPct,95,80)}
+          onClick={() => { setSearch("mfa"); }}/>
         <KpiTile icon={<UserX size={18}/>} label="RISKY USERS" value={riskyUsers.length}
           sub="Active risk detections" tone={riskyUsers.length===0?"good":riskyUsers.length<=3?"warning":"error"}
           active={!showResolved} onClick={() => { setSearch(""); setRiskLevel(""); setShowResolved(false); }}/>
         <KpiTile icon={<Globe size={18}/>} label="FOREIGN SIGN-INS" value={identity?.signIns.foreign??0}
-          sub="Last 7 days" tone={(identity?.signIns.foreign??0)===0?"good":"warning"}/>
+          sub="Last 7 days" tone={(identity?.signIns.foreign??0)===0?"good":"warning"}
+          onClick={() => { document.getElementById("foreign-signins-section")?.scrollIntoView({ behavior: "smooth" }); }}/>
         <KpiTile icon={<Users size={18}/>} label="GUEST ACCOUNTS" value={identity?.guests.total??0}
-          sub="External users" tone={((identity?.guests.total??0)>20)?"warning":"good"}/>
+          sub="External users" tone={((identity?.guests.total??0)>20)?"warning":"good"}
+          onClick={() => { setSearch("#EXT#"); }}/>
       </div>
 
       <div className="sticky-filter-bar filters-bar">
@@ -159,6 +177,8 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
           ...riskyUsers.map(a=>({ Section:"Risky Users", User:a.userPrincipalName??"", Severity:a.severity, Resolved:String(a.isResolved), Detected:a.detectedAt })),
           ...riskySignIns.map(a=>({ Section:"Risky Sign-ins", User:a.userPrincipalName??"", Severity:a.severity, Resolved:String(a.isResolved), Detected:a.detectedAt })),
           ...filteredMdiAlerts.map(a=>({ Section:"MDI Alerts", User:"", Severity:a.severity, Resolved:"", Detected:a.createdDateTime??"" })),
+          ...filteredDetections.map(d=>({ Section:"Risk Detections", User:d.userPrincipalName??d.userDisplayName??"", Severity:d.riskLevel??"", Resolved:d.riskState??"", Detected:d.activityDateTime??"" })),
+          ...filteredPim.map(p=>({ Section:"PIM Activations", User:p.principalDisplayName??p.principalUpn??"", Severity:p.roleName??"", Resolved:"", Detected:p.createdDateTime??"" })),
         ]} filename="identity-export.csv"/>
         {hasFilter&&<button className="btn-apply" onClick={()=>{setSearch("");setRiskLevel("");}}>Clear filters</button>}
         {search && (
@@ -190,8 +210,7 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
           <ProgressBar pct={mfaPct}/>
           {mfaMissing.length>0?(
             <div className="mini-list" style={{marginTop:14}}>
-              <div className="list-count">{mfaMissing.length} user{mfaMissing.length!==1?"s":""} without MFA</div>
-              <SectHdr>USERS WITHOUT MFA — {mfaMissing.length} shown</SectHdr>
+              <SectHdr>USERS WITHOUT MFA ({mfaMissing.length})</SectHdr>
               {mfaMissing.slice(0,8).map((a,i)=>(
                 <div key={i} className="mini-row al-clickable" onClick={()=>onAlertClick(a)}>
                   <UserX size={12} color="#dc2626"/>
@@ -255,6 +274,21 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
               ))}
             </div>
           ):<EmptyState icon={<ShieldCheck size={28} color="#d1d5db"/>} message="No risky sign-ins detected"/>}
+          {filteredForeignSignIns.length > 0 && (
+            <div id="foreign-signins-section" className="alert-list" style={{ marginTop: 18, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+              <SectHdr>FOREIGN SIGN-INS ({filteredForeignSignIns.length})</SectHdr>
+              {filteredForeignSignIns.slice(0, 5).map((s, i) => (
+                <div key={i} className="al-item al-item-noclick" style={{ cursor: "default" }}>
+                  <Globe size={14} style={{ color: "var(--status-warn-text)", flexShrink: 0, marginTop: 2 }} />
+                  <div className="al-body">
+                    <div className="al-title">{s.userPrincipalName ?? s.title}</div>
+                    <div className="al-desc">{s.title !== s.userPrincipalName ? s.title : "Foreign sign-in detected"}</div>
+                  </div>
+                  <span className="al-date">{fmtFullTime(s.detectedAt)}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
 
         <Card title="Risk Detections" badge={<><Badge label={`${riskDetections?.total??0} detections`} tone={(riskDetections?.total??0)>0?"error":"good"}/><span className="card-count">{filteredDetections.length}</span></>}>

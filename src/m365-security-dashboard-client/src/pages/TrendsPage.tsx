@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from "react";
 import { TrendingUp, TrendingDown, Minus, Info, Shield, Users, Smartphone, ShieldAlert, Activity, Download, Printer, FileText, ChevronDown, ChevronUp, BarChart3, AlertTriangle, CheckCircle } from "lucide-react";
 import { Card, LineChart, StateMessage, LoadingSkeleton, InlineError, CircleGauge, Badge } from "../components/SharedComponents";
 import { useAuth, apiFetch, apiBase } from "../services/api";
+import { fmtDate } from "../services/utils";
 
 type TrendSnapshot = {
   id: string;
@@ -56,6 +57,8 @@ export function TrendsPage() {
     const filtered = snapshots.filter(s => new Date(s.capturedAt).getTime() >= cutoff);
     return filtered.length > 1 ? filtered : snapshots.slice(-2);
   }, [snapshots, timeRange]);
+
+  const reversedSnapshots = useMemo(() => [...filteredSnapshots].reverse(), [filteredSnapshots]);
 
   // ─── Computed analytics ───────────────────────────────────────────────────────
   const latest = filteredSnapshots[filteredSnapshots.length - 1];
@@ -337,12 +340,12 @@ export function TrendsPage() {
               </tr>
             </thead>
             <tbody>
-              {[...filteredSnapshots].reverse().map((s, i) => (
+              {reversedSnapshots.map((s, i) => (
                 <tr key={s.id} style={{ background: i % 2 === 0 ? "transparent" : "var(--color-bg-alt)" }}>
-                  <td style={tdStyle}>{new Date(s.capturedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</td>
+                  <td style={tdStyle}>{fmtDate(s.capturedAt)}</td>
                   {METRICS.map(m => {
                     const val = s[m.key] as number;
-                    const prevRow = i < filteredSnapshots.length - 1 ? [...filteredSnapshots].reverse()[i + 1] : null;
+                    const prevRow = i < reversedSnapshots.length - 1 ? reversedSnapshots[i + 1] : null;
                     const prevVal = prevRow ? prevRow[m.key] as number : null;
                     const diff = prevVal !== null ? val - prevVal : 0;
                     const improving = diff === 0 ? null : m.lowerIsBetter ? diff < 0 : diff > 0;
@@ -375,9 +378,9 @@ export function TrendsPage() {
             </tr>
           </thead>
           <tbody>
-            {[...filteredSnapshots].reverse().slice(0, 30).map((s, i) => (
+            {reversedSnapshots.slice(0, 30).map((s, i) => (
               <tr key={s.id} style={{ background: i % 2 === 0 ? "transparent" : "#f8f9fa" }}>
-                <td style={{ ...tdStyle, fontSize: 10, padding: "3px 6px" }}>{new Date(s.capturedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</td>
+                <td style={{ ...tdStyle, fontSize: 10, padding: "3px 6px" }}>{fmtDate(s.capturedAt)}</td>
                 {METRICS.map(m => (
                   <td key={m.key} style={{ ...tdStyle, fontSize: 10, padding: "3px 6px" }}>
                     {m.isPct ? (s[m.key] as number).toFixed(1) : s[m.key]}{m.unit}

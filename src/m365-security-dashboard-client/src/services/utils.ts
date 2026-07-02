@@ -40,6 +40,10 @@ export function sevColor(s: string): string {
   } as Record<string, string>)[key] ?? "var(--dot-info)";
 }
 
+export function sevClass(s?: string): string {
+  return `sev-${(s || "info").toLowerCase()}`;
+}
+
 export function pctTone(p: number, goodThresh = 90, warnThresh = 70): Tone {
   return p >= goodThresh ? "good" : p >= warnThresh ? "warning" : p > 0 ? "error" : "neutral";
 }
@@ -86,6 +90,13 @@ export function relTime(iso?: string | null): string {
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
   if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
   return d.toLocaleDateString();
+}
+
+export function fmtFullTime(iso?: string | null): string {
+  if (!iso) return "–";
+  const rel = relTime(iso);
+  const abs = fmtDate(iso);
+  return rel ? `${rel} (${abs})` : abs;
 }
 
 export function downloadCsv(rows: Record<string, unknown>[], filename: string): void {

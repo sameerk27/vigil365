@@ -103,13 +103,26 @@ export function LineChart({ data, color = "#3b82f6", onClick }: { data: { date: 
   if (data.length < 2) return <div className="chart-empty">Collecting trend data…</div>;
 
   const w = 500, h = 140;
-  const pad = { t: 10, r: 12, b: 28, l: 40 };
+  const pad = { t: 18, r: 16, b: 28, l: 42 };
   const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
   const vals = data.map(d => d.value);
   const rawMin = Math.min(...vals), rawMax = Math.max(...vals) || 1;
-  // Add 5% padding to range so line doesn't hug edges
-  const rangePad = (rawMax - rawMin) * 0.05 || 0.5;
-  const min = rawMin - rangePad, max = rawMax + rangePad, range = max - min;
+  
+  // Enforce sensible bounds so percentage metrics and stable scores stay grounded as per Microsoft
+  const diff = rawMax - rawMin;
+  const span = Math.max(diff, rawMax <= 100 ? 15 : Math.max(10, diff * 0.2));
+  const mid = (rawMax + rawMin) / 2;
+  let min = mid - span / 2;
+  let max = mid + span / 2;
+  if (rawMin >= 0 && rawMax <= 100) {
+    min = Math.max(0, min);
+    max = Math.min(100, max);
+    if (max - min < 15) {
+      if (min === 0) max = Math.min(100, 15);
+      else if (max === 100) min = Math.max(0, 85);
+    }
+  }
+  const range = max - min || 1;
 
   const pts = data.map((d, i) => ({
     x: pad.l + (i / (data.length - 1)) * cw,
@@ -127,8 +140,8 @@ export function LineChart({ data, color = "#3b82f6", onClick }: { data: { date: 
   const area = `${line} L ${pts.at(-1)!.x.toFixed(1)} ${(pad.t+ch).toFixed(1)} L ${pts[0].x.toFixed(1)} ${(pad.t+ch).toFixed(1)} Z`;
 
   // Only 3 Y-axis labels: min, mid, max — prevents overlap
-  const yLabels = [rawMin, rawMin + (rawMax - rawMin) / 2, rawMax].map((v, i) => ({
-    v: Number.isInteger(v) ? v : +v.toFixed(1),
+  const yLabels = [min, min + range / 2, max].map((v) => ({
+    v: Number.isInteger(v) ? Math.round(v) : +v.toFixed(1),
     y: pad.t + ch - ((v - min) / range) * ch
   }));
 
@@ -145,7 +158,7 @@ export function LineChart({ data, color = "#3b82f6", onClick }: { data: { date: 
   };
 
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="line-chart-svg" preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "100%", overflow: "visible" }} onMouseLeave={() => setHoverIdx(null)}
+    <svg viewBox={`0 0 ${w} ${h}`} className="line-chart-svg" preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "100%", display: "block" }} onMouseLeave={() => setHoverIdx(null)}
       role="img" aria-label={`Line chart, ${data.length} points, from ${data[0].value} (${data[0].date}) to ${data.at(-1)!.value} (${data.at(-1)!.date}); min ${rawMin}, max ${rawMax}`}>
       <defs>
         <linearGradient id={`grad-${chartId}`} x1="0" y1="0" x2="0" y2="1">
@@ -355,14 +368,20 @@ export function InlineError({ title, perm, message }: { title: string; perm?: st
 }
 
 // ─── Detail Modal ─────────────────────────────────────────────────────────────
-export function DetailField({ label, value, copy, title }: { label: string; value?: string | null; copy?: boolean; title?: string }) {
-  if (!value) return null;
+export function DetailField({ label, value, copy, copyValue, title, onNavigate, navLabel }: { label: string; value?: React.ReactNode; copy?: boolean; copyValue?: string; title?: string; onNavigate?: () => void; navLabel?: string }) {
+  if (value === undefined || value === null || value === "") return null;
+  const rawStr = typeof value === "string" ? value : (copyValue ?? "");
   return (
     <div className="detail-field">
       <span className="detail-label">{label}</span>
-      <span className="detail-value" style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis" }} title={title ?? value}>{value}</span>
-        {copy && <CopyButton value={value} label={label}/>}
+      <span className="detail-value" style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, flexWrap: "wrap" }}>
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis" }} title={title ?? (typeof value === "string" ? value : undefined)}>{value}</span>
+        {copy && rawStr && <CopyButton value={copyValue ?? rawStr} label={label}/>}
+        {onNavigate && (
+          <button type="button" onClick={onNavigate} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "1px 6px", fontSize: 11, cursor: "pointer", color: "var(--accent)", marginLeft: 4, display: "inline-flex", alignItems: "center", gap: 3 }}>
+            {navLabel ?? "View →"}
+          </button>
+        )}
       </span>
     </div>
   );
@@ -372,8 +391,8 @@ export function DetailModal({ title, subtitle, onClose, portalUrl, portalLabel, 
   title: string;
   subtitle?: string;
   onClose: () => void;
-  portalUrl: string;
-  portalLabel: string;
+  portalUrl?: string;
+  portalLabel?: string;
   children: React.ReactNode;
 }) {
   useEffect(() => {
@@ -393,9 +412,11 @@ export function DetailModal({ title, subtitle, onClose, portalUrl, portalLabel, 
         </div>
         <div className="detail-modal-body">{children}</div>
         <div className="detail-modal-footer">
-          <a href={portalUrl} target="_blank" rel="noopener noreferrer" className="dm-portal-btn">
-            <ExternalLink size={13}/>{portalLabel} →
-          </a>
+          {portalUrl && (
+            <a href={portalUrl} target="_blank" rel="noopener noreferrer" className="dm-portal-btn">
+              <ExternalLink size={13}/>{portalLabel ?? "Open in portal"} →
+            </a>
+          )}
           <button className="dm-close-btn" onClick={onClose}>Close</button>
         </div>
       </div>

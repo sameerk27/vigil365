@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
-import { X, Bell, AlertCircle, Clock, ShieldAlert, Activity, CheckCircle, Search, ExternalLink, ArrowRight } from "lucide-react";
-import { AlertPolicy, TriggeredAlert, NotificationSettings, NotificationLogEntry, Tone } from "../services/types";
-import { acApi, useAuth, crossNavigate } from "../services/api";
+import { X, Bell, AlertCircle, Clock, ShieldAlert, Activity, CheckCircle, Search, ExternalLink, ArrowRight, ShieldCheck, AlertTriangle, PlusCircle } from "lucide-react";
+import { AlertPolicy, TriggeredAlert, NotificationSettings, NotificationLogEntry, Tone, AlertCoverageScorecard, AlertBaselineRule } from "../services/types";
+import { acApi, recApi, useAuth, crossNavigate } from "../services/api";
 import { showToast } from "../services/toast";
 import { DetailField, KpiTile, Card, Badge, EmptyState, MiniBarChart, ExportDropdown, ProgressBar, CopyButton } from "../components/SharedComponents";
 import { relTime, fmtDate } from "../services/utils";
 
-type AcTab = "dashboard" | "alerts" | "policies" | "templates" | "notifications";
+type AcTab = "dashboard" | "alerts" | "policies" | "templates" | "coverage" | "notifications";
 
 export const POLICY_TEMPLATES_CATALOG = [
   { name: "Critical Alerts Monitor",   desc: "Triggers when any critical security alert is detected",              metric: "criticalAlertCount", threshold: 1, severity: "critical" as const, category: "identity"   as const },
@@ -241,6 +241,188 @@ function NotificationSettingsTab() {
   );
 }
 
+function CoverageScorecardTab({ onChanged }: { onChanged: () => void | Promise<void> }) {
+  const [data, setData] = useState<AlertCoverageScorecard | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [enablingId, setEnablingId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<"all" | "missing" | "active">("all");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await recApi.getAlertCoverage();
+      setData(res);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleEnable = async (rule: AlertBaselineRule) => {
+    setEnablingId(rule.id);
+    try {
+      const updated = await recApi.enableCoverageRule(rule.id);
+      if (updated) {
+        setData(updated);
+        showToast("success", `Enabled rule: ${rule.title}`);
+        onChanged();
+      } else {
+        showToast("error", "Failed to enable rule via API");
+      }
+    } finally {
+      setEnablingId(null);
+    }
+  };
+
+  if (loading) return <div style={{ padding: 48, textAlign: "center", color: "#94a3b8" }}>Evaluating 20-rule enterprise baseline coverage...</div>;
+  if (!data) return <div style={{ padding: 48, textAlign: "center", color: "#f87171" }}>Failed to load alert coverage baseline.</div>;
+
+  const rules = data.rules.filter(r => filter === "all" ? true : filter === "missing" ? !r.isActive : r.isActive);
+  const missingCount = data.totalRules - data.activeRules;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* Hero Scorecard Gauge Card */}
+      <div style={{ background: "linear-gradient(135deg, rgba(15,23,42,0.95) 0%, rgba(30,27,75,0.85) 100%)", borderRadius: 16, padding: 24, border: "1px solid rgba(99,102,241,0.3)", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 24 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+          <div style={{ width: 84, height: 84, borderRadius: "50%", background: "rgba(99,102,241,0.15)", border: "2px solid rgba(99,102,241,0.5)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+            <span style={{ fontSize: 22, fontWeight: 800, color: "#fff" }}>{data.coveragePercentage}%</span>
+            <span style={{ fontSize: 10, color: "#a5b4fc", textTransform: "uppercase", fontWeight: 600 }}>Score</span>
+          </div>
+          <div>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: "#fff", margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
+              Enterprise Alerting Baseline Scorecard
+            </h2>
+            <p style={{ fontSize: 13, color: "#cbd5e1", marginTop: 4 }}>
+              Comparing active monitoring against Microsoft best practices. <strong>{data.activeRules} of {data.totalRules}</strong> recommended rules are actively monitored.
+            </p>
+            {missingCount > 0 ? (
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 8, padding: "4px 10px", borderRadius: 20, background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.3)", fontSize: 12, color: "#fbbf24", fontWeight: 600 }}>
+                <AlertTriangle size={14}/> {missingCount} unmonitored blind spots detected
+              </div>
+            ) : (
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 8, padding: "4px 10px", borderRadius: 20, background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.3)", fontSize: 12, color: "#34d399", fontWeight: 600 }}>
+                <ShieldCheck size={14}/> 100% full baseline alerting coverage achieved!
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          {(["all", "missing", "active"] as const).map(f => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              style={{
+                padding: "8px 16px",
+                borderRadius: 8,
+                fontSize: 13,
+                fontWeight: 600,
+                border: filter === f ? "1px solid #6366f1" : "1px solid rgba(255,255,255,0.1)",
+                background: filter === f ? "#4f46e5" : "rgba(15,23,42,0.6)",
+                color: filter === f ? "#fff" : "#94a3b8",
+                cursor: "pointer",
+                transition: "all 0.2s"
+              }}
+            >
+              {f === "all" ? `All (${data.totalRules})` : f === "missing" ? `Missing (${missingCount})` : `Active (${data.activeRules})`}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Rules Table */}
+      <Card title="Baseline Alerting Rules Catalog">
+        <div style={{ overflowX: "auto" }}>
+          <table className="data-table" style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.1)", textAlign: "left" }}>
+                <th style={{ padding: "12px 16px", fontSize: 12, color: "#94a3b8" }}>STATUS</th>
+                <th style={{ padding: "12px 16px", fontSize: 12, color: "#94a3b8" }}>RULE NAME</th>
+                <th style={{ padding: "12px 16px", fontSize: 12, color: "#94a3b8" }}>ENGINE</th>
+                <th style={{ padding: "12px 16px", fontSize: 12, color: "#94a3b8" }}>SEVERITY</th>
+                <th style={{ padding: "12px 16px", fontSize: 12, color: "#94a3b8" }}>DESCRIPTION</th>
+                <th style={{ padding: "12px 16px", fontSize: 12, color: "#94a3b8", textAlign: "right" }}>REMEDIATION / ACTION</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rules.map(r => (
+                <tr key={r.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                  <td style={{ padding: "14px 16px" }}>
+                    {r.isActive ? (
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 12, background: "rgba(16,185,129,0.15)", color: "#34d399", fontSize: 12, fontWeight: 700 }}>
+                        <CheckCircle size={14}/> Monitored
+                      </span>
+                    ) : (
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 12, background: "rgba(244,63,94,0.15)", color: "#fb7185", fontSize: 12, fontWeight: 700 }}>
+                        <AlertTriangle size={14}/> Blind Spot
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ padding: "14px 16px", fontWeight: 600, color: "#fff" }}>{r.title}</td>
+                  <td style={{ padding: "14px 16px" }}>
+                    <Badge label={r.ruleType === "Vigil365" ? "In-App DB" : "Native M365"} tone={r.ruleType === "Vigil365" ? "info" : "neutral"}/>
+                  </td>
+                  <td style={{ padding: "14px 16px" }}>
+                    <Badge label={r.severity} tone={sevToneAC(r.severity)}/>
+                  </td>
+                  <td style={{ padding: "14px 16px", fontSize: 13, color: "#cbd5e1", maxWidth: 320 }}>{r.description}</td>
+                  <td style={{ padding: "14px 16px", textAlign: "right" }}>
+                    {r.isActive ? (
+                      <span style={{ fontSize: 12, color: "#64748b" }}>Active monitoring</span>
+                    ) : r.ruleType === "Vigil365" ? (
+                      <button
+                        onClick={() => handleEnable(r)}
+                        disabled={enablingId === r.id}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          padding: "6px 14px",
+                          borderRadius: 8,
+                          background: "#4f46e5",
+                          color: "#fff",
+                          border: "none",
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: enablingId === r.id ? "wait" : "pointer"
+                        }}
+                      >
+                        <PlusCircle size={14}/> {enablingId === r.id ? "Enabling..." : "Enable in Vigil365"}
+                      </button>
+                    ) : (
+                      <a
+                        href={r.nativePortalDeepLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          padding: "6px 14px",
+                          borderRadius: 8,
+                          background: "rgba(255,255,255,0.1)",
+                          color: "#93c5fd",
+                          textDecoration: "none",
+                          fontSize: 12,
+                          fontWeight: 600
+                        }}
+                      >
+                        Configure in Defender <ExternalLink size={13}/>
+                      </a>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 export function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
   policies: AlertPolicy[];
   triggeredAlerts: TriggeredAlert[];
@@ -471,12 +653,15 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
 
       {/* Tabs */}
       <div className="ac-tabs">
-        {(["dashboard","alerts","policies","templates","notifications"] as AcTab[]).map(t => (
+        {(["dashboard","alerts","policies","templates","coverage","notifications"] as AcTab[]).map(t => (
           <button key={t} className={`ac-tab${tab===t?" active":""}`} onClick={() => { setTab(t); if (t === "alerts" || t === "dashboard") refresh(); }}>
-            {t === "dashboard" ? "Dashboard" : t === "alerts" ? "Active Alerts" : t === "policies" ? "Policies" : t === "templates" ? "Templates" : "Notifications"}
+            {t === "dashboard" ? "Dashboard" : t === "alerts" ? "Active Alerts" : t === "policies" ? "Policies" : t === "templates" ? "Templates" : t === "coverage" ? "Coverage Scorecard" : "Notifications"}
           </button>
         ))}
       </div>
+
+      {/* ── TAB: Coverage Scorecard ── */}
+      {tab === "coverage" && <CoverageScorecardTab onChanged={onChanged}/>}
 
       {/* ── TAB: Notifications ── */}
       {tab === "notifications" && <NotificationSettingsTab/>}

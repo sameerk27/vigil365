@@ -1,7 +1,8 @@
 import React, { useMemo } from "react";
 import { Shield, Lock, Monitor, Activity, ShieldAlert, Flag, TrendingUp, ChevronRight, User, Database, Bell, CheckCircle } from "lucide-react";
 import { Overview, SecureScore, IdentityData, DevicesData, ServiceHealthData, SecurityAlert, DefenderAlertsData, SecurityIncidentsData, AlertPolicy, TriggeredAlert } from "../services/types";
-import { pctTone, fmtShort, fmtService, fmtDefenderSource, relTime, fmtDate } from "../services/utils";
+import { pctTone, fmtShort, fmtService, fmtDefenderSource, relTime, fmtDate, fmtFullTime, sevClass } from "../services/utils";
+import { crossNavigate } from "../services/api";
 import { Card, KpiTile, CircleGauge, LineChart, StatBox, SectHdr, Badge, EmptyState } from "../components/SharedComponents";
 import { CollectionHealthCard } from "../components/CollectionHealthCard";
 
@@ -16,7 +17,8 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
     return +((overview.highPriority/overview.totalActive)*100).toFixed(1);
   }, [overview]);
 
-  const mfaMissingCount = useMemo(() => alerts.filter(a=>a.alertType==="MfaStatus"&&!a.isResolved).length, [alerts]);
+  const activeAlerts = useMemo(() => alerts.filter(a => !a.isResolved), [alerts]);
+  const mfaMissingCount = useMemo(() => activeAlerts.filter(a=>a.alertType==="MfaStatus").length, [activeAlerts]);
   const mfaPct = (identity?.mfa.total??0) > 0 ? (identity?.mfa.percentage??0) : 0;
   const mfaKnown = (identity?.mfa.total??0) > 0;
 
@@ -28,39 +30,76 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
 
   return (
     <div className="page">
+      {(() => {
+        const lr = overview?.lastRun;
+        const completed = lr?.completedAt;
+        const ageMin = completed ? (Date.now() - new Date(completed).getTime()) / 60000 : null;
+        const stale = ageMin != null && ageMin > 45; // > ~3 collection cycles
+        const failed = lr?.sourceFailures ?? 0;
+        const ok = !!completed && !stale && failed === 0;
+        const tone: "good" | "warn" | "neutral" = !completed ? "neutral" : ok ? "good" : "warn";
+        const c = {
+          good:    { bg: "var(--status-good-bg)",  bd: "var(--status-good-border)",  fg: "var(--status-good-text)",  dot: "var(--status-good-icon)" },
+          warn:    { bg: "var(--status-warn-bg)",  bd: "var(--status-warn-border)",  fg: "var(--status-warn-text)",  dot: "var(--status-warn-icon)" },
+          neutral: { bg: "var(--color-raised)",    bd: "var(--color-border)",        fg: "var(--color-muted)",       dot: "var(--color-faint)" },
+        }[tone];
+        const msg = !completed
+          ? "No collection yet — run a collection to populate the dashboard"
+          : `Data collected ${relTime(completed)}${stale ? " — stale, run a collection" : ""}${failed > 0 ? ` · ${failed} source${failed > 1 ? "s" : ""} failed` : " · all sources OK"}`;
+        return (
+          <div role="status" aria-live="polite"
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 14px", marginBottom: 12,
+              borderRadius: 8, background: c.bg, border: `1px solid ${c.bd}`, color: c.fg, fontSize: 12.5 }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: c.dot, flexShrink: 0 }}/>
+            <span>{msg}</span>
+            {(stale || failed > 0) && (
+              <button onClick={() => crossNavigate({ page: "servicehealth" })}
+                style={{ marginLeft: "auto", background: "none", border: "none", color: c.fg, textDecoration: "underline", cursor: "pointer", fontSize: 12 }}>
+                Details →
+              </button>
+            )}
+          </div>
+        );
+      })()}
       <div className="kpi-row">
         <KpiTile icon={<Shield size={18}/>} label="SECURE SCORE"
           value={secureScore?.configured&&!secureScore.error?`${secureScore.percentage}%`:"—"}
           sub={secureScore?.configured&&!secureScore.error?`${Math.round(secureScore.currentScore)} / ${Math.round(secureScore.maxScore)} pts`:"Run collection to load"}
           needsPerm={!!secureScore && (!secureScore.configured || !!secureScore.error)}
-          tone={secureScore?.configured&&!secureScore.error?pctTone(secureScore.percentage):"neutral"}/>
+          tone={secureScore?.configured&&!secureScore.error?pctTone(secureScore.percentage):"neutral"}
+          onClick={() => crossNavigate({ page: "compliance" })}/>
         <KpiTile icon={<Lock size={18}/>} label="MFA COVERAGE"
           value={mfaKnown ? `${mfaPct}%` : mfaMissingCount > 0 ? `${mfaMissingCount}` : identity?.configured ? "—" : "—"}
           sub={mfaKnown ? `${identity!.mfa.registered}/${identity!.mfa.total} users` : mfaMissingCount > 0 ? `users missing MFA` : identity?.configured ? "Needs Reports.Read.All" : "Run collection"}
           needsPerm={!!identity && identity.configured && !mfaKnown && mfaMissingCount === 0}
-          tone={mfaKnown ? pctTone(mfaPct,95,80) : mfaMissingCount > 0 ? "error" : "neutral"}/>
+          tone={mfaKnown ? pctTone(mfaPct,95,80) : mfaMissingCount > 0 ? "error" : "neutral"}
+          onClick={() => crossNavigate({ page: "identity", search: "mfa" })}/>
         <KpiTile icon={<Monitor size={18}/>} label="DEVICE COMPLIANCE"
           value={devices ? (devNonCompliant===0 && devEffectiveTotal===0 ? "—" : devNonCompliant===0 ? "All OK" : `${devNonCompliant} issues`) : "—"}
           sub={devices ? (devEffectiveTotal>0 ? `${Math.max(0,devEffectiveTotal-devNonCompliant)}/${devEffectiveTotal} compliant` : `${devNonCompliant} non-compliant`) : "Run collection"}
-          tone={devNonCompliant===0?"good":devNonCompliant<=3?"warning":"error"}/>
+          tone={devNonCompliant===0?"good":devNonCompliant<=3?"warning":"error"}
+          onClick={() => crossNavigate({ page: "devices" })}/>
         <KpiTile icon={<Activity size={18}/>} label="POSTURE RISK"
           value={<span style={{color: posturePct>10?"#b91c1c":undefined}}>{posturePct}%</span>}
           sub={`${overview?.highPriority??0} high / ${overview?.totalActive??0} active`}
-          tone={posturePct===0?"neutral":posturePct<=10?"good":posturePct<=25?"warning":"error"}/>
+          tone={posturePct===0?"neutral":posturePct<=10?"good":posturePct<=25?"warning":"error"}
+          onClick={() => crossNavigate({ page: "trends" })}/>
         <KpiTile icon={<ShieldAlert size={18}/>} label="DEFENDER ALERTS"
           value={defenderAlerts?.configured && !defenderAlerts.error ? `${defenderAlerts.total}` : "—"}
           sub={defenderAlerts?.configured && !defenderAlerts.error
             ? `${defenderAlerts.bySeverity?.["high"]??0} high / ${defenderAlerts.bySeverity?.["critical"]??0} critical`
             : defenderAlerts?.error ? "Needs SecurityAlert.Read.All" : "Run collection"}
           needsPerm={!!defenderAlerts?.error}
-          tone={!defenderAlerts?.configured||defenderAlerts.error?"neutral":(defenderAlerts.bySeverity?.["critical"]??0)>0?"error":(defenderAlerts.bySeverity?.["high"]??0)>0?"warning":"good"}/>
+          tone={!defenderAlerts?.configured||defenderAlerts.error?"neutral":(defenderAlerts.bySeverity?.["critical"]??0)>0?"error":(defenderAlerts.bySeverity?.["high"]??0)>0?"warning":"good"}
+          onClick={onNavigateAlertCenter}/>
         <KpiTile icon={<Flag size={18}/>} label="INCIDENTS"
           value={securityIncidents?.configured && !securityIncidents.error ? `${securityIncidents.total}` : "—"}
           sub={securityIncidents?.configured && !securityIncidents.error
             ? `${securityIncidents.bySeverity?.["high"]??0} high / ${securityIncidents.bySeverity?.["critical"]??0} critical`
             : securityIncidents?.error ? "Needs SecurityIncident.Read.All" : "Run collection"}
           needsPerm={!!securityIncidents?.error}
-          tone={!securityIncidents?.configured||securityIncidents.error?"neutral":(securityIncidents.bySeverity?.["critical"]??0)>0?"error":(securityIncidents.bySeverity?.["high"]??0)>0?"warning":"good"}/>
+          tone={!securityIncidents?.configured||securityIncidents.error?"neutral":(securityIncidents.bySeverity?.["critical"]??0)>0?"error":(securityIncidents.bySeverity?.["high"]??0)>0?"warning":"good"}
+          onClick={() => crossNavigate({ page: "incidents" })}/>
       </div>
 
       <div className="mid-row">
@@ -96,8 +135,8 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
               <div className="mini-list" style={{marginTop:8}}>
                 <SectHdr>RECENT ALERTS</SectHdr>
                 {defenderAlerts.alerts.slice(0,5).map((a,i)=>(
-                  <div key={i} className="mini-row">
-                    <span className={`sev-dot sev-${(a.severity??"unknown").toLowerCase()}`}/>
+                  <div key={i} className="mini-row al-clickable" onClick={onNavigateAlertCenter} style={{ cursor: "pointer" }}>
+                    <span className={sevClass(a.severity)}/>
                     <span className="mr-user" style={{flex:1}}>{a.title??"Unknown"}</span>
                     <Badge label={fmtDefenderSource(a.serviceSource??a.severity)} tone="neutral"/>
                   </div>
@@ -111,14 +150,14 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
           )}
         </Card>
         <Card title="Top Active Alerts"
-          badge={<Badge label={`${alerts.filter(a=>!a.isResolved).length} active`} tone={alerts.filter(a=>!a.isResolved).length>0?"error":"good"}/>}>
-          {alerts.filter(a=>!a.isResolved).length > 0 ? (
+          badge={<Badge label={`${activeAlerts.length} active`} tone={activeAlerts.length>0?"error":"good"}/>}>
+          {activeAlerts.length > 0 ? (
             <div className="mini-list">
-              {alerts.filter(a=>!a.isResolved)
+              {activeAlerts
                 .sort((a,b)=>{ const o=["Critical","High","Medium","Low","Informational"]; return o.indexOf(a.severity)-o.indexOf(b.severity); })
                 .slice(0,6).map((a,i)=>(
-                  <div key={i} className="mini-row act-clickable" onClick={()=>onAlertClick(a)} style={{cursor:"pointer"}}>
-                    <span className={`sev-dot sev-${a.severity.toLowerCase()}`}/>
+                  <div key={i} className="mini-row act-clickable" onClick={()=>onAlertClick(a)} style={{cursor:"pointer"}} title={fmtFullTime(a.detectedAt)}>
+                    <span className={sevClass(a.severity)}/>
                     <span className="mr-user" style={{flex:1}}>{a.title}</span>
                     <Badge label={a.service==="EntraId"?"Entra":a.service==="DefenderXdr"?"Defender":a.service==="Intune"?"Intune":a.service==="ExchangeOnline"?"Exchange":"Health"} tone="neutral"/>
                   </div>
@@ -162,14 +201,14 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
           })()}
         </Card>
         <Card title="Recent High Alerts"
-          badge={<Badge label={`${alerts.filter(a=>!a.isResolved&&(a.severity==="High"||a.severity==="Critical")).length} high/critical`} tone={alerts.filter(a=>!a.isResolved&&(a.severity==="High"||a.severity==="Critical")).length>0?"error":"good"}/>}>
-          {alerts.filter(a=>!a.isResolved&&(a.severity==="High"||a.severity==="Critical")).length>0 ? (
+          badge={<Badge label={`${activeAlerts.filter(a=>a.severity==="High"||a.severity==="Critical").length} high/critical`} tone={activeAlerts.filter(a=>a.severity==="High"||a.severity==="Critical").length>0?"error":"good"}/>}>
+          {activeAlerts.filter(a=>a.severity==="High"||a.severity==="Critical").length>0 ? (
             <div className="mini-list">
-              {alerts.filter(a=>!a.isResolved&&(a.severity==="High"||a.severity==="Critical"))
+              {activeAlerts.filter(a=>a.severity==="High"||a.severity==="Critical")
                 .sort((a,b)=>new Date(b.detectedAt).getTime()-new Date(a.detectedAt).getTime())
                 .slice(0,6).map((a,i)=>(
-                  <div key={i} className="mini-row act-clickable" onClick={()=>onAlertClick(a)} style={{cursor:"pointer"}}>
-                    <span className={`sev-dot sev-${a.severity.toLowerCase()}`}/>
+                  <div key={i} className="mini-row act-clickable" onClick={()=>onAlertClick(a)} style={{cursor:"pointer"}} title={fmtFullTime(a.detectedAt)}>
+                    <span className={sevClass(a.severity)}/>
                     <span className="mr-user" style={{flex:1}}>{a.title}</span>
                     <span className="mr-date">{fmtShort(a.detectedAt)}</span>
                   </div>
@@ -188,7 +227,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
             <div className="mini-list">
               <SectHdr>BREAKDOWN BY SERVICE</SectHdr>
               {(overview?.byService??[]).map((s,i)=>(
-                <div key={i} className="mini-row">
+                <div key={i} className="mini-row al-clickable" onClick={() => crossNavigate({ page: s.service === "EntraId" ? "identity" : s.service === "DefenderXdr" ? "alertcenter" : s.service === "Intune" ? "devices" : s.service === "ExchangeOnline" ? "email" : "servicehealth" })} style={{ cursor: "pointer" }}>
                   <Database size={11} color="#6b7280"/>
                   <span className="mr-user">{fmtService(s.service)}</span>
                   <Badge label={String(s.count)} tone={s.count>10?"error":s.count>3?"warning":"neutral"}/>
@@ -211,7 +250,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
           {(devices?.nonCompliantDevices.length??0)>0?(
             <div className="mini-list">
               {devices!.nonCompliantDevices.slice(0,3).map((d,i)=>(
-                <div key={i} className="mini-row">
+                <div key={i} className="mini-row al-clickable" onClick={() => crossNavigate({ page: "devices", search: d.deviceName ?? "" })} style={{ cursor: "pointer" }}>
                   <Monitor size={11} color="#6b7280"/>
                   <span className="mr-user">{d.deviceName??"Unknown device"}</span>
                   <span className="mr-date">{d.userPrincipalName?.split("@")[0]}</span>
@@ -223,7 +262,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
               ?<div className="empty-state" style={{paddingTop:8}}><p>Run a collection to load device data</p></div>
               :devNonCompliant===0
                 ?<div className="empty-state" style={{paddingTop:8}}><p>All devices are compliant</p></div>
-                :null
+                :<div className="empty-state" style={{paddingTop:8}}><p>{devNonCompliant} non-compliant reported by Intune summary</p></div>
           )}
         </Card>
       </div>
@@ -250,12 +289,12 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
             )
           }
         </Card>
-        <Card title="Top Improvement Actions" action={<ChevronRight size={15} color="#94a3b8"/>}>
+        <Card title="Top Improvement Actions" action={<button className="btn-export" onClick={() => crossNavigate({ page: "compliance" })}>View <ChevronRight size={13}/></button>}>
           <div className="impr-list">
             {(overview?.byService??[]).length===0
               ?<EmptyState message="Run a collection to see recommendations"/>
               :overview!.byService.map((s,i)=>(
-                <div key={i} className="impr-row">
+                <div key={i} className="impr-row al-clickable" onClick={() => crossNavigate({ page: s.service === "EntraId" ? "identity" : s.service === "DefenderXdr" ? "alertcenter" : s.service === "Intune" ? "devices" : s.service === "ExchangeOnline" ? "email" : "servicehealth" })} style={{ cursor: "pointer" }}>
                   <div className="impr-icon"><TrendingUp size={12}/></div>
                   <span className="impr-text">Review {fmtService(s.service)} — {s.count} active alert{s.count!==1?"s":""}</span>
                   <Badge label={`+${Math.min(s.count*3,30)} pts`} tone="neutral"/>
@@ -279,10 +318,10 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
                 <div className="mini-list" style={{marginTop:8}}>
                   <SectHdr>RECENT TRIGGERED</SectHdr>
                   {recent3.map((a,i)=>(
-                    <div key={i} className="mini-row">
-                      <span className={`sev-dot sev-${a.severity}`}/>
+                    <div key={i} className="mini-row al-clickable" onClick={onNavigateAlertCenter} style={{ cursor: "pointer" }}>
+                      <span className={sevClass(a.severity)}/>
                       <span className="mr-user" style={{flex:1}}>{a.policyName}</span>
-                      <span className="mr-date">{relTime(a.triggeredAt)}</span>
+                      <span className="mr-date" title={fmtFullTime(a.triggeredAt)}>{relTime(a.triggeredAt)}</span>
                     </div>
                   ))}
                 </div>

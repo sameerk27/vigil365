@@ -7,6 +7,19 @@ import { ServiceHealthGrid } from "../components/ServiceHealthGrid";
 
 export const M365_SVCS = ["Exchange Online","Microsoft Teams","SharePoint Online","OneDrive","Microsoft Entra","Microsoft Intune","Microsoft Defender","Viva Engage"];
 
+export const matchSvcIssue = (svc: string, title: string): boolean => {
+  const t = title.toLowerCase();
+  if (svc === "Exchange Online") return t.includes("exchange") || t.includes("outlook");
+  if (svc === "Microsoft Teams") return t.includes("teams");
+  if (svc === "SharePoint Online") return t.includes("sharepoint");
+  if (svc === "OneDrive") return t.includes("onedrive");
+  if (svc === "Microsoft Entra") return t.includes("entra") || t.includes("azure ad") || t.includes("identity");
+  if (svc === "Microsoft Intune") return t.includes("intune") || t.includes("mdm");
+  if (svc === "Microsoft Defender") return t.includes("defender") || t.includes("security") || t.includes("mde") || t.includes("mdo");
+  if (svc === "Viva Engage") return t.includes("viva") || t.includes("yammer");
+  return t.includes(svc.toLowerCase());
+};
+
 export function ServiceHealthPage({ serviceHealth }: { serviceHealth: ServiceHealthData|null }) {
   const [selectedIssue, setSelectedIssue] = useState<{title:string;description?:string;severity:string;detectedAt:string;portalUrl?:string}|null>(null);
   const [svcSearch, setSvcSearch] = useState("");
@@ -100,13 +113,14 @@ export function ServiceHealthPage({ serviceHealth }: { serviceHealth: ServiceHea
             <thead><tr><th>Service</th><th>Status</th><th>SLA Uptime</th><th>Last Incident</th></tr></thead>
             <tbody>
               {M365_SVCS.map(svc=>{
-                const hit=serviceHealth?.issues.some(i=>i.title.toLowerCase().includes(svc.split(" ")[0].toLowerCase()));
+                const matchingIssues = serviceHealth?.issues.filter(i=>matchSvcIssue(svc, i.title)) || [];
+                const hit = matchingIssues.length > 0;
                 return(
                   <tr key={svc}>
                     <td><div className="al-title">{svc}</div></td>
                     <td><Badge label={hit?"Advisory":"Operational"} tone={hit?"warning":"good"}/></td>
                     <td style={{color:"var(--status-good-text)",fontWeight:600}}>99.9%</td>
-                    <td className="al-date">{hit?fmtDate(serviceHealth?.issues[0]?.detectedAt):"No recent incidents"}</td>
+                    <td className="al-date">{hit?fmtDate(matchingIssues[0]?.detectedAt):"No recent incidents"}</td>
                   </tr>
                 );
               })}

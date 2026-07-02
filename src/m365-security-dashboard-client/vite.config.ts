@@ -18,14 +18,14 @@ export default defineConfig({
     port: 5000,
     strictPort: true,
     proxy: {
-      "/api": { target: "http://localhost:5001", changeOrigin: true }
+      "/api": { target: "https://vigil365.local:5001", changeOrigin: true, secure: false }
     }
   },
   server: {
     port: 5173,
     strictPort: true,
     proxy: {
-      "/api": { target: "http://localhost:5000", changeOrigin: true }
+      "/api": { target: "https://vigil365.local:5001", changeOrigin: true, secure: false }
     }
   }
 });

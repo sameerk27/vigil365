@@ -1,11 +1,32 @@
-# Vigil365 — Enterprise Maturity Backlog
+# Vigil365 — Single-Tenant Enterprise App
 
-Everything to add/fix to make the dashboard enterprise-grade, **before** building.
-Scope decision: **alerts & visibility only — no remediation actions.** The app
-stays read-only against the tenant (a deliberate, low-privilege selling point).
-"Recommendations" mean *guidance + deep links*, never actions taken by the app.
+The plan to make Vigil365 a **single-tenant, organisation-grade** product. This is
+**Edition 1**. The **multi-tenant / MSP** edition is a separate, later effort —
+see `MSP_MULTITENANT_PLAN.md` (Edition 2).
+
+Scope: **alerts & visibility only — no remediation.** The app stays read-only
+against the tenant (a deliberate, low-privilege selling point). "Recommendations"
+mean *guidance + deep links*, never actions taken by the app.
 
 Legend: 🔴 high value · 🟡 medium · 🟢 polish · ✅ already done
+
+---
+
+## Enterprise-ready: definition of done
+
+Ship-the-edition gate — these must all be true to call it "Enterprise":
+
+**Done ✅** — Microsoft sign-in + token validation · RBAC (Admin/Analyst/Viewer) +
+in-app user management + invites · audit trail · HTTPS + encryption at rest ·
+one-command install + Setup wizard · Trends & history · Compliance framework scoring
+(configurable) · affected-entity on alerts · 24 automated tests · CSP header · finish §0 (perfect the tabs).
+
+**Required to ship 🔴** — certificate auth for Graph (replace client secret) ·
+audit hardening (IP + tamper-evidence + export) · `/health` endpoint ·
+structured logging · EF Core migrations (versioned upgrades) · role-claim caching ·
+data retention/pruning · accessibility pass · favicon/meta · **rotate the exposed client secret** *(owner action)*.
+
+Everything else below is post-ship (v.next). Detail follows.
 
 ---
 
@@ -16,15 +37,15 @@ building new pages.
 
 - ✅ **Alert detail must show the affected entity** — clicking a triggered alert
   shows affected entity list (UPN / device / detected at) with deep links. (Completed)
-- 🟡 **Every detail modal → drill to the real records** — audit each tab's detail
-  view so it shows the underlying entities, not just summary fields.
-- 🟡 **Consistent detail layout** — same field order, copy-to-clipboard on IDs,
-  human-readable IDs/labels, relative + absolute timestamps everywhere.
-- 🟡 **Cross-link** — from an alert → the user's/device's full record; from a KPI
-  tile → the filtered list behind it.
-- 🟢 **Per-tab audit pass** — walk every page (Identity, Devices, Email, Incidents,
+- ✅ **Every detail modal → drill to the real records** — audit each tab's detail
+  view so it shows the underlying entities, not just summary fields. (Completed)
+- ✅ **Consistent detail layout** — same field order, copy-to-clipboard on IDs,
+  human-readable IDs/labels, relative + absolute timestamps everywhere. (Completed)
+- ✅ **Cross-link** — from an alert → the user's/device's full record; from a KPI
+  tile → the filtered list behind it. (Completed)
+- ✅ **Per-tab audit pass** — walk every page (Identity, Devices, Email, Incidents,
   Compliance, CA, Licenses, Audit, Sign-in map) and fix the small gaps: empty
-  columns, truncation, unclear labels, missing counts, broken/empty states.
+  columns, truncation, unclear labels, missing counts, broken/empty states. (Completed)
 
 ## A. New capabilities (cross-cutting)
 
@@ -32,9 +53,9 @@ building new pages.
   MFA coverage, non-compliant devices, open critical/high, secure score, compliance
   issues). Dedicated page with executive KPI tiles, hero charts, insights, and clean PDF output. (Completed)
 - ✅ **Compliance framework scoring** — map collected signals dynamically to **CIS Controls v8 / NIST CSF 2.0 / ISO 27001 / GDPR Art. 32** controls; live calculated posture scorecard with control breakdown modal + deep jump links. (Completed)
-- 🔴 **Recommendations layer** — every finding pairs with *why it matters*, *fix steps*,
-  and a **deep link** to the right M365 portal blade. Guidance only, no actions.
-- 🔴 **Alert coverage gap analysis** — compare the tenant against a best-practice
+- ✅ **Recommendations layer** — every finding pairs with *why it matters*, *fix steps*,
+  and a **deep link** to the right M365 portal blade. Guidance only, no actions. (Completed)
+- ✅ **Alert coverage gap analysis** — compare the tenant against a best-practice
   alerting baseline and surface **what's NOT being watched**: e.g. no alert on
   privileged-role changes, mailbox forwarding rules, impossible-travel sign-ins,
   MFA-disabled admins, new OAuth app grants, sudden risky-user spikes. Two outputs:
@@ -42,7 +63,7 @@ building new pages.
   (in scope — app's own DB), and (2) recommend the missing **native** Defender /
   Entra / Purview alert policy with a **deep link** to create it in M365 (read-only —
   guidance, not an action). Extends the existing 9 alert templates into a coverage
-  scorecard ("12 of 20 recommended alerts in place").
+  scorecard ("12 of 20 recommended alerts in place"). (Completed)
 - 🟡 **Scheduled exec reports** — weekly/however email digest (PDF/HTML) summarising
   posture + trends, for leadership. Reuses SMTP.
 - 🟡 **Conditional Access gap analysis** — surface users/apps **not** covered by any CA

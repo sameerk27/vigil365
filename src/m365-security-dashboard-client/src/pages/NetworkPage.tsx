@@ -1,9 +1,9 @@
 import React, { useState, useMemo } from "react";
 import { Activity, LogIn, XCircle, Globe, AlertCircle, ExternalLink, BarChart2 } from "lucide-react";
 import { ServiceHealthData, SignInLocationsData, SignInEntry } from "../services/types";
-import { fmtDate, relTime, fmtShort, countryFlag } from "../services/utils";
+import { fmtDate, relTime, fmtShort, countryFlag, fmtFullTime } from "../services/utils";
 import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, StatusDot, SectHdr, MiniBarChart } from "../components/SharedComponents";
-import { M365_SVCS } from "./ServiceHealthPage";
+import { M365_SVCS, matchSvcIssue } from "./ServiceHealthPage";
 
 export function NetworkPage({ serviceHealth, signInLocations }: { serviceHealth: ServiceHealthData|null; signInLocations: SignInLocationsData|null }) {
   const [selectedSignIn, setSelectedSignIn] = useState<SignInEntry|null>(null);
@@ -12,16 +12,22 @@ export function NetworkPage({ serviceHealth, signInLocations }: { serviceHealth:
   // top apps by sign-in count
   const topApps = useMemo(()=>{
     if (!signInLocations?.recent.length) return [];
-    const counts: Record<string,number> = {};
-    signInLocations.recent.forEach(s=>{ if (s.app) counts[s.app]=(counts[s.app]??0)+1; });
-    return Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([app,count])=>({ label:app.replace("Microsoft ","").slice(0,22), value:count, color:"var(--color-primary)" }));
+    const counts: Record<string,{ total: number; failures: number; fullApp: string }> = {};
+    signInLocations.recent.forEach(s=>{
+      if (s.app) {
+        const key = s.app.replace("Microsoft ","").slice(0,22);
+        if (!counts[key]) counts[key] = { total: 0, failures: 0, fullApp: s.app };
+        counts[key].total += 1;
+        if (!s.success) counts[key].failures += 1;
+      }
+    });
+    return Object.entries(counts).sort((a,b)=>b[1].total-a[1].total).slice(0,6).map(([app,data])=>({ label:app, value:data.total, failures:data.failures, fullApp:data.fullApp, color:"var(--color-primary)" }));
   },[signInLocations]);
 
   // per-service status from health data
   const svcStatus = M365_SVCS.map(svc=>{
-    const issue = serviceHealth?.issues.find(i=>
-      i.title.toLowerCase().includes(svc.split(" ")[0].toLowerCase())||
-      i.title.toLowerCase().includes(svc.split(" ").at(-1)!.toLowerCase()));
+    const matchingIssues = serviceHealth?.issues.filter(i=>matchSvcIssue(svc, i.title)) || [];
+    const issue = matchingIssues[0];
     return { name:svc, issue, status:issue?"Advisory":"Operational" };
   });
 
@@ -100,9 +106,9 @@ export function NetworkPage({ serviceHealth, signInLocations }: { serviceHealth:
                     <tbody>
                       {topApps.map((a,i)=>(
                         <tr key={i}>
-                          <td><div className="al-title">{a.label}</div></td>
+                          <td><div className="al-title" title={(a as any).fullApp}>{a.label}</div></td>
                           <td style={{fontWeight:600}}>{a.value}</td>
-                          <td><Badge label="Reachable" tone="good"/></td>
+                          <td><Badge label={(a as any).failures > 0 ? `${(a as any).failures} errors` : "Reachable"} tone={(a as any).failures > 0 ? "warning" : "good"}/></td>
                         </tr>
                       ))}
                     </tbody>
@@ -125,7 +131,7 @@ export function NetworkPage({ serviceHealth, signInLocations }: { serviceHealth:
                       <td><div className="al-title">{s.upn?.split("@")[0]??"Unknown"}</div></td>
                       <td className="al-desc">{s.app??"—"}</td>
                       <td className="al-desc">{countryFlag(s.country)} {[s.city,s.country].filter(Boolean).join(", ")||"Unknown"}</td>
-                      <td className="al-date">{relTime(s.created) || fmtDate(s.created)}</td>
+                      <td className="al-date" title={fmtFullTime(s.created)}>{relTime(s.created) || fmtDate(s.created)}</td>
                       <td><Badge label={s.success?"Success":"Failed"} tone={s.success?"good":"error"}/></td>
                     </tr>
                   ))}

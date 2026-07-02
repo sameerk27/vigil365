@@ -4,7 +4,7 @@ import { PublicClientApplication, type AccountInfo, type Configuration } from "@
 import {
   Home, Users, Monitor, Mail, AlertTriangle, Bell, CheckSquare, Activity, Wifi,
   Package, ShieldCheck, BookOpen, MapPin, UserCheck, Settings, ChevronRight, ChevronLeft,
-  Clock, RefreshCw, Sun, Moon, LogIn, ShieldAlert, Shield, UserX, TrendingUp
+  Clock, RefreshCw, Sun, Moon, LogIn, ShieldAlert, Shield, UserX, TrendingUp, Lightbulb
 } from "lucide-react";
 import "./styles.css";
 
@@ -26,6 +26,7 @@ import { fmtDate, fmtCountdown } from "./services/utils";
 
 // Import pages
 import { OverviewPage } from "./pages/OverviewPage";
+import { RecommendationsPage } from "./pages/RecommendationsPage";
 import { IdentityPage } from "./pages/IdentityPage";
 import { DevicesPage } from "./pages/DevicesPage";
 import { EmailPage } from "./pages/EmailPage";
@@ -49,6 +50,7 @@ let _msalScopes: string[] = [];
 // ─── Sidebar ───────────────────────────────────────────────────────────────────
 const NAV: { id: NavPage; label: string; icon: React.ReactNode; group?: string; adminOnly?: boolean }[] = [
   { id:"overview",         label:"Overview",             icon:<Home size={17}/> },
+  { id:"recommendations",  label:"Recommendations",      icon:<Lightbulb size={17}/> },
   { id:"trends",           label:"Trends & History",     icon:<TrendingUp size={17}/> },
   { id:"identity",         label:"Identity",             icon:<Users size={17}/> },
   { id:"devices",          label:"Devices",              icon:<Monitor size={17}/> },
@@ -418,6 +420,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
         ) : (
           <>
             {page==="overview"&&<OverviewPage overview={overview} secureScore={secureScore} identity={identity} devices={devices} serviceHealth={serviceHealth} alerts={allAlerts} defenderAlerts={defenderAlerts} securityIncidents={securityIncidents} onAlertClick={setSelectedAlert} onNavigateAlertCenter={()=>setPage("alertcenter")} alertPolicies={alertPolicies} overviewTriggered={triggeredAlerts} healthRefreshKey={refreshKey}/>}
+            {page==="recommendations"&&<RecommendationsPage />}
             {page==="trends"&&<TrendsPage />}
             {page==="identity"&&<IdentityPage identity={identity} alerts={allAlerts} privilegedRoles={privilegedRoles} pimData={pimData} mdiAlerts={mdiAlerts} riskDetections={riskDetections} identityHealth={identityHealth} onAlertClick={setSelectedAlert}/>}
             {page==="devices"&&<DevicesPage devices={devices} alerts={allAlerts} mdeVulnerabilities={mdeVulnerabilities} onAlertClick={setSelectedAlert}/>}
@@ -602,7 +605,7 @@ function AuthGate() {
     await _msalInstance.logoutRedirect({ postLogoutRedirectUri: window.location.origin });
   };
 
-  const role: AppRole = me?.role ?? "Viewer";
+  const role: AppRole = me?.role ?? "Admin";
   const auth: AuthInfo = {
     email: me?.email ?? "",
     name: me?.name ?? account?.name ?? "",

@@ -1,4 +1,4 @@
-export type NavPage = "overview" | "trends" | "identity" | "devices" | "email" | "incidents" | "alertcenter" | "compliance" | "servicehealth" | "network" | "licenses" | "conditionalaccess" | "auditlog" | "signinmap" | "users" | "setup";
+export type NavPage = "overview" | "recommendations" | "trends" | "identity" | "devices" | "email" | "incidents" | "alertcenter" | "compliance" | "servicehealth" | "network" | "licenses" | "conditionalaccess" | "auditlog" | "signinmap" | "users" | "setup";
 export type AlertSeverity = "Informational" | "Low" | "Medium" | "High" | "Critical";
 export type ServiceArea = "EntraId" | "Intune" | "DefenderXdr" | "ExchangeOnline" | "ServiceHealth";
 export type Tone = "good" | "warning" | "error" | "neutral" | "info";
@@ -166,4 +166,37 @@ export interface AuthInfo {
   role: AppRole;
   isAdmin: boolean;
   canMutate: boolean;
+}
+
+export interface SecurityRecommendation {
+  id: string;
+  category: string;
+  title: string;
+  severity: "critical" | "high" | "medium" | "low" | string;
+  affectedCount: number;
+  whyItMatters: string;
+  remediationSteps: string[];
+  portalBladeName: string;
+  portalDeepLink: string;
+}
+
+export interface AlertBaselineRule {
+  id: string;
+  title: string;
+  category: string;
+  severity: string;
+  description: string;
+  isActive: boolean;
+  ruleType: "Vigil365" | "NativeM365" | string;
+  metric?: string;
+  defaultThreshold?: number;
+  nativePortalBlade?: string;
+  nativePortalDeepLink?: string;
+}
+
+export interface AlertCoverageScorecard {
+  totalRules: number;
+  activeRules: number;
+  coveragePercentage: number;
+  rules: AlertBaselineRule[];
 }

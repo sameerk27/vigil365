@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import { Monitor, XCircle, Clock, ShieldAlert, Search, Laptop, CheckCircle, Eye, ShieldCheck } from "lucide-react";
 import { DevicesData, SecurityAlert, MdeVulnerabilitiesData, MdeAlert } from "../services/types";
-import { pctTone, fmtDate, relTime } from "../services/utils";
-import { consumeNavSeed } from "../services/api";
+import { pctTone, fmtDate, relTime, fmtFullTime } from "../services/utils";
+import { consumeNavSeed, crossNavigate } from "../services/api";
 import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, MiniBarChart, InfoRow, CircleGauge, ExportDropdown, StatBox, SectHdr } from "../components/SharedComponents";
 
 export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick }:
@@ -18,7 +18,21 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
   const [mdeSearch, setMdeSearch] = useState("");
   const [mdeSev, setMdeSev]       = useState("");
 
-  useEffect(() => { const seed = consumeNavSeed("devices"); if (seed) { setNcSearch(seed); scrollTo(ncRef); } }, []);
+  useEffect(() => {
+    const checkSeed = () => {
+      const seed = consumeNavSeed("devices");
+      if (seed) { setNcSearch(seed); scrollTo(ncRef); }
+    };
+    checkSeed();
+    const listener = (e: any) => {
+      if (e.detail?.page === "devices" && e.detail?.search) {
+        setNcSearch(e.detail.search);
+        scrollTo(ncRef);
+      }
+    };
+    window.addEventListener("nav-seed-update", listener);
+    return () => window.removeEventListener("nav-seed-update", listener);
+  }, []);
 
   const deviceAlerts = useMemo(() => alerts.filter(a => a.service==="Intune"), [alerts]);
 
@@ -58,7 +72,7 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
     return items;
   }, [mdeVulnerabilities, mdeSev, mdeSearch]);
 
-  const devComplPct = devices?.compliancePct??(devices?.nonCompliant===0?100:94);
+  const devComplPct = devices ? devices.compliancePct : 0;
 
   const complianceData = [
     { label:"Compliant", value: devices?(devices.totalDevices>0?Math.max(0,devices.totalDevices-devices.nonCompliant):0):0, color:"var(--status-good-icon)" },
@@ -77,10 +91,11 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
           portalLabel="View in Defender XDR"
         >
           <DetailField label="Alert ID" value={selectedMde.id} copy/>
+          {selectedMde.alertWebUrl && <DetailField label="Portal URL" value="Open in Defender XDR" onNavigate={()=>window.open(selectedMde.alertWebUrl, "_blank")} navLabel="Open →"/>}
           <DetailField label="Severity" value={selectedMde.severity}/>
           <DetailField label="Status" value={selectedMde.status}/>
           <DetailField label="Category" value={selectedMde.category}/>
-          <DetailField label="Detected" value={selectedMde.createdDateTime ? `${relTime(selectedMde.createdDateTime)} (${fmtDate(selectedMde.createdDateTime)})` : undefined} title={fmtDate(selectedMde.createdDateTime)}/>
+          <DetailField label="Detected" value={fmtFullTime(selectedMde.createdDateTime)} title={fmtDate(selectedMde.createdDateTime)}/>
           {selectedMde.description && <><div className="dm-section-hdr">Description</div><div className="dm-desc-block">{selectedMde.description}</div></>}
           {(selectedMde.mitreTechniques?.length ?? 0) > 0 && (
             <><div className="dm-section-hdr">MITRE Techniques</div>
@@ -89,9 +104,9 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
         </DetailModal>
       )}
       <div className="kpi-row kpi-row-4">
-        <KpiTile icon={<Monitor size={18}/>} label="COMPLIANCE RATE" value={`${devComplPct}%`}
-          sub={(devices?.totalDevices??0)>0?`${devices!.totalDevices} total devices`:"From collected alerts"}
-          tone={pctTone(devComplPct)}/>
+        <KpiTile icon={<Monitor size={18}/>} label="COMPLIANCE RATE" value={devices ? `${devComplPct}%` : "—"}
+          sub={devices ? ((devices.totalDevices??0)>0?`${devices.totalDevices} total devices`:"No devices enrolled") : "Run collection to load"}
+          tone={devices ? pctTone(devComplPct) : "neutral"} onClick={() => scrollTo(ncRef)}/>
         <KpiTile icon={<XCircle size={18}/>} label="NON-COMPLIANT" value={devices?.nonCompliant??0}
           sub="Require immediate action" tone={(devices?.nonCompliant??0)===0?"good":(devices?.nonCompliant??0)<=3?"warning":"error"}
           onClick={() => { setNcSearch(""); setNcSev(""); scrollTo(ncRef); }}/>
@@ -99,7 +114,8 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
           sub={`>${7} days inactive`} tone={(devices?.notCheckedIn??0)===0?"good":"warning"}
           onClick={() => { setStaleSearch(""); scrollTo(staleRef); }}/>
         <KpiTile icon={<ShieldAlert size={18}/>} label="TOTAL ALERTS" value={deviceAlerts.length}
-          sub="Active device alerts" tone={deviceAlerts.length===0?"good":deviceAlerts.length<=5?"warning":"error"}/>
+          sub="Active Intune alerts" tone={deviceAlerts.length===0?"good":deviceAlerts.length<=5?"warning":"error"}
+          onClick={() => { setNcSearch(""); setStaleSearch(""); scrollTo(ncRef); }}/>
       </div>
 
       {/* Compliance Overview — full-width summary at top */}

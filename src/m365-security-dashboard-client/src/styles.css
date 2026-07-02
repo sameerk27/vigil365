@@ -371,6 +371,7 @@ select, input { font: inherit; }
   padding: 16px;
   min-width: 0;
   box-shadow: var(--shadow-card);
+  overflow: hidden;
 }
 
 .card-head {
