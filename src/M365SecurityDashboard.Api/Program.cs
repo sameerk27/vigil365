@@ -625,9 +625,15 @@ app.MapPost("/api/setup/graph", async (
 app.MapGet("/api/dashboard/overview", async (AppDbContext db, CancellationToken ct) =>
 {
     var since = DateTimeOffset.UtcNow.AddDays(-30);
-    var alerts = db.SecurityAlerts.AsNoTracking().Where(a => !a.IsResolved);
+    // Service-health advisories are availability noise, not security signal —
+    // they get their own count and never inflate the alert KPIs.
+    var alerts = db.SecurityAlerts.AsNoTracking()
+        .Where(a => !a.IsResolved && a.Service != M365ServiceArea.ServiceHealth);
     var totalActive = await alerts.CountAsync(ct);
     var high = await alerts.CountAsync(a => a.Severity == AlertSeverity.High || a.Severity == AlertSeverity.Critical, ct);
+    var critical = await alerts.CountAsync(a => a.Severity == AlertSeverity.Critical, ct);
+    var advisories = await db.SecurityAlerts.AsNoTracking()
+        .CountAsync(a => !a.IsResolved && a.Service == M365ServiceArea.ServiceHealth, ct);
     var lastRun = await db.CollectionRuns.AsNoTracking().OrderByDescending(r => r.StartedAt).FirstOrDefaultAsync(ct);
 
     var byService = await alerts
@@ -637,7 +643,7 @@ app.MapGet("/api/dashboard/overview", async (AppDbContext db, CancellationToken 
         .ToListAsync(ct);
 
     var trends = await db.SecurityAlerts.AsNoTracking()
-        .Where(a => a.DetectedAt >= since)
+        .Where(a => a.DetectedAt >= since && a.Service != M365ServiceArea.ServiceHealth)
         .GroupBy(a => new { Date = a.DetectedAt.Date, a.Severity })
         .Select(g => new { date = g.Key.Date, severity = g.Key.Severity.ToString(), count = g.Count() })
         .OrderBy(x => x.date)
@@ -647,6 +653,8 @@ app.MapGet("/api/dashboard/overview", async (AppDbContext db, CancellationToken 
     {
         totalActive,
         highPriority = high,
+        criticalCount = critical,
+        serviceAdvisories = advisories,
         lastRun,
         byService,
         trends,

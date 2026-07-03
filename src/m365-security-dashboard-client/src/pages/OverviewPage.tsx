@@ -17,7 +17,32 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
     return +((overview.highPriority/overview.totalActive)*100).toFixed(1);
   }, [overview]);
 
-  const activeAlerts = useMemo(() => alerts.filter(a => !a.isResolved), [alerts]);
+  // Security alerts only — service-health advisories are availability noise and
+  // live in their own card, never in the alert feed or counts.
+  const activeAlerts = useMemo(() => alerts.filter(a => !a.isResolved && a.service !== "ServiceHealth"), [alerts]);
+  const advisories = useMemo(() => alerts.filter(a => !a.isResolved && a.service === "ServiceHealth"), [alerts]);
+
+  // The triage feed: open critical/high security alerts + unacknowledged policy
+  // alerts, ranked by severity then recency. This is the first thing on the page.
+  const needsAttention = useMemo(() => {
+    const sevRank = (s: string) => ({ critical: 0, high: 1, medium: 2, low: 3, informational: 4 } as Record<string, number>)[s.toLowerCase()] ?? 5;
+    const fromAlerts = activeAlerts
+      .filter(a => a.severity === "Critical" || a.severity === "High")
+      .map(a => ({
+        key: `a-${a.id}`, severity: a.severity, title: a.title,
+        source: fmtService(a.service), when: a.detectedAt,
+        onClick: () => onAlertClick(a),
+      }));
+    const fromPolicies = overviewTriggered
+      .filter(t => t.status === "new")
+      .map(t => ({
+        key: `p-${t.id}`, severity: t.severity, title: `Policy fired: ${t.policyName}`,
+        source: "Alert Center", when: t.triggeredAt,
+        onClick: onNavigateAlertCenter,
+      }));
+    return [...fromAlerts, ...fromPolicies]
+      .sort((a, b) => sevRank(a.severity) - sevRank(b.severity) || new Date(b.when).getTime() - new Date(a.when).getTime());
+  }, [activeAlerts, overviewTriggered, onAlertClick, onNavigateAlertCenter]);
   const mfaMissingCount = useMemo(() => activeAlerts.filter(a=>a.alertType==="MfaStatus").length, [activeAlerts]);
   const mfaPct = (identity?.mfa.total??0) > 0 ? (identity?.mfa.percentage??0) : 0;
   const mfaKnown = (identity?.mfa.total??0) > 0;
@@ -31,20 +56,28 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
   return (
     <div className="page">
       {(() => {
+        // Branch on the run's status, not just completedAt — an in-progress or
+        // failed run is not "no collection yet" (the header shows its start time).
         const lr = overview?.lastRun;
         const completed = lr?.completedAt;
+        const running = !!lr && !completed && lr.status !== "Failed";
+        const runFailed = !!lr && lr.status === "Failed";
         const ageMin = completed ? (Date.now() - new Date(completed).getTime()) / 60000 : null;
         const stale = ageMin != null && ageMin > 45; // > ~3 collection cycles
         const failed = lr?.sourceFailures ?? 0;
         const ok = !!completed && !stale && failed === 0;
-        const tone: "good" | "warn" | "neutral" = !completed ? "neutral" : ok ? "good" : "warn";
+        const tone: "good" | "warn" | "neutral" = runFailed ? "warn" : !completed ? "neutral" : ok ? "good" : "warn";
         const c = {
           good:    { bg: "var(--status-good-bg)",  bd: "var(--status-good-border)",  fg: "var(--status-good-text)",  dot: "var(--status-good-icon)" },
           warn:    { bg: "var(--status-warn-bg)",  bd: "var(--status-warn-border)",  fg: "var(--status-warn-text)",  dot: "var(--status-warn-icon)" },
           neutral: { bg: "var(--color-raised)",    bd: "var(--color-border)",        fg: "var(--color-muted)",       dot: "var(--color-faint)" },
         }[tone];
-        const msg = !completed
+        const msg = !lr
           ? "No collection yet — run a collection to populate the dashboard"
+          : running
+          ? `Collection in progress — started ${relTime(lr.startedAt)}`
+          : runFailed
+          ? `Last collection failed${lr.completedAt ? ` ${relTime(lr.completedAt)}` : ""} — run a collection to retry`
           : `Data collected ${relTime(completed)}${stale ? " — stale, run a collection" : ""}${failed > 0 ? ` · ${failed} source${failed > 1 ? "s" : ""} failed` : " · all sources OK"}`;
         return (
           <div role="status" aria-live="polite"
@@ -61,6 +94,43 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
           </div>
         );
       })()}
+      {/* ── Needs attention: the triage feed comes before any metric ─────────── */}
+      <Card title="Needs Attention"
+        badge={needsAttention.length > 0
+          ? <Badge label={`${needsAttention.filter(x => x.severity.toLowerCase() === "critical").length} critical · ${needsAttention.filter(x => x.severity.toLowerCase() === "high").length} high`} tone="error"/>
+          : <Badge label="All clear" tone="good"/>}
+        action={needsAttention.length > 0
+          ? <button className="btn-export" onClick={onNavigateAlertCenter}>Open Alert Center <ChevronRight size={13}/></button>
+          : undefined}>
+        {needsAttention.length === 0 ? (
+          <EmptyState icon={<CheckCircle size={24} color="var(--status-good-icon)"/>}
+            message="Nothing needs attention — no open critical or high-severity alerts and no unacknowledged policy alerts."/>
+        ) : (
+          <div className="alert-list">
+            {needsAttention.slice(0, 8).map(item => (
+              <div key={item.key} className="al-item" onClick={item.onClick} role="button" tabIndex={0}
+                onKeyDown={e => { if (e.key === "Enter") item.onClick(); }}>
+                <span className={sevClass(item.severity)}/>
+                <div className="al-body">
+                  <div className="al-title">{item.title}</div>
+                  <div className="row-meta">
+                    <Badge label={item.severity.toUpperCase()} tone={item.severity.toLowerCase() === "critical" ? "error" : "warning"}/>
+                    <span className="row-meta-item">{item.source}</span>
+                    <span className="row-meta-item" title={fmtFullTime(item.when)}>{relTime(item.when) || fmtDate(item.when)}</span>
+                  </div>
+                </div>
+                <ChevronRight size={14} style={{ color: "var(--color-faint)", flexShrink: 0, alignSelf: "center" }}/>
+              </div>
+            ))}
+            {needsAttention.length > 8 && (
+              <div className="more-link" onClick={onNavigateAlertCenter}>
+                +{needsAttention.length - 8} more in the Alert Center →
+              </div>
+            )}
+          </div>
+        )}
+      </Card>
+
       <div className="kpi-row">
         <KpiTile icon={<Shield size={18}/>} label="SECURE SCORE"
           value={secureScore?.configured&&!secureScore.error?`${secureScore.percentage}%`:"—"}
@@ -149,22 +219,29 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
             <EmptyState icon={<ShieldAlert size={24} color="#d1d5db"/>} message="Run a collection to load Defender alerts"/>
           )}
         </Card>
-        <Card title="Top Active Alerts"
-          badge={<Badge label={`${activeAlerts.length} active`} tone={activeAlerts.length>0?"error":"good"}/>}>
-          {activeAlerts.length > 0 ? (
+        <Card title="M365 Service Advisories"
+          badge={<Badge label={advisories.length > 0 ? `${advisories.length} open` : "All operational"} tone={advisories.length > 0 ? "warning" : "good"}/>}
+          action={<button className="btn-export" onClick={() => crossNavigate({ page: "servicehealth" })}>Service Health <ChevronRight size={13}/></button>}>
+          <div style={{ fontSize: 11.5, color: "var(--color-muted)", paddingBottom: 8 }}>
+            Microsoft platform advisories — availability, not security. Kept out of the alert counts.
+          </div>
+          {advisories.length > 0 ? (
             <div className="mini-list">
-              {activeAlerts
-                .sort((a,b)=>{ const o=["Critical","High","Medium","Low","Informational"]; return o.indexOf(a.severity)-o.indexOf(b.severity); })
-                .slice(0,6).map((a,i)=>(
-                  <div key={i} className="mini-row act-clickable" onClick={()=>onAlertClick(a)} style={{cursor:"pointer"}} title={fmtFullTime(a.detectedAt)}>
-                    <span className={sevClass(a.severity)}/>
-                    <span className="mr-user" style={{flex:1}}>{a.title}</span>
-                    <Badge label={a.service==="EntraId"?"Entra":a.service==="DefenderXdr"?"Defender":a.service==="Intune"?"Intune":a.service==="ExchangeOnline"?"Exchange":"Health"} tone="neutral"/>
-                  </div>
-                ))}
+              {advisories.slice(0, 5).map((a, i) => (
+                <div key={i} className="mini-row al-clickable" onClick={() => crossNavigate({ page: "servicehealth" })} style={{ cursor: "pointer" }} title={fmtFullTime(a.detectedAt)}>
+                  <span className={sevClass(a.severity)}/>
+                  <span className="mr-user" style={{ flex: 1 }}>{a.title}</span>
+                  <span className="mr-date">{fmtShort(a.detectedAt)}</span>
+                </div>
+              ))}
+              {advisories.length > 5 && (
+                <div className="more-link" onClick={() => crossNavigate({ page: "servicehealth" })}>
+                  +{advisories.length - 5} more in Service Health →
+                </div>
+              )}
             </div>
           ) : (
-            <EmptyState icon={<CheckCircle size={24} color="#22c55e"/>} message="No active alerts — environment looks healthy"/>
+            <EmptyState icon={<CheckCircle size={24} color="var(--status-good-icon)"/>} message="No open service advisories"/>
           )}
         </Card>
       </div>
@@ -199,24 +276,6 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
               </>
             );
           })()}
-        </Card>
-        <Card title="Recent High Alerts"
-          badge={<Badge label={`${activeAlerts.filter(a=>a.severity==="High"||a.severity==="Critical").length} high/critical`} tone={activeAlerts.filter(a=>a.severity==="High"||a.severity==="Critical").length>0?"error":"good"}/>}>
-          {activeAlerts.filter(a=>a.severity==="High"||a.severity==="Critical").length>0 ? (
-            <div className="mini-list">
-              {activeAlerts.filter(a=>a.severity==="High"||a.severity==="Critical")
-                .sort((a,b)=>new Date(b.detectedAt).getTime()-new Date(a.detectedAt).getTime())
-                .slice(0,6).map((a,i)=>(
-                  <div key={i} className="mini-row act-clickable" onClick={()=>onAlertClick(a)} style={{cursor:"pointer"}} title={fmtFullTime(a.detectedAt)}>
-                    <span className={sevClass(a.severity)}/>
-                    <span className="mr-user" style={{flex:1}}>{a.title}</span>
-                    <span className="mr-date">{fmtShort(a.detectedAt)}</span>
-                  </div>
-                ))}
-            </div>
-          ) : (
-            <EmptyState icon={<Activity size={24} color="#22c55e"/>} message="No high or critical alerts"/>
-          )}
         </Card>
         <Card title="Alerts by Service">
           <div className="stat-row2">
@@ -265,6 +324,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
                 :<div className="empty-state" style={{paddingTop:8}}><p>{devNonCompliant} non-compliant reported by Intune summary</p></div>
           )}
         </Card>
+        <CollectionHealthCard refreshKey={healthRefreshKey}/>
       </div>
 
       <div className="footer-row">
@@ -331,7 +391,6 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
             </Card>
           );
         })()}
-        <CollectionHealthCard refreshKey={healthRefreshKey}/>
       </div>
     </div>
   );

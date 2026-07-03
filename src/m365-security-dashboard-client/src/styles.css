@@ -591,6 +591,17 @@ select, input { font: inherit; }
   font-size: 13px; cursor: pointer;
 }
 
+/* Standalone text/number input (forms, modals) — unlike .search-input this
+   carries its own border and does not need a .search-box wrapper. */
+.form-input {
+  padding: 8px 12px;
+  border: 1px solid var(--color-border); border-radius: var(--radius-ctl);
+  background: var(--color-card); color: var(--color-text);
+  font-size: 13px;
+}
+.form-input::placeholder { color: var(--color-faint); }
+.form-input:focus { outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--color-primary-subtle); }
+
 .btn-apply {
   padding: 8px 18px;
   border: none; border-radius: var(--radius-ctl);

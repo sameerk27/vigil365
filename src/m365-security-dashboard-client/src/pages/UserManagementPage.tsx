@@ -161,9 +161,9 @@ export function UserManagementPage() {
         </div>
         {showAdd && (
           <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap", padding:"0 0 16px" }}>
-            <input className="search-input" type="email" placeholder="user@domain.com"
+            <input className="form-input" type="email" placeholder="user@domain.com"
               value={addEmail} onChange={e => setAddEmail(e.target.value)} style={{ minWidth:220 }} />
-            <input className="search-input" type="text" placeholder="Display name (optional)"
+            <input className="form-input" type="text" placeholder="Display name (optional)"
               value={addName} onChange={e => setAddName(e.target.value)} style={{ minWidth:180 }} />
             <select className="filter-sel" value={addRole} onChange={e => setAddRole(e.target.value as AppRole)}>
               <option value="Admin">Admin</option>

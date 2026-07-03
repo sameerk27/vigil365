@@ -73,8 +73,7 @@ export function CollectionHealthCard({ refreshKey }: { refreshKey: number }) {
             </div>
           ) : (
             <div className="mini-row" style={{marginTop:8, color:"var(--status-good-text)"}}>
-              <AlertTriangle size={13} style={{ visibility: "hidden", width: 0 }} /> {/* spacer fallback if needed, but simple span with icon is fine */}
-              <span style={{fontSize:12}}>All {12} data sources collecting normally</span>
+              <span style={{fontSize:12}}>All data sources collected without errors on the last run</span>
             </div>
           )}
         </>

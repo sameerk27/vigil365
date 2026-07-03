@@ -41,7 +41,19 @@ export function sevColor(s: string): string {
 }
 
 export function sevClass(s?: string): string {
-  return `sev-${(s || "info").toLowerCase()}`;
+  // Includes the sev-dot base class — styles.css only styles the compound
+  // selector (.sev-dot.sev-high), so the bare sev-* class renders nothing.
+  return `sev-dot sev-${(s || "informational").toLowerCase()}`;
+}
+
+/** Single app-wide severity → badge-tone mapping. Use this everywhere a
+ *  severity string becomes a Badge/KpiTile tone so colors stay consistent. */
+export function sevTone(s?: string): Tone {
+  const k = (s || "").toLowerCase();
+  return k === "critical" || k === "high" ? "error"
+    : k === "medium" ? "warning"
+    : k === "low" ? "info"
+    : "neutral";
 }
 
 export function pctTone(p: number, goodThresh = 90, warnThresh = 70): Tone {

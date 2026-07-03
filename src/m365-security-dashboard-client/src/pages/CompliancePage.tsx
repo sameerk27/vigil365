@@ -182,7 +182,7 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
           <div className="dm-section-hdr">Control Requirement Assessment</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 8 }}>
             {selectedFw.controls.map((ctrl: any) => (
-              <div key={ctrl.id} style={{ border: "1px solid var(--color-border)", borderRadius: 8, padding: 12, background: "var(--color-surface)" }}>
+              <div key={ctrl.id} style={{ border: "1px solid var(--color-border)", borderRadius: 8, padding: 12, background: "var(--color-card)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
                   <div>
                     <span style={{ fontFamily: "monospace", fontSize: 11, background: "var(--color-raised)", padding: "2px 6px", borderRadius: 4, marginRight: 6, color: "var(--color-muted)" }}>{ctrl.id}</span>
@@ -194,8 +194,8 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
                 <div style={{ fontSize: 12, color: "var(--color-muted)", marginBottom: 8 }}>Signal: <strong style={{ color: "var(--color-text)" }}>{ctrl.signal}</strong></div>
                 {!ctrl.passed && (
                   <div style={{ background: "var(--status-error-bg)", border: "1px solid var(--status-error-border)", borderRadius: 6, padding: "8px 10px", fontSize: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ color: "var(--status-error-text)" }}>💡 {ctrl.fix}</span>
-                    <a href={ctrl.link} target="_blank" rel="noreferrer" style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, color: "#3b82f6", textDecoration: "none", background: "var(--color-surface)", padding: "4px 8px", borderRadius: 4, border: "1px solid var(--color-border)" }}>
+                    <span style={{ color: "var(--status-error-text)" }}>{ctrl.fix}</span>
+                    <a href={ctrl.link} target="_blank" rel="noreferrer" style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, color: "#3b82f6", textDecoration: "none", background: "var(--color-card)", padding: "4px 8px", borderRadius: 4, border: "1px solid var(--color-border)" }}>
                       Fix in M365 <ExternalLink size={12}/>
                     </a>
                   </div>
@@ -211,29 +211,29 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div>
               <label style={{ fontSize: 12, fontWeight: 600 }}>Target MFA Registration (%)</label>
-              <input type="number" className="filter-input" style={{ width: "100%", marginTop: 4 }} value={thresholds.mfaTarget} onChange={e => setThresholds({ ...thresholds, mfaTarget: Number(e.target.value) })} />
+              <input type="number" className="form-input" style={{ width: "100%", marginTop: 4 }} value={thresholds.mfaTarget} onChange={e => setThresholds({ ...thresholds, mfaTarget: Number(e.target.value) })} />
             </div>
             <div>
               <label style={{ fontSize: 12, fontWeight: 600 }}>Max Privileged Users (Admins)</label>
-              <input type="number" className="filter-input" style={{ width: "100%", marginTop: 4 }} value={thresholds.maxAdmins} onChange={e => setThresholds({ ...thresholds, maxAdmins: Number(e.target.value) })} />
+              <input type="number" className="form-input" style={{ width: "100%", marginTop: 4 }} value={thresholds.maxAdmins} onChange={e => setThresholds({ ...thresholds, maxAdmins: Number(e.target.value) })} />
             </div>
             <div>
               <label style={{ fontSize: 12, fontWeight: 600 }}>Min Conditional Access Policies</label>
-              <input type="number" className="filter-input" style={{ width: "100%", marginTop: 4 }} value={thresholds.minCaPolicies} onChange={e => setThresholds({ ...thresholds, minCaPolicies: Number(e.target.value) })} />
+              <input type="number" className="form-input" style={{ width: "100%", marginTop: 4 }} value={thresholds.minCaPolicies} onChange={e => setThresholds({ ...thresholds, minCaPolicies: Number(e.target.value) })} />
             </div>
             <div>
               <label style={{ fontSize: 12, fontWeight: 600 }}>Max Failed Sign-ins (24h)</label>
-              <input type="number" className="filter-input" style={{ width: "100%", marginTop: 4 }} value={thresholds.maxFailedSignIns} onChange={e => setThresholds({ ...thresholds, maxFailedSignIns: Number(e.target.value) })} />
+              <input type="number" className="form-input" style={{ width: "100%", marginTop: 4 }} value={thresholds.maxFailedSignIns} onChange={e => setThresholds({ ...thresholds, maxFailedSignIns: Number(e.target.value) })} />
             </div>
             <div>
               <label style={{ fontSize: 12, fontWeight: 600 }}>Max Phishing Compromise Rate (%)</label>
-              <input type="number" className="filter-input" style={{ width: "100%", marginTop: 4 }} value={thresholds.maxPhishRate} onChange={e => setThresholds({ ...thresholds, maxPhishRate: Number(e.target.value) })} />
+              <input type="number" className="form-input" style={{ width: "100%", marginTop: 4 }} value={thresholds.maxPhishRate} onChange={e => setThresholds({ ...thresholds, maxPhishRate: Number(e.target.value) })} />
             </div>
             <div>
               <label style={{ fontSize: 12, fontWeight: 600 }}>Target Secure Score (%)</label>
-              <input type="number" className="filter-input" style={{ width: "100%", marginTop: 4 }} value={thresholds.minSecureScore} onChange={e => setThresholds({ ...thresholds, minSecureScore: Number(e.target.value) })} />
+              <input type="number" className="form-input" style={{ width: "100%", marginTop: 4 }} value={thresholds.minSecureScore} onChange={e => setThresholds({ ...thresholds, minSecureScore: Number(e.target.value) })} />
             </div>
-            <button className="btn-primary" style={{ marginTop: 8 }} onClick={() => { localStorage.setItem("vigil365_compliance_thresholds", JSON.stringify(thresholds)); setShowThresholdModal(false); }}>
+            <button className="btn-apply" style={{ marginTop: 8 }} onClick={() => { localStorage.setItem("vigil365_compliance_thresholds", JSON.stringify(thresholds)); setShowThresholdModal(false); }}>
               Save Thresholds
             </button>
           </div>
@@ -245,8 +245,8 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
           <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: "var(--color-text)" }}>Enterprise Compliance Baseline</h2>
           <div style={{ fontSize: 12, color: "var(--color-muted)" }}>Pinned frameworks: NIST CSF 2.0 (2024), CIS Controls v8.1, ISO/IEC 27001:2022/Amd 1:2024, GDPR Art. 32 (2016/679)</div>
         </div>
-        <button className="btn-secondary" onClick={() => setShowThresholdModal(true)} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          ⚙️ Configure Thresholds
+        <button className="btn-export" onClick={() => setShowThresholdModal(true)} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          Configure Thresholds
         </button>
       </div>
 
@@ -260,7 +260,7 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
           sub={dlpAlerts?.error?"Needs SecurityAlert.Read.All":"Data loss prevention alerts"} needsPerm={!!dlpAlerts?.error}
           tone={(dlpAlerts?.total??0)===0?"good":"warning"}/>
         <KpiTile icon={<Star size={18}/>} label="AVG FRAMEWORK SCORE" value={`${Math.round(frameworks.reduce((a,b)=>a+b.score,0)/frameworks.length)}%`}
-          sub="Across CIS, NIST, ISO, GDPR" tone={pctTone(frameworks[0].score)}/>
+          sub="Across CIS, NIST, ISO, GDPR" tone={pctTone(Math.round(frameworks.reduce((a,b)=>a+b.score,0)/frameworks.length))}/>
       </div>
 
       <div className="two-col">

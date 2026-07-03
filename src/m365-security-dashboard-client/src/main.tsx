@@ -302,7 +302,9 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
     identity: allAlerts.filter(a=>a.service==="EntraId").length + (mdiAlerts?.total??0) + (riskDetections?.total??0) + (identityHealth?.total??0),
     devices: allAlerts.filter(a=>a.service==="Intune").length,
     email: allAlerts.filter(a=>a.service==="ExchangeOnline").length,
-    incidents: allAlerts.length + (serviceHealth?.total??0) + (defenderAlerts?.total??0) + (securityIncidents?.total??0),
+    // Security alerts only — service-health advisories have their own badge and
+    // must not inflate the incidents count.
+    incidents: allAlerts.filter(a=>a.service!=="ServiceHealth").length + (defenderAlerts?.total??0) + (securityIncidents?.total??0),
     alertcenter: newTriggeredCount,
     servicehealth: serviceHealth?.total??0,
     licenses: (inactiveUsers?.inactive90Count??0)+(passwordExpiry?.expiringSoonCount??0),
@@ -334,8 +336,6 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
 
   const currentNav = NAV.find(n=>n.id===page);
 
-  // System status banner: show if any M365 services are degraded
-  const systemDegraded = (serviceHealth?.total ?? 0) > 0;
 
   const isInitialLoad = loading && overview === null;
 
@@ -408,13 +408,6 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
         </header>
         {loading && !isInitialLoad && <div className="loading-bar"><div className="loading-bar-fill"/></div>}
         {error&&<div className="err-banner">{error} <button style={{marginLeft:8,textDecoration:"underline",background:"none",border:"none",color:"inherit",cursor:"pointer"}} onClick={()=>setError("")}>Dismiss</button></div>}
-        {systemDegraded && (
-          <div style={{padding:"0 24px 0",marginTop:8}}>
-            <div className="sys-status-banner status-degraded">
-              <AlertTriangle size={15}/> {serviceHealth!.total} M365 service{serviceHealth!.total>1?"s":""} currently have active advisories — check Service Health for details.
-            </div>
-          </div>
-        )}
         {isInitialLoad ? (
           <DashboardSkeleton />
         ) : (

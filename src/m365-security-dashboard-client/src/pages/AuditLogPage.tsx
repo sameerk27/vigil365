@@ -63,7 +63,7 @@ export function AuditLogPage({ data }: { data: AuditLogData|null }) {
           active={resultFilter==="failure"} onClick={()=>{setSearch("");setCategoryFilter("");setResultFilter(resultFilter==="failure"?"":"failure");}}/>
         <KpiTile icon={<Database size={18}/>} label="CATEGORIES" value={categories.length}
           sub="Distinct activity types" tone="neutral"/>
-        <KpiTile icon={<Clock size={18}/>} label="DATA FRESHNESS" value="Real-time" sub="Direct from Graph API" tone="good"/>
+        <KpiTile icon={<Clock size={18}/>} label="DATA FRESHNESS" value="On refresh" sub="Fetched from Graph on page load" tone="neutral"/>
       </div>
 
       <Card title="Admin Audit Log"

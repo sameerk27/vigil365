@@ -74,8 +74,8 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
         <KpiTile icon={<ShieldAlert size={18}/>} label="MALWARE DETECTED" value={malware.length}
           sub="Email-borne threats" tone={malware.length===0?"good":"error"}
           onClick={() => setSearch("malware")}/>
-        <KpiTile icon={<CheckCircle size={18}/>} label="DEFENDER STATUS" value={mailFlow.length===0?"Active":"Degraded"}
-          sub="Office 365 Defender" tone={mailFlow.length===0?"good":"warning"}
+        <KpiTile icon={<CheckCircle size={18}/>} label="EMAIL THREATS" value={quarantined.length + malware.length}
+          sub="Quarantined + malware combined" tone={quarantined.length + malware.length === 0 ? "good" : "warning"}
           onClick={() => setSearch("")}/>
       </div>
 

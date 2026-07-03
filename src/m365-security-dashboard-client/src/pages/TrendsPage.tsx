@@ -105,7 +105,7 @@ export function TrendsPage() {
     if (latest.criticalAlertsCount > 0) result.push({ type: "critical", text: `${latest.criticalAlertsCount} critical alert${latest.criticalAlertsCount > 1 ? "s" : ""} currently active. Immediate investigation recommended.` });
 
     // Data coverage
-    result.push({ type: "info", text: `Showing ${filteredSnapshots.length} data points over ${timeRange} days. Data is captured once per collection cycle (default: every 5 minutes).` });
+    result.push({ type: "info", text: `Showing ${filteredSnapshots.length} data points over ${timeRange} days. One snapshot is captured per collection cycle (15 minutes by default).` });
 
     return result;
   }, [filteredSnapshots, latest, oldest, timeRange]);
@@ -240,7 +240,7 @@ export function TrendsPage() {
           </p>
         </div>
         <div className="trends-controls no-print" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <div style={{ display: "flex", gap: 3, background: "var(--color-bg-alt)", padding: 3, borderRadius: 8, border: "1px solid var(--color-border)" }}>
+          <div style={{ display: "flex", gap: 3, background: "var(--color-raised)", padding: 3, borderRadius: 8, border: "1px solid var(--color-border)" }}>
             {[7, 30, 90].map(days => (
               <button key={days} onClick={() => setTimeRange(days)}
                 style={{
@@ -325,7 +325,7 @@ export function TrendsPage() {
       {/* ─── Historical Data Table ─── */}
       <div className="no-print">
         <button onClick={() => setShowTable(!showTable)}
-          style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", background: "var(--color-bg-alt)", border: "1px solid var(--color-border)", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 600, color: "var(--color-text)", width: "100%", marginBottom: showTable ? 0 : 24 }}>
+          style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", background: "var(--color-raised)", border: "1px solid var(--color-border)", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 600, color: "var(--color-text)", width: "100%", marginBottom: showTable ? 0 : 24 }}>
           {showTable ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           Historical Data Table ({filteredSnapshots.length} records)
         </button>
@@ -334,14 +334,14 @@ export function TrendsPage() {
         <div style={{ overflowX: "auto", marginBottom: 24, border: "1px solid var(--color-border)", borderTop: "none", borderRadius: "0 0 8px 8px" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
             <thead>
-              <tr style={{ background: "var(--color-bg-alt)" }}>
+              <tr style={{ background: "var(--color-raised)" }}>
                 <th style={thStyle}>Date</th>
                 {METRICS.map(m => <th key={m.key} style={thStyle}>{m.label}</th>)}
               </tr>
             </thead>
             <tbody>
               {reversedSnapshots.map((s, i) => (
-                <tr key={s.id} style={{ background: i % 2 === 0 ? "transparent" : "var(--color-bg-alt)" }}>
+                <tr key={s.id} style={{ background: i % 2 === 0 ? "transparent" : "var(--color-raised)" }}>
                   <td style={tdStyle}>{fmtDate(s.capturedAt)}</td>
                   {METRICS.map(m => {
                     const val = s[m.key] as number;
@@ -354,7 +354,7 @@ export function TrendsPage() {
                         <span style={{ fontWeight: 600 }}>{m.isPct ? val.toFixed(1) : val}{m.unit}</span>
                         {diff !== 0 && (
                           <span style={{ marginLeft: 6, fontSize: 10, color: improving ? "#10b981" : "#ef4444", fontWeight: 600 }}>
-                            {diff > 0 ? "▲" : "▼"}{Math.abs(m.isPct ? diff : diff)}
+                            {diff > 0 ? "▲" : "▼"}{m.isPct ? Math.abs(diff).toFixed(1) : Math.abs(diff)}
                           </span>
                         )}
                       </td>

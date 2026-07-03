@@ -86,8 +86,12 @@ export const acApi = {
 };
 
 export const recApi = {
+  // Throws on failure — callers must show an error state. Swallowing errors here
+  // made a dead backend indistinguishable from "no recommendations, all healthy".
   async getRecommendations(): Promise<import("./types").SecurityRecommendation[]> {
-    try { const r = await apiFetch(`${apiBase}/api/recommendations`); return r.ok ? await r.json() : []; } catch { return []; }
+    const r = await apiFetch(`${apiBase}/api/recommendations`);
+    if (!r.ok) throw new Error(`Recommendations request failed (${r.status})`);
+    return await r.json();
   },
   async getAlertCoverage(): Promise<import("./types").AlertCoverageScorecard | null> {
     try { const r = await apiFetch(`${apiBase}/api/alert-coverage`); return r.ok ? await r.json() : null; } catch { return null; }

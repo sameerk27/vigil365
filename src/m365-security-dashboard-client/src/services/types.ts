@@ -12,6 +12,9 @@ export type SecurityAlert = {
 
 export type Overview = {
   totalActive: number; highPriority: number;
+  criticalCount?: number;
+  /** Open M365 service-health advisories — reported separately, never counted as security alerts. */
+  serviceAdvisories?: number;
   lastRun?: { startedAt: string; completedAt?: string; status: string; alertsUpserted: number; sourceFailures: number };
   byService: { service: string; count: number }[];
   trends: { date: string; severity: string; count: number }[];
