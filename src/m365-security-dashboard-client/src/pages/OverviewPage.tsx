@@ -9,8 +9,12 @@ import { CollectionHealthCard } from "../components/CollectionHealthCard";
 export function OverviewPage({ overview, secureScore, identity, devices, serviceHealth, alerts, defenderAlerts, securityIncidents, onAlertClick, onNavigateAlertCenter, alertPolicies, overviewTriggered, healthRefreshKey }:
   { overview:Overview|null; secureScore:SecureScore|null; identity:IdentityData|null; devices:DevicesData|null; serviceHealth:ServiceHealthData|null; alerts:SecurityAlert[]; defenderAlerts:DefenderAlertsData|null; securityIncidents:SecurityIncidentsData|null; onAlertClick:(a:SecurityAlert)=>void; onNavigateAlertCenter:()=>void; alertPolicies:AlertPolicy[]; overviewTriggered:TriggeredAlert[]; healthRefreshKey:number }) {
 
+  // Points without a valid maxScore are gaps in the source data, not 0% — mapping
+  // them to 0 painted a fake cliff at the end of the trend line.
   const trendData = useMemo(() =>
-    (secureScore?.trend??[]).map(t => ({ date:t.date, value:t.maxScore>0?+(t.score/t.maxScore*100).toFixed(1):0 })), [secureScore]);
+    (secureScore?.trend??[])
+      .filter(t => t.maxScore > 0 && t.score > 0)
+      .map(t => ({ date:t.date, value:+(t.score/t.maxScore*100).toFixed(1) })), [secureScore]);
 
   const posturePct = useMemo(() => {
     if (!overview||overview.totalActive===0) return 0;
@@ -33,13 +37,24 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
         source: fmtService(a.service), when: a.detectedAt,
         onClick: () => onAlertClick(a),
       }));
-    const fromPolicies = overviewTriggered
-      .filter(t => t.status === "new")
-      .map(t => ({
-        key: `p-${t.id}`, severity: t.severity, title: `Policy fired: ${t.policyName}`,
-        source: "Alert Center", when: t.triggeredAt,
-        onClick: onNavigateAlertCenter,
-      }));
+    // One row per policy, not one per firing — a policy that has fired 40 times
+    // unacknowledged is one problem, not 40. Show the latest firing + count.
+    const openByPolicy = new Map<string, { latest: typeof overviewTriggered[number]; count: number }>();
+    for (const t of overviewTriggered) {
+      if (t.status !== "new") continue;
+      const entry = openByPolicy.get(t.policyId);
+      if (!entry) openByPolicy.set(t.policyId, { latest: t, count: 1 });
+      else {
+        entry.count++;
+        if (new Date(t.triggeredAt) > new Date(entry.latest.triggeredAt)) entry.latest = t;
+      }
+    }
+    const fromPolicies = [...openByPolicy.values()].map(({ latest: t, count }) => ({
+      key: `p-${t.policyId}`, severity: t.severity,
+      title: `Policy firing: ${t.policyName}${count > 1 ? ` (${count} open occurrences)` : ""}`,
+      source: "Alert Center", when: t.triggeredAt,
+      onClick: onNavigateAlertCenter,
+    }));
     return [...fromAlerts, ...fromPolicies]
       .sort((a, b) => sevRank(a.severity) - sevRank(b.severity) || new Date(b.when).getTime() - new Date(a.when).getTime());
   }, [activeAlerts, overviewTriggered, onAlertClick, onNavigateAlertCenter]);
