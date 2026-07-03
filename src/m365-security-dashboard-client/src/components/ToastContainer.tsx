@@ -17,10 +17,12 @@ export function ToastContainer() {
   }, [addToast]);
 
   return (
-    <div className="toast-container">
+    <div className="toast-container" role="status" aria-live="polite" aria-atomic="true">
       {toasts.map(t => (
         <div key={t.id} className={`toast toast-${t.type ?? "success"}`}>
-          {t.type === "error" ? <XCircle size={15} /> : <CheckCircle size={15} color="var(--status-good-icon)" />}
+          {t.type === "error"
+            ? <XCircle size={15} color="var(--status-error-icon)" />
+            : <CheckCircle size={15} color="var(--status-good-icon)" />}
           <span>{t.message}</span>
         </div>
       ))}

@@ -255,6 +255,13 @@ select, input { font: inherit; }
 }
 
 /* ── Sidebar collapse toggle ─────────────────────────────────────────────── */
+.sb-version {
+  flex-shrink: 0;
+  padding: 8px 16px 0;
+  font-size: 10px; letter-spacing: .3px;
+  color: #4a6080; user-select: none;
+}
+
 .sb-collapse-btn {
   flex-shrink: 0;
   margin: 6px auto 12px;

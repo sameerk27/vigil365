@@ -395,14 +395,29 @@ export function DetailModal({ title, subtitle, onClose, portalUrl, portalLabel, 
   portalLabel?: string;
   children: React.ReactNode;
 }) {
+  const panelRef = React.useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const panel = panelRef.current;
+    // Move focus into the dialog, and trap Tab within it.
+    panel?.querySelector<HTMLElement>("button, a, input, select, [tabindex]")?.focus();
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { onClose(); return; }
+      if (e.key === "Tab" && panel) {
+        const focusable = panel.querySelectorAll<HTMLElement>('button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+        if (focusable.length === 0) return;
+        const first = focusable[0], last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    };
     window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    return () => { window.removeEventListener("keydown", handler); previouslyFocused?.focus?.(); };
   }, [onClose]);
   return (
     <div className="detail-modal-backdrop" onClick={onClose}>
-      <div className="detail-modal" onClick={e => e.stopPropagation()}>
+      <div className="detail-modal" ref={panelRef} onClick={e => e.stopPropagation()}
+        role="dialog" aria-modal="true" aria-label={title}>
         <div className="detail-modal-hdr">
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="dm-title">{title}</div>
@@ -451,10 +466,23 @@ export function InfoRow({ label, value, tone }: { label: string; value: React.Re
 }
 
 // ─── Alert Detail Modal ───────────────────────────────────────────────────────
-export function AlertDetailModal({ alert, onClose }: { alert: SecurityAlert; onClose: () => void }) {
+export function AlertDetailModal({ alert, allAlerts, onSelectAlert, onClose }: {
+  alert: SecurityAlert;
+  allAlerts?: SecurityAlert[];
+  onSelectAlert?: (a: SecurityAlert) => void;
+  onClose: () => void;
+}) {
   const sevTone: Tone = alert.severity === "Critical" || alert.severity === "High" ? "error"
     : alert.severity === "Medium" ? "warning"
     : alert.severity === "Low" ? "info" : "neutral";
+
+  // Investigation context: other open alerts touching the same user or device.
+  const entity = alert.userPrincipalName || alert.deviceName;
+  const related = (allAlerts ?? []).filter(a =>
+    a.id !== alert.id && !a.isResolved && !!entity &&
+    (a.userPrincipalName === alert.userPrincipalName && !!alert.userPrincipalName ||
+     a.deviceName === alert.deviceName && !!alert.deviceName)
+  ).slice(0, 6);
 
   const portalUrl = alert.portalUrl ?? (() => {
     if (alert.service === "Intune") {
@@ -502,6 +530,29 @@ export function AlertDetailModal({ alert, onClose }: { alert: SecurityAlert; onC
         <Badge label={fmtService(alert.service)} tone="neutral"/>
         <Badge label={alert.isResolved ? "Resolved" : "Active"} tone={alert.isResolved ? "good" : "error"}/>
       </div>
+      {entity && (
+        <>
+          <div className="dm-section-hdr">Related open alerts for {alert.userPrincipalName ? "this user" : "this device"}</div>
+          {related.length === 0 ? (
+            <div style={{ fontSize: 12, color: "var(--color-muted)", padding: "4px 0" }}>
+              No other open alerts involve {entity}.
+            </div>
+          ) : (
+            <div className="mini-list">
+              {related.map(r => (
+                <div key={r.id} className="mini-row al-clickable"
+                  onClick={() => onSelectAlert?.(r)} style={{ cursor: onSelectAlert ? "pointer" : "default" }}
+                  role={onSelectAlert ? "button" : undefined} tabIndex={onSelectAlert ? 0 : undefined}
+                  onKeyDown={e => { if (onSelectAlert && e.key === "Enter") onSelectAlert(r); }}>
+                  <span className={`sev-dot sev-${r.severity.toLowerCase()}`}/>
+                  <span className="mr-user" style={{ flex: 1 }}>{r.title}</span>
+                  <Badge label={fmtService(r.service)} tone="neutral"/>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </DetailModal>
   );
 }

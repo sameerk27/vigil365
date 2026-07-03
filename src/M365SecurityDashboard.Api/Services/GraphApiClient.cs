@@ -29,6 +29,8 @@ public sealed class GraphApiClient
             : $"{_options.BaseUrl.TrimEnd('/')}/{path.TrimStart('/')}";
 
         var isFirstPage = true;
+        var throttleRetries = 0;
+        const int maxThrottleRetries = 3; // a persistently throttling tenant must fail, not hang forever
         while (!string.IsNullOrWhiteSpace(next))
         {
             string? nextForIteration = null;
@@ -42,6 +44,13 @@ public sealed class GraphApiClient
                 using var response = await _http.SendAsync(request, ct);
                 if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
                 {
+                    if (++throttleRetries > maxThrottleRetries)
+                    {
+                        if (!isFirstPage) break; // keep the pages we already have
+                        throw new HttpRequestException(
+                            $"Graph throttled the request {maxThrottleRetries} times in a row (429). Try again later.",
+                            null, response.StatusCode);
+                    }
                     var retryAfter = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(15);
                     await Task.Delay(retryAfter, ct);
                     nextForIteration = next; // retry same URL
@@ -55,6 +64,7 @@ public sealed class GraphApiClient
                 else
                 {
                     isFirstPage = false;
+                    throttleRetries = 0; // budget is per page, not per collection
                     await using var stream = await response.Content.ReadAsStreamAsync(ct);
                     using var document = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
 

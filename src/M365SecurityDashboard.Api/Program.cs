@@ -79,12 +79,33 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddEndpointsApiExplorer();
 if (builder.Environment.IsDevelopment()) builder.Services.AddSwaggerGen();
+// CORS origins are config-driven so real deployments (custom hostnames, reverse
+// proxies) work without a rebuild; localhost defaults cover dev out of the box.
+var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+    ?? ["http://localhost:5000", "http://localhost:5173"];
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
-        policy.WithOrigins("http://localhost:5000", "http://localhost:5173")
+        policy.WithOrigins(corsOrigins)
               .AllowAnyHeader()
               .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+});
+
+// Basic abuse protection: per-client fixed-window limiter on the API. Generous
+// enough for the SPA's parallel dashboard fan-out, tight enough to blunt scraping
+// or brute-force attempts. 429s include Retry-After via the default handler.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.GlobalLimiter = System.Threading.RateLimiting.PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
+        System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+            ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 300,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
 });
 
 var app = builder.Build();
@@ -233,6 +254,7 @@ app.Use(async (ctx, next) =>
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseCors();
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 

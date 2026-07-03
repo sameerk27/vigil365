@@ -51,46 +51,57 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
   });
   const [showThresholdModal, setShowThresholdModal] = useState(false);
 
-  // Dynamic M365 Compliance Framework Engine (16 Comprehensive Controls)
+  // Dynamic M365 Compliance Framework Engine (16 Comprehensive Controls).
+  // Each control declares `hasData` — whether its source signal is actually
+  // present. Controls without data are scored as "Insufficient data", NOT PASS,
+  // so an unconnected tenant never shows a green compliance score.
+  const identityData = !!identity?.configured;
+  const caData = !!ca?.configured;
+  const devicesData = (devices?.totalDevices ?? 0) > 0 || (devices?.nonCompliant ?? 0) > 0;
   const allControls = useMemo(() => [
-    { id:"PR.AA-01", cis:"CIS 6.1", iso:"A.5.17", gdpr:"Art. 32(1)(b)", name:"Multi-Factor Authentication Enforcement", passed:(identity?.mfa?.percentage ?? 0) >= thresholds.mfaTarget, signal: typeof identity?.mfa?.percentage==='number' ? `${identity.mfa.percentage.toFixed(1)}% MFA registered (Target: ≥${thresholds.mfaTarget}%)` : "0% MFA registered", fix:"Require MFA for all users in Conditional Access", link:"https://entra.microsoft.com/#view/Microsoft_AAD_ConditionalAccess/ConditionalAccessBlade/~/Policies" },
-    { id:"PR.AA-02", cis:"CIS 5.1", iso:"A.8.2", gdpr:"Art. 32(4)", name:"Privileged Identity Management (PIM) & Role Governance", passed:(privilegedRoles?.totalPrivilegedUsers ?? 0) > 0 && (privilegedRoles?.totalPrivilegedUsers ?? 0) <= thresholds.maxAdmins, signal:`${privilegedRoles?.totalPrivilegedUsers ?? 0} privileged users (Max: ${thresholds.maxAdmins})`, fix:"Enforce PIM just-in-time elevation and limit permanent global admins", link:"https://entra.microsoft.com/#view/Microsoft_AAD_IAM/PrivilegedIdentityManagementBlade" },
-    { id:"PR.AA-03", cis:"CIS 6.3", iso:"A.5.15", gdpr:"Art. 32(1)(b)", name:"Zero Trust Conditional Access Baseline", passed:(ca?.policies?.length ?? 0) >= thresholds.minCaPolicies, signal:`${ca?.policies?.length ?? 0} active CA policies (Target: ≥${thresholds.minCaPolicies})`, fix:"Implement baseline Zero Trust policies (Block legacy auth, require compliant device)", link:"https://entra.microsoft.com/#view/Microsoft_AAD_ConditionalAccess/ConditionalAccessBlade/~/Policies" },
-    { id:"PR.AA-04", cis:"CIS 5.2", iso:"A.8.5", gdpr:"Art. 32(1)(a)", name:"Legacy Authentication Protocol Blocking", passed:(ca?.policies ?? []).some((p:any) => p.name?.toLowerCase().includes("legacy") || p.name?.toLowerCase().includes("block")), signal: (ca?.policies ?? []).some((p:any) => p.name?.toLowerCase().includes("legacy") || p.name?.toLowerCase().includes("block")) ? "Legacy auth blocked" : "Legacy auth permitted", fix:"Create Conditional Access policy blocking client apps using basic/legacy auth", link:"https://entra.microsoft.com/#view/Microsoft_AAD_ConditionalAccess/ConditionalAccessBlade/~/Policies" },
-    
-    { id:"DE.CM-01", cis:"CIS 6.2", iso:"A.8.16", gdpr:"Art. 33", name:"Active Risky User Mitigation", passed:(identity?.riskyUsers ?? 0) === 0, signal:`${identity?.riskyUsers ?? 0} active risky users`, fix:"Investigate high-risk users and confirm compromise or dismiss", link:"https://entra.microsoft.com/#view/Microsoft_AAD_IAM/RiskyUsersBlade" },
-    { id:"DE.CM-02", cis:"CIS 6.4", iso:"A.8.16", gdpr:"Art. 33", name:"Identity Anomaly Detection (Sign-in Signals)", passed:(identity?.signIns?.failed ?? 0) < thresholds.maxFailedSignIns, signal:`${identity?.signIns?.failed ?? 0} failed sign-ins (Max: <${thresholds.maxFailedSignIns})`, fix:"Review Entra sign-in diagnostic logs for brute-force attempts", link:"https://entra.microsoft.com/#view/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/~/SignIns" },
-    
-    { id:"PR.DS-01", cis:"CIS 4.1", iso:"A.8.1", gdpr:"Art. 32(1)(b)", name:"Endpoint Compliance & Health Enrollment", passed:(devices?.totalDevices ?? 0) > 0 && (devices?.nonCompliant ?? 0) === 0, signal:`${devices?.nonCompliant ?? 0} non-compliant of ${devices?.totalDevices ?? 0} devices`, fix:"Enforce Intune device compliance policies", link:"https://intune.microsoft.com/#view/Microsoft_Intune_DeviceSettings/DevicesComplianceMenu/~/compliancePolicies" },
-    { id:"PR.DS-02", cis:"CIS 4.2", iso:"A.8.12", gdpr:"Art. 32(1)(a)", name:"Windows BitLocker Disk Encryption", passed:(devices?.nonCompliant ?? 0) === 0, signal: (devices?.nonCompliant ?? 0) === 0 ? "Endpoints encrypted" : "Encryption unverified on non-compliant devices", fix:"Deploy BitLocker silent encryption policy in Intune Endpoint Security", link:"https://intune.microsoft.com/#view/Microsoft_Intune_Workflows/SecurityManagementMenu/~/diskEncryption" },
-    { id:"PR.DS-03", cis:"CIS 7.1", iso:"A.8.8", gdpr:"Art. 32(1)(c)", name:"Endpoint EDR & Malicious Software Protection", passed:(securityIncidents?.total ?? 0) === 0, signal:`${securityIncidents?.total ?? 0} active security incidents`, fix:"Review Microsoft Defender XDR incident queue", link:"https://security.microsoft.com/incidents" },
-    
-    { id:"PR.DS-04", cis:"CIS 3.1", iso:"A.8.12", gdpr:"Art. 32(1)(b)", name:"Data Loss Prevention (DLP) Enforcement", passed:(dlpAlerts?.total ?? 0) === 0, signal:`${dlpAlerts?.total ?? 0} active DLP violations`, fix:"Review DLP incident queue and adjust oversharing rules", link:"https://compliance.microsoft.com/datalossprevention/alerts" },
-    { id:"PR.DS-05", cis:"CIS 3.2", iso:"A.8.11", gdpr:"Art. 32(1)(a)", name:"Information Protection & Sensitivity Labelling", passed:(insiderRisk?.total ?? 0) === 0, signal: insiderRisk?.total ? `${insiderRisk.total} insider risk alerts` : "No active data leakage alerts", fix:"Configure Microsoft Purview sensitivity labels and auto-labelling rules", link:"https://compliance.microsoft.com/informationprotection" },
-    
-    { id:"PR.PT-01", cis:"CIS 9.1", iso:"A.8.7", gdpr:"Art. 32(1)(b)", name:"Anti-Phishing & Impersonation Defense", passed:(attackSimulation?.avgCompromiseRate ?? 0) < thresholds.maxPhishRate, signal: attackSimulation?.configured && typeof attackSimulation?.avgCompromiseRate === 'number' ? `${attackSimulation.avgCompromiseRate.toFixed(1)}% phish compromise rate (Target: <${thresholds.maxPhishRate}%)` : "No simulation running", fix:"Run ongoing Defender for Office 365 phishing simulations", link:"https://security.microsoft.com/attacksimulator" },
-    { id:"PR.PT-02", cis:"CIS 9.2", iso:"A.8.7", gdpr:"Art. 32(1)(b)", name:"Safe Attachments & Safe Links Sandboxing", passed:!!emailProtection?.configured, signal: `${emailProtection?.total ?? 0} MDO threat detections`, fix:"Ensure Standard or Strict preset security policies are enabled in MDO", link:"https://security.microsoft.com/presetSecurityPolicies" },
-    
-    { id:"DE.AE-01", cis:"CIS 8.1", iso:"A.8.15", gdpr:"Art. 30", name:"Unified Audit Logging & Purview Signal Retention", passed:!!purview?.configured, signal:purview?.configured ? "Purview audit log active" : "Purview API disconnected", fix:"Connect Microsoft Purview API permission SecurityAlert.Read.All", link:"https://compliance.microsoft.com/auditlogsearch" },
-    { id:"DE.AE-02", cis:"CIS 2.1", iso:"A.5.23", gdpr:"Art. 28", name:"Cloud App (OAuth) Permission Governance", passed:(mcasAlerts?.total ?? 0) === 0, signal:`${mcasAlerts?.total ?? 0} risky cloud app alerts`, fix:"Review Microsoft Defender for Cloud Apps OAuth app grant queue", link:"https://security.microsoft.com/cloudapps/oauth-apps" },
-    
-    { id:"ID.GV-01", cis:"CIS 16.1", iso:"A.5.1", gdpr:"Art. 24", name:"Continuous Posture Optimization", passed:(secureScore?.percentage ?? 0) >= thresholds.minSecureScore, signal:`Secure Score at ${secureScore?.percentage ?? 0}% (Target: ≥${thresholds.minSecureScore}%)`, fix:"Complete recommended improvement actions in Microsoft Defender", link:"https://security.microsoft.com/securescore?viewid=actions" }
-  ], [identity, devices, dlpAlerts, ca, purview, secureScore, overview, insiderRisk, attackSimulation, mcasAlerts, securityIncidents, privilegedRoles, emailProtection, thresholds]);
+    { id:"PR.AA-01", cis:"CIS 6.1", iso:"A.5.17", gdpr:"Art. 32(1)(b)", name:"Multi-Factor Authentication Enforcement", hasData:(identity?.mfa?.total ?? 0) > 0, passed:(identity?.mfa?.percentage ?? 0) >= thresholds.mfaTarget, signal: (identity?.mfa?.total ?? 0) > 0 ? `${identity!.mfa.percentage.toFixed(1)}% MFA registered (Target: ≥${thresholds.mfaTarget}%)` : "MFA data not collected (needs Reports.Read.All)", fix:"Require MFA for all users in Conditional Access", link:"https://entra.microsoft.com/#view/Microsoft_AAD_ConditionalAccess/ConditionalAccessBlade/~/Policies" },
+    { id:"PR.AA-02", cis:"CIS 5.1", iso:"A.8.2", gdpr:"Art. 32(4)", name:"Privileged Identity Management (PIM) & Role Governance", hasData:!!privilegedRoles?.configured, passed:(privilegedRoles?.totalPrivilegedUsers ?? 0) > 0 && (privilegedRoles?.totalPrivilegedUsers ?? 0) <= thresholds.maxAdmins, signal: privilegedRoles?.configured ? `${privilegedRoles.totalPrivilegedUsers ?? 0} privileged users (Max: ${thresholds.maxAdmins})` : "Privileged role data not collected", fix:"Enforce PIM just-in-time elevation and limit permanent global admins", link:"https://entra.microsoft.com/#view/Microsoft_AAD_IAM/PrivilegedIdentityManagementBlade" },
+    { id:"PR.AA-03", cis:"CIS 6.3", iso:"A.5.15", gdpr:"Art. 32(1)(b)", name:"Zero Trust Conditional Access Baseline", hasData:caData, passed:(ca?.policies?.length ?? 0) >= thresholds.minCaPolicies, signal: caData ? `${ca?.policies?.length ?? 0} active CA policies (Target: ≥${thresholds.minCaPolicies})` : "CA policy data not collected", fix:"Implement baseline Zero Trust policies (Block legacy auth, require compliant device)", link:"https://entra.microsoft.com/#view/Microsoft_AAD_ConditionalAccess/ConditionalAccessBlade/~/Policies" },
+    { id:"PR.AA-04", cis:"CIS 5.2", iso:"A.8.5", gdpr:"Art. 32(1)(a)", name:"Legacy Authentication Protocol Blocking", hasData:caData, passed:(ca?.policies ?? []).some((p:any) => p.name?.toLowerCase().includes("legacy") || p.name?.toLowerCase().includes("block")), signal: !caData ? "CA policy data not collected" : (ca?.policies ?? []).some((p:any) => p.name?.toLowerCase().includes("legacy") || p.name?.toLowerCase().includes("block")) ? "Legacy auth blocked" : "Legacy auth permitted", fix:"Create Conditional Access policy blocking client apps using basic/legacy auth", link:"https://entra.microsoft.com/#view/Microsoft_AAD_ConditionalAccess/ConditionalAccessBlade/~/Policies" },
 
+    { id:"DE.CM-01", cis:"CIS 6.2", iso:"A.8.16", gdpr:"Art. 33", name:"Active Risky User Mitigation", hasData:identityData, passed:(identity?.riskyUsers ?? 0) === 0, signal: identityData ? `${identity?.riskyUsers ?? 0} active risky users` : "Identity data not collected", fix:"Investigate high-risk users and confirm compromise or dismiss", link:"https://entra.microsoft.com/#view/Microsoft_AAD_IAM/RiskyUsersBlade" },
+    { id:"DE.CM-02", cis:"CIS 6.4", iso:"A.8.16", gdpr:"Art. 33", name:"Identity Anomaly Detection (Sign-in Signals)", hasData:identityData, passed:(identity?.signIns?.failed ?? 0) < thresholds.maxFailedSignIns, signal: identityData ? `${identity?.signIns?.failed ?? 0} failed sign-ins (Max: <${thresholds.maxFailedSignIns})` : "Sign-in data not collected", fix:"Review Entra sign-in diagnostic logs for brute-force attempts", link:"https://entra.microsoft.com/#view/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/~/SignIns" },
+
+    { id:"PR.DS-01", cis:"CIS 4.1", iso:"A.8.1", gdpr:"Art. 32(1)(b)", name:"Endpoint Compliance & Health Enrollment", hasData:devicesData, passed:(devices?.totalDevices ?? 0) > 0 && (devices?.nonCompliant ?? 0) === 0, signal: devicesData ? `${devices?.nonCompliant ?? 0} non-compliant of ${devices?.totalDevices ?? 0} devices` : "Device data not collected", fix:"Enforce Intune device compliance policies", link:"https://intune.microsoft.com/#view/Microsoft_Intune_DeviceSettings/DevicesComplianceMenu/~/compliancePolicies" },
+    { id:"PR.DS-02", cis:"CIS 4.2", iso:"A.8.12", gdpr:"Art. 32(1)(a)", name:"Windows BitLocker Disk Encryption", hasData:devicesData, passed:(devices?.nonCompliant ?? 0) === 0, signal: !devicesData ? "Device data not collected" : (devices?.nonCompliant ?? 0) === 0 ? "Endpoints encrypted" : "Encryption unverified on non-compliant devices", fix:"Deploy BitLocker silent encryption policy in Intune Endpoint Security", link:"https://intune.microsoft.com/#view/Microsoft_Intune_Workflows/SecurityManagementMenu/~/diskEncryption" },
+    { id:"PR.DS-03", cis:"CIS 7.1", iso:"A.8.8", gdpr:"Art. 32(1)(c)", name:"Endpoint EDR & Malicious Software Protection", hasData:!!securityIncidents?.configured, passed:(securityIncidents?.total ?? 0) === 0, signal: securityIncidents?.configured ? `${securityIncidents.total ?? 0} active security incidents` : "Incident data not collected", fix:"Review Microsoft Defender XDR incident queue", link:"https://security.microsoft.com/incidents" },
+
+    { id:"PR.DS-04", cis:"CIS 3.1", iso:"A.8.12", gdpr:"Art. 32(1)(b)", name:"Data Loss Prevention (DLP) Enforcement", hasData:!!dlpAlerts?.configured, passed:(dlpAlerts?.total ?? 0) === 0, signal: dlpAlerts?.configured ? `${dlpAlerts.total ?? 0} active DLP violations` : "DLP data not collected", fix:"Review DLP incident queue and adjust oversharing rules", link:"https://compliance.microsoft.com/datalossprevention/alerts" },
+    { id:"PR.DS-05", cis:"CIS 3.2", iso:"A.8.11", gdpr:"Art. 32(1)(a)", name:"Information Protection & Sensitivity Labelling", hasData:!!insiderRisk?.configured, passed:(insiderRisk?.total ?? 0) === 0, signal: insiderRisk?.configured ? (insiderRisk.total ? `${insiderRisk.total} insider risk alerts` : "No active data leakage alerts") : "Insider risk data not collected", fix:"Configure Microsoft Purview sensitivity labels and auto-labelling rules", link:"https://compliance.microsoft.com/informationprotection" },
+
+    { id:"PR.PT-01", cis:"CIS 9.1", iso:"A.8.7", gdpr:"Art. 32(1)(b)", name:"Anti-Phishing & Impersonation Defense", hasData:!!attackSimulation?.configured && (attackSimulation?.total ?? 0) > 0, passed:(attackSimulation?.avgCompromiseRate ?? 0) < thresholds.maxPhishRate, signal: attackSimulation?.configured && (attackSimulation?.total ?? 0) > 0 ? `${attackSimulation!.avgCompromiseRate.toFixed(1)}% phish compromise rate (Target: <${thresholds.maxPhishRate}%)` : "No phishing simulation data", fix:"Run ongoing Defender for Office 365 phishing simulations", link:"https://security.microsoft.com/attacksimulator" },
+    { id:"PR.PT-02", cis:"CIS 9.2", iso:"A.8.7", gdpr:"Art. 32(1)(b)", name:"Safe Attachments & Safe Links Sandboxing", hasData:!!emailProtection?.configured, passed:!!emailProtection?.configured, signal: emailProtection?.configured ? `${emailProtection.total ?? 0} MDO threat detections` : "MDO data not collected", fix:"Ensure Standard or Strict preset security policies are enabled in MDO", link:"https://security.microsoft.com/presetSecurityPolicies" },
+
+    { id:"DE.AE-01", cis:"CIS 8.1", iso:"A.8.15", gdpr:"Art. 30", name:"Unified Audit Logging & Purview Signal Retention", hasData:purview != null, passed:!!purview?.configured, signal:purview?.configured ? "Purview audit log active" : "Purview API disconnected", fix:"Connect Microsoft Purview API permission SecurityAlert.Read.All", link:"https://compliance.microsoft.com/auditlogsearch" },
+    { id:"DE.AE-02", cis:"CIS 2.1", iso:"A.5.23", gdpr:"Art. 28", name:"Cloud App (OAuth) Permission Governance", hasData:!!mcasAlerts?.configured, passed:(mcasAlerts?.total ?? 0) === 0, signal: mcasAlerts?.configured ? `${mcasAlerts.total ?? 0} risky cloud app alerts` : "Cloud app data not collected", fix:"Review Microsoft Defender for Cloud Apps OAuth app grant queue", link:"https://security.microsoft.com/cloudapps/oauth-apps" },
+
+    { id:"ID.GV-01", cis:"CIS 16.1", iso:"A.5.1", gdpr:"Art. 24", name:"Continuous Posture Optimization", hasData:!!secureScore?.configured, passed:(secureScore?.percentage ?? 0) >= thresholds.minSecureScore, signal: secureScore?.configured ? `Secure Score at ${secureScore.percentage}% (Target: ≥${thresholds.minSecureScore}%)` : "Secure Score not collected", fix:"Complete recommended improvement actions in Microsoft Defender", link:"https://security.microsoft.com/securescore?viewid=actions" }
+  ], [identity, identityData, devices, devicesData, dlpAlerts, ca, caData, purview, secureScore, overview, insiderRisk, attackSimulation, mcasAlerts, securityIncidents, privilegedRoles, emailProtection, thresholds]);
+
+  // Scores are computed only over controls with data — "insufficient data" never
+  // counts as pass OR fail. A framework with no measurable controls shows N/A.
   const frameworks = useMemo(() => [
     { name:"NIST CSF 2.0 (2024)", desc:"National Institute of Standards & Technology Core Framework", controls: allControls },
     { name:"CIS Controls v8.1", desc:"Center for Internet Security Critical Security Controls v8.1", controls: allControls.filter(c => c.cis) },
     { name:"ISO/IEC 27001:2022/Amd 1:2024", desc:"Information Security Management Systems Annex A (2024 Amendment)", controls: allControls.filter(c => c.iso) },
     { name:"GDPR Art. 32 (2016/679)", desc:"EU General Data Protection Regulation Security of Processing", controls: allControls.filter(c => c.gdpr) }
   ].map(fw => {
-    const passed = fw.controls.filter(c => c.passed).length;
-    const score = fw.controls.length > 0 ? Math.round((passed / fw.controls.length) * 100) : 0;
-    return { ...fw, score, passed, total: fw.controls.length, status: score >= 80 ? "Compliant" : score >= 50 ? "Action Required" : "High Risk" };
+    const measured = fw.controls.filter(c => c.hasData);
+    const passed = measured.filter(c => c.passed).length;
+    const score = measured.length > 0 ? Math.round((passed / measured.length) * 100) : 0;
+    const noData = measured.length === 0;
+    return { ...fw, score, passed, total: fw.controls.length, measured: measured.length, noData,
+      status: noData ? "No data" : score >= 80 ? "Compliant" : score >= 50 ? "Action Required" : "High Risk" };
   }), [allControls]);
 
   const controls = useMemo(() => {
     const calc = (ids: string[]) => {
-      const sub = allControls.filter(c => ids.includes(c.id));
+      const sub = allControls.filter(c => ids.includes(c.id) && c.hasData);
       const pass = sub.filter(c => c.passed).length;
       return sub.length ? Math.round((pass / sub.length) * 100) : 0;
     };
@@ -189,10 +200,10 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
                     {(ctrl.cis||ctrl.iso||ctrl.gdpr)&&<span style={{ fontFamily: "monospace", fontSize: 11, background: "rgba(59,130,246,0.1)", border:"1px solid rgba(59,130,246,0.2)", padding: "1px 5px", borderRadius: 4, marginRight: 8, color: "#3b82f6" }}>{ctrl.cis||ctrl.iso||ctrl.gdpr}</span>}
                     <span style={{ fontWeight: 600, fontSize: 13, color: "var(--color-text)" }}>{ctrl.name}</span>
                   </div>
-                  <Badge label={ctrl.passed ? "PASS" : "ACTION REQUIRED"} tone={ctrl.passed ? "good" : "error"}/>
+                  <Badge label={!ctrl.hasData ? "NOT ASSESSED" : ctrl.passed ? "PASS" : "ACTION REQUIRED"} tone={!ctrl.hasData ? "neutral" : ctrl.passed ? "good" : "error"}/>
                 </div>
                 <div style={{ fontSize: 12, color: "var(--color-muted)", marginBottom: 8 }}>Signal: <strong style={{ color: "var(--color-text)" }}>{ctrl.signal}</strong></div>
-                {!ctrl.passed && (
+                {ctrl.hasData && !ctrl.passed && (
                   <div style={{ background: "var(--status-error-bg)", border: "1px solid var(--status-error-border)", borderRadius: 6, padding: "8px 10px", fontSize: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <span style={{ color: "var(--status-error-text)" }}>{ctrl.fix}</span>
                     <a href={ctrl.link} target="_blank" rel="noreferrer" style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, color: "#3b82f6", textDecoration: "none", background: "var(--color-card)", padding: "4px 8px", borderRadius: 4, border: "1px solid var(--color-border)" }}>
@@ -254,13 +265,21 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
         <KpiTile icon={<Shield size={18}/>} label="SECURE SCORE"
           value={secureScore?.configured&&!secureScore.error?`${secureScore.percentage}%`:"—"}
           sub="Microsoft 365 posture" tone={pctTone(secureScore?.percentage??0)}/>
-        <KpiTile icon={<FileText size={18}/>} label="FRAMEWORKS" value={`${frameworks.filter(f=>f.score>=80).length}/${frameworks.length}`}
+        <KpiTile icon={<FileText size={18}/>} label="FRAMEWORKS" value={`${frameworks.filter(f=>!f.noData&&f.score>=80).length}/${frameworks.length}`}
           sub="Compliant standards" tone="info"/>
         <KpiTile icon={<FileText size={18}/>} label="DLP VIOLATIONS" value={dlpAlerts?.configured&&!dlpAlerts.error?dlpAlerts.total:"—"}
           sub={dlpAlerts?.error?"Needs SecurityAlert.Read.All":"Data loss prevention alerts"} needsPerm={!!dlpAlerts?.error}
           tone={(dlpAlerts?.total??0)===0?"good":"warning"}/>
-        <KpiTile icon={<Star size={18}/>} label="AVG FRAMEWORK SCORE" value={`${Math.round(frameworks.reduce((a,b)=>a+b.score,0)/frameworks.length)}%`}
-          sub="Across CIS, NIST, ISO, GDPR" tone={pctTone(Math.round(frameworks.reduce((a,b)=>a+b.score,0)/frameworks.length))}/>
+        {(() => {
+          const assessed = frameworks.filter(f => !f.noData);
+          const avg = assessed.length ? Math.round(assessed.reduce((a,b)=>a+b.score,0)/assessed.length) : 0;
+          const totalMeasured = allControls.filter(c => c.hasData).length;
+          return (
+            <KpiTile icon={<Star size={18}/>} label="AVG FRAMEWORK SCORE" value={assessed.length ? `${avg}%` : "—"}
+              sub={`${totalMeasured} of ${allControls.length} controls assessed`}
+              tone={assessed.length ? pctTone(avg) : "neutral"}/>
+          );
+        })()}
       </div>
 
       <div className="two-col">
@@ -292,12 +311,13 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
                     <div className="fw-name" style={{ fontWeight: 600, fontSize: 14, color: "var(--color-text)" }}>{f.name}</div>
                     <div style={{ fontSize: 11, color: "var(--color-muted)" }}>{f.desc}</div>
                   </div>
-                  <Badge label={f.status} tone={f.score>=80?"good":f.score>=50?"warning":"error"}/>
+                  <Badge label={f.noData ? "No data" : f.status} tone={f.noData ? "neutral" : f.score>=80?"good":f.score>=50?"warning":"error"}/>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{ flex: 1 }}><ProgressBar pct={f.score}/></div>
-                  <span style={{ fontSize: 13, fontWeight: 700, minWidth: 38, textAlign: "right", color: f.score>=80?"var(--status-good-text)":f.score>=50?"var(--status-warn-text)":"var(--status-error-text)" }}>{f.score}%</span>
+                  <div style={{ flex: 1 }}><ProgressBar pct={f.noData ? 0 : f.score}/></div>
+                  <span style={{ fontSize: 13, fontWeight: 700, minWidth: 38, textAlign: "right", color: f.noData ? "var(--color-muted)" : f.score>=80?"var(--status-good-text)":f.score>=50?"var(--status-warn-text)":"var(--status-error-text)" }}>{f.noData ? "N/A" : `${f.score}%`}</span>
                 </div>
+                {!f.noData && <div style={{ fontSize: 10.5, color: "var(--color-faint)", marginTop: 4 }}>{f.measured} of {f.total} controls assessed</div>}
               </div>
             ))}
           </div>

@@ -43,6 +43,9 @@ import { UserManagementPage } from "./pages/UserManagementPage";
 import { SetupPage } from "./pages/SetupPage";
 import { TrendsPage } from "./pages/TrendsPage";
 
+// App version — surfaced in the sidebar so the running build is always identifiable.
+export const APP_VERSION = "1.0.0";
+
 // ─── MSAL instances local to bootstrapping ─────────────────────────────────────
 let _msalInstance: PublicClientApplication | null = null;
 let _msalScopes: string[] = [];
@@ -100,6 +103,7 @@ function Sidebar({ page, setPage, alertCounts, collapsed, onToggleCollapse }: {
               className={`nav-item ${page===n.id?"nav-active":""}`}
               onClick={()=>setPage(n.id)}
               aria-label={n.label}
+              aria-current={page===n.id ? "page" : undefined}
               title={collapsed ? n.label : undefined}
             >
               {n.icon}
@@ -112,6 +116,7 @@ function Sidebar({ page, setPage, alertCounts, collapsed, onToggleCollapse }: {
           </React.Fragment>
         ))}
       </nav>
+      {!collapsed && <div className="sb-version">Vigil365 v{APP_VERSION}</div>}
       <button
         className="sb-collapse-btn"
         onClick={onToggleCollapse}
@@ -432,7 +437,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
           </>
         )}
       </div>
-      {selectedAlert&&<AlertDetailModal alert={selectedAlert} onClose={()=>setSelectedAlert(null)}/>}
+      {selectedAlert&&<AlertDetailModal alert={selectedAlert} allAlerts={allAlerts} onSelectAlert={setSelectedAlert} onClose={()=>setSelectedAlert(null)}/>}
       <ToastContainer/>
     </div>
   );
@@ -598,7 +603,9 @@ function AuthGate() {
     await _msalInstance.logoutRedirect({ postLogoutRedirectUri: window.location.origin });
   };
 
-  const role: AppRole = me?.role ?? "Admin";
+  // Least privilege on failure: an unreadable /api/auth/me must not surface
+  // Admin-only controls (the server still enforces, but the UI shouldn't tease).
+  const role: AppRole = me?.role ?? "Viewer";
   const auth: AuthInfo = {
     email: me?.email ?? "",
     name: me?.name ?? account?.name ?? "",

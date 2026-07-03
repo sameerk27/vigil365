@@ -114,7 +114,14 @@ export function IncidentsPage({ alerts, serviceHealth, defenderAlerts, securityI
         return i.data.title.toLowerCase().includes(q);
       });
     }
-    return items;
+    // Triage order: worst first (severity), then most recent. The queue must lead
+    // with the item an analyst should look at now, regardless of source.
+    const sevRank = (s?: string) => ({ critical:0, high:1, medium:2, low:3, informational:4 } as Record<string,number>)[(s??"").toLowerCase()] ?? 5;
+    const itemSev = (i: UnifiedItem) => i.kind==="alert"?i.data.severity:i.kind==="defender"?i.data.severity:i.kind==="incident"?i.data.severity:i.data.severity;
+    const itemWhen = (i: UnifiedItem) => i.kind==="alert"?i.data.detectedAt:i.kind==="defender"?i.data.createdDateTime:i.kind==="incident"?i.data.createdDateTime:i.data.detectedAt;
+    return [...items].sort((a,b) =>
+      sevRank(itemSev(a)) - sevRank(itemSev(b)) ||
+      new Date(itemWhen(b) ?? 0).getTime() - new Date(itemWhen(a) ?? 0).getTime());
   }, [unified, typeFilter, severity, search, dateRange]);
 
   const dbBySeverity = useMemo(() =>
@@ -167,14 +174,14 @@ export function IncidentsPage({ alerts, serviceHealth, defenderAlerts, securityI
         <KpiTile icon={<AlertCircle size={18}/>} label="SECURITY INCIDENTS" value={incidentCount}
           sub={securityIncidents?.error?"Permission needed":"Active incidents"} tone={incidentCount>0?"warning":"good"}
           active={typeFilter==="incidents"} onClick={()=>{setSeverity("");setTypeFilter("incidents");}}/>
-        <KpiTile icon={<AlertTriangle size={16}/>} label="DB CRITICAL"
+        <KpiTile icon={<AlertTriangle size={16}/>} label="CRITICAL ALERTS"
           value={dbBySeverity["Critical"]??0}
-          sub="Critical severity alerts"
+          sub="Critical severity, unresolved"
           tone={(dbBySeverity["Critical"]??0)>0?"error":"good"}
           active={typeFilter==="alerts"&&severity==="critical"} onClick={()=>{setTypeFilter("alerts");setSeverity("critical");}}/>
-        <KpiTile icon={<AlertTriangle size={16}/>} label="DB HIGH"
+        <KpiTile icon={<AlertTriangle size={16}/>} label="HIGH ALERTS"
           value={dbBySeverity["High"]??0}
-          sub="High severity alerts"
+          sub="High severity, unresolved"
           tone={(dbBySeverity["High"]??0)>0?"warning":"good"}
           active={typeFilter==="alerts"&&severity==="high"} onClick={()=>{setTypeFilter("alerts");setSeverity("high");}}/>
         <KpiTile icon={<Bell size={18}/>} label="M365 ADVISORIES" value={advisoryCount} sub="Active advisories" tone={advisoryCount>0?"warning":"good"}
@@ -206,7 +213,7 @@ export function IncidentsPage({ alerts, serviceHealth, defenderAlerts, securityI
           <div className="pill-group">
             {(["all","defender","incidents","alerts","advisories"] as IncidentFilter[]).map(t=>(
               <button key={t} className={`pill-btn ${typeFilter===t?"active":""}`} onClick={()=>setTypeFilter(t)}>
-                {t==="all"?`All (${counts.all})`:t==="defender"?`Defender (${defenderCount})`:t==="incidents"?`Incidents (${incidentCount})`:t==="alerts"?`Security DB (${alerts.length})`:`Advisories (${advisoryCount})`}
+                {t==="all"?`All (${counts.all})`:t==="defender"?`Defender (${defenderCount})`:t==="incidents"?`Incidents (${incidentCount})`:t==="alerts"?`Vigil365 Alerts (${alerts.length})`:`Advisories (${advisoryCount})`}
               </button>
             ))}
           </div>
