@@ -50,33 +50,65 @@ export const APP_VERSION = "1.0.0";
 let _msalInstance: PublicClientApplication | null = null;
 let _msalScopes: string[] = [];
 
-// ─── Sidebar ───────────────────────────────────────────────────────────────────
-const NAV: { id: NavPage; label: string; icon: React.ReactNode; group?: string; adminOnly?: boolean }[] = [
-  { id:"overview",         label:"Overview",             icon:<Home size={17}/> },
-  { id:"recommendations",  label:"Recommendations",      icon:<Lightbulb size={17}/> },
-  { id:"trends",           label:"Trends & History",     icon:<TrendingUp size={17}/> },
-  { id:"identity",         label:"Identity",             icon:<Users size={17}/> },
-  { id:"devices",          label:"Devices",              icon:<Monitor size={17}/> },
-  { id:"email",            label:"Email",                icon:<Mail size={17}/> },
-  { id:"incidents",        label:"Incidents & Alerts",   icon:<AlertTriangle size={17}/> },
-  { id:"alertcenter",      label:"Alert Center",         icon:<Bell size={17}/> },
-  { id:"compliance",       label:"Compliance",           icon:<CheckSquare size={17}/> },
-  { id:"servicehealth",    label:"Service Health",       icon:<Activity size={17}/> },
-  { id:"network",          label:"M365 Connectivity",    icon:<Wifi size={17}/> },
-  { id:"licenses",         label:"Licenses & Users",     icon:<Package size={17}/>, group:"Enterprise" },
-  { id:"conditionalaccess",label:"Conditional Access",   icon:<ShieldCheck size={17}/>, group:"Enterprise" },
-  { id:"auditlog",         label:"Audit Log",            icon:<BookOpen size={17}/>, group:"Enterprise" },
-  { id:"signinmap",        label:"Sign-in Locations",    icon:<MapPin size={17}/>, group:"Enterprise" },
-  { id:"users",            label:"User Management",      icon:<UserCheck size={17}/>, group:"Administration", adminOnly:true },
-  { id:"setup",            label:"Setup",                icon:<Settings size={17}/>, group:"Administration", adminOnly:true },
+// ─── Navigation: 8 sections, each holding one or more tab pages ────────────────
+// Every original page id still exists (crossNavigate targets are unchanged) —
+// pages are grouped into sections; multi-page sections render a tab bar.
+type SectionDef = {
+  id: string; label: string; icon: React.ReactNode;
+  pages: { id: NavPage; label: string; adminOnly?: boolean }[];
+};
+const SECTIONS: SectionDef[] = [
+  { id:"overview", label:"Overview",       icon:<Home size={17}/>,          pages:[{ id:"overview", label:"Overview" }] },
+  { id:"alerts",   label:"Alerts",         icon:<AlertTriangle size={17}/>, pages:[
+      { id:"incidents",   label:"Alert Queue" },
+      { id:"alertcenter", label:"Alert Center" }] },
+  { id:"identity", label:"Identity",       icon:<Users size={17}/>,         pages:[
+      { id:"identity",          label:"Overview" },
+      { id:"signinmap",         label:"Sign-in Locations" },
+      { id:"conditionalaccess", label:"Conditional Access" },
+      { id:"auditlog",          label:"Audit Log" }] },
+  { id:"devices",  label:"Devices",        icon:<Monitor size={17}/>,       pages:[{ id:"devices", label:"Devices" }] },
+  { id:"email",    label:"Email",          icon:<Mail size={17}/>,          pages:[{ id:"email", label:"Email" }] },
+  { id:"posture",  label:"Posture",        icon:<CheckSquare size={17}/>,   pages:[
+      { id:"compliance",      label:"Compliance" },
+      { id:"recommendations", label:"Recommendations" },
+      { id:"trends",          label:"Trends & History" }] },
+  { id:"health",   label:"M365 Health",    icon:<Activity size={17}/>,      pages:[
+      { id:"servicehealth", label:"Service Health" },
+      { id:"network",       label:"Connectivity" }] },
+  { id:"admin",    label:"Administration", icon:<Settings size={17}/>,      pages:[
+      { id:"licenses", label:"Licenses & Users" },
+      { id:"users",    label:"User Management", adminOnly:true },
+      { id:"setup",    label:"Setup", adminOnly:true }] },
 ];
+const sectionOf = (p: NavPage): SectionDef => SECTIONS.find(s => s.pages.some(pg => pg.id === p)) ?? SECTIONS[0];
+const pageLabel = (p: NavPage): string => {
+  const s = sectionOf(p);
+  const tab = s.pages.find(pg => pg.id === p);
+  return s.pages.length > 1 && tab ? `${s.label} · ${tab.label}` : s.label;
+};
+const VALID_PAGES = new Set<string>(SECTIONS.flatMap(s => s.pages.map(p => p.id)));
+
+// ─── Hash router ────────────────────────────────────────────────────────────────
+// URL shape: #/{pageId} with an optional ?alert={id} permalink. Keeps pages
+// refresh-safe, bookmarkable, and makes alert links shareable (email/Teams).
+function parseHash(): { page: NavPage | null; alertId: number | null } {
+  const m = window.location.hash.match(/^#\/([a-z]+)(?:\?alert=(\d+))?/);
+  const page = m && VALID_PAGES.has(m[1]) ? (m[1] as NavPage) : null;
+  const alertId = m?.[2] ? Number(m[2]) : null;
+  return { page, alertId };
+}
 
 function Sidebar({ page, setPage, alertCounts, collapsed, onToggleCollapse }: {
   page:NavPage; setPage:(p:NavPage)=>void; alertCounts: Record<string,number>;
   collapsed: boolean; onToggleCollapse: () => void;
 }) {
   const { isAdmin } = useAuth();
-  const items = NAV.filter(n => !n.adminOnly || isAdmin);
+  const activeSection = sectionOf(page).id;
+  // Remember the last tab visited per section so returning to a section
+  // reopens where the user left off, not always the first tab.
+  const lastTab = React.useRef<Record<string, NavPage>>({});
+  lastTab.current[activeSection] = page;
   return (
     <aside className={`sidebar ${collapsed ? "" : "expanded"}`}>
       <div className="sb-logo">
@@ -94,27 +126,30 @@ function Sidebar({ page, setPage, alertCounts, collapsed, onToggleCollapse }: {
         )}
       </div>
       <nav className="sb-nav">
-        {items.map((n,i)=>(
-          <React.Fragment key={n.id}>
-            {!collapsed && n.group && (i===0 || items[i-1].group!==n.group) && (
-              <div className="nav-group-label">{n.group}</div>
-            )}
+        {SECTIONS.map(s => {
+          const visible = s.pages.filter(p => !p.adminOnly || isAdmin);
+          if (visible.length === 0) return null;
+          const count = visible.reduce((acc, p) => acc + (alertCounts[p.id] ?? 0), 0);
+          const target = () => {
+            const remembered = lastTab.current[s.id];
+            return remembered && visible.some(v => v.id === remembered) ? remembered : visible[0].id;
+          };
+          return (
             <button
-              className={`nav-item ${page===n.id?"nav-active":""}`}
-              onClick={()=>setPage(n.id)}
-              aria-label={n.label}
-              aria-current={page===n.id ? "page" : undefined}
-              title={collapsed ? n.label : undefined}
+              key={s.id}
+              className={`nav-item ${activeSection===s.id?"nav-active":""}`}
+              onClick={()=>setPage(target())}
+              aria-label={s.label}
+              aria-current={activeSection===s.id ? "page" : undefined}
+              title={collapsed ? s.label : undefined}
             >
-              {n.icon}
-              {!collapsed && <span>{n.label}</span>}
-              {!collapsed && (alertCounts as Record<string,number>)[n.id]>0 && (
-                <span className="nav-badge">{(alertCounts as Record<string,number>)[n.id]}</span>
-              )}
-              {collapsed && <span className="nav-tooltip">{n.label}{(alertCounts[n.id]??0)>0?` (${alertCounts[n.id]})`:"" }</span>}
+              {s.icon}
+              {!collapsed && <span>{s.label}</span>}
+              {!collapsed && count>0 && <span className="nav-badge">{count > 99 ? "99+" : count}</span>}
+              {collapsed && <span className="nav-tooltip">{s.label}{count>0?` (${count})`:"" }</span>}
             </button>
-          </React.Fragment>
-        ))}
+          );
+        })}
       </nav>
       {!collapsed && <div className="sb-version">Vigil365 v{APP_VERSION}</div>}
       <button
@@ -132,7 +167,26 @@ function Sidebar({ page, setPage, alertCounts, collapsed, onToggleCollapse }: {
 // ─── Main App Shell ────────────────────────────────────────────────────────────
 function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?: () => void }) {
   const auth = useAuth();
-  const [page, setPage] = useState<NavPage>("overview");
+  // Page state is hash-routed: initialised from the URL, kept in sync both ways,
+  // so refresh preserves the page and back/forward navigates pages.
+  const [page, setPageState] = useState<NavPage>(() => parseHash().page ?? "overview");
+  const [pendingAlertId, setPendingAlertId] = useState<number | null>(() => parseHash().alertId);
+  const setPage = useCallback((p: NavPage) => {
+    setPageState(p);
+    if (window.location.hash !== `#/${p}`) window.history.pushState(null, "", `#/${p}`);
+  }, []);
+  useEffect(() => {
+    if (!window.location.hash) window.history.replaceState(null, "", `#/${parseHash().page ?? "overview"}`);
+    const sync = () => {
+      const { page: p, alertId } = parseHash();
+      if (p) setPageState(p);
+      if (alertId != null) setPendingAlertId(alertId);
+    };
+    window.addEventListener("popstate", sync);
+    window.addEventListener("hashchange", sync);
+    return () => { window.removeEventListener("popstate", sync); window.removeEventListener("hashchange", sync); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem("m365-theme") === "dark");
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false); // false = expanded
@@ -185,6 +239,20 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [running, setRunning] = useState(false);
   const [selectedAlert, setSelectedAlert] = useState<SecurityAlert|null>(null);
+
+  // Alert permalinks: the open alert is reflected in the URL (#/page?alert=id)
+  // so the link can be shared; opening such a link selects the alert once data
+  // has loaded. replaceState avoids polluting history with every open/close.
+  useEffect(() => {
+    window.history.replaceState(null, "", selectedAlert ? `#/${page}?alert=${selectedAlert.id}` : `#/${page}`);
+  }, [selectedAlert, page]);
+  useEffect(() => {
+    if (pendingAlertId == null || allAlerts.length === 0) return;
+    const target = allAlerts.find(a => a.id === pendingAlertId);
+    if (target) setSelectedAlert(target);
+    setPendingAlertId(null);
+  }, [pendingAlertId, allAlerts]);
+
   const [countdown, setCountdown] = useState(AUTO_REFRESH_SEC);
   const [refreshKey, setRefreshKey] = useState(0);
   const abortRef = useRef<AbortController|null>(null);
@@ -339,7 +407,8 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
     return r;
   }, [alertCounts, seenCounts]);
 
-  const currentNav = NAV.find(n=>n.id===page);
+  const activeSectionDef = sectionOf(page);
+  const visibleTabs = activeSectionDef.pages.filter(p => !p.adminOnly || auth.isAdmin);
 
 
   const isInitialLoad = loading && overview === null;
@@ -351,7 +420,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
       <div className="main-area">
         <header className="main-hdr">
           <div>
-            <h1 className="hdr-title">{currentNav?.label??"Overview"}</h1>
+            <h1 className="hdr-title">{pageLabel(page)}</h1>
             <p className="hdr-sub">
               Vigil365 · M365 Security Operations · Updated {lastRefresh.toLocaleTimeString()}
               {" · "}<span className="countdown-chip"><Clock size={10}/>Next refresh {fmtCountdown(countdown)}</span>
@@ -411,6 +480,17 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
             )}
           </div>
         </header>
+        {visibleTabs.length > 1 && (
+          <div className="ac-tabs section-tabs" role="tablist" aria-label={`${activeSectionDef.label} sections`}>
+            {visibleTabs.map(t => (
+              <button key={t.id} role="tab" aria-selected={page === t.id}
+                className={`ac-tab ${page === t.id ? "active" : ""}`}
+                onClick={() => setPage(t.id)}>
+                {t.label}{(unreadCounts[t.id] ?? 0) > 0 ? ` (${unreadCounts[t.id]})` : ""}
+              </button>
+            ))}
+          </div>
+        )}
         {loading && !isInitialLoad && <div className="loading-bar"><div className="loading-bar-fill"/></div>}
         {error&&<div className="err-banner">{error} <button style={{marginLeft:8,textDecoration:"underline",background:"none",border:"none",color:"inherit",cursor:"pointer"}} onClick={()=>setError("")}>Dismiss</button></div>}
         {isInitialLoad ? (

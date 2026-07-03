@@ -1280,6 +1280,8 @@ select, input { font: inherit; }
 
 /* ── Alert Center ─────────────────────────────────────────────────────────── */
 .ac-tabs { display: flex; gap: 4px; margin-bottom: 20px; }
+/* Section tab bar (multi-page sections) rendered under the main header */
+.section-tabs { padding: 12px 24px 0; margin-bottom: 0; flex-wrap: wrap; }
 .ac-tab {
   padding: 7px 18px; border-radius: var(--radius-ctl); border: 1px solid var(--color-border);
   background: var(--color-card); color: var(--color-muted);
