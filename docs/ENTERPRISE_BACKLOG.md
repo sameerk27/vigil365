@@ -30,9 +30,9 @@ alert engine: one open alert per policy, updated in place · design-system polis
 pass (tokens, severity unification, dark mode, a11y foundations) · favicon + meta ·
 37 automated tests.
 
-**Required to ship 🔴** — certificate auth for Graph (replace client secret) ·
-EF Core migrations (versioned upgrades) ·
-**rotate the exposed client secret** *(owner action)*.
+**Required to ship 🔴** — **rotate the exposed client secret** *(owner action —
+the only remaining gate item)*. Certificate auth ✅ and EF Core migrations ✅
+shipped July 4 2026 (Phase 0 of `IMPLEMENTATION_PLAN.md`).
 
 Everything else below is post-ship (v.next). Detail follows.
 
