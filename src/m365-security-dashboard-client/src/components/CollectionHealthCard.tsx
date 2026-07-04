@@ -48,7 +48,7 @@ export function CollectionHealthCard({ refreshKey }: { refreshKey: number }) {
       ) : !runs ? (
         <EmptyState message="Loading collection status…"/>
       ) : !last ? (
-        <EmptyState icon={<Database size={22} color="#d1d5db"/>} message="No collection has run yet"/>
+        <EmptyState icon={<Database size={22}/>} message="No collection has run yet"/>
       ) : (
         <>
           <div className="stat-row3">

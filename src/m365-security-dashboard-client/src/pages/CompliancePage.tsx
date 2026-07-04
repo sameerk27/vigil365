@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { Shield, FileText, Star, Search, ShieldAlert, ShieldCheck, Flag, ExternalLink, CheckCircle2, XCircle } from "lucide-react";
 import { SecureScore, Overview, DlpAlertsData, PurviewData, McasAlertsData, InsiderRiskData, AttackSimulationData, DlpAlert, McasAlert, InsiderRiskAlert, AttackSim, Tone, IdentityData, DevicesData, ConditionalAccessData, SecurityIncidentsData, PrivilegedRolesData, EmailProtectionData } from "../services/types";
-import { fmtDate, relTime, pctTone } from "../services/utils";
+import { fmtDate, relTime, pctTone, sevTone } from "../services/utils";
 import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, ProgressBar, ExportDropdown, StatBox, SectHdr } from "../components/SharedComponents";
 import { FilterPresets } from "../components/FilterPresets";
 
@@ -326,7 +326,7 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
 
       <div className="sticky-filter-bar filters-bar">
         <label className="search-box">
-          <Search size={15} color="#94a3b8"/>
+          <Search size={15}/>
           <input value={alertSearch} onChange={e=>setAlertSearch(e.target.value)}
             placeholder="Search DLP, MCAS, IRM alerts…" className="search-input"/>
         </label>
@@ -350,9 +350,9 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
       <div className="two-col">
         <Card title="DLP Alerts" badge={<Badge label={`${filteredDlp.length} / ${dlpAlerts?.total??0} violations`} tone={(dlpAlerts?.total??0)>0?"error":"good"}/>}>
           {dlpAlerts?.error
-            ?<EmptyState icon={<ShieldAlert size={28} color="#d1d5db"/>} message="Needs SecurityAlert.Read.All"/>
+            ?<EmptyState icon={<ShieldAlert size={28}/>} message="Needs SecurityAlert.Read.All"/>
             :(dlpAlerts?.total??0)===0
-              ?<EmptyState icon={<ShieldCheck size={28} color="#d1d5db"/>} message="No DLP violations detected"/>
+              ?<EmptyState icon={<ShieldCheck size={28}/>} message="No DLP violations detected"/>
               :(
                 <div className="alert-list">
                   {filteredDlp.length===0&&<div className="td-empty" style={{padding:12}}>No violations match the filter.</div>}
@@ -367,7 +367,7 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
                           <span className="row-meta-item">{relTime(a.createdDateTime)}</span>
                         </div>
                       </div>
-                      <Badge label={a.severity} tone={a.severity==="high"||a.severity==="High"?"error":"warning"}/>
+                      <Badge label={a.severity} tone={sevTone(a.severity)}/>
                     </div>
                   ))}
                 </div>
@@ -377,9 +377,9 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
 
         <Card title="Sensitivity Labels" badge={<Badge label={`${purview?.labelCount??0} labels`} tone={(purview?.labelCount??0)>0?"info":"neutral"}/>}>
           {purview?.error
-            ?<EmptyState icon={<FileText size={28} color="#d1d5db"/>} message="Needs InformationProtectionPolicy.Read permission"/>
+            ?<EmptyState icon={<FileText size={28}/>} message="Needs InformationProtectionPolicy.Read permission"/>
             :(purview?.labelCount??0)===0
-              ?<EmptyState icon={<FileText size={28} color="#d1d5db"/>} message="No sensitivity labels configured"/>
+              ?<EmptyState icon={<FileText size={28}/>} message="No sensitivity labels configured"/>
               :(
                 <div className="mini-list">
                   {purview!.labels.map((l,i)=>(
@@ -399,9 +399,9 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
       <div className="two-col">
         <Card title="Cloud App Anomalies" badge={<Badge label={`${filteredMcas.length} / ${mcasAlerts?.total??0} alerts`} tone={(mcasAlerts?.total??0)>0?"error":"good"}/>}>
           {mcasAlerts?.error
-            ?<EmptyState icon={<ShieldAlert size={28} color="#d1d5db"/>} message="Needs SecurityAlert.Read.All"/>
+            ?<EmptyState icon={<ShieldAlert size={28}/>} message="Needs SecurityAlert.Read.All"/>
             :(mcasAlerts?.total??0)===0
-              ?<EmptyState icon={<ShieldCheck size={28} color="#d1d5db"/>} message="No Cloud App anomalies — no impossible travel, mass downloads, or suspicious OAuth detected"/>
+              ?<EmptyState icon={<ShieldCheck size={28}/>} message="No Cloud App anomalies — no impossible travel, mass downloads, or suspicious OAuth detected"/>
               :(
                 <>
                   <div className="stat-row4" style={{marginBottom:14}}>
@@ -424,7 +424,7 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
                             <span className="row-meta-item">{relTime(a.createdDateTime)}</span>
                           </div>
                         </div>
-                        <Badge label={a.severity} tone={a.severity==="high"||a.severity==="High"?"error":"warning"}/>
+                        <Badge label={a.severity} tone={sevTone(a.severity)}/>
                       </div>
                     ))}
                   </div>
@@ -435,9 +435,9 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
 
         <Card title="Insider Risk Management" badge={<Badge label={`${filteredIrm.length} / ${insiderRisk?.total??0} alerts`} tone={(insiderRisk?.total??0)>0?"error":"good"}/>}>
           {insiderRisk?.error
-            ?<EmptyState icon={<ShieldAlert size={28} color="#d1d5db"/>} message="Needs SecurityAlert.Read.All — IRM alerts available if Purview IRM is licensed"/>
+            ?<EmptyState icon={<ShieldAlert size={28}/>} message="Needs SecurityAlert.Read.All — IRM alerts available if Purview IRM is licensed"/>
             :(insiderRisk?.total??0)===0
-              ?<EmptyState icon={<ShieldCheck size={28} color="#d1d5db"/>} message="No Insider Risk alerts — no data exfiltration or policy violations detected"/>
+              ?<EmptyState icon={<ShieldCheck size={28}/>} message="No Insider Risk alerts — no data exfiltration or policy violations detected"/>
               :(
                 <>
                   <div className="stat-row3" style={{marginBottom:14}}>
@@ -459,7 +459,7 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
                             <span className="row-meta-item">{relTime(a.createdDateTime)}</span>
                           </div>
                         </div>
-                        <Badge label={a.severity} tone={a.severity==="high"||a.severity==="High"?"error":"warning"}/>
+                        <Badge label={a.severity} tone={sevTone(a.severity)}/>
                       </div>
                     ))}
                   </div>
@@ -471,9 +471,9 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
 
       <Card title="Attack Simulation & Training" badge={<Badge label={`${attackSimulation?.total??0} simulations`} tone="neutral"/>}>
         {attackSimulation?.error
-          ?<EmptyState icon={<ShieldAlert size={28} color="#d1d5db"/>} message="Needs AttackSimulation.ReadWrite.All — add permission in Azure App Registration"/>
+          ?<EmptyState icon={<ShieldAlert size={28}/>} message="Needs AttackSimulation.ReadWrite.All — add permission in Azure App Registration"/>
           :(attackSimulation?.total??0)===0
-            ?<EmptyState icon={<ShieldCheck size={28} color="#d1d5db"/>} message="No attack simulations configured — consider running phishing tests to measure user resilience"/>
+            ?<EmptyState icon={<ShieldCheck size={28}/>} message="No attack simulations configured — consider running phishing tests to measure user resilience"/>
             :(
               <>
                 <div className="stat-row3" style={{marginBottom:14}}>

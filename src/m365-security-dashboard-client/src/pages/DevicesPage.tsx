@@ -140,7 +140,7 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
         action={
           <div style={{display:"flex",alignItems:"center",gap:6}}>
             <label className="search-box" style={{minWidth:200}}>
-              <Search size={13} color="#94a3b8"/>
+              <Search size={13}/>
               <input value={ncSearch} onChange={e=>setNcSearch(e.target.value)}
                 placeholder="Search device or user…" className="search-input"/>
             </label>
@@ -156,7 +156,7 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
           </div>
         }>
         {deviceAlerts.filter(a=>a.alertType==="NonCompliantDevice").length===0
-          ?<EmptyState icon={<ShieldCheck size={28} color="#d1d5db"/>} message="All devices are compliant"/>
+          ?<EmptyState icon={<ShieldCheck size={28}/>} message="All devices are compliant"/>
           : nonCompliant.length===0
             ?<div className="td-empty" style={{padding:16}}>No devices match the filter.</div>
             :(
@@ -186,7 +186,7 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
         action={
           <div style={{display:"flex",alignItems:"center",gap:6}}>
             <label className="search-box" style={{minWidth:200}}>
-              <Search size={13} color="#94a3b8"/>
+              <Search size={13}/>
               <input value={staleSearch} onChange={e=>setStaleSearch(e.target.value)}
                 placeholder="Search device or user…" className="search-input"/>
             </label>
@@ -195,7 +195,7 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
           </div>
         }>
         {deviceAlerts.filter(a=>a.alertType==="DeviceNotCheckedIn").length===0
-          ?<EmptyState icon={<CheckCircle size={28} color="#d1d5db"/>} message="All devices checked in within the sync window"/>
+          ?<EmptyState icon={<CheckCircle size={28}/>} message="All devices checked in within the sync window"/>
           : notCheckedIn.length===0
             ?<div className="td-empty" style={{padding:16}}>No devices match the filter.</div>
             :(
@@ -209,7 +209,7 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
                         <td><div className="trunc" style={{maxWidth:160}} title={a.userPrincipalName??undefined}>{a.userPrincipalName??"—"}</div></td>
                         <td className="al-date" title={fmtDate(a.detectedAt)}>{relTime(a.detectedAt)}</td>
                         <td><Badge label="Stale" tone="warning"/></td>
-                        <td><Eye size={13} color="#94a3b8" className="tbl-eye"/></td>
+                        <td><Eye size={13} className="tbl-eye"/></td>
                       </tr>
                     ))}
                   </tbody>
@@ -226,7 +226,7 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
           (mdeVulnerabilities?.configured && !mdeVulnerabilities?.error && (mdeVulnerabilities?.total??0)>0) ? (
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               <label className="search-box" style={{minWidth:180}}>
-                <Search size={13} color="#94a3b8"/>
+                <Search size={13}/>
                 <input value={mdeSearch} onChange={e=>setMdeSearch(e.target.value)}
                   placeholder="Search title, category…" className="search-input"/>
               </label>
@@ -243,9 +243,9 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
           ) : undefined
         }>
         {mdeVulnerabilities?.error
-          ?<EmptyState icon={<ShieldAlert size={28} color="#d1d5db"/>} message="Needs SecurityAlert.Read.All"/>
+          ?<EmptyState icon={<ShieldAlert size={28}/>} message="Needs SecurityAlert.Read.All"/>
           :(mdeVulnerabilities?.total??0)===0
-            ?<EmptyState icon={<ShieldCheck size={28} color="#d1d5db"/>} message="No Defender for Endpoint alerts"/>
+            ?<EmptyState icon={<ShieldCheck size={28}/>} message="No Defender for Endpoint alerts"/>
             :(
               <>
                 <div className="stat-row4" style={{marginBottom:14}}>
@@ -268,7 +268,7 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
                           <span className="row-meta-item">{relTime(a.createdDateTime)}</span>
                         </div>
                       </div>
-                      <Eye size={13} color="#94a3b8" style={{flexShrink:0}}/>
+                      <Eye size={13} style={{flexShrink:0}}/>
                     </div>
                   ))}
                   {filteredMde.length>10&&<div className="more-link">{filteredMde.length-10} more results — use search to narrow</div>}

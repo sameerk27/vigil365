@@ -378,7 +378,7 @@ export function DetailField({ label, value, copy, copyValue, title, onNavigate, 
         <span style={{ overflow: "hidden", textOverflow: "ellipsis" }} title={title ?? (typeof value === "string" ? value : undefined)}>{value}</span>
         {copy && rawStr && <CopyButton value={copyValue ?? rawStr} label={label}/>}
         {onNavigate && (
-          <button type="button" onClick={onNavigate} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "1px 6px", fontSize: 11, cursor: "pointer", color: "var(--accent)", marginLeft: 4, display: "inline-flex", alignItems: "center", gap: 3 }}>
+          <button type="button" onClick={onNavigate} style={{ background: "none", border: "1px solid var(--color-border)", borderRadius: 4, padding: "1px 6px", fontSize: 11, cursor: "pointer", color: "var(--color-primary)", marginLeft: 4, display: "inline-flex", alignItems: "center", gap: 3 }}>
             {navLabel ?? "View →"}
           </button>
         )}

@@ -20,6 +20,11 @@
   --shadow-modal:   0 8px 32px rgba(0,0,0,.14);
   --shadow-raised:  0 4px 14px rgba(0,0,0,.08);
 
+  /* ── Aliases (referenced across components; must always resolve) ── */
+  --color-surface:  var(--color-raised);
+  --color-bg-alt:   var(--color-raised);
+  --font-mono:      "Consolas", ui-monospace, "Cascadia Mono", monospace;
+
   /* ── Text scale ── */
   --color-text:     #0f172a;
   --color-text-secondary: #1e293b;
@@ -314,11 +319,18 @@ select, input { font: inherit; }
   border-bottom: 1px solid var(--color-border);
   position: sticky; top: 0; z-index: 20;
   gap: 16px;
+  /* Fixed height so sticky offsets below (filter bars) are reliable, and a
+     subtle shadow so content scrolling underneath reads as a separate layer */
+  min-height: 61px; box-sizing: border-box;
+  box-shadow: 0 1px 3px rgba(0,0,0,.05);
 }
 
 .hdr-title { font-size: 17px; font-weight: 700; color: var(--color-text); }
 .hdr-sub   { font-size: 11px; color: var(--color-muted); margin-top: 1px;
-              display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+              display: flex; align-items: center; gap: 6px;
+              /* never wrap — a two-line subtitle changes the sticky header height
+                 and breaks every offset pinned below it */
+              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .hdr-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
@@ -367,6 +379,8 @@ select, input { font: inherit; }
 
 /* ── Page ────────────────────────────────────────────────────────────────── */
 .page { padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; }
+/* Anchored scrolls (scrollIntoView targets, permalinks) must clear the sticky header */
+.page > * { scroll-margin-top: 76px; }
 @keyframes pageFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 .page { animation: pageFadeIn .2s ease; }
 
@@ -532,7 +546,7 @@ select, input { font: inherit; }
 }
 
 /* ── Footer Row ──────────────────────────────────────────────────────────── */
-.footer-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.footer-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
 
 /* Admin Activity */
 .act-list { display: flex; flex-direction: column; gap: 10px; }
@@ -590,6 +604,8 @@ select, input { font: inherit; }
   font-size: 13px; color: var(--color-text);
 }
 .search-input::placeholder { color: var(--color-faint); }
+/* Search / filter icons inherit a themed muted color — never hardcode hex on them */
+.search-box svg { color: var(--color-faint); flex-shrink: 0; }
 
 .filter-sel {
   padding: 8px 12px;
@@ -628,6 +644,27 @@ select, input { font: inherit; }
   white-space: nowrap;
 }
 .btn-export:hover { background: var(--color-raised); border-color: var(--color-muted); }
+
+/* Destructive actions — never green, never blue */
+.btn-danger {
+  padding: 7px 14px;
+  border: 1px solid var(--status-error-border); border-radius: var(--radius-ctl);
+  background: var(--status-error-bg); color: var(--status-error-text);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+.btn-danger:hover { background: var(--status-error-border); }
+
+/* Shared interactive states: visible keyboard focus + consistent disabled look */
+.btn-apply:focus-visible, .btn-export:focus-visible, .btn-danger:focus-visible,
+.btn-run:focus-visible, .btn-icon:focus-visible, .pill-btn:focus-visible,
+.ac-tab:focus-visible, .filter-sel:focus-visible, .form-input:focus-visible,
+.nav-item:focus-visible {
+  outline: 2px solid var(--color-primary); outline-offset: 2px;
+}
+.btn-apply:disabled, .btn-export:disabled, .btn-danger:disabled, .btn-run:disabled {
+  opacity: .55; cursor: not-allowed;
+}
 
 .toggle-label {
   display: flex; align-items: center; gap: 6px;
@@ -1111,31 +1148,8 @@ select, input { font: inherit; }
 .export-dropdown button:hover { background: var(--color-raised); }
 .export-dropdown hr { border: none; border-top: 1px solid var(--color-border); margin: 0; }
 
-/* ── Loading skeleton ────────────────────────────────────────────────────── */
-@keyframes shimmer {
-  0% { background-position: -400px 0; }
-  100% { background-position: 400px 0; }
-}
-.skeleton {
-  background: linear-gradient(90deg, var(--color-raised) 25%, var(--color-border) 50%, var(--color-raised) 75%);
-  background-size: 400px 100%;
-  animation: shimmer 1.4s infinite;
-  border-radius: 4px;
-}
-.skeleton-card {
-  background: var(--color-card);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  padding: 16px;
-  box-shadow: var(--shadow-card);
-}
-.skeleton-row { display: flex; flex-direction: column; gap: 10px; }
-.skeleton-line { height: 12px; border-radius: 4px; }
-.skeleton-line.w-full { width: 100%; }
-.skeleton-line.w-3q   { width: 75%; }
-.skeleton-line.w-half { width: 50%; }
-.skeleton-line.w-qtr  { width: 25%; }
-.skeleton-line.h-kpi  { height: 24px; }
+/* ── Loading skeleton: one system — the pulse .skeleton-box (defined below).
+   The unused shimmer variant was removed. ─────────────────────────────────── */
 
 /* ── Sign-in map placeholder ─────────────────────────────────────────────── */
 .signin-map-placeholder {
@@ -1325,7 +1339,6 @@ select, input { font: inherit; }
 .btn-run-pulse { animation: pulse-ring 1.8s infinite; }
 
 /* Page-level typography */
-.page-title { font-size: 20px; font-weight: 700; color: var(--color-text); }
 
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 @media (max-width: 1400px) { .kpi-row { grid-template-columns: repeat(3, 1fr); } }

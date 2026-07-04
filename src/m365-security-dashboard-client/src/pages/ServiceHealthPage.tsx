@@ -61,7 +61,7 @@ export function ServiceHealthPage({ serviceHealth }: { serviceHealth: ServiceHea
           action={
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               <label className="search-box" style={{minWidth:180}}>
-                <Search size={14} color="#94a3b8"/>
+                <Search size={14}/>
                 <input value={svcSearch} onChange={e=>setSvcSearch(e.target.value)}
                   placeholder="Search service, description…" className="search-input"/>
               </label>
@@ -93,7 +93,7 @@ export function ServiceHealthPage({ serviceHealth }: { serviceHealth: ServiceHea
         </Card>
       ):(
         <Card title="Service Incident History">
-          <EmptyState icon={<ShieldCheck size={36} color="#d1d5db"/>}
+          <EmptyState icon={<ShieldCheck size={36}/>}
             message="No active incidents — all M365 services are operating normally"/>
         </Card>
       )}

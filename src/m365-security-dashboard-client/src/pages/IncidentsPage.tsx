@@ -218,7 +218,7 @@ export function IncidentsPage({ alerts, serviceHealth, defenderAlerts, securityI
             ))}
           </div>
           <label className="search-box">
-            <Search size={15} color="#94a3b8"/>
+            <Search size={15}/>
             <input value={search} onChange={e=>setSearch(e.target.value)}
               placeholder="Search title, user, source…" className="search-input"/>
           </label>
@@ -270,7 +270,7 @@ export function IncidentsPage({ alerts, serviceHealth, defenderAlerts, securityI
                       </td>
                       <td className="al-desc">{a.status}{a.classification ? ` · ${a.classification}` : ""}</td>
                       <td className="al-date">{relTime(a.createdDateTime) || fmtDate(a.createdDateTime)}</td>
-                      <td><Eye size={13} color="#94a3b8" className="tbl-eye"/></td>
+                      <td><Eye size={13} className="tbl-eye"/></td>
                     </tr>
                   );
                 }
@@ -287,7 +287,7 @@ export function IncidentsPage({ alerts, serviceHealth, defenderAlerts, securityI
                       </td>
                       <td className="al-desc">{i.status} {i.classification ? `· ${i.classification}` : ""}</td>
                       <td className="al-date">{relTime(i.createdDateTime) || fmtDate(i.createdDateTime)}</td>
-                      <td><Eye size={13} color="#94a3b8" className="tbl-eye"/></td>
+                      <td><Eye size={13} className="tbl-eye"/></td>
                     </tr>
                   );
                 }
@@ -318,7 +318,7 @@ export function IncidentsPage({ alerts, serviceHealth, defenderAlerts, securityI
                     </td>
                     <td className="trunc" style={{maxWidth:140}} title={a.userPrincipalName||a.deviceName||undefined}>{a.userPrincipalName||a.deviceName||"—"}</td>
                     <td className="al-date" title={fmtDate(a.detectedAt)}>{relTime(a.detectedAt) || fmtDate(a.detectedAt)}</td>
-                    <td><Eye size={13} color="#94a3b8" className="tbl-eye"/></td>
+                    <td><Eye size={13} className="tbl-eye"/></td>
                   </tr>
                 );
               })}

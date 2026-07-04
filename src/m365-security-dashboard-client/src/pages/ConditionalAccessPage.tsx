@@ -64,7 +64,7 @@ export function ConditionalAccessPage({ data }: { data: ConditionalAccessData|nu
         action={(data?.configured && data.policies.length>0) ? (
           <div style={{display:"flex",alignItems:"center",gap:6}}>
             <label className="search-box" style={{minWidth:200}}>
-              <Search size={14} color="#94a3b8"/>
+              <Search size={14}/>
               <input value={policySearch} onChange={e=>setPolicySearch(e.target.value)}
                 placeholder="Search policy name, scope, apps…" className="search-input"/>
             </label>
@@ -83,7 +83,7 @@ export function ConditionalAccessPage({ data }: { data: ConditionalAccessData|nu
         {!data?.configured
           ? <EmptyState message={data?.error??"Requires Policy.Read.All permission"}/>
           : data.policies.length===0
-            ? <EmptyState icon={<ShieldOff size={36} color="#d1d5db"/>} message="No Conditional Access policies found. This is a significant security gap."/>
+            ? <EmptyState icon={<ShieldOff size={36}/>} message="No Conditional Access policies found. This is a significant security gap."/>
             : <>
                 <div className="tbl-wrap">
                   <table className="data-tbl">

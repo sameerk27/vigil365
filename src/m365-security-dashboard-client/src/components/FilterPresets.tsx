@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Star } from "lucide-react";
+import { Star, X } from "lucide-react";
 import { showToast } from "../services/toast";
 
 export function FilterPresets({ pageKey, filters, onLoad }: {
@@ -42,8 +42,8 @@ export function FilterPresets({ pageKey, filters, onLoad }: {
         <>
           <input value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === "Enter" && save()}
             placeholder="Preset name…" className="filter-sel" style={{ minWidth:120 }} autoFocus />
-          <button className="btn-export" onClick={save}>Save</button>
-          <button className="btn-apply" style={{ padding:"7px 10px" }} onClick={() => setSaving(false)}>✕</button>
+          <button className="btn-apply" style={{ padding:"7px 14px" }} onClick={save}>Save</button>
+          <button className="btn-export" aria-label="Cancel saving preset" onClick={() => setSaving(false)}><X size={13}/></button>
         </>
       ) : (
         <button className="btn-export" onClick={() => setSaving(true)}><Star size={12} /> Save filter</button>
@@ -51,7 +51,8 @@ export function FilterPresets({ pageKey, filters, onLoad }: {
       {presets.map(p => (
         <span key={p.name} className="preset-chip">
           {p.name}
-          <button onClick={() => remove(p.name)} style={{ background:"none", border:"none", cursor:"pointer", color:"var(--color-faint)", padding:"0 2px" }}>✕</button>
+          <button onClick={() => remove(p.name)} aria-label={`Remove preset ${p.name}`}
+            style={{ background:"none", border:"none", cursor:"pointer", color:"var(--color-faint)", padding:"0 2px", display:"inline-flex", alignItems:"center" }}><X size={11}/></button>
         </span>
       ))}
     </div>

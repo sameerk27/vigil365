@@ -47,7 +47,7 @@ export function LicensesPage({ licenses, inactive, passwords }: {
           action={(licenses?.configured && (licenses?.skus.length??0)>0) ? (
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               <label className="search-box" style={{minWidth:160}}>
-                <Search size={14} color="#94a3b8"/>
+                <Search size={14}/>
                 <input value={skuSearch} onChange={e=>setSkuSearch(e.target.value)}
                   placeholder="Search SKU name…" className="search-input"/>
               </label>
@@ -58,7 +58,7 @@ export function LicensesPage({ licenses, inactive, passwords }: {
           {(!licenses?.configured || !licenses.skus.length)
             ? (licenses?.configured && licenses.error
                 ? <InlineError title="License data unavailable" perm="Organization.Read.All" message={licenses.error}/>
-                : <EmptyState icon={<Package size={28} color="#d1d5db"/>} message={licenses?.error??"Requires Organization.Read.All permission"}/>)
+                : <EmptyState icon={<Package size={28}/>} message={licenses?.error??"Requires Organization.Read.All permission"}/>)
             : <>
                 <div className="util-banner">
                   <div className="ub-bar"><ProgressBar pct={utilPct} color={utilPct>95?"var(--status-error-icon)":utilPct>80?"var(--status-good-icon)":"var(--color-primary)"}/></div>
@@ -90,7 +90,7 @@ export function LicensesPage({ licenses, inactive, passwords }: {
           action={(inactive?.configured && (inactive?.inactive90Count??0)>0) ? (
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               <label className="search-box" style={{minWidth:160}}>
-                <Search size={14} color="#94a3b8"/>
+                <Search size={14}/>
                 <input value={userSearch} onChange={e=>setUserSearch(e.target.value)}
                   placeholder="Search UPN or name…" className="search-input"/>
               </label>
@@ -107,9 +107,9 @@ export function LicensesPage({ licenses, inactive, passwords }: {
             </div>
           ) : undefined}>
           {!inactive?.configured
-            ? <EmptyState icon={<UserX size={28} color="#d1d5db"/>} message={inactive?.error??"Requires AuditLog.Read.All + User.Read.All"}/>
+            ? <EmptyState icon={<UserX size={28}/>} message={inactive?.error??"Requires AuditLog.Read.All + User.Read.All"}/>
             : inactive.inactive90Count===0
-              ? <EmptyState icon={<UserCheck size={28} color="#d1d5db"/>} message="No users inactive for 90+ days"/>
+              ? <EmptyState icon={<UserCheck size={28}/>} message="No users inactive for 90+ days"/>
               : <>
 
                   <div className="alert-list">

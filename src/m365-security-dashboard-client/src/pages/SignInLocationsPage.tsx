@@ -67,7 +67,7 @@ export function SignInLocationsPage({ data }: { data: SignInLocationsData|null }
           {!data?.configured
             ? <EmptyState message={data?.error??"Requires AuditLog.Read.All permission"}/>
             : data.byCountry.length===0
-              ? <EmptyState icon={<Globe size={28} color="#d1d5db"/>} message="No location data available"/>
+              ? <EmptyState icon={<Globe size={28}/>} message="No location data available"/>
               : <>
                   <MiniBarChart items={data.byCountry.slice(0,8).map(c=>({
                     label:c.country??"Unknown", value:c.count, color:c.failures>2?"#dc2626":"#3b82f6"
@@ -95,7 +95,7 @@ export function SignInLocationsPage({ data }: { data: SignInLocationsData|null }
           action={(data?.configured && data.recent.length>0) ? (
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               <label className="search-box" style={{minWidth:180}}>
-                <Search size={14} color="#94a3b8"/>
+                <Search size={14}/>
                 <input value={signInSearch} onChange={e=>setSignInSearch(e.target.value)}
                   placeholder="Search user, country, city, app…" className="search-input"/>
               </label>
@@ -119,7 +119,7 @@ export function SignInLocationsPage({ data }: { data: SignInLocationsData|null }
           {!data?.configured
             ? <EmptyState message="Requires AuditLog.Read.All permission"/>
             : data.recent.length===0
-              ? <EmptyState icon={<LogIn size={28} color="#d1d5db"/>} message="No recent sign-in data"/>
+              ? <EmptyState icon={<LogIn size={28}/>} message="No recent sign-in data"/>
               : <>
                   <div className="alert-list">
                     {filteredSignIns.length===0&&<div className="td-empty" style={{padding:12}}>No sign-ins match the filter.</div>}

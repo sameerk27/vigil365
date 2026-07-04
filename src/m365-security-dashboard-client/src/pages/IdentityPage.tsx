@@ -157,7 +157,7 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
 
       <div className="sticky-filter-bar filters-bar">
         <label className="search-box">
-          <Search size={15} color="#94a3b8"/>
+          <Search size={15}/>
           <input value={search} onChange={e=>setSearch(e.target.value)}
             placeholder="Search across all identity data — user, alert, role…" className="search-input"/>
         </label>
@@ -231,7 +231,7 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
 
         <Card title="Risky Users" badge={<><Badge label={riskyUsers.length===0?"None":"Needs review"} tone={riskyUsers.length===0?"good":"error"}/><span className="card-count">{riskyUsers.length}</span></>}>
           {riskyUsers.length===0
-            ?<EmptyState icon={<UserCheck size={28} color="#d1d5db"/>} message="No risky users detected"/>
+            ?<EmptyState icon={<UserCheck size={28}/>} message="No risky users detected"/>
             :(
               <div className="alert-list">
                 {riskyUsers.slice(0,8).map((a,i)=>(
@@ -273,9 +273,9 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
                 </div>
               ))}
             </div>
-          ):<EmptyState icon={<ShieldCheck size={28} color="#d1d5db"/>} message="No risky sign-ins detected"/>}
+          ):<EmptyState icon={<ShieldCheck size={28}/>} message="No risky sign-ins detected"/>}
           {filteredForeignSignIns.length > 0 && (
-            <div id="foreign-signins-section" className="alert-list" style={{ marginTop: 18, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+            <div id="foreign-signins-section" className="alert-list" style={{ marginTop: 18, borderTop: "1px solid var(--color-border)", paddingTop: 12 }}>
               <SectHdr>FOREIGN SIGN-INS ({filteredForeignSignIns.length})</SectHdr>
               {filteredForeignSignIns.slice(0, 5).map((s, i) => (
                 <div key={i} className="al-item al-item-noclick" style={{ cursor: "default" }}>
@@ -293,9 +293,9 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
 
         <Card title="Risk Detections" badge={<><Badge label={`${riskDetections?.total??0} detections`} tone={(riskDetections?.total??0)>0?"error":"good"}/><span className="card-count">{filteredDetections.length}</span></>}>
           {riskDetections?.error
-            ?<EmptyState icon={<AlertTriangle size={28} color="#d1d5db"/>} message="Needs IdentityRiskEvent.Read.All"/>
+            ?<EmptyState icon={<AlertTriangle size={28}/>} message="Needs IdentityRiskEvent.Read.All"/>
             :(riskDetections?.total??0)===0
-              ?<EmptyState icon={<ShieldCheck size={28} color="#d1d5db"/>} message="No risk detections — no leaked credentials, password spray, or MITM attacks found"/>
+              ?<EmptyState icon={<ShieldCheck size={28}/>} message="No risk detections — no leaked credentials, password spray, or MITM attacks found"/>
               :(
                 <>
                   <div className="stat-row3" style={{marginBottom:14}}>
@@ -342,9 +342,9 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
       <div className="two-col">
         <Card title="Defender for Identity Alerts" badge={<><Badge label={`${filteredMdiAlerts.length} / ${mdiAlerts?.total??0} alerts`} tone={(mdiAlerts?.total??0)>0?"error":"good"}/><span className="card-count">{filteredMdiAlerts.length}</span></>}>
           {mdiAlerts?.error
-            ?<EmptyState icon={<ShieldAlert size={28} color="#d1d5db"/>} message="Needs SecurityAlert.Read.All"/>
+            ?<EmptyState icon={<ShieldAlert size={28}/>} message="Needs SecurityAlert.Read.All"/>
             :(mdiAlerts?.total??0)===0
-              ?<EmptyState icon={<ShieldCheck size={28} color="#d1d5db"/>} message="No Defender for Identity alerts — no on-prem AD threats detected"/>
+              ?<EmptyState icon={<ShieldCheck size={28}/>} message="No Defender for Identity alerts — no on-prem AD threats detected"/>
               :(
                 <>
                   <div className="stat-row4" style={{marginBottom:14}}>
@@ -379,9 +379,9 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
 
         <Card title="PIM Role Activations" badge={<Badge label={`${filteredPim.length} / ${pimData?.total??0} recent`} tone="neutral"/>}>
           {pimData?.error
-            ?<EmptyState icon={<Key size={28} color="#d1d5db"/>} message="Needs RoleManagement.Read.Directory"/>
+            ?<EmptyState icon={<Key size={28}/>} message="Needs RoleManagement.Read.Directory"/>
             :(pimData?.activations.length??0)===0
-              ?<EmptyState icon={<Clock size={28} color="#d1d5db"/>} message="No recent role activations"/>
+              ?<EmptyState icon={<Clock size={28}/>} message="No recent role activations"/>
               :(
                 <div className="act-list">
                   {filteredPim.length===0&&<div className="td-empty" style={{padding:12}}>No activations match the filter.</div>}
@@ -407,9 +407,9 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
       <div className="two-col">
         <Card title="Privileged Roles" badge={<Badge label={`${privilegedRoles?.totalPrivilegedUsers??0} privileged users`} tone={(privilegedRoles?.totalPrivilegedUsers??0)>0?"warning":"good"}/>}>
           {privilegedRoles?.error
-            ?<EmptyState icon={<ShieldAlert size={28} color="#d1d5db"/>} message={`Could not load privileged roles: ${privilegedRoles.error}`}/>
+            ?<EmptyState icon={<ShieldAlert size={28}/>} message={`Could not load privileged roles: ${privilegedRoles.error}`}/>
             :(privilegedRoles?.roles.length??0)===0
-              ?<EmptyState icon={<ShieldCheck size={28} color="#d1d5db"/>} message="No high-privilege role members found"/>
+              ?<EmptyState icon={<ShieldCheck size={28}/>} message="No high-privilege role members found"/>
               :(
                 <div className="mini-list">
                   {privilegedRoles!.roles.map((r,i)=>{
@@ -423,7 +423,7 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
                         </div>
                         {r.members.slice(0,5).map((m,j)=>(
                           <div key={j} className="mini-row" style={{paddingLeft:22}}>
-                            <User size={11} color="#94a3b8"/>
+                            <User size={11}/>
                             <span className="mr-user">{m.userPrincipalName??m.displayName??"Unknown"}</span>
                           </div>
                         ))}
@@ -438,7 +438,7 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
 
         <Card title="Recent Admin Activity" badge={<Badge label={`${identity?.recentAdminActivity.length??0} events`} tone="neutral"/>}>
           {(identity?.recentAdminActivity.length??0)===0
-            ?<EmptyState icon={<Clock size={28} color="#d1d5db"/>} message="Requires AuditLog.Read.All permission"/>
+            ?<EmptyState icon={<Clock size={28}/>} message="Requires AuditLog.Read.All permission"/>
             :(
               <div className="act-list">
                 {identity!.recentAdminActivity.map((a,i)=>(
@@ -461,9 +461,9 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
 
       <Card title="Identity Sensor Health" badge={<Badge label={(identityHealth?.total??0)===0?"All Healthy":`${identityHealth?.total??0} issues`} tone={(identityHealth?.issues?.length??0)===0?"good":"error"}/>}>
         {identityHealth?.error
-          ?<EmptyState icon={<AlertTriangle size={28} color="#d1d5db"/>} message="Needs IdentityBaseline.Read.All — add permission in Azure App Registration"/>
+          ?<EmptyState icon={<AlertTriangle size={28}/>} message="Needs IdentityBaseline.Read.All — add permission in Azure App Registration"/>
           :(identityHealth?.total??0)===0
-            ?<EmptyState icon={<ShieldCheck size={36} color="#d1d5db"/>} message="All identity sensors reporting healthy — no MDI sensor gaps detected"/>
+            ?<EmptyState icon={<ShieldCheck size={36}/>} message="All identity sensors reporting healthy — no MDI sensor gaps detected"/>
             :(
               <div className="alert-list">
                 {identityHealth!.issues.map((iss,i)=>(

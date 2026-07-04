@@ -97,7 +97,7 @@ export function NetworkPage({ serviceHealth, signInLocations }: { serviceHealth:
 
         <Card title="Top Apps Accessed" badge={<Badge label="From sign-in log" tone="neutral"/>}>
           {topApps.length===0
-            ? <EmptyState icon={<BarChart2 size={28} color="#d1d5db"/>} message="No sign-in data available"/>
+            ? <EmptyState icon={<BarChart2 size={28}/>} message="No sign-in data available"/>
             : <>
                 <MiniBarChart items={topApps}/>
                 <div className="tbl-wrap" style={{marginTop:12}}>
@@ -121,7 +121,7 @@ export function NetworkPage({ serviceHealth, signInLocations }: { serviceHealth:
 
       <Card title="Recent Sign-in Activity" badge={<Badge label={`${signInLocations?.total??0} events`} tone="neutral"/>}>
         {!signInLocations?.configured||signInLocations.recent.length===0
-          ? <EmptyState icon={<LogIn size={28} color="#d1d5db"/>} message="No recent sign-in data"/>
+          ? <EmptyState icon={<LogIn size={28}/>} message="No recent sign-in data"/>
           : <div className="tbl-wrap">
               <table className="data-tbl">
                 <thead><tr><th>User</th><th>App</th><th>Location</th><th>Time</th><th>Result</th></tr></thead>

@@ -82,7 +82,7 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
       <div className="two-col">
         <Card title="Quarantined Messages" badge={<Badge label={`${quarantined.length} held`} tone={quarantined.length>0?"warning":"good"}/>}>
           {quarantined.length===0
-            ?<EmptyState icon={<Inbox size={28} color="#d1d5db"/>} message="No messages currently quarantined"/>
+            ?<EmptyState icon={<Inbox size={28}/>} message="No messages currently quarantined"/>
             :(
               <div className="alert-list">
                 {quarantined.slice(0,8).map((a,i)=>(
@@ -102,7 +102,7 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
 
         <Card title="Mail Flow Issues" badge={<Badge label={mailFlow.length===0?"Healthy":"Action needed"} tone={mailFlow.length===0?"good":"error"}/>}>
           {mailFlow.length===0
-            ?<EmptyState icon={<Send size={28} color="#d1d5db"/>} message="Mail flow is operating normally"/>
+            ?<EmptyState icon={<Send size={28}/>} message="Mail flow is operating normally"/>
             :(
               <div className="alert-list">
                 {mailFlow.map((a,i)=>(
@@ -164,7 +164,7 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
         action={(emailProtection?.configured && !emailProtection?.error && (emailProtection?.total??0)>0) ? (
           <div style={{display:"flex",alignItems:"center",gap:6}}>
             <label className="search-box" style={{minWidth:200}}>
-              <Search size={14} color="#94a3b8"/>
+              <Search size={14}/>
               <input value={search} onChange={e=>setSearch(e.target.value)}
                 placeholder="Search alert title, description…" className="search-input"/>
             </label>
@@ -186,9 +186,9 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
           </div>
         ) : undefined}>
         {emailProtection?.error
-          ?<EmptyState icon={<ShieldAlert size={28} color="#d1d5db"/>} message="Needs SecurityAlert.Read.All for Defender for Office 365"/>
+          ?<EmptyState icon={<ShieldAlert size={28}/>} message="Needs SecurityAlert.Read.All for Defender for Office 365"/>
           :(emailProtection?.total??0)===0
-            ?<EmptyState icon={<ShieldCheck size={28} color="#d1d5db"/>} message="No Defender for Office 365 alerts"/>
+            ?<EmptyState icon={<ShieldCheck size={28}/>} message="No Defender for Office 365 alerts"/>
             :(
               <>
                 <div className="threat-grid" style={{marginBottom:14}}>

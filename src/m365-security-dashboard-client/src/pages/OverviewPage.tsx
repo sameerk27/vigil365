@@ -229,9 +229,9 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
               </div>
             </>
           ) : defenderAlerts?.error ? (
-            <EmptyState icon={<ShieldAlert size={24} color="#d1d5db"/>} message={`Needs SecurityAlert.Read.All permission`}/>
+            <EmptyState icon={<ShieldAlert size={24}/>} message={`Needs SecurityAlert.Read.All permission`}/>
           ) : (
-            <EmptyState icon={<ShieldAlert size={24} color="#d1d5db"/>} message="Run a collection to load Defender alerts"/>
+            <EmptyState icon={<ShieldAlert size={24}/>} message="Run a collection to load Defender alerts"/>
           )}
         </Card>
         <Card title="M365 Service Advisories"
@@ -279,7 +279,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
                   <div className="mini-list">
                     <SectHdr>AT-RISK USERS</SectHdr>
                     {riskyUsers.slice(0,4).map((a,i)=>(
-                      <div key={i} className="mini-row act-clickable" onClick={()=>onAlertClick(a)} style={{cursor:"pointer"}}>
+                      <div key={i} className="mini-row al-clickable" onClick={()=>onAlertClick(a)} style={{cursor:"pointer"}}>
                         <span className={`sev-dot sev-${a.severity.toLowerCase()}`}/>
                         <span className="mr-user">{a.userPrincipalName??a.title}</span>
                         <Badge label={a.severity} tone={a.severity==="High"||a.severity==="Critical"?"error":"warning"}/>
@@ -309,7 +309,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
               ))}
             </div>
           ) : (
-            <EmptyState icon={<Database size={24} color="#d1d5db"/>} message="Run a collection to see alert breakdown"/>
+            <EmptyState icon={<Database size={24}/>} message="Run a collection to see alert breakdown"/>
           )}
         </Card>
         <Card title="Device Compliance"
@@ -346,13 +346,13 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
         <Card title="Recent Admin Activity" badge={<Badge label={`${identity?.recentAdminActivity.length??0} events`} tone="neutral"/>}>
           {(identity?.recentAdminActivity.length??0)===0
             ?(
-              <EmptyState icon={<User size={28} color="#d1d5db"/>}
+              <EmptyState icon={<User size={28}/>}
                 message="No admin activity — requires AuditLog.Read.All permission"/>
             ):(
               <div className="act-list">
                 {identity!.recentAdminActivity.slice(0,6).map((a,i)=>(
                   <div key={i} className="act-row">
-                    <User size={12} color="#94a3b8"/>
+                    <User size={12}/>
                     <div className="act-body">
                       <span className="act-who">{a.initiatedByUser?.split("@")[0]??"System"}</span>
                       <span className="act-what"> {a.activityDisplayName}</span>
@@ -372,7 +372,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
                 <div key={i} className="impr-row al-clickable" onClick={() => crossNavigate({ page: s.service === "EntraId" ? "identity" : s.service === "DefenderXdr" ? "alertcenter" : s.service === "Intune" ? "devices" : s.service === "ExchangeOnline" ? "email" : "servicehealth" })} style={{ cursor: "pointer" }}>
                   <div className="impr-icon"><TrendingUp size={12}/></div>
                   <span className="impr-text">Review {fmtService(s.service)} — {s.count} active alert{s.count!==1?"s":""}</span>
-                  <Badge label={`+${Math.min(s.count*3,30)} pts`} tone="neutral"/>
+                  <Badge label={`${s.count} open`} tone={s.count>10?"error":s.count>3?"warning":"neutral"}/>
                 </div>
               ))
             }
@@ -401,7 +401,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
                   ))}
                 </div>
               ) : (
-                <EmptyState icon={<Bell size={22} color="#d1d5db"/>} message="No alerts triggered yet"/>
+                <EmptyState icon={<Bell size={22}/>} message="No alerts triggered yet"/>
               )}
             </Card>
           );

@@ -73,7 +73,7 @@ export function SetupPage() {
           {field("Application (client) ID", clientId, setClientId, "00000000-0000-0000-0000-000000000000", "text", true)}
           {field(status?.hasSecret ? "Client secret (leave blank to keep current)" : "Client secret", clientSecret, setClientSecret, status?.hasSecret ? "••••••••" : "Paste secret value", "password")}
           <div>
-            <button className="btn-export" disabled={saving} onClick={save}>{saving ? "Saving & testing…" : "Save & Test Connection"}</button>
+            <button className="btn-apply" disabled={saving} onClick={save}>{saving ? "Saving & testing…" : "Save & Test Connection"}</button>
           </div>
           {result && (
             <div style={{ display:"flex", alignItems:"center", gap:8, fontSize:13, padding:"10px 14px", borderRadius:8,

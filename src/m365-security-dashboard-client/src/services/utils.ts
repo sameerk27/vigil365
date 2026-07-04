@@ -19,14 +19,21 @@ export function fmtDefenderSource(s: string): string {
   return map[s] ?? s.replace(/([A-Z])/g, " $1").replace(/^./, c => c.toUpperCase()).trim();
 }
 
+// Date formatting: exactly two formats app-wide — fmtDate (date + time) and
+// fmtShort (date only). Both add the year automatically when it isn't the
+// current year, and both pin en-US so output never varies by system locale.
 export function fmtDate(iso?: string): string {
   if (!iso) return "–";
-  return new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const d = new Date(iso);
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleString("en-US", { month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }), hour: "2-digit", minute: "2-digit" });
 }
 
 export function fmtShort(iso?: string): string {
   if (!iso) return "–";
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const d = new Date(iso);
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }) });
 }
 
 export function sevColor(s: string): string {
@@ -101,7 +108,7 @@ export function relTime(iso?: string | null): string {
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
   if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
-  return d.toLocaleDateString();
+  return fmtShort(iso); // consistent en-US format, not system locale
 }
 
 export function fmtFullTime(iso?: string | null): string {

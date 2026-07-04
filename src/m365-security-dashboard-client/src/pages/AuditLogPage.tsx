@@ -71,7 +71,7 @@ export function AuditLogPage({ data }: { data: AuditLogData|null }) {
         action={(data?.configured && !data.error) ? (
           <div style={{display:"flex",alignItems:"center",gap:6}}>
             <label className="search-box" style={{minWidth:200}}>
-              <Search size={15} color="#94a3b8"/>
+              <Search size={15}/>
               <input value={search} onChange={e=>setSearch(e.target.value)}
                 placeholder="Search actor, action, target…" className="search-input"/>
             </label>

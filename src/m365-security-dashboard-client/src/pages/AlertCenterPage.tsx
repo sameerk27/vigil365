@@ -4,7 +4,14 @@ import { AlertPolicy, TriggeredAlert, NotificationSettings, NotificationLogEntry
 import { acApi, recApi, useAuth, crossNavigate } from "../services/api";
 import { showToast } from "../services/toast";
 import { DetailField, KpiTile, Card, Badge, EmptyState, MiniBarChart, ExportDropdown, ProgressBar, CopyButton, LoadingSkeleton } from "../components/SharedComponents";
-import { relTime, fmtDate, sevTone } from "../services/utils";
+import { relTime, fmtDate, fmtShort, sevTone } from "../services/utils";
+
+/** Human-readable status labels — raw enums like "auto_resolved" never reach the UI. */
+const STATUS_LABELS: Record<string, string> = {
+  new: "New", acknowledged: "Acknowledged", snoozed: "Snoozed",
+  auto_resolved: "Auto-resolved", resolved: "Resolved",
+};
+export const fmtStatus = (s: string) => STATUS_LABELS[s] ?? s.replace(/_/g, " ");
 
 type AcTab = "dashboard" | "alerts" | "policies" | "templates" | "coverage" | "notifications";
 
@@ -143,7 +150,7 @@ function NotificationSettingsTab() {
   }, []);
   useEffect(() => { reload(); }, [reload]);
 
-  if (!cfg) return <Card title="Notification Channels"><EmptyState icon={<Bell size={28} color="#d1d5db"/>} message="Loading settings…"/></Card>;
+  if (!cfg) return <Card title="Notification Channels"><EmptyState icon={<Bell size={28}/>} message="Loading settings…"/></Card>;
 
   const set = <K extends keyof NotificationSettings>(k: K, v: NotificationSettings[K]) => setCfg(c => c ? { ...c, [k]: v } : c);
 
@@ -217,7 +224,7 @@ function NotificationSettingsTab() {
 
       <Card title="Notification History" badge={<Badge label={`${log.length} sent`} tone="neutral"/>}>
         {log.length === 0 ? (
-          <EmptyState icon={<Bell size={28} color="#d1d5db"/>} message="No notifications sent yet. They appear here once an alert fires with a channel enabled."/>
+          <EmptyState icon={<Bell size={28}/>} message="No notifications sent yet. They appear here once an alert fires with a channel enabled."/>
         ) : (
           <div className="tbl-wrap">
             <table className="data-tbl">
@@ -597,14 +604,14 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
           <div className="kpi-row">
             <KpiTile icon={<Bell size={18}/>}         label="ACTIVE POLICIES"   value={enabledCount}      sub={`${policies.length} total policies`}        tone={enabledCount>0?"good":"neutral"} onClick={() => setTab("policies")}/>
             <KpiTile icon={<AlertCircle size={18}/>}  label="ACTIVE ALERTS"     value={activeAlertsCount} sub="Unacknowledged"                              tone={activeAlertsCount>0?"error":"good"} onClick={() => { setSevFilter(""); setDateFilter(""); setStatusFilter("new"); setTab("alerts"); }}/>
-            <KpiTile icon={<Clock size={18}/>}        label="TRIGGERED TODAY"   value={triggeredToday}    sub={today}                                       tone={triggeredToday>0?"warning":"good"} onClick={() => { setSevFilter(""); setStatusFilter(""); setDateFilter(new Date().toLocaleDateString("en-CA")); setTab("alerts"); }}/>
+            <KpiTile icon={<Clock size={18}/>}        label="TRIGGERED TODAY"   value={triggeredToday}    sub={fmtShort(new Date().toISOString())}          tone={triggeredToday>0?"warning":"good"} onClick={() => { setSevFilter(""); setStatusFilter(""); setDateFilter(new Date().toLocaleDateString("en-CA")); setTab("alerts"); }}/>
             <KpiTile icon={<ShieldAlert size={18}/>}  label="CRITICAL ALERTS"   value={criticalCount}     sub="Severity: critical"                          tone={criticalCount>0?"error":"good"} onClick={() => { setDateFilter(""); setSevFilter("critical"); setStatusFilter("new"); setTab("alerts"); }}/>
           </div>
 
           <div className="mid-row">
             <Card title="Alerts Triggered (Last 7 Days)" className="card-score">
               {triggeredAlerts.length === 0 ? (
-                <EmptyState icon={<Bell size={28} color="#d1d5db"/>} message="No alerts triggered yet. Policies are monitoring the environment."/>
+                <EmptyState icon={<Bell size={28}/>} message="No alerts triggered yet. Policies are monitoring the environment."/>
               ) : (
                 <svg viewBox={`0 0 420 110`} style={{ width:"100%", height:110 }}>
                   {last7.map((d, i) => {
@@ -624,7 +631,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
 
             <Card title="Alerts by Category">
               {catCounts.length === 0 ? (
-                <EmptyState icon={<Activity size={28} color="#d1d5db"/>} message="No triggered alerts yet"/>
+                <EmptyState icon={<Activity size={28}/>} message="No triggered alerts yet"/>
               ) : (
                 <div style={{ display:"flex", alignItems:"center", gap:16 }}>
                   <svg viewBox="0 0 100 100" width={100} height={100} style={{ flexShrink:0 }}>
@@ -646,8 +653,8 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
                         return el;
                       });
                     })()}
-                    <circle cx="50" cy="50" r="29" fill="white"/>
-                    <text x="50" y="54" textAnchor="middle" fontSize="12" fontWeight="700" fill="#0f172a">{catCounts.reduce((s,[,v])=>s+v,0)}</text>
+                    <circle cx="50" cy="50" r="29" style={{ fill: "var(--color-card)" }}/>
+                    <text x="50" y="54" textAnchor="middle" fontSize="12" fontWeight="700" style={{ fill: "var(--color-text)" }}>{catCounts.reduce((s,[,v])=>s+v,0)}</text>
                   </svg>
                   <div style={{ flex:1 }}>
                     {catCounts.map(([cat, count]) => (
@@ -671,7 +678,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
                     <div key={i} className="mini-row" style={{ cursor:"pointer" }} onClick={() => setSelectedTriggered(a)}>
                       <span className={`sev-dot sev-${a.severity}`}/>
                       <span className="mr-user" style={{ flex:1 }}>{a.policyName}</span>
-                      <Badge label={a.status} tone={statusTone(a.status)}/>
+                      <Badge label={fmtStatus(a.status)} tone={statusTone(a.status)}/>
                       {a.snoozedUntil && new Date(a.snoozedUntil) > new Date() && (
                         <span style={{ fontSize:10, color:"var(--color-muted)" }}>snoozed until {relTime(a.snoozedUntil)}</span>
                       )}
@@ -694,7 +701,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
           action={
             <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
               <label className="search-box">
-                <Search size={14} color="#94a3b8"/>
+                <Search size={14}/>
                 <input className="search-input" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search policy…"/>
               </label>
               <input type="date" className="filter-sel" value={dateFilter} onChange={e=>setDateFilter(e.target.value)} title="Filter by date"/>
@@ -715,7 +722,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
                 <option value="resolved">Resolved</option>
               </select>
               <ExportDropdown rows={filteredTA.map(a=>({ Policy:a.policyName, Severity:a.severity, Category:a.category, Condition:a.condition, MetricValue:a.metricValue, Threshold:a.threshold, Triggered:a.triggeredAt, Status:a.status }))} filename="triggered-alerts.csv"/>
-              {(search||sevFilter||catFilter||statusFilter)&&<button className="btn-apply" style={{padding:"5px 10px",fontSize:12}} onClick={()=>{setSearch("");setSevFilter("");setCatFilter("");setStatusFilter("");}}>Clear</button>}
+              {(search||sevFilter||catFilter||statusFilter||dateFilter)&&<button className="btn-apply" style={{padding:"5px 10px",fontSize:12}} onClick={()=>{setSearch("");setSevFilter("");setCatFilter("");setStatusFilter("");setDateFilter("");}}>Clear</button>}
             </div>
           }>
           {filteredTA.length === 0 ? (
@@ -739,7 +746,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
                       <td style={{ fontWeight:600 }}>{a.metricValue}</td>
                       <td>{a.threshold}</td>
                       <td className="al-date">{relTime(a.triggeredAt)}</td>
-                      <td><Badge label={a.status} tone={statusTone(a.status)}/>
+                      <td><Badge label={fmtStatus(a.status)} tone={statusTone(a.status)}/>
                         {a.snoozedUntil && new Date(a.snoozedUntil) > new Date() && (
                           <div style={{ fontSize:10, color:"var(--color-muted)", marginTop:2 }}>snoozed until {relTime(a.snoozedUntil)}</div>
                         )}
@@ -778,7 +785,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
         <Card title="Alert Policies" badge={<Badge label={`${policies.length} policies`} tone="neutral"/>}
           action={<button className="btn-run" style={{ padding:"7px 14px", fontSize:13 }} onClick={() => { setEditPolicy(null); setShowModal(true); }}><Bell size={13}/> New Policy</button>}>
           {policies.length === 0 ? (
-            <EmptyState icon={<Bell size={28} color="#d1d5db"/>} message="No policies yet. Create one or use a template."/>
+            <EmptyState icon={<Bell size={28}/>} message="No policies yet. Create one or use a template."/>
           ) : (
             <div className="tbl-wrap">
               <table className="data-tbl">

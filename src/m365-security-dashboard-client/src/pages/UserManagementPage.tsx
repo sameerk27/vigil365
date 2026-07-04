@@ -68,22 +68,23 @@ export function UserManagementPage() {
         method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role }),
       });
       if (r.ok) { showToast(`${u.email} is now ${role}`); await load(); }
-      else { const e = await r.json().catch(() => ({})); showToast(e.error ?? "Could not change role"); }
+      else { const e = await r.json().catch(() => ({})); showToast(e.error ?? "Could not change role", "error"); }
     } finally { setBusy(null); }
   };
 
   const removeUser = async (u: ManagedUser) => {
+    if (!window.confirm(`Remove ${u.email}? They will lose access to Vigil365 (their Microsoft account is not affected).`)) return;
     setBusy(u.email);
     try {
       const r = await apiFetch(`${apiBase}/api/admin/users/${encodeURIComponent(u.email)}`, { method: "DELETE" });
       if (r.ok) { showToast(`Removed ${u.email}`); await load(); }
-      else { const e = await r.json().catch(() => ({})); showToast(e.error ?? "Could not remove user"); }
+      else { const e = await r.json().catch(() => ({})); showToast(e.error ?? "Could not remove user", "error"); }
     } finally { setBusy(null); }
   };
 
   const addUser = async () => {
     const email = addEmail.trim().toLowerCase();
-    if (!email || !email.includes("@")) { showToast("Enter a valid email address"); return; }
+    if (!email || !email.includes("@")) { showToast("Enter a valid email address", "error"); return; }
     setAdding(true);
     try {
       const r = await apiFetch(`${apiBase}/api/admin/users`, {
@@ -92,14 +93,14 @@ export function UserManagementPage() {
       });
       if (r.ok) {
         const d = await r.json().catch(() => ({}));
-        if (addInvite && d.inviteError) showToast(`Added ${email}, but email failed: ${d.inviteError}`);
+        if (addInvite && d.inviteError) showToast(`Added ${email}, but email failed: ${d.inviteError}`, "error");
         else if (addInvite && d.inviteSent) showToast(`Added ${email} as ${addRole} — invite sent`);
         else showToast(`Added ${email} as ${addRole}`);
         setAddEmail(""); setAddName(""); setAddRole("Viewer"); setAddInvite(false); setShowAdd(false);
         await load();
       } else {
         const e = await r.json().catch(() => ({}));
-        showToast(e.error ?? "Could not add user");
+        showToast(e.error ?? "Could not add user", "error");
       }
     } finally { setAdding(false); }
   };
@@ -109,7 +110,7 @@ export function UserManagementPage() {
     try {
       const r = await apiFetch(`${apiBase}/api/admin/users/${encodeURIComponent(u.email)}/invite`, { method: "POST" });
       if (r.ok) showToast(`Invite email sent to ${u.email}`);
-      else { const e = await r.json().catch(() => ({})); showToast(e.error ?? "Could not send invite"); }
+      else { const e = await r.json().catch(() => ({})); showToast(e.error ?? "Could not send invite", "error"); }
     } finally { setBusy(null); }
   };
 
@@ -123,7 +124,7 @@ export function UserManagementPage() {
     setExporting(true);
     try {
       const r = await apiFetch(`${apiBase}/api/admin/audit-log/export`);
-      if (!r.ok) { showToast("Export failed"); return; }
+      if (!r.ok) { showToast("Export failed", "error"); return; }
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -132,7 +133,7 @@ export function UserManagementPage() {
       a.click();
       URL.revokeObjectURL(url);
       showToast("Audit log exported");
-    } catch { showToast("Export failed"); }
+    } catch { showToast("Export failed", "error"); }
     finally { setExporting(false); }
   };
 
@@ -140,13 +141,13 @@ export function UserManagementPage() {
     setVerifying(true);
     try {
       const r = await apiFetch(`${apiBase}/api/admin/audit-log/verify`);
-      if (!r.ok) { showToast("Verification request failed"); return; }
+      if (!r.ok) { showToast("Verification request failed", "error"); return; }
       const d: VerifyResult = await r.json();
       setVerify(d);
       showToast(d.valid
         ? `Chain intact — ${d.verified} entries verified`
         : `Tampering detected at entry #${d.firstBrokenId}`);
-    } catch { showToast("Verification request failed"); }
+    } catch { showToast("Verification request failed", "error"); }
     finally { setVerifying(false); }
   };
 
@@ -174,8 +175,8 @@ export function UserManagementPage() {
               <input type="checkbox" checked={addInvite} onChange={e => setAddInvite(e.target.checked)} />
               Send invite email
             </label>
-            <button className="btn-export" disabled={adding} onClick={addUser}>{adding ? "Adding…" : "Add"}</button>
-            <button className="btn-apply" style={{ padding:"5px 10px", fontSize:12 }} onClick={() => setShowAdd(false)}>Cancel</button>
+            <button className="btn-apply" disabled={adding} onClick={addUser}>{adding ? "Adding…" : "Add"}</button>
+            <button className="btn-export" onClick={() => setShowAdd(false)}>Cancel</button>
           </div>
         )}
         {users === null
@@ -208,13 +209,13 @@ export function UserManagementPage() {
                           <option value="Analyst">Analyst</option>
                           <option value="Viewer">Viewer</option>
                         </select>
-                        <button className="btn-apply" style={{ padding:"3px 8px", fontSize:11 }}
+                        <button className="btn-export" style={{ padding:"3px 8px", fontSize:11 }}
                           disabled={busy===u.email} onClick={() => sendInvite(u)}
                           title="Email this user a sign-in link (requires SMTP configured in Settings)">
                           {new Date(u.lastSeenAt).getFullYear() <= 1 ? "Send invite" : "Resend invite"}
                         </button>
                         {u.email !== myEmail && (
-                          <button className="btn-resolve" style={{ padding:"3px 8px", fontSize:11 }}
+                          <button className="btn-danger" style={{ padding:"3px 8px", fontSize:11 }}
                             disabled={busy===u.email} onClick={() => removeUser(u)} title="Remove user">Remove</button>
                         )}
                       </td>
