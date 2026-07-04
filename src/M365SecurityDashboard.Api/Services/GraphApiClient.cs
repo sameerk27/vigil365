@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using Azure.Core;
 using Azure.Identity;
@@ -12,13 +13,48 @@ public sealed class GraphApiClient
     private static readonly string[] Scopes = ["https://graph.microsoft.com/.default"];
     private readonly HttpClient _http;
     private readonly GraphOptions _options;
-    private readonly ClientSecretCredential _credential;
+    private readonly TokenCredential _credential;
 
     public GraphApiClient(HttpClient http, IOptions<GraphOptions> options)
     {
         _http = http;
         _options = options.Value;
-        _credential = new ClientSecretCredential(_options.TenantId, _options.ClientId, _options.ClientSecret);
+        _credential = BuildCredential(_options);
+    }
+
+    /// <summary>
+    /// Certificate auth is preferred when configured (no long-lived secret to
+    /// store or rotate); the client secret remains the fallback so existing
+    /// installs keep working during migration.
+    /// </summary>
+    public static TokenCredential BuildCredential(GraphOptions o)
+    {
+        if (o.HasCertificate())
+            return new ClientCertificateCredential(o.TenantId, o.ClientId, LoadCertificate(o));
+        return new ClientSecretCredential(o.TenantId, o.ClientId, o.ClientSecret);
+    }
+
+    public static X509Certificate2 LoadCertificate(GraphOptions o)
+    {
+        if (!string.IsNullOrWhiteSpace(o.CertificateThumbprint))
+        {
+            var thumb = o.CertificateThumbprint.Replace(" ", "").ToUpperInvariant();
+            foreach (var location in new[] { StoreLocation.CurrentUser, StoreLocation.LocalMachine })
+            {
+                using var store = new X509Store(StoreName.My, location);
+                store.Open(OpenFlags.ReadOnly);
+                var match = store.Certificates.Find(X509FindType.FindByThumbprint, thumb, validOnly: false);
+                if (match.Count > 0) return match[0];
+            }
+            throw new InvalidOperationException(
+                $"Certificate with thumbprint '{thumb}' was not found in CurrentUser\\My or LocalMachine\\My.");
+        }
+
+        if (!File.Exists(o.CertificatePath))
+            throw new InvalidOperationException($"Certificate file not found: '{o.CertificatePath}'.");
+        return string.IsNullOrEmpty(o.CertificatePassword)
+            ? new X509Certificate2(o.CertificatePath)
+            : new X509Certificate2(o.CertificatePath, o.CertificatePassword);
     }
 
     public async Task<IReadOnlyList<JsonElement>> GetCollectionAsync(string path, CancellationToken ct)

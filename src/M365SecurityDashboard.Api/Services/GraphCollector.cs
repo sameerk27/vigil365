@@ -282,7 +282,9 @@ public sealed class GraphCollector(
         {
             try
             {
-                var items = await graph.GetCollectionAsync("/v1.0/security/secureScores?$top=1", ct);
+                // Single page only — GetCollectionAsync would follow @odata.nextLink
+                // through the ENTIRE score history one item at a time.
+                var items = await graph.GetSinglePageAsync("/v1.0/security/secureScores?$top=1", ct);
                 if (items.Count > 0)
                 {
                     var latest = items[0];

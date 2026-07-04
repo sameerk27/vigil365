@@ -114,12 +114,45 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-    // Wait for the database to accept connections — in Docker the SQL container
-    // may still be starting when the app boots. Retry for up to ~60s.
+    // Versioned schema via EF migrations. Wait for the database server — in
+    // Docker the SQL container may still be starting. Retry for up to ~60s.
+    //
+    // Installs created before migrations existed (EnsureCreated + raw DDL) are
+    // BASELINED: their schema is first brought fully up to the current model by
+    // the idempotent legacy DDL, then InitialCreate is recorded as applied
+    // without running. Newer migrations then apply normally on every start.
     var dbLog = app.Services.GetRequiredService<ILogger<Program>>();
     for (var attempt = 1; ; attempt++)
     {
-        try { db.Database.EnsureCreated(); break; }
+        try
+        {
+            if (db.Database.CanConnect() && !db.Database.GetAppliedMigrations().Any())
+            {
+                var isLegacyDb = db.Database
+                    .SqlQueryRaw<int>("SELECT CASE WHEN OBJECT_ID(N'[SecurityAlerts]', N'U') IS NOT NULL THEN 1 ELSE 0 END AS [Value]")
+                    .AsEnumerable().First() == 1;
+                if (isLegacyDb)
+                {
+                    // Older installs may be missing later idempotent patches —
+                    // apply them all so the DB matches the model we baseline to.
+                    db.Database.ExecuteSqlRaw(AlertingSchema.EnsureTablesSql);
+                    var baseline = db.Database.GetMigrations().First();
+                    db.Database.ExecuteSqlRaw("""
+                        IF OBJECT_ID(N'[__EFMigrationsHistory]', N'U') IS NULL
+                        CREATE TABLE [__EFMigrationsHistory] (
+                            [MigrationId] nvarchar(150) NOT NULL CONSTRAINT [PK___EFMigrationsHistory] PRIMARY KEY,
+                            [ProductVersion] nvarchar(32) NOT NULL);
+                        """);
+                    db.Database.ExecuteSql($"""
+                        IF NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = {baseline})
+                        INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion]) VALUES ({baseline}, '8.0.11');
+                        """);
+                    dbLog.LogInformation("Baselined pre-migration database at {Migration}.", baseline);
+                }
+            }
+            db.Database.Migrate();
+            break;
+        }
         catch (Exception ex) when (attempt < 30)
         {
             dbLog.LogWarning("Database not ready (attempt {Attempt}): {Message}. Retrying in 2s…", attempt, ex.Message);
@@ -127,9 +160,6 @@ using (var scope = app.Services.CreateScope())
         }
     }
 
-    // EnsureCreated() does not add tables to a pre-existing database, so create
-    // the alerting tables idempotently for installs that predate this feature.
-    db.Database.ExecuteSqlRaw(AlertingSchema.EnsureTablesSql);
     AlertingSchema.SeedDefaultPolicies(db);
 
     // Apply Graph credentials saved via the setup wizard over the GraphOptions
@@ -599,7 +629,10 @@ app.MapGet("/api/setup/graph", (IOptions<GraphOptions> opts) =>
         configured = o.IsConfigured(),
         tenantId = o.IsConfigured() ? o.TenantId : "",
         clientId = o.IsConfigured() ? o.ClientId : "",
-        hasSecret = !string.IsNullOrWhiteSpace(o.ClientSecret) && o.ClientSecret != "YOUR_APP_CLIENT_SECRET",
+        hasSecret = o.HasSecret(),
+        hasCertificate = o.HasCertificate(),
+        // Certificate wins when both are present — mirrors GraphApiClient.BuildCredential.
+        authMode = o.HasCertificate() ? "certificate" : o.HasSecret() ? "secret" : "none",
     });
 }).RequireAuthorization("RequireAdmin");
 

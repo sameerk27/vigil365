@@ -3,9 +3,11 @@ using M365SecurityDashboard.Api.Models;
 namespace M365SecurityDashboard.Api.Data;
 
 /// <summary>
-/// Idempotent DDL + seed data for the server-side alerting tables. Kept separate
-/// so installs created before the alerting feature get the new tables without a
-/// full EF migration (the app uses EnsureCreated, which never alters an existing DB).
+/// LEGACY BRIDGE + seed data. The schema is now owned by EF migrations
+/// (Data/Migrations); this idempotent DDL runs exactly once — when a
+/// pre-migration database is baselined at startup — to bring any older install
+/// up to the model the InitialCreate migration describes. Do not add new
+/// schema changes here; add a migration instead.
 /// </summary>
 public static class AlertingSchema
 {
