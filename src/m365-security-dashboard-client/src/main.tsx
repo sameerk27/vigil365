@@ -4,7 +4,7 @@ import { PublicClientApplication, type AccountInfo, type Configuration } from "@
 import {
   Home, Users, Monitor, Mail, AlertTriangle, Bell, CheckSquare, Activity, Wifi,
   Package, ShieldCheck, BookOpen, MapPin, UserCheck, Settings, ChevronRight, ChevronLeft,
-  Clock, RefreshCw, Sun, Moon, LogIn, ShieldAlert, Shield, UserX, TrendingUp, Lightbulb
+  Clock, RefreshCw, Sun, Moon, LogIn, LogOut, ShieldAlert, Shield, UserX, TrendingUp, Lightbulb, Lock
 } from "lucide-react";
 import "./styles.css";
 
@@ -418,6 +418,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
       <Sidebar page={page} setPage={setPage} alertCounts={unreadCounts}
         collapsed={sidebarCollapsed} onToggleCollapse={() => setSidebarCollapsed(c => !c)}/>
       <div className="main-area">
+        <div className="mobile-notice">Vigil365 is optimised for desktop — navigation is limited on small screens.</div>
         <header className="main-hdr">
           <div>
             <h1 className="hdr-title">{pageLabel(page)}</h1>
@@ -472,7 +473,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
                       onMouseEnter={e => (e.currentTarget.style.background = "var(--color-raised)")}
                       onMouseLeave={e => (e.currentTarget.style.background = "none")}
                     >
-                      <LogIn size={14} style={{ transform: "rotate(180deg)" }}/> Sign out
+                      <LogOut size={14}/> Sign out
                     </button>
                   </div>
                 )}
@@ -601,64 +602,48 @@ function AuthGate() {
 
   if (authEnabled && !account) {
     return (
-      <div style={{ display: "flex", height: "100vh", background: "#0f172a", fontFamily: "system-ui, -apple-system, sans-serif" }}>
-        {/* Left panel — branding */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-between", padding: "48px 56px", background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)", borderRight: "1px solid #1e293b" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 10, background: "linear-gradient(135deg, #2563eb, #1d4ed8)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 20px rgba(37,99,235,0.4)" }}>
-              <Shield size={22} color="#fff" />
-            </div>
-            <span style={{ fontSize: 22, fontWeight: 700, color: "#f1f5f9", letterSpacing: "-0.3px" }}>Vigil365</span>
+      <div className="login-shell">
+        {/* Left panel — branding (deliberately dark; scoped .login-* classes) */}
+        <div className="login-brand">
+          <div className="login-logo">
+            <div className="login-logo-mark"><Shield size={22} color="#fff" /></div>
+            <span className="login-logo-name">Vigil365</span>
           </div>
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
-              <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e", boxShadow: "0 0 8px #22c55e" }} />
-              <span style={{ fontSize: 12, color: "#94a3b8", letterSpacing: "0.08em", textTransform: "uppercase" }}>Live Security Monitoring</span>
+            <div className="login-live">
+              <span className="login-live-dot" />
+              <span className="login-live-label">Live Security Monitoring</span>
             </div>
-            <h1 style={{ fontSize: 38, fontWeight: 800, color: "#f8fafc", lineHeight: 1.15, margin: "0 0 16px", letterSpacing: "-0.5px" }}>
-              Microsoft 365<br />Security Operations
-            </h1>
-            <p style={{ fontSize: 15, color: "#cbd5e1", lineHeight: 1.7, margin: 0, maxWidth: 380 }}>
+            <h1 className="login-title">Microsoft 365<br />Security Operations</h1>
+            <p className="login-desc">
               Real-time visibility across identity, devices, email, and compliance — all in one self-hosted dashboard.
             </p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 40 }}>
+            <div className="login-features">
               {[
                 { icon: <Users size={14}/>, label: "Identity & Access Monitoring" },
                 { icon: <Monitor size={14}/>, label: "Device Compliance & Intune" },
                 { icon: <ShieldAlert size={14}/>, label: "Defender XDR & Threat Detection" },
                 { icon: <Activity size={14}/>, label: "Alert Policies & Notifications" },
               ].map((f, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, color: "#94a3b8", fontSize: 13 }}>
-                  <div style={{ color: "#60a5fa" }}>{f.icon}</div>
-                  {f.label}
-                </div>
+                <div key={i} className="login-feature">{f.icon}{f.label}</div>
               ))}
             </div>
           </div>
-          <div style={{ fontSize: 12, color: "#64748b" }}>
-            Open source · Self-hosted · MIT License
-          </div>
+          <div className="login-footer">Open source · Self-hosted · MIT License · v{APP_VERSION}</div>
         </div>
 
         {/* Right panel — login form */}
-        <div style={{ width: 460, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 56px", background: "#0f172a" }}>
-          <div style={{ width: "100%", maxWidth: 340 }}>
-            <h2 style={{ fontSize: 24, fontWeight: 700, color: "#f8fafc", margin: "0 0 8px", letterSpacing: "-0.3px" }}>Sign in</h2>
-            <p style={{ fontSize: 13, color: "#94a3b8", margin: "0 0 36px" }}>Use your Microsoft 365 account to access the security dashboard.</p>
+        <div className="login-form-panel">
+          <div className="login-form">
+            <h2>Sign in</h2>
+            <p className="login-form-sub">Use your Microsoft 365 account to access the security dashboard.</p>
 
             {loginError && (
-              <div style={{ background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 8, padding: "10px 14px", marginBottom: 20, fontSize: 13, color: "#fca5a5", display: "flex", alignItems: "center", gap: 8 }}>
-                <AlertTriangle size={14}/> {loginError}
-              </div>
+              <div className="login-error" role="alert"><AlertTriangle size={14}/> {loginError}</div>
             )}
 
-            <button
-              onClick={handleLogin}
-              style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, width: "100%", padding: "13px 20px", background: "#2563eb", color: "#fff", border: "none", borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: "pointer", boxShadow: "0 4px 14px rgba(37,99,235,0.4)", transition: "background 0.15s" }}
-              onMouseEnter={e => (e.currentTarget.style.background = "#1d4ed8")}
-              onMouseLeave={e => (e.currentTarget.style.background = "#2563eb")}
-            >
-              <svg width="18" height="18" viewBox="0 0 21 21" fill="none">
+            <button className="login-ms-btn" onClick={handleLogin}>
+              <svg width="18" height="18" viewBox="0 0 21 21" fill="none" aria-hidden="true">
                 <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
                 <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
                 <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
@@ -667,10 +652,9 @@ function AuthGate() {
               Sign in with Microsoft
             </button>
 
-            <div style={{ marginTop: 24, padding: "14px 16px", background: "#1e293b", borderRadius: 8, border: "1px solid #334155" }}>
-              <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6 }}>
-                🔒 Access is restricted to your Microsoft 365 organisation. Only users in your tenant can sign in.
-              </div>
+            <div className="login-note">
+              <Lock size={13} style={{ flexShrink: 0, marginTop: 2 }}/>
+              <span>Access is restricted to your Microsoft 365 organisation. Only users in your tenant can sign in.</span>
             </div>
           </div>
         </div>

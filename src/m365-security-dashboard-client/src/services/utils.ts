@@ -72,24 +72,22 @@ export function fmtCountdown(sec: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+/** 2-letter ISO code for a country name. Flag emoji render as bare letter
+ *  pairs on Windows, so the UI shows a neutral code chip instead. */
 export function countryFlag(country?: string): string {
-  if (!country) return "🌐";
+  if (!country) return "";
   const map: Record<string, string> = {
-    "united states": "🇺🇸", "usa": "🇺🇸", "us": "🇺🇸",
-    "united kingdom": "🇬🇧", "uk": "🇬🇧", "gb": "🇬🇧",
-    "india": "🇮🇳", "in": "🇮🇳", "canada": "🇨🇦", "ca": "🇨🇦",
-    "australia": "🇦🇺", "au": "🇦🇺", "germany": "🇩🇪", "de": "🇩🇪",
-    "france": "🇫🇷", "fr": "🇫🇷", "netherlands": "🇳🇱", "nl": "🇳🇱",
-    "ireland": "🇮🇪", "ie": "🇮🇪", "china": "🇨🇳", "cn": "🇨🇳",
-    "russia": "🇷🇺", "ru": "🇷🇺", "brazil": "🇧🇷", "br": "🇧🇷",
-    "japan": "🇯🇵", "jp": "🇯🇵", "singapore": "🇸🇬", "sg": "🇸🇬",
-    "spain": "🇪🇸", "es": "🇪🇸", "italy": "🇮🇹", "it": "🇮🇹",
-    "nigeria": "🇳🇬", "ng": "🇳🇬", "pakistan": "🇵🇰", "pk": "🇵🇰",
-    "united arab emirates": "🇦🇪", "uae": "🇦🇪", "ae": "🇦🇪",
-    "south africa": "🇿🇦", "za": "🇿🇦", "mexico": "🇲🇽", "mx": "🇲🇽",
-    "sweden": "🇸🇪", "se": "🇸🇪", "switzerland": "🇨🇭", "ch": "🇨🇭",
+    "united states": "US", "usa": "US",
+    "united kingdom": "GB", "uk": "GB",
+    "india": "IN", "canada": "CA", "australia": "AU", "germany": "DE",
+    "france": "FR", "netherlands": "NL", "ireland": "IE", "china": "CN",
+    "russia": "RU", "brazil": "BR", "japan": "JP", "singapore": "SG",
+    "spain": "ES", "italy": "IT", "nigeria": "NG", "pakistan": "PK",
+    "united arab emirates": "AE", "uae": "AE",
+    "south africa": "ZA", "mexico": "MX", "sweden": "SE", "switzerland": "CH",
   };
-  return map[country.trim().toLowerCase()] ?? "🌐";
+  const key = country.trim().toLowerCase();
+  return map[key] ?? (key.length === 2 ? key.toUpperCase() : "");
 }
 
 export function expiryChip(days: number): { label: string; cls: string } {

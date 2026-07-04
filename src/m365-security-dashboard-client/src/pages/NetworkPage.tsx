@@ -130,7 +130,7 @@ export function NetworkPage({ serviceHealth, signInLocations }: { serviceHealth:
                     <tr key={i} className="tbl-row-click" onClick={()=>setSelectedSignIn(s)}>
                       <td><div className="al-title">{s.upn?.split("@")[0]??"Unknown"}</div></td>
                       <td className="al-desc">{s.app??"—"}</td>
-                      <td className="al-desc">{countryFlag(s.country)} {[s.city,s.country].filter(Boolean).join(", ")||"Unknown"}</td>
+                      <td className="al-desc"><span className="flag-emoji">{countryFlag(s.country) || "—"}</span> {[s.city,s.country].filter(Boolean).join(", ")||"Unknown"}</td>
                       <td className="al-date" title={fmtFullTime(s.created)}>{relTime(s.created) || fmtDate(s.created)}</td>
                       <td><Badge label={s.success?"Success":"Failed"} tone={s.success?"good":"error"}/></td>
                     </tr>

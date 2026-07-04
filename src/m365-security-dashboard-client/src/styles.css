@@ -1027,7 +1027,13 @@ select, input { font: inherit; }
 
 /* ── Country flag cell ───────────────────────────────────────────────────── */
 .flag-cell { display: inline-flex; align-items: center; gap: 7px; }
-.flag-emoji { font-size: 15px; line-height: 1; }
+/* ISO country-code chip — flag emoji don't render on Windows */
+.flag-emoji {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600; line-height: 1;
+  padding: 2px 5px; border-radius: 4px;
+  background: var(--color-raised); border: 1px solid var(--color-border);
+  color: var(--color-muted); letter-spacing: .5px;
+}
 
 /* eye icon reveal on clickable table rows */
 .tbl-eye { opacity: 0; transition: opacity .12s; }
@@ -1112,15 +1118,16 @@ select, input { font: inherit; }
 .toast {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 16px;
-  background: #1e293b; color: #f1f5f9;
+  background: var(--color-card); color: var(--color-text);
+  border: 1px solid var(--color-border);
   font-size: 13px; border-radius: 10px;
-  box-shadow: 0 4px 16px rgba(0,0,0,.25);
+  box-shadow: var(--shadow-raised);
   min-width: 240px;
   animation: toastIn .22s ease;
   border-left: 3px solid var(--color-primary);
 }
-.toast.toast-success { border-left-color: #22c55e; }
-.toast.toast-error   { border-left-color: #f87171; }
+.toast.toast-success { border-left-color: var(--status-good-icon); }
+.toast.toast-error   { border-left-color: var(--status-error-icon); }
 @keyframes toastIn { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
 
 /* ── Export dropdown ─────────────────────────────────────────────────────── */
@@ -1151,15 +1158,77 @@ select, input { font: inherit; }
 /* ── Loading skeleton: one system — the pulse .skeleton-box (defined below).
    The unused shimmer variant was removed. ─────────────────────────────────── */
 
-/* ── Sign-in map placeholder ─────────────────────────────────────────────── */
-.signin-map-placeholder {
-  height: 220px;
-  background: linear-gradient(135deg, #1e3a5f 0%, #0f2040 100%);
-  border-radius: 10px;
+
+/* ── Login (deliberately dark brand surface — scoped .login-* classes) ────── */
+.login-shell { display: flex; height: 100vh; background: #0f172a; }
+.login-brand {
+  flex: 1; display: flex; flex-direction: column; justify-content: space-between;
+  padding: 48px 56px;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  border-right: 1px solid #1e293b;
+}
+.login-logo { display: flex; align-items: center; gap: 12px; }
+.login-logo-mark {
+  width: 40px; height: 40px; border-radius: 10px;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover));
   display: flex; align-items: center; justify-content: center;
-  color: rgba(255,255,255,.45);
-  font-size: 13px;
-  letter-spacing: .04em;
+  box-shadow: 0 0 20px rgba(37,99,235,.4);
+}
+.login-logo-name { font-size: 22px; font-weight: 700; color: #f1f5f9; letter-spacing: -.3px; }
+.login-live { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; }
+.login-live-dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 8px #22c55e; }
+.login-live-label { font-size: 12px; color: #94a3b8; letter-spacing: .08em; text-transform: uppercase; }
+.login-title { font-size: 38px; font-weight: 800; color: #f8fafc; line-height: 1.15; margin: 0 0 16px; letter-spacing: -.5px; }
+.login-desc { font-size: 15px; color: #cbd5e1; line-height: 1.7; margin: 0; max-width: 380px; }
+.login-features { display: flex; flex-direction: column; gap: 14px; margin-top: 40px; }
+.login-feature { display: flex; align-items: center; gap: 10px; color: #94a3b8; font-size: 13px; }
+.login-feature svg { color: #60a5fa; flex-shrink: 0; }
+.login-footer { font-size: 12px; color: #64748b; }
+.login-form-panel {
+  width: 460px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 48px 56px; background: #0f172a;
+}
+.login-form { width: 100%; max-width: 340px; }
+.login-form h2 { font-size: 24px; font-weight: 700; color: #f8fafc; margin: 0 0 8px; letter-spacing: -.3px; }
+.login-form-sub { font-size: 13px; color: #94a3b8; margin: 0 0 36px; }
+.login-error {
+  background: #450a0a; border: 1px solid #7f1d1d; border-radius: 8px;
+  padding: 10px 14px; margin-bottom: 20px; font-size: 13px; color: #fca5a5;
+  display: flex; align-items: center; gap: 8px;
+}
+.login-ms-btn {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; padding: 13px 20px;
+  background: var(--color-primary); color: #fff;
+  border: none; border-radius: 10px;
+  font-size: 15px; font-weight: 600; cursor: pointer;
+  box-shadow: 0 4px 14px rgba(37,99,235,.4);
+  transition: background .15s;
+}
+.login-ms-btn:hover { background: var(--color-primary-hover); }
+.login-ms-btn:focus-visible { outline: 2px solid #93c5fd; outline-offset: 2px; }
+.login-note {
+  margin-top: 24px; padding: 14px 16px;
+  background: #1e293b; border: 1px solid #334155; border-radius: 8px;
+  font-size: 12px; color: #94a3b8; line-height: 1.6;
+  display: flex; gap: 8px; align-items: flex-start;
+}
+@media (max-width: 900px) {
+  .login-brand { display: none; }
+  .login-form-panel { width: 100%; }
+}
+
+/* ── Mobile notice: below 600px the sidebar is hidden — say so, don't dead-end ── */
+.mobile-notice { display: none; }
+@media (max-width: 600px) {
+  .mobile-notice {
+    display: block;
+    padding: 8px 14px;
+    background: var(--status-warn-bg); color: var(--status-warn-text);
+    border-bottom: 1px solid var(--status-warn-border);
+    font-size: 12px; text-align: center;
+  }
 }
 
 /* ── Empty state permission variant ──────────────────────────────────────── */
