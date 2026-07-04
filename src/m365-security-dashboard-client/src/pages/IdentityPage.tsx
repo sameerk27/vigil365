@@ -151,8 +151,7 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
           sub="Last 7 days" tone={(identity?.signIns.foreign??0)===0?"good":"warning"}
           onClick={() => { document.getElementById("foreign-signins-section")?.scrollIntoView({ behavior: "smooth" }); }}/>
         <KpiTile icon={<Users size={18}/>} label="GUEST ACCOUNTS" value={identity?.guests.total??0}
-          sub="External users" tone={((identity?.guests.total??0)>20)?"warning":"good"}
-          onClick={() => { setSearch("#EXT#"); }}/>
+          sub="External users" tone={((identity?.guests.total??0)>20)?"warning":"good"}/>
       </div>
 
       <div className="sticky-filter-bar filters-bar">
@@ -198,12 +197,12 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
 
       {/* Row 1: MFA (left, primary) + Risky Users (right) */}
       <div className="two-col">
-        <Card title="MFA Registration Status" badge={<><Badge label={`${mfaPct}% covered`} tone={pctTone(mfaPct,95,80)}/><span className="card-count">{mfaMissing.length} missing</span></>}>
+        <Card title="MFA Registration Status" badge={<Badge label={`${mfaPct}% covered · ${mfaMissing.length} missing`} tone={pctTone(mfaPct,95,80)}/>}>
           <div className="mfa-hero">
             <CircleGauge pct={mfaPct} size={90} color={mfaPct>=95?"var(--status-good-icon)":mfaPct>=80?"var(--status-warn-icon)":"var(--status-error-icon)"}/>
             <div className="mfa-stats">
               <InfoRow label="MFA Registered" value={<><CheckCircle size={13} color="var(--status-good-icon)"/> {identity?.mfa.registered??0} users</>} tone="good"/>
-              <InfoRow label="MFA Missing" value={<><XCircle size={13} color="#dc2626"/> {mfaMissing.length} users</>} tone="error"/>
+              <InfoRow label="MFA Missing" value={<><XCircle size={13} color="var(--status-error-icon)"/> {mfaMissing.length} users</>} tone="error"/>
               <InfoRow label="Total Users" value={identity?.mfa.total??0}/>
             </div>
           </div>
@@ -213,7 +212,7 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
               <SectHdr>USERS WITHOUT MFA ({mfaMissing.length})</SectHdr>
               {mfaMissing.slice(0,8).map((a,i)=>(
                 <div key={i} className="mini-row al-clickable" onClick={()=>onAlertClick(a)}>
-                  <UserX size={12} color="#dc2626"/>
+                  <UserX size={12} color="var(--status-error-icon)"/>
                   <span className="mr-user">{a.userPrincipalName}</span>
                   <Badge label="No MFA" tone="error"/>
                 </div>

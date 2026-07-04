@@ -187,7 +187,7 @@ export function UserManagementPage() {
             <div className="tbl-wrap">
               <table className="data-tbl">
                 <thead>
-                  <tr><th>User</th><th>Email</th><th>Role</th><th>Last seen</th><th>Actions</th></tr>
+                  <tr><th scope="col">User</th><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Last seen</th><th scope="col">Actions</th></tr>
                 </thead>
                 <tbody>
                   {users.map(u => (
@@ -264,7 +264,7 @@ export function UserManagementPage() {
             <div className="tbl-wrap">
               <table className="data-tbl">
                 <thead>
-                  <tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Details</th><th>IP</th></tr>
+                  <tr><th scope="col">When</th><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Target</th><th scope="col">Details</th><th scope="col">IP</th></tr>
                 </thead>
                 <tbody>
                   {audit.map(a => (

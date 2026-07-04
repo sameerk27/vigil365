@@ -74,7 +74,7 @@ export function SignInLocationsPage({ data }: { data: SignInLocationsData|null }
                   }))}/>
                   <div className="tbl-wrap" style={{marginTop:12}}>
                     <table className="data-tbl">
-                      <thead><tr><th>Country</th><th>Sign-ins</th><th>Failures</th></tr></thead>
+                      <thead><tr><th scope="col">Country</th><th scope="col">Sign-ins</th><th scope="col">Failures</th></tr></thead>
                       <tbody>
                         {data.byCountry.map((c,i)=>(
                           <tr key={i}>

@@ -335,7 +335,7 @@ export function TrendsPage() {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
             <thead>
               <tr style={{ background: "var(--color-raised)" }}>
-                <th style={thStyle}>Date</th>
+                <th scope="col" style={thStyle}>Date</th>
                 {METRICS.map(m => <th key={m.key} style={thStyle}>{m.label}</th>)}
               </tr>
             </thead>
@@ -373,7 +373,7 @@ export function TrendsPage() {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10 }}>
           <thead>
             <tr>
-              <th style={{ ...thStyle, fontSize: 10, padding: "4px 6px" }}>Date</th>
+              <th scope="col" style={{ ...thStyle, fontSize: 10, padding: "4px 6px" }}>Date</th>
               {METRICS.map(m => <th key={m.key} style={{ ...thStyle, fontSize: 10, padding: "4px 6px" }}>{m.label}</th>)}
             </tr>
           </thead>

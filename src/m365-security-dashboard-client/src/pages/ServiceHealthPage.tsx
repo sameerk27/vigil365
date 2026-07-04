@@ -101,7 +101,7 @@ export function ServiceHealthPage({ serviceHealth }: { serviceHealth: ServiceHea
       <Card title="Per-Service Status">
         <div className="tbl-wrap">
           <table className="data-tbl">
-            <thead><tr><th>Service</th><th>Status</th><th>Open Advisories</th><th>Latest Advisory</th></tr></thead>
+            <thead><tr><th scope="col">Service</th><th scope="col">Status</th><th scope="col">Open Advisories</th><th scope="col">Latest Advisory</th></tr></thead>
             <tbody>
               {M365_SVCS.map(svc=>{
                 const matchingIssues = serviceHealth?.issues.filter(i=>matchSvcIssue(svc, i.title)) || [];

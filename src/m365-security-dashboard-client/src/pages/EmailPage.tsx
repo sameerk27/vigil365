@@ -67,19 +67,19 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
       <div className="kpi-row kpi-row-4">
         <KpiTile icon={<Inbox size={18}/>} label="QUARANTINED" value={quarantined.length}
           sub="Messages held in quarantine" tone={quarantined.length===0?"good":quarantined.length<=5?"warning":"error"}
-          onClick={() => setSearch("quarantined")}/>
+          onClick={() => document.getElementById("email-quarantine-card")?.scrollIntoView({ behavior: "smooth" })}/>
         <KpiTile icon={<AlertTriangle size={18}/>} label="MAIL FLOW ISSUES" value={mailFlow.length}
           sub="Active delivery problems" tone={mailFlow.length===0?"good":"error"}
-          onClick={() => setSearch("mailflow")}/>
+          onClick={() => document.getElementById("email-mailflow-card")?.scrollIntoView({ behavior: "smooth" })}/>
         <KpiTile icon={<ShieldAlert size={18}/>} label="MALWARE DETECTED" value={malware.length}
           sub="Email-borne threats" tone={malware.length===0?"good":"error"}
-          onClick={() => setSearch("malware")}/>
+          onClick={() => document.getElementById("email-malware-card")?.scrollIntoView({ behavior: "smooth" })}/>
         <KpiTile icon={<CheckCircle size={18}/>} label="EMAIL THREATS" value={quarantined.length + malware.length}
           sub="Quarantined + malware combined" tone={quarantined.length + malware.length === 0 ? "good" : "warning"}
           onClick={() => setSearch("")}/>
       </div>
 
-      <div className="two-col">
+      <div className="two-col" id="email-quarantine-card">
         <Card title="Quarantined Messages" badge={<Badge label={`${quarantined.length} held`} tone={quarantined.length>0?"warning":"good"}/>}>
           {quarantined.length===0
             ?<EmptyState icon={<Inbox size={28}/>} message="No messages currently quarantined"/>
@@ -100,14 +100,14 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
           }
         </Card>
 
-        <Card title="Mail Flow Issues" badge={<Badge label={mailFlow.length===0?"Healthy":"Action needed"} tone={mailFlow.length===0?"good":"error"}/>}>
+        <Card title="Mail Flow Issues" id="email-mailflow-card" badge={<Badge label={mailFlow.length===0?"Healthy":"Action needed"} tone={mailFlow.length===0?"good":"error"}/>}>
           {mailFlow.length===0
             ?<EmptyState icon={<Send size={28}/>} message="Mail flow is operating normally"/>
             :(
               <div className="alert-list">
                 {mailFlow.map((a,i)=>(
                   <div key={i} className="al-item" onClick={()=>onAlertClick(a)}>
-                    <XCircle size={13} color="#dc2626"/>
+                    <XCircle size={13} color="var(--status-error-icon)"/>
                     <div className="al-body">
                       <div className="al-title">{a.title}</div>
                       <div className="al-desc">{a.description}</div>
@@ -123,11 +123,11 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
       </div>
 
       {malware.length > 0 && (
-        <Card title="Malware Detections" badge={<Badge label={`${malware.length} threats`} tone="error"/>}>
+        <Card title="Malware Detections" id="email-malware-card" badge={<Badge label={`${malware.length} threats`} tone="error"/>}>
           <div className="alert-list">
             {malware.map((a, i) => (
               <div key={i} className="al-item" onClick={() => onAlertClick(a)}>
-                <ShieldAlert size={14} color="#dc2626" />
+                <ShieldAlert size={14} color="var(--status-error-icon)" />
                 <div className="al-body">
                   <div className="al-title">{a.title}</div>
                   <div className="al-desc">{a.userPrincipalName ? `${a.userPrincipalName} · ` : ""}{a.description}</div>

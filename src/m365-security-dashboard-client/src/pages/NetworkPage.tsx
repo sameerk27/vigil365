@@ -102,7 +102,7 @@ export function NetworkPage({ serviceHealth, signInLocations }: { serviceHealth:
                 <MiniBarChart items={topApps}/>
                 <div className="tbl-wrap" style={{marginTop:12}}>
                   <table className="data-tbl">
-                    <thead><tr><th>Application</th><th>Sign-in Events</th><th>Status</th></tr></thead>
+                    <thead><tr><th scope="col">Application</th><th scope="col">Sign-in Events</th><th scope="col">Status</th></tr></thead>
                     <tbody>
                       {topApps.map((a,i)=>(
                         <tr key={i}>
@@ -124,7 +124,7 @@ export function NetworkPage({ serviceHealth, signInLocations }: { serviceHealth:
           ? <EmptyState icon={<LogIn size={28}/>} message="No recent sign-in data"/>
           : <div className="tbl-wrap">
               <table className="data-tbl">
-                <thead><tr><th>User</th><th>App</th><th>Location</th><th>Time</th><th>Result</th></tr></thead>
+                <thead><tr><th scope="col">User</th><th scope="col">App</th><th scope="col">Location</th><th scope="col">Time</th><th scope="col">Result</th></tr></thead>
                 <tbody>
                   {signInLocations.recent.map((s,i)=>(
                     <tr key={i} className="tbl-row-click" onClick={()=>setSelectedSignIn(s)}>

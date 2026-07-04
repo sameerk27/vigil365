@@ -444,35 +444,29 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
               {darkMode ? <Sun size={15}/> : <Moon size={15}/>}
             </button>
             {account && (
-              <div style={{ position: "relative" }}>
+              <div className="user-menu-wrap"
+                onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setUserMenuOpen(false); }}
+                onKeyDown={e => { if (e.key === "Escape") setUserMenuOpen(false); }}>
                 <button
-                  className="btn-icon"
+                  className="btn-icon user-menu-btn"
                   onClick={() => setUserMenuOpen(o => !o)}
                   title={account.username}
-                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 8px", borderRadius: 6 }}
+                  aria-haspopup="menu" aria-expanded={userMenuOpen}
                 >
-                  <div style={{ width: 26, height: 26, borderRadius: "50%", background: "#2563eb", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
-                    {(account.name ?? account.username).charAt(0).toUpperCase()}
-                  </div>
-                  <span style={{ fontSize: 12, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} className="mr-user">
-                    {account.name ?? account.username}
-                  </span>
+                  <span className="user-avatar">{(account.name ?? account.username).charAt(0).toUpperCase()}</span>
+                  <span className="user-menu-name">{account.name ?? account.username}</span>
                 </button>
                 {userMenuOpen && (
-                  <div style={{ position: "absolute", right: 0, top: "calc(100% + 6px)", background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.15)", minWidth: 220, zIndex: 200 }}>
-                    <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--color-border)" }}>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>{account.name}</div>
-                      <div style={{ fontSize: 11, color: "var(--color-muted)", marginTop: 2 }}>{account.username}</div>
+                  <div className="user-menu" role="menu">
+                    <div className="user-menu-hdr">
+                      <div className="um-name">{account.name}</div>
+                      <div className="um-mail">{account.username}</div>
                       <div style={{ marginTop: 6 }}>
                         <Badge label={auth.role} tone={auth.isAdmin ? "info" : auth.canMutate ? "good" : "neutral"}/>
                       </div>
                     </div>
-                    <button
-                      onClick={() => { setUserMenuOpen(false); onSignOut?.(); }}
-                      style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "10px 16px", background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "var(--color-text)", borderRadius: "0 0 8px 8px" }}
-                      onMouseEnter={e => (e.currentTarget.style.background = "var(--color-raised)")}
-                      onMouseLeave={e => (e.currentTarget.style.background = "none")}
-                    >
+                    <button role="menuitem" className="user-menu-item"
+                      onClick={() => { setUserMenuOpen(false); onSignOut?.(); }}>
                       <LogOut size={14}/> Sign out
                     </button>
                   </div>
@@ -701,24 +695,22 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
   render() {
     if (this.state.hasError) {
       return (
-        <div style={{ padding: "40px", fontFamily: "system-ui, sans-serif", color: "#f8fafc", background: "#0f172a", minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ maxWidth: "600px", width: "100%", background: "#1e293b", padding: "32px", borderRadius: "12px", border: "1px solid #334155", boxShadow: "0 10px 25px rgba(0,0,0,0.3)" }}>
-            <h1 style={{ color: "#ef4444", fontSize: "24px", margin: "0 0 16px 0", display: "flex", alignItems: "center", gap: "10px" }}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-              Dashboard Render Error
+        <div className="err-shell">
+          <div className="err-card">
+            <h1 className="err-title">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              Something went wrong
             </h1>
-            <p style={{ fontSize: "14px", color: "#94a3b8", lineHeight: "1.6" }}>
-              Vigil365 encountered a rendering exception. This usually happens due to missing API fields or unhandled null values in the UI components.
+            <p className="err-desc">
+              Vigil365 hit an unexpected error while rendering this page. Your data is safe —
+              reloading usually resolves it. If it keeps happening, share the technical details
+              below with your administrator.
             </p>
-            <pre style={{ background: "#0f172a", padding: "16px", borderRadius: "8px", overflowX: "auto", fontSize: "12px", color: "#fca5a5", border: "1px solid #450a0a", margin: "20px 0 0 0", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-              {this.state.error?.stack || this.state.error?.message || String(this.state.error)}
-            </pre>
-            <button 
-              onClick={() => window.location.reload()}
-              style={{ marginTop: "24px", padding: "10px 20px", background: "#2563eb", color: "#fff", border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: "600" }}
-            >
-              Reload Page
-            </button>
+            <button className="btn-apply" onClick={() => window.location.reload()}>Reload page</button>
+            <details className="err-details">
+              <summary>Technical details</summary>
+              <pre>{this.state.error?.stack || this.state.error?.message || String(this.state.error)}</pre>
+            </details>
           </div>
         </div>
       );

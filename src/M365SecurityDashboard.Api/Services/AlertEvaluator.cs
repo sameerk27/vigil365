@@ -34,16 +34,37 @@ public sealed class AlertEvaluator(
         // each open alert's current metric without re-querying the policy table.
         var policyMetricById = policies.ToDictionary(p => p.Id, p => p.Metric);
 
+        var collapsed = 0;
         foreach (var policy in policies)
         {
             var value = metrics.GetValueOrDefault(policy.Metric, 0);
             if (value < policy.Threshold) continue;
 
-            // Suppress re-notification while a recent "new" alert for this policy exists.
-            var window = now.AddMinutes(-Math.Max(1, policy.SuppressionMinutes));
-            var recent = await db.TriggeredAlerts.AnyAsync(
-                t => t.PolicyId == policy.Id && t.Status == "new" && t.TriggeredAt >= window, ct);
-            if (recent) continue;
+            // One open alert per policy: while the breach persists, the existing
+            // open alert is updated in place (current value, affected entities,
+            // last-evaluated time) instead of stacking a new row every cycle.
+            // A new row — and a new notification — only happens after the previous
+            // alert reached a terminal state (resolved / auto-resolved).
+            var openForPolicy = await db.TriggeredAlerts
+                .Where(t => t.PolicyId == policy.Id && t.Status != "resolved" && t.Status != "auto_resolved")
+                .OrderByDescending(t => t.TriggeredAt)
+                .ToListAsync(ct);
+            if (openForPolicy.Count > 0)
+            {
+                var keeper = openForPolicy[0];
+                keeper.MetricValue = value;
+                keeper.Threshold = policy.Threshold;
+                keeper.LastEvaluatedAt = now;
+                keeper.AffectedEntities = await GetAffectedEntitiesJsonAsync(policy.Metric, ct);
+                // Collapse duplicates accumulated by the old fire-every-cycle
+                // behaviour — keep the newest, retire the rest silently.
+                foreach (var dup in openForPolicy.Skip(1))
+                {
+                    dup.Status = "auto_resolved";
+                    collapsed++;
+                }
+                continue;
+            }
 
             var affectedEntitiesJson = await GetAffectedEntitiesJsonAsync(policy.Metric, ct);
             var alert = new TriggeredAlert
@@ -105,14 +126,14 @@ public sealed class AlertEvaluator(
             alert.LastEvaluatedAt = now;
         }
 
-        if (fired > 0 || autoResolved > 0)
-        {
-            await db.SaveChangesAsync(ct);
-            if (fired > 0)
-                logger.LogInformation("Alert evaluation fired {Count} new alert(s)", fired);
-            if (autoResolved > 0)
-                logger.LogInformation("Auto-resolved {Count} alert(s) after metric recovery", autoResolved);
-        }
+        // Always save — in-place updates to open alerts happen even when nothing fired.
+        await db.SaveChangesAsync(ct);
+        if (fired > 0)
+            logger.LogInformation("Alert evaluation fired {Count} new alert(s)", fired);
+        if (autoResolved > 0)
+            logger.LogInformation("Auto-resolved {Count} alert(s) after metric recovery", autoResolved);
+        if (collapsed > 0)
+            logger.LogInformation("Collapsed {Count} duplicate open alert(s) into one per policy", collapsed);
         return fired;
     }
 

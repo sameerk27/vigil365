@@ -305,7 +305,7 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
         <Card title="Compliance Frameworks (Click to Drill Down)">
           <div className="frameworks-list">
             {frameworks.map((f,i)=>(
-              <div key={i} className="framework-item clickable-row" onClick={()=>setSelectedFw(f)} style={{ cursor: "pointer", padding: "10px 12px", borderRadius: 6, transition: "background 0.15s", border: "1px solid var(--color-border-subtle)", marginBottom: 8 }}>
+              <div key={i} className="framework-item al-clickable" onClick={()=>setSelectedFw(f)} style={{ cursor: "pointer", padding: "10px 12px", borderRadius: 6, transition: "background 0.15s", border: "1px solid var(--color-border-subtle)", marginBottom: 8 }}>
                 <div className="fw-head" style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                   <div>
                     <div className="fw-name" style={{ fontWeight: 600, fontSize: 14, color: "var(--color-text)" }}>{f.name}</div>
@@ -484,7 +484,7 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
                 </div>
                 <div className="tbl-wrap">
                   <table className="data-tbl">
-                    <thead><tr><th>Simulation</th><th>Type</th><th>Targeted</th><th>Clicked</th><th>Compromise Rate</th><th>Status</th></tr></thead>
+                    <thead><tr><th scope="col">Simulation</th><th scope="col">Type</th><th scope="col">Targeted</th><th scope="col">Clicked</th><th scope="col">Compromise Rate</th><th scope="col">Status</th></tr></thead>
                     <tbody>
                       {attackSimulation!.simulations.slice(0,8).map((s,i)=>(
                         <tr key={s.id??i} className="tbl-row-click" onClick={()=>setSelectedSim(s)}>

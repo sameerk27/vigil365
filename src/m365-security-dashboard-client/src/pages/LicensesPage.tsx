@@ -67,7 +67,7 @@ export function LicensesPage({ licenses, inactive, passwords }: {
                 <MiniBarChart items={filteredSkus.slice(0,8).map(s=>({ label:s.name.replace(/_/g," ").slice(0,22), value:s.consumed, color:s.available<=5?"#dc2626":"#3b82f6" }))}/>
                 <div className="tbl-wrap" style={{marginTop:12}}>
                   <table className="data-tbl">
-                    <thead><tr><th>SKU</th><th>Purchased</th><th>Consumed</th><th>Available</th></tr></thead>
+                    <thead><tr><th scope="col">SKU</th><th scope="col">Purchased</th><th scope="col">Consumed</th><th scope="col">Available</th></tr></thead>
                     <tbody>
                       {filteredSkus.length===0&&<tr><td colSpan={4} className="td-empty">No SKUs match.</td></tr>}
                       {filteredSkus.map((s,i)=>(
@@ -139,7 +139,7 @@ export function LicensesPage({ licenses, inactive, passwords }: {
           ? <EmptyState message={passwords?.error??"Requires User.Read.All permission"}/>
           : <div className="tbl-wrap">
               <table className="data-tbl">
-                <thead><tr><th>User</th><th>Days Until Expiry</th><th>Last Changed</th><th>Status</th></tr></thead>
+                <thead><tr><th scope="col">User</th><th scope="col">Days Until Expiry</th><th scope="col">Last Changed</th><th scope="col">Status</th></tr></thead>
                 <tbody>
                   {passwords.expired.slice(0,5).map((u,i)=>{
                     const c=expiryChip(u.daysUntilExpiry);

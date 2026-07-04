@@ -252,7 +252,7 @@ export function IncidentsPage({ alerts, serviceHealth, defenderAlerts, securityI
         <div className="tbl-wrap">
           <table className="data-tbl">
             <thead>
-              <tr><th>Severity</th><th>Source</th><th>Title</th><th>Details</th><th>Detected</th><th></th></tr>
+              <tr><th scope="col">Severity</th><th scope="col">Source</th><th scope="col">Title</th><th scope="col">Details</th><th scope="col">Detected</th><th scope="col"></th></tr>
             </thead>
             <tbody>
               {filtered.length===0&&<tr><td colSpan={6} className="td-empty">No items match current filters.</td></tr>}
@@ -262,7 +262,7 @@ export function IncidentsPage({ alerts, serviceHealth, defenderAlerts, securityI
                   const sev=a.severity.charAt(0).toUpperCase()+a.severity.slice(1);
                   return (
                     <tr key={`def-${idx}`} className="tbl-row-click row-border-defender" onClick={()=>setSelectedDefender(a)}>
-                      <td><span className="sev-pill" style={{borderColor:sevColor(sev),color:sevColor(sev)}}>{sev}</span></td>
+                      <td><span className={`sev-pill sev-pill-${(sev||"info").toLowerCase()==="informational"?"info":(sev||"info").toLowerCase()}`}>{sev}</span></td>
                       <td><span className="src-badge src-defender"><ShieldAlert size={10}/>{fmtDefenderSource(a.serviceSource??'Defender')}</span></td>
                       <td>
                         <div className="al-title trunc" title={a.title??undefined}>{a.title}</div>
@@ -279,7 +279,7 @@ export function IncidentsPage({ alerts, serviceHealth, defenderAlerts, securityI
                   const sev=i.severity.charAt(0).toUpperCase()+i.severity.slice(1);
                   return (
                     <tr key={`inc-${idx}`} className="tbl-row-click row-border-incident" onClick={()=>setSelectedIncident(i)}>
-                      <td><span className="sev-pill" style={{borderColor:sevColor(sev),color:sevColor(sev)}}>{sev}</span></td>
+                      <td><span className={`sev-pill sev-pill-${(sev||"info").toLowerCase()==="informational"?"info":(sev||"info").toLowerCase()}`}>{sev}</span></td>
                       <td><span className="src-badge src-incident"><AlertCircle size={10}/>Incident</span></td>
                       <td>
                         <div className="al-title trunc" title={i.displayName??undefined}>{i.displayName??'Security Incident'}</div>
@@ -295,7 +295,7 @@ export function IncidentsPage({ alerts, serviceHealth, defenderAlerts, securityI
                   const a=item.data;
                   return (
                     <tr key={`adv-${idx}`} className="row-border-advisory">
-                      <td><span className="sev-pill sev-pill-medium">{a.severity}</span></td>
+                      <td><span className={`sev-pill sev-pill-${(a.severity||"info").toLowerCase()==="informational"?"info":(a.severity||"info").toLowerCase()}`}>{a.severity}</span></td>
                       <td><span className="src-badge src-advisory"><Bell size={10}/>Advisory</span></td>
                       <td>
                         <div className="al-title trunc" title={a.title}>{a.title}</div>
@@ -303,14 +303,14 @@ export function IncidentsPage({ alerts, serviceHealth, defenderAlerts, securityI
                       </td>
                       <td className="al-desc">M365 Service Health</td>
                       <td className="al-date" title={fmtDate(a.detectedAt)}>{relTime(a.detectedAt) || fmtDate(a.detectedAt)}</td>
-                      <td>{a.portalUrl&&<a href={a.portalUrl} target="_blank" rel="noopener noreferrer" className="portal-link"><ExternalLink size={11}/></a>}</td>
+                      <td>{a.portalUrl&&<a href={a.portalUrl} target="_blank" rel="noopener noreferrer" className="portal-link" aria-label="Open advisory in M365 admin center" title="Open in M365 admin center"><ExternalLink size={11}/></a>}</td>
                     </tr>
                   );
                 }
                 const a=item.data;
                 return (
                   <tr key={`db-${a.service}-${a.id}`} className="tbl-row-click row-border-db" onClick={()=>onAlertClick(a)}>
-                    <td><span className="sev-pill" style={{borderColor:sevColor(a.severity),color:sevColor(a.severity)}}>{a.severity}</span></td>
+                    <td><span className={`sev-pill sev-pill-${(a.severity||"info").toLowerCase()==="informational"?"info":(a.severity||"info").toLowerCase()}`}>{a.severity}</span></td>
                     <td><span className="src-badge src-db"><Database size={10}/>{fmtService(a.service)}</span></td>
                     <td>
                       <div className="al-title trunc" title={a.title}>{a.title}</div>

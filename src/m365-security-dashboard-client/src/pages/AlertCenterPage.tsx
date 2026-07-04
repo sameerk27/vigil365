@@ -228,7 +228,7 @@ function NotificationSettingsTab() {
         ) : (
           <div className="tbl-wrap">
             <table className="data-tbl">
-              <thead><tr><th>Status</th><th>Channel</th><th>Policy</th><th>Target</th><th>Sent</th><th>Detail</th></tr></thead>
+              <thead><tr><th scope="col">Status</th><th scope="col">Channel</th><th scope="col">Policy</th><th scope="col">Target</th><th scope="col">Sent</th><th scope="col">Detail</th></tr></thead>
               <tbody>
                 {log.map(l => (
                   <tr key={l.id}>
@@ -320,7 +320,7 @@ function CoverageScorecardTab({ onChanged }: { onChanged: () => void | Promise<v
         <div className="tbl-wrap">
           <table className="data-tbl">
             <thead>
-              <tr><th>Status</th><th>Rule name</th><th>Engine</th><th>Severity</th><th>Description</th><th style={{ textAlign: "right" }}>Action</th></tr>
+              <tr><th scope="col">Status</th><th scope="col">Rule name</th><th scope="col">Engine</th><th scope="col">Severity</th><th scope="col">Description</th><th scope="col" style={{ textAlign: "right" }}>Action</th></tr>
             </thead>
             <tbody>
               {rules.map(r => (
@@ -513,10 +513,10 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
                           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                             <thead>
                               <tr style={{ background: "var(--color-raised)", borderBottom: "1px solid var(--color-border)", color: "var(--color-muted)", textAlign: "left" }}>
-                                <th style={{ padding: "8px 12px" }}>Entity</th>
-                                <th style={{ padding: "8px 12px" }}>Details</th>
-                                <th style={{ padding: "8px 12px" }}>Detected At</th>
-                                <th style={{ padding: "8px 12px", textAlign: "right" }}>Actions</th>
+                                <th scope="col" style={{ padding: "8px 12px" }}>Entity</th>
+                                <th scope="col" style={{ padding: "8px 12px" }}>Details</th>
+                                <th scope="col" style={{ padding: "8px 12px" }}>Detected At</th>
+                                <th scope="col" style={{ padding: "8px 12px", textAlign: "right" }}>Actions</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -671,7 +671,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
 
             <Card title="Recent Alerts" action={<button className="btn-export" onClick={() => setTab("alerts")}>View All</button>}>
               {triggeredAlerts.length === 0 ? (
-                <EmptyState icon={<CheckCircle size={24} color="#22c55e"/>} message="No alerts triggered yet"/>
+                <EmptyState icon={<CheckCircle size={24} color="var(--status-good-icon)"/>} message="No alerts triggered yet"/>
               ) : (
                 <div className="mini-list">
                   {[...triggeredAlerts].sort((a,b) => new Date(b.triggeredAt).getTime()-new Date(a.triggeredAt).getTime()).slice(0,10).map((a,i) => (
@@ -726,14 +726,14 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
             </div>
           }>
           {filteredTA.length === 0 ? (
-            <EmptyState icon={<CheckCircle size={28} color="#22c55e"/>} message="No alerts triggered yet. Your policies are monitoring the environment."/>
+            <EmptyState icon={<CheckCircle size={28} color="var(--status-good-icon)"/>} message="No alerts triggered yet. Your policies are monitoring the environment."/>
           ) : (
             <div className="tbl-wrap">
               <table className="data-tbl">
                 <thead>
                   <tr>
-                    <th>Severity</th><th>Policy Name</th><th>Category</th><th>Condition</th>
-                    <th>Value</th><th>Threshold</th><th>Triggered</th><th>Status</th><th>Actions</th>
+                    <th scope="col">Severity</th><th scope="col">Policy Name</th><th scope="col">Category</th><th scope="col">Condition</th>
+                    <th scope="col">Value</th><th scope="col">Threshold</th><th scope="col">Triggered</th><th scope="col">Status</th><th scope="col">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -790,7 +790,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
             <div className="tbl-wrap">
               <table className="data-tbl">
                 <thead>
-                  <tr><th>Name</th><th>Category</th><th>Condition</th><th>Severity</th><th>Status</th><th>Last Triggered</th><th>Count</th><th>Actions</th></tr>
+                  <tr><th scope="col">Name</th><th scope="col">Category</th><th scope="col">Condition</th><th scope="col">Severity</th><th scope="col">Status</th><th scope="col">Last Triggered</th><th scope="col">Count</th><th scope="col">Actions</th></tr>
                 </thead>
                 <tbody>
                   {policies.map(p => (

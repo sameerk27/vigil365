@@ -87,7 +87,7 @@ export function ConditionalAccessPage({ data }: { data: ConditionalAccessData|nu
             : <>
                 <div className="tbl-wrap">
                   <table className="data-tbl">
-                    <thead><tr><th>Policy Name</th><th>State</th><th>Scope</th><th>Applications</th><th>Controls Required</th></tr></thead>
+                    <thead><tr><th scope="col">Policy Name</th><th scope="col">State</th><th scope="col">Scope</th><th scope="col">Applications</th><th scope="col">Controls Required</th></tr></thead>
                     <tbody>
                       {filteredPolicies.length===0&&<tr><td colSpan={5} className="td-empty">No policies match the filter.</td></tr>}
                       {filteredPolicies.map((p,i)=>(
@@ -118,7 +118,7 @@ export function ConditionalAccessPage({ data }: { data: ConditionalAccessData|nu
       <Card title="Control Coverage Analysis">
         <div className="tbl-wrap">
           <table className="data-tbl">
-            <thead><tr><th>Control</th><th>Enforced By</th><th>Best Practice</th></tr></thead>
+            <thead><tr><th scope="col">Control</th><th scope="col">Enforced By</th><th scope="col">Best Practice</th></tr></thead>
             <tbody>
               {[
                 { control:"mfa", label:"Multi-Factor Authentication", rec:"Should cover all users & all apps at minimum" },

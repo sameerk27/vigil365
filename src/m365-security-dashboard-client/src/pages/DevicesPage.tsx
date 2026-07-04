@@ -163,7 +163,7 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
               <div className="alert-list">
                 {nonCompliant.map((a,i)=>(
                   <div key={i} className="al-item" onClick={()=>onAlertClick(a)}>
-                    <Laptop size={14} color="#dc2626"/>
+                    <Laptop size={14} color="var(--status-error-icon)"/>
                     <div className="al-body">
                       <div className="al-title">{a.deviceName??a.title}</div>
                       <div className="al-desc">{a.userPrincipalName} · {a.description}</div>
@@ -201,7 +201,7 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
             :(
               <div className="tbl-wrap">
                 <table className="data-tbl">
-                  <thead><tr><th>Device</th><th>User</th><th>Last Seen</th><th>Status</th><th></th></tr></thead>
+                  <thead><tr><th scope="col">Device</th><th scope="col">User</th><th scope="col">Last Seen</th><th scope="col">Status</th><th scope="col"></th></tr></thead>
                   <tbody>
                     {notCheckedIn.map((a,i)=>(
                       <tr key={i} className="tbl-row-click" onClick={()=>onAlertClick(a)}>

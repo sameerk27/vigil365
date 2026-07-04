@@ -248,12 +248,12 @@ export function StatBox({ value, label, color, sub }: { value: string|number; la
   );
 }
 
-export function Card({ title, badge, action, children, className="" }:
-  { title: string; badge?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode; className?: string }) {
+export function Card({ title, badge, action, children, className="", id }:
+  { title: string; badge?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode; className?: string; id?: string }) {
   return (
-    <div className={`card ${className}`}>
+    <div className={`card ${className}`} id={id}>
       <div className="card-head">
-        <span className="card-title">{title}</span>
+        <h2 className="card-title">{title}</h2>
         <div className="card-head-right">{badge}{action}</div>
       </div>
       {children}

@@ -218,7 +218,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
                     ))}
                   </div>
                 )}
-                {riskyUsers.length===0&&<EmptyState icon={<Activity size={24} color="#22c55e"/>} message="No risky users detected"/>}
+                {riskyUsers.length===0&&<EmptyState icon={<Activity size={24} color="var(--status-good-icon)"/>} message="No risky users detected"/>}
               </>
             );
           })()}
@@ -233,7 +233,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
               <SectHdr>BREAKDOWN BY SERVICE</SectHdr>
               {(overview?.byService??[]).map((s,i)=>(
                 <div key={i} className="mini-row al-clickable" onClick={() => crossNavigate({ page: s.service === "EntraId" ? "identity" : s.service === "DefenderXdr" ? "alertcenter" : s.service === "Intune" ? "devices" : s.service === "ExchangeOnline" ? "email" : "servicehealth" })} style={{ cursor: "pointer" }}>
-                  <Database size={11} color="#6b7280"/>
+                  <Database size={11} color="var(--color-muted)"/>
                   <span className="mr-user">{fmtService(s.service)}</span>
                   <Badge label={String(s.count)} tone={s.count>10?"error":s.count>3?"warning":"neutral"}/>
                 </div>
@@ -256,7 +256,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
             <div className="mini-list">
               {devices!.nonCompliantDevices.slice(0,3).map((d,i)=>(
                 <div key={i} className="mini-row al-clickable" onClick={() => crossNavigate({ page: "devices", search: d.deviceName ?? "" })} style={{ cursor: "pointer" }}>
-                  <Monitor size={11} color="#6b7280"/>
+                  <Monitor size={11} color="var(--color-muted)"/>
                   <span className="mr-user">{d.deviceName??"Unknown device"}</span>
                   <span className="mr-date">{d.userPrincipalName?.split("@")[0]}</span>
                 </div>

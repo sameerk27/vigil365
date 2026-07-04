@@ -101,7 +101,7 @@ export function AuditLogPage({ data }: { data: AuditLogData|null }) {
           : <>
               <div className="tbl-wrap">
                 <table className="data-tbl">
-                  <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Result</th></tr></thead>
+                  <thead><tr><th scope="col">Time</th><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Target</th><th scope="col">Result</th></tr></thead>
                   <tbody>
                     {filtered.length===0&&<tr><td colSpan={5} className="td-empty">No events match the filter.</td></tr>}
                     {filtered.map((e,i)=>(
