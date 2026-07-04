@@ -262,8 +262,8 @@ export function Card({ title, badge, action, children, className="", id }:
   );
 }
 
-export function KpiTile({ icon, label, value, sub, tone="neutral", needsPerm, onClick, active }:
-  { icon: React.ReactNode; label: string; value: React.ReactNode; sub?: string; tone?: Tone; needsPerm?: boolean; onClick?: () => void; active?: boolean }) {
+export function KpiTile({ icon, label, value, sub, tone="neutral", needsPerm, onClick, active, help }:
+  { icon: React.ReactNode; label: string; value: React.ReactNode; sub?: string; tone?: Tone; needsPerm?: boolean; onClick?: () => void; active?: boolean; help?: string }) {
   const inner = (
     <>
       <div className="kpi-icon">{icon}</div>
@@ -282,7 +282,7 @@ export function KpiTile({ icon, label, value, sub, tone="neutral", needsPerm, on
         type="button"
         className={`kpi-tile kpi-${tone} kpi-clickable${active ? " kpi-active" : ""}`}
         onClick={onClick}
-        title={`${label} — click to filter`}
+        title={help ?? `${label} — click to filter`}
         style={{ textAlign: "left", font: "inherit", cursor: "pointer", width: "100%" }}
       >
         {inner}
@@ -290,7 +290,7 @@ export function KpiTile({ icon, label, value, sub, tone="neutral", needsPerm, on
     );
   }
   return (
-    <div className={`kpi-tile kpi-${tone}`}>
+    <div className={`kpi-tile kpi-${tone}`} title={help}>
       {inner}
     </div>
   );

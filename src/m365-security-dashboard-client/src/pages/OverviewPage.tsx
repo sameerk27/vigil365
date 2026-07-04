@@ -78,29 +78,29 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
         );
       })()}
       <div className="kpi-row">
-        <KpiTile icon={<Shield size={18}/>} label="SECURE SCORE"
+        <KpiTile icon={<Shield size={18}/>} label="SECURE SCORE" help="Microsoft Secure Score — your tenant's security configuration posture as a percentage of achievable points. Click to open Compliance."
           value={secureScore?.configured&&!secureScore.error?`${secureScore.percentage}%`:"—"}
           sub={secureScore?.configured&&!secureScore.error?`${Math.round(secureScore.currentScore)} / ${Math.round(secureScore.maxScore)} pts`:"Run collection to load"}
           needsPerm={!!secureScore && (!secureScore.configured || !!secureScore.error)}
           tone={secureScore?.configured&&!secureScore.error?pctTone(secureScore.percentage):"neutral"}
           onClick={() => crossNavigate({ page: "compliance" })}/>
-        <KpiTile icon={<Lock size={18}/>} label="MFA COVERAGE"
+        <KpiTile icon={<Lock size={18}/>} label="MFA COVERAGE" help="Share of enabled users registered for multi-factor authentication. Target ≥95%. Click to open Identity filtered to MFA."
           value={mfaKnown ? `${mfaPct}%` : mfaMissingCount > 0 ? `${mfaMissingCount}` : identity?.configured ? "—" : "—"}
           sub={mfaKnown ? `${identity!.mfa.registered}/${identity!.mfa.total} users` : mfaMissingCount > 0 ? `users missing MFA` : identity?.configured ? "Needs Reports.Read.All" : "Run collection"}
           needsPerm={!!identity && identity.configured && !mfaKnown && mfaMissingCount === 0}
           tone={mfaKnown ? pctTone(mfaPct,95,80) : mfaMissingCount > 0 ? "error" : "neutral"}
           onClick={() => crossNavigate({ page: "identity", search: "mfa" })}/>
-        <KpiTile icon={<Monitor size={18}/>} label="DEVICE COMPLIANCE"
+        <KpiTile icon={<Monitor size={18}/>} label="DEVICE COMPLIANCE" help="Devices failing one or more Intune compliance policies (encryption, OS version, PIN…). Click to open Devices."
           value={devices ? (devNonCompliant===0 && devEffectiveTotal===0 ? "—" : devNonCompliant===0 ? "All OK" : `${devNonCompliant} issues`) : "—"}
           sub={devices ? (devEffectiveTotal>0 ? `${Math.max(0,devEffectiveTotal-devNonCompliant)}/${devEffectiveTotal} compliant` : `${devNonCompliant} non-compliant`) : "Run collection"}
           tone={devNonCompliant===0?"good":devNonCompliant<=3?"warning":"error"}
           onClick={() => crossNavigate({ page: "devices" })}/>
-        <KpiTile icon={<Activity size={18}/>} label="POSTURE RISK"
+        <KpiTile icon={<Activity size={18}/>} label="POSTURE RISK" help="Share of open security alerts that are high or critical severity — a quick read on how serious the current queue is. Click for Trends."
           value={<span style={{color: posturePct>10?"#b91c1c":undefined}}>{posturePct}%</span>}
           sub={`${overview?.highPriority??0} high / ${overview?.totalActive??0} active`}
           tone={posturePct===0?"neutral":posturePct<=10?"good":posturePct<=25?"warning":"error"}
           onClick={() => crossNavigate({ page: "trends" })}/>
-        <KpiTile icon={<ShieldAlert size={18}/>} label="DEFENDER ALERTS"
+        <KpiTile icon={<ShieldAlert size={18}/>} label="DEFENDER ALERTS" help="Active, unresolved alerts from Microsoft Defender XDR across all products. Click to open the Alert Center."
           value={defenderAlerts?.configured && !defenderAlerts.error ? `${defenderAlerts.total}` : "—"}
           sub={defenderAlerts?.configured && !defenderAlerts.error
             ? `${defenderAlerts.bySeverity?.["high"]??0} high / ${defenderAlerts.bySeverity?.["critical"]??0} critical`
@@ -108,7 +108,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
           needsPerm={!!defenderAlerts?.error}
           tone={!defenderAlerts?.configured||defenderAlerts.error?"neutral":(defenderAlerts.bySeverity?.["critical"]??0)>0?"error":(defenderAlerts.bySeverity?.["high"]??0)>0?"warning":"good"}
           onClick={onNavigateAlertCenter}/>
-        <KpiTile icon={<Flag size={18}/>} label="INCIDENTS"
+        <KpiTile icon={<Flag size={18}/>} label="INCIDENTS" help="Active Defender XDR incidents — correlated groups of related alerts. Click to open the Alert Queue."
           value={securityIncidents?.configured && !securityIncidents.error ? `${securityIncidents.total}` : "—"}
           sub={securityIncidents?.configured && !securityIncidents.error
             ? `${securityIncidents.bySeverity?.["high"]??0} high / ${securityIncidents.bySeverity?.["critical"]??0} critical`

@@ -86,6 +86,10 @@ export const acApi = {
   async assign(id: string, assignedTo: string): Promise<boolean> {
     try { const r = await apiFetch(`${apiBase}/api/triggered-alerts/${id}/assign`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ assignedTo }) }); return r.ok; } catch { return false; }
   },
+  /** Undo for acknowledge/resolve — returns the alert to "new". */
+  async reopen(id: string): Promise<boolean> {
+    try { const r = await apiFetch(`${apiBase}/api/triggered-alerts/${id}/reopen`, { method: "POST" }); return r.ok; } catch { return false; }
+  },
 };
 
 // ─── Alert workbench: local triage state + analyst notes ──────────────────────

@@ -1772,6 +1772,22 @@ app.MapPost("/api/triggered-alerts/{id:guid}/snooze", async (
     return Results.Ok(t);
 }).RequireAuthorization("RequireAnalyst");
 
+// Reopen a triggered alert (undo for acknowledge/resolve). Returns it to "new".
+app.MapPost("/api/triggered-alerts/{id:guid}/reopen", async (
+    AppDbContext db, Guid id, AuditLogger audit, CancellationToken ct) =>
+{
+    var t = await db.TriggeredAlerts.FindAsync([id], ct);
+    if (t is null) return Results.NotFound();
+    var was = t.Status;
+    t.Status = "new";
+    t.AcknowledgedAt = null;
+    t.AcknowledgedBy = null;
+    t.BelowThresholdStreakCount = 0;
+    await db.SaveChangesAsync(ct);
+    await audit.WriteAsync("alert.reopen", "triggered_alert", id.ToString(), $"reopened (was {was})", ct);
+    return Results.Ok(t);
+}).RequireAuthorization("RequireAnalyst");
+
 app.MapPost("/api/triggered-alerts/{id:guid}/unsnooze", async (
     AppDbContext db, Guid id, AuditLogger audit, CancellationToken ct) =>
 {

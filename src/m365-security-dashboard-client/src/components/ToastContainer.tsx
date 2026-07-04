@@ -8,7 +8,8 @@ export function ToastContainer() {
   const addToast = useCallback((t: Omit<ToastEntry, "id">) => {
     const id = Date.now() + Math.random();
     setToasts(prev => [...prev, { ...t, id }]);
-    setTimeout(() => setToasts(prev => prev.filter(x => x.id !== id)), 3000);
+    // Undo-able toasts stay longer so the action is actually reachable.
+    setTimeout(() => setToasts(prev => prev.filter(x => x.id !== id)), t.action ? 6000 : 3000);
   }, []);
 
   useEffect(() => {
@@ -23,7 +24,13 @@ export function ToastContainer() {
           {t.type === "error"
             ? <XCircle size={15} color="var(--status-error-icon)" />
             : <CheckCircle size={15} color="var(--status-good-icon)" />}
-          <span>{t.message}</span>
+          <span style={{ flex: 1 }}>{t.message}</span>
+          {t.action && (
+            <button className="toast-action"
+              onClick={() => { t.action!.onAction(); setToasts(prev => prev.filter(x => x.id !== t.id)); }}>
+              {t.action.label}
+            </button>
+          )}
         </div>
       ))}
     </div>

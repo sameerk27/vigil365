@@ -507,12 +507,23 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
     } finally { setBulkBusy(false); }
   };
 
+  const undoTo = async (id: string) => {
+    if (await acApi.reopen(id)) { showToast("Alert reopened"); await onChanged(); }
+    else showToast("Could not reopen alert", "error");
+  };
+
   const acknowledge = async (id: string) => {
-    if (await acApi.acknowledge(id)) { showToast("Alert acknowledged"); await onChanged(); }
+    if (await acApi.acknowledge(id)) {
+      showToast("Alert acknowledged", "success", { label: "Undo", onAction: () => undoTo(id) });
+      await onChanged();
+    }
   };
 
   const resolve = async (id: string) => {
-    if (await acApi.resolve(id)) { showToast("Alert resolved"); await onChanged(); }
+    if (await acApi.resolve(id)) {
+      showToast("Alert resolved", "success", { label: "Undo", onAction: () => undoTo(id) });
+      await onChanged();
+    }
   };
 
   const snooze = async (id: string, durationHours: 4 | 24 | 168) => {
@@ -695,8 +706,8 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="ac-tabs">
+      {/* Tabs — underline style so they read as a level below the section tabs */}
+      <div className="ac-tabs ac-tabs-underline" role="tablist" aria-label="Alert Center views">
         {(["dashboard","alerts","policies","templates","coverage","notifications"] as AcTab[]).map(t => (
           <button key={t} className={`ac-tab${tab===t?" active":""}`} onClick={() => { setTab(t); if (t === "alerts" || t === "dashboard") refresh(); }}>
             {t === "dashboard" ? "Dashboard" : t === "alerts" ? "Active Alerts" : t === "policies" ? "Policies" : t === "templates" ? "Templates" : t === "coverage" ? "Coverage Scorecard" : "Notifications"}

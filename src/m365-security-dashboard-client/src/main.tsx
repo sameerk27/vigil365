@@ -4,7 +4,8 @@ import { PublicClientApplication, type AccountInfo, type Configuration } from "@
 import {
   Home, Users, Monitor, Mail, AlertTriangle, Bell, CheckSquare, Activity, Wifi,
   Package, ShieldCheck, BookOpen, MapPin, UserCheck, Settings, ChevronRight, ChevronLeft,
-  Clock, RefreshCw, Sun, Moon, LogIn, LogOut, ShieldAlert, Shield, UserX, TrendingUp, Lightbulb, Lock
+  Clock, RefreshCw, Sun, Moon, LogIn, LogOut, ShieldAlert, Shield, UserX, TrendingUp, Lightbulb, Lock,
+  Search as SearchIcon, Pause, Play
 } from "lucide-react";
 import "./styles.css";
 
@@ -21,6 +22,7 @@ import {
 import { apiBase, apiFetch, AuthContext, initMsal, acApi, AUTO_REFRESH_SEC, useAuth, registerNavHandler } from "./services/api";
 import { showToast } from "./services/toast";
 import { ToastContainer } from "./components/ToastContainer";
+import { GlobalSearch } from "./components/GlobalSearch";
 import { Badge, AlertDetailModal, DashboardSkeleton } from "./components/SharedComponents";
 import { fmtDate, fmtCountdown } from "./services/utils";
 
@@ -263,6 +265,11 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
 
   const [countdown, setCountdown] = useState(AUTO_REFRESH_SEC);
   const [refreshKey, setRefreshKey] = useState(0);
+  // Pause-able auto-refresh: an analyst mid-read shouldn't have the list
+  // re-render under them with no say in it.
+  const [refreshPaused, setRefreshPaused] = useState(false);
+  const refreshPausedRef = useRef(refreshPaused);
+  refreshPausedRef.current = refreshPaused;
   const abortRef = useRef<AbortController|null>(null);
 
   const load = useCallback(async () => {
@@ -366,16 +373,16 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
     return () => { cancelled = true; };
   }, [loading, refreshKey, refreshAlertCenter]);
 
-  // Countdown ticker
+  // Countdown ticker — frozen while paused.
   useEffect(() => {
-    const ticker = setInterval(() => setCountdown(prev => Math.max(0, prev - 1)), 1000);
+    const ticker = setInterval(() => setCountdown(prev => refreshPausedRef.current ? prev : Math.max(0, prev - 1)), 1000);
     return () => clearInterval(ticker);
   }, []);
 
-  // When the countdown reaches zero, trigger a refresh.
+  // When the countdown reaches zero, trigger a refresh (unless paused).
   useEffect(() => {
-    if (countdown === 0 && !loading) setRefreshKey(k => k + 1);
-  }, [countdown, loading]);
+    if (countdown === 0 && !loading && !refreshPaused) setRefreshKey(k => k + 1);
+  }, [countdown, loading, refreshPaused]);
 
   const newTriggeredCount = useMemo(() => triggeredAlerts.filter(a => a.status === "new").length, [triggeredAlerts]);
 
@@ -418,6 +425,20 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
   const activeSectionDef = sectionOf(page);
   const visibleTabs = activeSectionDef.pages.filter(p => !p.adminOnly || auth.isAdmin);
 
+  // ── Global search (Ctrl+K) ────────────────────────────────────────────────
+  const [searchOpen, setSearchOpen] = useState(false);
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setSearchOpen(o => !o); }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+  const searchPages = useMemo(() =>
+    SECTIONS.flatMap(s => s.pages
+      .filter(p => !p.adminOnly || auth.isAdmin)
+      .map(p => ({ id: p.id, label: s.pages.length > 1 ? `${s.label} · ${p.label}` : s.label }))),
+    [auth.isAdmin]);
 
   const isInitialLoad = loading && overview === null;
 
@@ -432,10 +453,18 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
             <h1 className="hdr-title">{pageLabel(page)}</h1>
             <p className="hdr-sub">
               Vigil365 · M365 Security Operations · Updated {lastRefresh.toLocaleTimeString()}
-              {" · "}<span className="countdown-chip"><Clock size={10}/>Next refresh {fmtCountdown(countdown)}</span>
+              {" · "}
+              <button className="countdown-chip" onClick={() => setRefreshPaused(p => !p)}
+                title={refreshPaused ? "Resume auto-refresh" : "Pause auto-refresh"}
+                aria-pressed={refreshPaused}>
+                {refreshPaused ? <><Play size={10}/>Auto-refresh paused</> : <><Pause size={10}/>Next refresh {fmtCountdown(countdown)}</>}
+              </button>
             </p>
           </div>
           <div className="hdr-actions">
+            <button className="hdr-search" onClick={() => setSearchOpen(true)} aria-label="Search (Ctrl+K)">
+              <SearchIcon size={13}/><span>Search</span><kbd>Ctrl K</kbd>
+            </button>
             {overview?.lastRun&&(
               <Badge label={`Last run: ${fmtDate(overview.lastRun.completedAt??overview.lastRun.startedAt)}`} tone="neutral"/>
             )}
@@ -522,6 +551,8 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
         )}
       </div>
       {selectedAlert&&<AlertDetailModal alert={selectedAlert} allAlerts={allAlerts} onSelectAlert={setSelectedAlert} onClose={()=>setSelectedAlert(null)}/>}
+      <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} alerts={allAlerts}
+        pages={searchPages} onOpenAlert={a => setSelectedAlert(a)} onNavigatePage={setPage}/>
       <ToastContainer/>
     </div>
   );
