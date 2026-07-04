@@ -15,6 +15,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<AppUser> AppUsers => Set<AppUser>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<GraphConfig> GraphConfig => Set<GraphConfig>();
+    public DbSet<AlertNote> AlertNotes => Set<AlertNote>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -78,5 +79,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         });
 
         modelBuilder.Entity<GraphConfig>(entity => entity.HasKey(g => g.Id));
+
+        modelBuilder.Entity<AlertNote>(entity =>
+        {
+            entity.HasKey(n => n.Id);
+            entity.HasIndex(n => new { n.TargetKind, n.TargetId });
+        });
     }
 }

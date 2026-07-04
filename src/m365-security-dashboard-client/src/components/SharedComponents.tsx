@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Download, ChevronRight, Copy, ClipboardCheck, ExternalLink, AlertTriangle, Activity, X, Lock } from "lucide-react";
-import { Tone, SecurityAlert } from "../services/types";
+import { Download, ChevronRight, Copy, ClipboardCheck, ExternalLink, AlertTriangle, Activity, X, Lock, UserCheck, MessageSquare } from "lucide-react";
+import { Tone, SecurityAlert, AlertNote } from "../services/types";
 import { fmtService, fmtDate, relTime, downloadCsv, copyToClipboard } from "../services/utils";
 import { showToast } from "../services/toast";
+import { useAuth, acApi, wbApi } from "../services/api";
 
 // ─── Export dropdown ──────────────────────────────────────────────────────────
 export function ExportDropdown({ rows, filename }: { rows: Record<string, unknown>[]; filename: string }) {
@@ -459,6 +460,132 @@ export function InfoRow({ label, value, tone }: { label: string; value: React.Re
   );
 }
 
+// ─── Triage section: assignment + disposition + analyst notes ─────────────────
+// Local workbench state only — nothing here writes to Microsoft 365.
+export function TriageSection({ kind, targetId, assignedTo, disposition, showDisposition = false }: {
+  kind: "security" | "policy";
+  targetId: string;
+  assignedTo?: string | null;
+  disposition?: string | null;
+  showDisposition?: boolean;
+}) {
+  const { email: myEmail, canMutate } = useAuth();
+  const [curAssignee, setCurAssignee] = useState<string | null>(assignedTo ?? null);
+  const [curDisposition, setCurDisposition] = useState<string | null>(disposition ?? null);
+  const [assignInput, setAssignInput] = useState("");
+  const [notes, setNotes] = useState<AlertNote[] | null>(null);
+  const [noteText, setNoteText] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setCurAssignee(assignedTo ?? null);
+    setCurDisposition(disposition ?? null);
+    let cancelled = false;
+    setNotes(null);
+    wbApi.listNotes(kind, targetId).then(n => { if (!cancelled) setNotes(n); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind, targetId]);
+
+  const doAssign = async (to: string) => {
+    setBusy(true);
+    const ok = kind === "policy"
+      ? await acApi.assign(targetId, to)
+      : await wbApi.workbench(Number(targetId), { assignedTo: to });
+    setBusy(false);
+    if (ok) { setCurAssignee(to || null); setAssignInput(""); showToast(to ? `Assigned to ${to}` : "Unassigned"); }
+    else showToast("Assignment failed", "error");
+  };
+
+  const doDisposition = async (d: string) => {
+    setBusy(true);
+    const ok = await wbApi.workbench(Number(targetId), { disposition: d });
+    setBusy(false);
+    if (ok) { setCurDisposition(d || null); showToast(d ? `Marked ${d.replace("_", " ")}` : "Disposition cleared"); }
+    else showToast("Could not update disposition", "error");
+  };
+
+  const addNote = async () => {
+    const t = noteText.trim();
+    if (!t) return;
+    setBusy(true);
+    const ok = await wbApi.addNote(kind, targetId, t);
+    setBusy(false);
+    if (ok) { setNoteText(""); setNotes(await wbApi.listNotes(kind, targetId)); }
+    else showToast("Could not add note", "error");
+  };
+
+  return (
+    <div className="triage-section">
+      <div className="dm-section-hdr"><UserCheck size={13} style={{ verticalAlign: "-2px", marginRight: 5 }}/>Triage</div>
+      <div className="triage-row">
+        <span className="triage-label">Assigned to</span>
+        <span className="triage-value">{curAssignee ?? "Unassigned"}</span>
+        {canMutate && (
+          <span className="triage-actions">
+            {curAssignee !== myEmail && (
+              <button className="btn-export" style={{ padding: "3px 9px", fontSize: 11 }} disabled={busy}
+                onClick={() => doAssign(myEmail)}>Assign to me</button>
+            )}
+            {curAssignee && (
+              <button className="btn-export" style={{ padding: "3px 9px", fontSize: 11 }} disabled={busy}
+                onClick={() => doAssign("")}>Unassign</button>
+            )}
+            <input className="form-input" style={{ padding: "3px 8px", fontSize: 11, width: 170 }}
+              placeholder="assign by email…" value={assignInput}
+              onChange={e => setAssignInput(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && assignInput.includes("@")) doAssign(assignInput.trim().toLowerCase()); }}/>
+          </span>
+        )}
+      </div>
+      {showDisposition && (
+        <div className="triage-row">
+          <span className="triage-label">Disposition</span>
+          {canMutate ? (
+            <select className="filter-sel" style={{ padding: "3px 8px", fontSize: 12 }} disabled={busy}
+              value={curDisposition ?? ""} onChange={e => doDisposition(e.target.value)}>
+              <option value="">Untriaged</option>
+              <option value="reviewed">Reviewed</option>
+              <option value="escalated">Escalated</option>
+              <option value="false_positive">False positive</option>
+            </select>
+          ) : (
+            <span className="triage-value">{curDisposition?.replace("_", " ") ?? "Untriaged"}</span>
+          )}
+        </div>
+      )}
+
+      <div className="dm-section-hdr" style={{ marginTop: 12 }}><MessageSquare size={13} style={{ verticalAlign: "-2px", marginRight: 5 }}/>Notes {notes ? `(${notes.length})` : ""}</div>
+      {notes === null ? (
+        <div style={{ fontSize: 12, color: "var(--color-muted)", padding: "4px 0" }}>Loading notes…</div>
+      ) : notes.length === 0 ? (
+        <div style={{ fontSize: 12, color: "var(--color-muted)", padding: "4px 0" }}>No notes yet.</div>
+      ) : (
+        <div className="triage-notes">
+          {notes.map(n => (
+            <div key={n.id} className="triage-note">
+              <div className="triage-note-meta">
+                <span className="triage-note-author">{n.author.split("@")[0]}</span>
+                <span title={fmtDate(n.createdAt)}>{relTime(n.createdAt)}</span>
+              </div>
+              <div className="triage-note-text">{n.text}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {canMutate && (
+        <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+          <input className="form-input" style={{ flex: 1, fontSize: 12 }} placeholder="Add a note — what did you find?"
+            value={noteText} maxLength={2000}
+            onChange={e => setNoteText(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") addNote(); }}/>
+          <button className="btn-apply" style={{ padding: "6px 14px", fontSize: 12 }} disabled={busy || !noteText.trim()} onClick={addNote}>Add</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Alert Detail Modal ───────────────────────────────────────────────────────
 export function AlertDetailModal({ alert, allAlerts, onSelectAlert, onClose }: {
   alert: SecurityAlert;
@@ -524,6 +651,8 @@ export function AlertDetailModal({ alert, allAlerts, onSelectAlert, onClose }: {
         <Badge label={fmtService(alert.service)} tone="neutral"/>
         <Badge label={alert.isResolved ? "Resolved" : "Active"} tone={alert.isResolved ? "good" : "error"}/>
       </div>
+      <TriageSection kind="security" targetId={String(alert.id)}
+        assignedTo={alert.assignedTo} disposition={alert.disposition} showDisposition/>
       {entity && (
         <>
           <div className="dm-section-hdr">Related open alerts for {alert.userPrincipalName ? "this user" : "this device"}</div>

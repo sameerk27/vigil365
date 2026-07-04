@@ -1160,6 +1160,41 @@ select, input { font: inherit; }
    The unused shimmer variant was removed. ─────────────────────────────────── */
 
 
+/* ── Triage section (assignment / disposition / notes in alert detail) ────── */
+.triage-section { margin-top: 14px; padding-top: 4px; }
+.triage-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 5px 0; }
+.triage-label { font-size: 12px; color: var(--color-muted); min-width: 88px; }
+.triage-value { font-size: 12.5px; font-weight: 600; color: var(--color-text); }
+.triage-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.triage-notes { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.triage-note {
+  padding: 8px 10px; border-radius: var(--radius-ctl);
+  background: var(--color-raised); border: 1px solid var(--color-border-subtle);
+}
+.triage-note-meta { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--color-muted); margin-bottom: 3px; }
+.triage-note-author { font-weight: 600; color: var(--color-text-secondary); }
+.triage-note-text { font-size: 12.5px; color: var(--color-text); line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+
+/* ── Table toolkit: sortable headers, bulk bar, pagination footer ─────────── */
+.th-sort {
+  display: inline-flex; align-items: center; gap: 3px;
+  background: none; border: none; padding: 0; cursor: pointer;
+  font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit;
+}
+.th-sort:hover { color: var(--color-text); }
+.bulk-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; margin-bottom: 10px;
+  background: var(--color-primary-subtle);
+  border: 1px solid var(--color-primary-border); border-radius: var(--radius-ctl);
+}
+.bulk-count { font-size: 12.5px; font-weight: 600; color: var(--color-primary); margin-right: 4px; }
+.tbl-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 4px 0; font-size: 12px; color: var(--color-muted);
+  border-top: 1px solid var(--color-border-subtle); margin-top: 8px;
+}
+
 /* ── Error boundary (theme-aware, stack behind a disclosure) ──────────────── */
 .err-shell {
   min-height: 100vh; display: flex; align-items: center; justify-content: center;
@@ -1323,22 +1358,25 @@ select, input { font: inherit; }
 .row-border-advisory td:first-child { border-left: 3px solid var(--sev-medium-text); }
 
 /* ── Detail Modal (centered, full-detail) ────────────────────────────────── */
+/* Detail views are right slide-in panels (Defender/Sentinel convention): the
+   queue stays visible behind them, so triage flow isn't interrupted. */
 .detail-modal-backdrop {
   position: fixed; inset: 0;
-  background: rgba(15,23,42,.55);
+  background: rgba(15,23,42,.45);
   z-index: 250;
-  display: flex; align-items: center; justify-content: center;
+  display: flex; align-items: stretch; justify-content: flex-end;
   animation: fadeIn .18s ease;
-  padding: 16px;
 }
+@keyframes panelIn { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 .detail-modal {
   background: var(--color-card);
-  border-radius: 14px;
-  width: 640px; max-width: 96vw;
-  max-height: 80vh;
+  border-radius: 0;
+  border-left: 1px solid var(--color-border);
+  width: 620px; max-width: 94vw;
+  height: 100%; max-height: 100vh;
   display: flex; flex-direction: column;
   box-shadow: var(--shadow-modal);
-  animation: zoomIn .18s ease;
+  animation: panelIn .2s ease;
   overflow: hidden;
 }
 .detail-modal-hdr {

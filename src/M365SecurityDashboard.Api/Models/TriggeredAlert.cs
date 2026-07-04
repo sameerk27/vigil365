@@ -55,4 +55,8 @@ public sealed class TriggeredAlert
 
     /// <summary>JSON serialized list of matching SecurityAlert entity rows at trigger time.</summary>
     public string? AffectedEntities { get; set; }
+
+    /// <summary>Vigil365 user (email) this alert is assigned to.</summary>
+    [MaxLength(320)]
+    public string? AssignedTo { get; set; }
 }

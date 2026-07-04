@@ -14,7 +14,8 @@ namespace M365SecurityDashboard.Api.Services;
 public sealed class NotificationSender(
     IHttpClientFactory httpFactory,
     SecretProtector protector,
-    ILogger<NotificationSender> logger)
+    ILogger<NotificationSender> logger,
+    IConfiguration? config = null)
 {
     private static readonly Dictionary<string, int> SeverityRank = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -22,6 +23,14 @@ public sealed class NotificationSender(
     };
 
     private static int Rank(string? sev) => SeverityRank.TryGetValue(sev ?? "low", out var r) ? r : 1;
+
+    /// <summary>Deep link to this alert in Vigil365 — one click from a Teams
+    /// message or email straight to the alert. Null when no base URL is configured.</summary>
+    private string? AlertLink(TriggeredAlert a)
+    {
+        var baseUrl = config?["Auth:RedirectUri"];
+        return string.IsNullOrWhiteSpace(baseUrl) ? null : $"{baseUrl.TrimEnd('/')}/#/alertcenter?alert={a.Id}";
+    }
 
     /// <summary>Dispatch all configured channels for a single triggered alert.</summary>
     public async Task DispatchAsync(AppDbContext db, NotificationSettings cfg, TriggeredAlert alert, CancellationToken ct)
@@ -151,7 +160,7 @@ public sealed class NotificationSender(
                             new
                             {
                                 type = "TextBlock",
-                                text = $"🛡️ Vigil365: {a.PolicyName}",
+                                text = $"Vigil365: {a.PolicyName}",
                                 weight = "Bolder",
                                 size = "Medium",
                                 color = cardColor
@@ -169,7 +178,10 @@ public sealed class NotificationSender(
                                     new { title = "Triggered At", value = a.TriggeredAt.ToString("u") }
                                 }
                             }
-                        }
+                        },
+                        actions = AlertLink(a) is { } link
+                            ? new object[] { new { type = "Action.OpenUrl", title = "Open in Vigil365", url = link } }
+                            : [],
                     }
                 }
             }
@@ -192,6 +204,7 @@ public sealed class NotificationSender(
             threshold = a.Threshold,
             triggeredAt = a.TriggeredAt,
             status = a.Status,
+            link = AlertLink(a),
         });
         await PostJsonAsync(db, "webhook", url, payload, a, ct);
     }
@@ -239,6 +252,9 @@ public sealed class NotificationSender(
                         <tr><td style="padding:4px 12px 4px 0;color:#64748b">Category</td><td>{a.Category}</td></tr>
                         <tr><td style="padding:4px 12px 4px 0;color:#64748b">Triggered</td><td>{a.TriggeredAt:u}</td></tr>
                       </table>
+                      {(AlertLink(a) is { } link
+                        ? $"""<p style="margin:16px 0 0"><a href="{WebUtility.HtmlEncode(link)}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:9px 18px;border-radius:8px;font-weight:600">Open in Vigil365</a></p>"""
+                        : "")}
                     </div>
                     """,
             };

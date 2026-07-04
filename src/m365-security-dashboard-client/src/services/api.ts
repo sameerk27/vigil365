@@ -83,6 +83,23 @@ export const acApi = {
   async unsnooze(id: string): Promise<boolean> {
     try { const r = await apiFetch(`${apiBase}/api/triggered-alerts/${id}/unsnooze`, { method: "POST" }); return r.ok; } catch { return false; }
   },
+  async assign(id: string, assignedTo: string): Promise<boolean> {
+    try { const r = await apiFetch(`${apiBase}/api/triggered-alerts/${id}/assign`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ assignedTo }) }); return r.ok; } catch { return false; }
+  },
+};
+
+// ─── Alert workbench: local triage state + analyst notes ──────────────────────
+export const wbApi = {
+  /** Assign / set disposition on a collected M365 security alert. */
+  async workbench(alertId: number, body: { assignedTo?: string; disposition?: string }): Promise<boolean> {
+    try { const r = await apiFetch(`${apiBase}/api/alerts/${alertId}/workbench`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); return r.ok; } catch { return false; }
+  },
+  async listNotes(kind: "security" | "policy", targetId: string): Promise<import("./types").AlertNote[]> {
+    try { const r = await apiFetch(`${apiBase}/api/alert-notes/${kind}/${targetId}`); return r.ok ? await r.json() : []; } catch { return []; }
+  },
+  async addNote(kind: "security" | "policy", targetId: string, text: string): Promise<boolean> {
+    try { const r = await apiFetch(`${apiBase}/api/alert-notes/${kind}/${targetId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) }); return r.ok; } catch { return false; }
+  },
 };
 
 export const recApi = {

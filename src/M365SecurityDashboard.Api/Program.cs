@@ -1784,6 +1784,81 @@ app.MapPost("/api/triggered-alerts/{id:guid}/unsnooze", async (
     return Results.Ok(t);
 }).RequireAuthorization("RequireAnalyst");
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Alert workbench — local triage state. Never writes to Microsoft 365.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Assign / set disposition on a collected M365 security alert.
+app.MapPost("/api/alerts/{id:long}/workbench", async (
+    long id, WorkbenchRequest input, AppDbContext db, AuditLogger audit, CancellationToken ct) =>
+{
+    var alert = await db.SecurityAlerts.FindAsync([id], ct);
+    if (alert is null) return Results.NotFound();
+
+    if (input.Disposition is not null)
+    {
+        var d = input.Disposition.Trim().ToLowerInvariant();
+        if (d != "" && d != "reviewed" && d != "escalated" && d != "false_positive")
+            return Results.BadRequest(new { error = "Disposition must be reviewed, escalated, false_positive, or empty to clear." });
+        alert.Disposition = d == "" ? null : d;
+        await audit.WriteAsync("alert.disposition", "alert", id.ToString(), $"disposition set to {(alert.Disposition ?? "none")}", ct);
+    }
+    if (input.AssignedTo is not null)
+    {
+        alert.AssignedTo = string.IsNullOrWhiteSpace(input.AssignedTo) ? null : input.AssignedTo.Trim().ToLowerInvariant();
+        await audit.WriteAsync("alert.assign", "alert", id.ToString(), alert.AssignedTo is null ? "unassigned" : $"assigned to {alert.AssignedTo}", ct);
+    }
+    await db.SaveChangesAsync(ct);
+    return Results.Ok(alert);
+}).RequireAuthorization("RequireAnalyst");
+
+// Assign a triggered policy alert.
+app.MapPost("/api/triggered-alerts/{id:guid}/assign", async (
+    Guid id, WorkbenchRequest input, AppDbContext db, AuditLogger audit, CancellationToken ct) =>
+{
+    var t = await db.TriggeredAlerts.FindAsync([id], ct);
+    if (t is null) return Results.NotFound();
+    t.AssignedTo = string.IsNullOrWhiteSpace(input.AssignedTo) ? null : input.AssignedTo!.Trim().ToLowerInvariant();
+    await db.SaveChangesAsync(ct);
+    await audit.WriteAsync("alert.assign", "triggered_alert", id.ToString(),
+        t.AssignedTo is null ? "unassigned" : $"assigned to {t.AssignedTo}", ct);
+    return Results.Ok(t);
+}).RequireAuthorization("RequireAnalyst");
+
+// Analyst notes — append-only, on either alert kind.
+app.MapGet("/api/alert-notes/{kind}/{targetId}", async (
+    string kind, string targetId, AppDbContext db, CancellationToken ct) =>
+{
+    if (kind != "security" && kind != "policy") return Results.BadRequest(new { error = "Kind must be security or policy." });
+    return Results.Ok(await db.AlertNotes.AsNoTracking()
+        .Where(n => n.TargetKind == kind && n.TargetId == targetId)
+        .OrderBy(n => n.CreatedAt)
+        .ToListAsync(ct));
+});
+
+app.MapPost("/api/alert-notes/{kind}/{targetId}", async (
+    string kind, string targetId, NoteRequest input, AppDbContext db, AuditLogger audit,
+    System.Security.Claims.ClaimsPrincipal caller, CancellationToken ct) =>
+{
+    if (kind != "security" && kind != "policy") return Results.BadRequest(new { error = "Kind must be security or policy." });
+    var text = (input.Text ?? "").Trim();
+    if (text.Length == 0) return Results.BadRequest(new { error = "Note text is required." });
+    if (text.Length > 2000) text = text[..2000];
+
+    var note = new AlertNote
+    {
+        TargetKind = kind,
+        TargetId = targetId,
+        Author = AuthHelpers.GetEmail(caller),
+        Text = text,
+        CreatedAt = DateTimeOffset.UtcNow,
+    };
+    db.AlertNotes.Add(note);
+    await db.SaveChangesAsync(ct);
+    await audit.WriteAsync("alert.note", kind == "security" ? "alert" : "triggered_alert", targetId, "note added", ct);
+    return Results.Ok(note);
+}).RequireAuthorization("RequireAnalyst");
+
 // Manually run an evaluation pass (used by the dashboard "refresh" + on-demand check).
 // Analyst+: evaluation dispatches real notifications, so it must not be open to abuse.
 app.MapPost("/api/alert-policies/evaluate", async (AlertEvaluator evaluator, CancellationToken ct) =>
@@ -1872,3 +1947,9 @@ public sealed record GraphSetupRequest(string TenantId, string ClientId, string?
 
 /// <summary>Body shape for POST /api/admin/users (pre-provision a user).</summary>
 public sealed record AddUserRequest(string Email, string Role, string? DisplayName, bool SendInvite = false);
+
+/// <summary>Body shape for the workbench endpoints (assign / disposition).</summary>
+public sealed record WorkbenchRequest(string? AssignedTo, string? Disposition);
+
+/// <summary>Body shape for POST /api/alert-notes/{kind}/{targetId}.</summary>
+public sealed record NoteRequest(string Text);

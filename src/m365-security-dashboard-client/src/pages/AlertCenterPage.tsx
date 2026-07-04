@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
-import { X, Bell, AlertCircle, Clock, ShieldAlert, Activity, CheckCircle, Search, ExternalLink, ArrowRight, ShieldCheck, AlertTriangle, PlusCircle } from "lucide-react";
+import { X, Bell, AlertCircle, Clock, ShieldAlert, Activity, CheckCircle, Search, ExternalLink, ArrowRight, ShieldCheck, AlertTriangle, PlusCircle, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { AlertPolicy, TriggeredAlert, NotificationSettings, NotificationLogEntry, Tone, AlertCoverageScorecard, AlertBaselineRule } from "../services/types";
 import { acApi, recApi, useAuth, crossNavigate } from "../services/api";
 import { showToast } from "../services/toast";
-import { DetailField, KpiTile, Card, Badge, EmptyState, MiniBarChart, ExportDropdown, ProgressBar, CopyButton, LoadingSkeleton } from "../components/SharedComponents";
+import { DetailField, KpiTile, Card, Badge, EmptyState, MiniBarChart, ExportDropdown, ProgressBar, CopyButton, LoadingSkeleton, TriageSection } from "../components/SharedComponents";
 import { relTime, fmtDate, fmtShort, sevTone } from "../services/utils";
 
 /** Human-readable status labels — raw enums like "auto_resolved" never reach the UI. */
@@ -38,6 +38,23 @@ function statusTone(s: string): Tone {
     : s === "snoozed" ? "neutral"
     : s === "auto_resolved" ? "info"
     : "good"; // resolved
+}
+
+/** Sortable table header — click to sort, click again to flip direction. */
+function SortTh<T extends string>({ label, col, sortBy, sortDir, onSort }: {
+  label: string; col: T; sortBy: string; sortDir: "asc" | "desc"; onSort: (c: T) => void;
+}) {
+  const active = sortBy === col;
+  return (
+    <th scope="col" aria-sort={active ? (sortDir === "asc" ? "ascending" : "descending") : undefined}>
+      <button type="button" className="th-sort" onClick={() => onSort(col)}>
+        {label}
+        {active
+          ? (sortDir === "asc" ? <ChevronUp size={12}/> : <ChevronDown size={12}/>)
+          : <ChevronsUpDown size={12} style={{ opacity: .35 }}/>}
+      </button>
+    </th>
+  );
 }
 
 function PolicyModal({ policy, onSave, onClose }: {
@@ -355,13 +372,15 @@ function CoverageScorecardTab({ onChanged }: { onChanged: () => void | Promise<v
   );
 }
 
-export function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
+export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLinkAlertId, onDeepLinkConsumed }: {
   policies: AlertPolicy[];
   triggeredAlerts: TriggeredAlert[];
   onChanged: () => void | Promise<void>;
+  deepLinkAlertId?: string | null;
+  onDeepLinkConsumed?: () => void;
 }) {
   const { canMutate } = useAuth();
-  
+
   const [tab, setTab] = useState<AcTab>("dashboard");
   const [search, setSearch] = useState("");
   const [sevFilter, setSevFilter] = useState("");
@@ -371,6 +390,16 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
   const [editPolicy, setEditPolicy] = useState<Partial<AlertPolicy> | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [selectedTriggered, setSelectedTriggered] = useState<TriggeredAlert | null>(null);
+
+  // Notification permalink (#/alertcenter?alert={guid}): open that alert's
+  // detail directly once the data is available.
+  useEffect(() => {
+    if (!deepLinkAlertId || triggeredAlerts.length === 0) return;
+    const target = triggeredAlerts.find(a => a.id.toLowerCase() === deepLinkAlertId.toLowerCase());
+    if (target) { setTab("alerts"); setSelectedTriggered(target); }
+    onDeepLinkConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkAlertId, triggeredAlerts]);
 
   const refresh = () => { onChanged(); };
 
@@ -404,7 +433,19 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
 
   const catColors: Record<string, string> = { identity: "#3b82f6", devices: "#8b5cf6", email: "#f59e0b", compliance: "#10b981", licenses: "#ec4899" };
 
-  // ── Active alerts filter ──────────────────────────────────────────────────
+  // ── Active alerts: filter → sort → paginate ──────────────────────────────
+  const [sortBy, setSortBy] = useState<"severity" | "policyName" | "triggeredAt" | "status" | "assignedTo">("triggeredAt");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [pageNum, setPageNum] = useState(1);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const PAGE_SIZE = 25;
+
+  const toggleSort = (col: typeof sortBy) => {
+    if (sortBy === col) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortBy(col); setSortDir(col === "triggeredAt" ? "desc" : "asc"); }
+    setPageNum(1);
+  };
+
   const filteredTA = useMemo(() => {
     let items = triggeredAlerts;
     if (search) { const q = search.toLowerCase(); items = items.filter(a => a.policyName.toLowerCase().includes(q) || a.condition.toLowerCase().includes(q)); }
@@ -412,8 +453,59 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
     if (catFilter) items = items.filter(a => a.category === catFilter);
     if (statusFilter) items = items.filter(a => a.status === statusFilter);
     if (dateFilter) items = items.filter(a => a.triggeredAt.startsWith(dateFilter));
-    return items.sort((a, b) => new Date(b.triggeredAt).getTime() - new Date(a.triggeredAt).getTime());
-  }, [triggeredAlerts, search, sevFilter, catFilter, statusFilter, dateFilter]);
+    const sevRank: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+    const statusRank: Record<string, number> = { new: 0, acknowledged: 1, snoozed: 2, auto_resolved: 3, resolved: 4 };
+    const dir = sortDir === "asc" ? 1 : -1;
+    return [...items].sort((a, b) => {
+      switch (sortBy) {
+        case "severity":   return ((sevRank[a.severity] ?? 5) - (sevRank[b.severity] ?? 5)) * dir;
+        case "policyName": return a.policyName.localeCompare(b.policyName) * dir;
+        case "status":     return ((statusRank[a.status] ?? 5) - (statusRank[b.status] ?? 5)) * dir;
+        case "assignedTo": return (a.assignedTo ?? "￿").localeCompare(b.assignedTo ?? "￿") * dir;
+        default:           return (new Date(a.triggeredAt).getTime() - new Date(b.triggeredAt).getTime()) * dir;
+      }
+    });
+  }, [triggeredAlerts, search, sevFilter, catFilter, statusFilter, dateFilter, sortBy, sortDir]);
+
+  const pageCount = Math.max(1, Math.ceil(filteredTA.length / PAGE_SIZE));
+  const safePage = Math.min(pageNum, pageCount);
+  const pagedTA = useMemo(() => filteredTA.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE), [filteredTA, safePage]);
+
+  /** SLA age: how long an alert has waited. Overdue = still "new" after 24h. */
+  const slaAge = (a: TriggeredAlert) => {
+    const ms = Date.now() - new Date(a.triggeredAt).getTime();
+    const h = Math.floor(ms / 3600000);
+    const label = h < 1 ? `${Math.max(1, Math.floor(ms / 60000))}m` : h < 48 ? `${h}h` : `${Math.floor(h / 24)}d`;
+    return { label, overdue: a.status === "new" && h >= 24 };
+  };
+
+  const toggleSelect = (id: string) => setSelected(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const pageAllSelected = pagedTA.length > 0 && pagedTA.every(a => selected.has(a.id));
+  const togglePageAll = () => setSelected(prev => {
+    const next = new Set(prev);
+    if (pageAllSelected) pagedTA.forEach(a => next.delete(a.id));
+    else pagedTA.forEach(a => next.add(a.id));
+    return next;
+  });
+
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const bulkAction = async (action: "acknowledge" | "resolve") => {
+    setBulkBusy(true);
+    try {
+      const targets = filteredTA.filter(a => selected.has(a.id) && a.status !== "resolved" && a.status !== "auto_resolved");
+      let ok = 0;
+      for (const a of targets) {
+        if (action === "acknowledge" ? await acApi.acknowledge(a.id) : await acApi.resolve(a.id)) ok++;
+      }
+      showToast(`${action === "acknowledge" ? "Acknowledged" : "Resolved"} ${ok} alert${ok !== 1 ? "s" : ""}`);
+      setSelected(new Set());
+      await onChanged();
+    } finally { setBulkBusy(false); }
+  };
 
   const acknowledge = async (id: string) => {
     if (await acApi.acknowledge(id)) { showToast("Alert acknowledged"); await onChanged(); }
@@ -575,6 +667,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
                 }
                 return null;
               })()}
+              <TriageSection kind="policy" targetId={selectedTriggered.id} assignedTo={selectedTriggered.assignedTo}/>
             </div>
             <div className="detail-modal-footer">
               <button className="dm-close-btn" onClick={() => setSelectedTriggered(null)}>Close</button>
@@ -725,32 +818,57 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
               {(search||sevFilter||catFilter||statusFilter||dateFilter)&&<button className="btn-apply" style={{padding:"5px 10px",fontSize:12}} onClick={()=>{setSearch("");setSevFilter("");setCatFilter("");setStatusFilter("");setDateFilter("");}}>Clear</button>}
             </div>
           }>
+          {canMutate && selected.size > 0 && (
+            <div className="bulk-bar">
+              <span className="bulk-count">{selected.size} selected</span>
+              <button className="btn-ack" disabled={bulkBusy} onClick={() => bulkAction("acknowledge")}>Acknowledge</button>
+              <button className="btn-resolve" disabled={bulkBusy} onClick={() => bulkAction("resolve")}>Resolve</button>
+              <button className="btn-export" style={{ padding:"4px 10px", fontSize:12 }} onClick={() => setSelected(new Set())}>Clear selection</button>
+            </div>
+          )}
           {filteredTA.length === 0 ? (
             <EmptyState icon={<CheckCircle size={28} color="var(--status-good-icon)"/>} message="No alerts triggered yet. Your policies are monitoring the environment."/>
           ) : (
+            <>
             <div className="tbl-wrap">
               <table className="data-tbl">
                 <thead>
                   <tr>
-                    <th scope="col">Severity</th><th scope="col">Policy Name</th><th scope="col">Category</th><th scope="col">Condition</th>
-                    <th scope="col">Value</th><th scope="col">Threshold</th><th scope="col">Triggered</th><th scope="col">Status</th><th scope="col">Actions</th>
+                    {canMutate && <th scope="col" style={{ width:28 }}>
+                      <input type="checkbox" checked={pageAllSelected} onChange={togglePageAll} aria-label="Select all alerts on this page"/>
+                    </th>}
+                    <SortTh label="Severity"  col="severity"   sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}/>
+                    <SortTh label="Policy"    col="policyName" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}/>
+                    <th scope="col">Condition</th>
+                    <th scope="col">Value</th>
+                    <SortTh label="Triggered" col="triggeredAt" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}/>
+                    <th scope="col" title="How long this alert has waited. Red = unacknowledged for over 24h.">Age</th>
+                    <SortTh label="Status"    col="status"     sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}/>
+                    <SortTh label="Assigned"  col="assignedTo" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}/>
+                    <th scope="col">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredTA.map(a => (
+                  {pagedTA.map(a => {
+                    const sla = slaAge(a);
+                    return (
                     <tr key={a.id} className="clickable" onClick={() => setSelectedTriggered(a)}>
+                      {canMutate && <td onClick={e=>e.stopPropagation()}>
+                        <input type="checkbox" checked={selected.has(a.id)} onChange={() => toggleSelect(a.id)} aria-label={`Select ${a.policyName}`}/>
+                      </td>}
                       <td><Badge label={a.severity} tone={sevToneAC(a.severity)}/></td>
                       <td style={{ fontWeight:500 }}>{a.policyName}</td>
-                      <td style={{ textTransform:"capitalize" }}>{a.category}</td>
                       <td style={{ fontSize:12, color:"var(--color-muted)" }}>{a.condition}</td>
-                      <td style={{ fontWeight:600 }}>{a.metricValue}</td>
-                      <td>{a.threshold}</td>
+                      <td style={{ fontWeight:600 }}>{a.metricValue} <span style={{ color:"var(--color-faint)", fontWeight:400 }}>/ {a.threshold}</span></td>
                       <td className="al-date">{relTime(a.triggeredAt)}</td>
+                      <td className="al-date" style={sla.overdue ? { color:"var(--status-error-text)", fontWeight:700 } : undefined}
+                        title={sla.overdue ? "Unacknowledged for over 24 hours" : undefined}>{sla.label}</td>
                       <td><Badge label={fmtStatus(a.status)} tone={statusTone(a.status)}/>
                         {a.snoozedUntil && new Date(a.snoozedUntil) > new Date() && (
                           <div style={{ fontSize:10, color:"var(--color-muted)", marginTop:2 }}>snoozed until {relTime(a.snoozedUntil)}</div>
                         )}
                       </td>
+                      <td className="al-date">{a.assignedTo ? a.assignedTo.split("@")[0] : "—"}</td>
                       <td onClick={e=>e.stopPropagation()} style={{ display:"flex", gap:4, alignItems:"center", flexWrap:"wrap" }}>
                         {!canMutate && <span style={{ fontSize:11, color:"var(--color-muted)" }}>—</span>}
                         {canMutate && a.status === "new" && <button className="btn-ack" onClick={()=>acknowledge(a.id)}>Acknowledge</button>}
@@ -772,10 +890,19 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged }: {
                         {canMutate && a.status !== "resolved" && a.status !== "auto_resolved" && <button className="btn-resolve" onClick={()=>resolve(a.id)}>Resolve</button>}
                       </td>
                     </tr>
-                  ))}
+                  );})}
                 </tbody>
               </table>
             </div>
+            <div className="tbl-footer">
+              <span>Showing {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filteredTA.length)} of {filteredTA.length}</span>
+              <div style={{ display:"flex", gap:6 }}>
+                <button className="btn-export" style={{ padding:"3px 10px", fontSize:12 }} disabled={safePage <= 1} onClick={() => setPageNum(p => p - 1)}>‹ Prev</button>
+                <span style={{ alignSelf:"center", fontSize:12, color:"var(--color-muted)" }}>Page {safePage} of {pageCount}</span>
+                <button className="btn-export" style={{ padding:"3px 10px", fontSize:12 }} disabled={safePage >= pageCount} onClick={() => setPageNum(p => p + 1)}>Next ›</button>
+              </div>
+            </div>
+            </>
           )}
         </Card>
       )}

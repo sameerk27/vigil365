@@ -8,6 +8,9 @@ export type SecurityAlert = {
   severity: AlertSeverity; title: string; description?: string;
   userPrincipalName?: string; deviceName?: string; portalUrl?: string;
   detectedAt: string; lastUpdatedAt: string; isResolved: boolean;
+  /** Workbench: local triage state, never written back to M365. */
+  assignedTo?: string | null;
+  disposition?: "reviewed" | "escalated" | "false_positive" | null;
 };
 
 export type Overview = {
@@ -146,6 +149,17 @@ export interface TriggeredAlert {
   belowThresholdStreakCount?: number;
   lastEvaluatedAt?: string;
   affectedEntities?: string;
+  assignedTo?: string | null;
+}
+
+/** Append-only analyst note on an alert (either kind). */
+export interface AlertNote {
+  id: number;
+  targetKind: "security" | "policy";
+  targetId: string;
+  author: string;
+  text: string;
+  createdAt: string;
 }
 
 export interface NotificationSettings {

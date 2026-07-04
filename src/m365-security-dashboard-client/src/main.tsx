@@ -90,13 +90,19 @@ const pageLabel = (p: NavPage): string => {
 const VALID_PAGES = new Set<string>(SECTIONS.flatMap(s => s.pages.map(p => p.id)));
 
 // ─── Hash router ────────────────────────────────────────────────────────────────
-// URL shape: #/{pageId} with an optional ?alert={id} permalink. Keeps pages
-// refresh-safe, bookmarkable, and makes alert links shareable (email/Teams).
-function parseHash(): { page: NavPage | null; alertId: number | null } {
-  const m = window.location.hash.match(/^#\/([a-z]+)(?:\?alert=(\d+))?/);
+// URL shape: #/{pageId} with an optional ?alert={id} permalink. Numeric ids are
+// collected M365 security alerts; GUIDs are triggered policy alerts (the kind
+// notifications link to). Keeps pages refresh-safe, bookmarkable, shareable.
+function parseHash(): { page: NavPage | null; alertId: number | null; triggeredId: string | null } {
+  const m = window.location.hash.match(/^#\/([a-z]+)(?:\?alert=([0-9a-fA-F-]+))?/);
   const page = m && VALID_PAGES.has(m[1]) ? (m[1] as NavPage) : null;
-  const alertId = m?.[2] ? Number(m[2]) : null;
-  return { page, alertId };
+  const raw = m?.[2] ?? null;
+  const isGuid = !!raw && raw.includes("-");
+  return {
+    page,
+    alertId: raw && !isGuid ? Number(raw) : null,
+    triggeredId: isGuid ? raw : null,
+  };
 }
 
 function Sidebar({ page, setPage, alertCounts, collapsed, onToggleCollapse }: {
@@ -171,6 +177,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
   // so refresh preserves the page and back/forward navigates pages.
   const [page, setPageState] = useState<NavPage>(() => parseHash().page ?? "overview");
   const [pendingAlertId, setPendingAlertId] = useState<number | null>(() => parseHash().alertId);
+  const [pendingTriggeredId, setPendingTriggeredId] = useState<string | null>(() => parseHash().triggeredId);
   const setPage = useCallback((p: NavPage) => {
     setPageState(p);
     if (window.location.hash !== `#/${p}`) window.history.pushState(null, "", `#/${p}`);
@@ -178,9 +185,10 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
   useEffect(() => {
     if (!window.location.hash) window.history.replaceState(null, "", `#/${parseHash().page ?? "overview"}`);
     const sync = () => {
-      const { page: p, alertId } = parseHash();
+      const { page: p, alertId, triggeredId } = parseHash();
       if (p) setPageState(p);
       if (alertId != null) setPendingAlertId(alertId);
+      if (triggeredId != null) setPendingTriggeredId(triggeredId);
     };
     window.addEventListener("popstate", sync);
     window.addEventListener("hashchange", sync);
@@ -499,7 +507,8 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
             {page==="devices"&&<DevicesPage devices={devices} alerts={allAlerts} mdeVulnerabilities={mdeVulnerabilities} onAlertClick={setSelectedAlert}/>}
             {page==="email"&&<EmailPage alerts={allAlerts} emailProtection={emailProtection} onAlertClick={setSelectedAlert}/>}
             {page==="incidents"&&<IncidentsPage alerts={allAlerts} serviceHealth={serviceHealth} defenderAlerts={defenderAlerts} securityIncidents={securityIncidents} onAlertClick={setSelectedAlert}/>}
-            {page==="alertcenter"&&<AlertCenterPage policies={alertPolicies} triggeredAlerts={triggeredAlerts} onChanged={refreshAlertCenter}/>}
+            {page==="alertcenter"&&<AlertCenterPage policies={alertPolicies} triggeredAlerts={triggeredAlerts} onChanged={refreshAlertCenter}
+              deepLinkAlertId={pendingTriggeredId} onDeepLinkConsumed={() => setPendingTriggeredId(null)}/>}
             {page==="compliance"&&<CompliancePage secureScore={secureScore} overview={overview} dlpAlerts={dlpAlerts} purview={purview} mcasAlerts={mcasAlerts} insiderRisk={insiderRisk} attackSimulation={attackSimulation} identity={identity} devices={devices} ca={conditionalAccess} securityIncidents={securityIncidents} privilegedRoles={privilegedRoles} emailProtection={emailProtection}/>}
             {page==="servicehealth"&&<ServiceHealthPage serviceHealth={serviceHealth}/>}
             {page==="network"&&<NetworkPage serviceHealth={serviceHealth} signInLocations={signInLocations}/>}
