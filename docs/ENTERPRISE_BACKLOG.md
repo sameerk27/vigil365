@@ -16,17 +16,22 @@ Legend: 🔴 high value · 🟡 medium · 🟢 polish · ✅ already done
 
 Ship-the-edition gate — these must all be true to call it "Enterprise":
 
-**Done ✅** — Microsoft sign-in + token validation · RBAC (Admin/Analyst/Viewer) +
-in-app user management + invites · audit trail · HTTPS + encryption at rest ·
-one-command install + Setup wizard · Trends & history · Compliance framework scoring
-(configurable) · affected-entity on alerts · CSP header · finish §0 (perfect the tabs) ·
-audit hardening (IP/UA + SHA-256 hash chain + CSV export + verify + sign-in events) ·
-`/health` endpoint (DB/Graph/collection freshness) · structured JSON logging +
-correlation IDs · role-claim caching (60s TTL + eviction) · data retention/pruning
-(nightly worker, configurable) · favicon + meta · 34 automated tests.
+**Done ✅** — Microsoft sign-in + token validation · **enforced** RBAC
+(Admin/Analyst/Viewer, deny-by-default fallback policy) + in-app user management +
+invites · audit trail · HTTPS + encryption at rest · one-command install + Setup
+wizard · Trends & history · Compliance framework scoring (configurable, no-data =
+"Not assessed") · affected-entity on alerts · CSP header · finish §0 (perfect the
+tabs) · audit hardening (IP/UA + SHA-256 hash chain + CSV export + verify + sign-in
+events) · `/health` endpoint · structured JSON logging + correlation IDs ·
+role-claim caching · data retention/pruning · rate limiting (300/min/IP) ·
+config-driven CORS · bounded Graph 429 retries · demo-data honesty (opt-in seeding
++ auto-purge) · hash routing + alert permalinks · 8-section IA with tabs ·
+alert engine: one open alert per policy, updated in place · design-system polish
+pass (tokens, severity unification, dark mode, a11y foundations) · favicon + meta ·
+37 automated tests.
 
 **Required to ship 🔴** — certificate auth for Graph (replace client secret) ·
-EF Core migrations (versioned upgrades) · accessibility pass ·
+EF Core migrations (versioned upgrades) ·
 **rotate the exposed client secret** *(owner action)*.
 
 Everything else below is post-ship (v.next). Detail follows.
@@ -95,16 +100,18 @@ building new pages.
 
 ## C. UI/UX polish (concrete, found in review)
 
-- 🔴 **Error boundary** — there is **none**; a render error in any component blanks the
-  whole app. Add a top-level boundary + per-page fallback.
-- 🔴 **Loading skeletons** — currently plain "Loading…" text. Add card/table skeletons
-  so the layout doesn't jump.
-- 🟡 **Accessibility** — only ~9 aria/role attributes across ~5k lines. Add: aria-labels
-  on icon-only buttons, table semantics, focus rings, `aria-live` for toasts, dialog roles.
-- 🟡 **Keyboard navigation** — minimal. Esc-to-close all modals, focus trap in modals,
-  Enter to submit forms, arrow-key nav in long lists, focus return on close.
-- 🟡 **Empty vs error vs no-permission states** — unify into one clear component with
-  distinct visuals (no data / failed to load+retry / needs Graph permission).
+- ✅ **Error boundary** — top-level boundary with theme-aware friendly card; stack
+  trace behind a "Technical details" disclosure. (Completed; per-page fallback still open.)
+- ✅ **Loading skeletons** — pulse skeleton system (kpi/table/list/card) + DashboardSkeleton. (Completed)
+- ✅ **Accessibility (foundations)** — dialog role + focus trap + focus return
+  (DetailModal), aria-live toasts, :focus-visible on all buttons, th scope=col,
+  card titles as h2, aria-current nav, aria-labels on icon buttons. (Completed;
+  remaining: keyboard access on clickable list rows, trap parity for PolicyModal +
+  triggered-alert modal.)
+- 🟡 **Keyboard navigation** — partial: Esc closes modals, focus trap in DetailModal.
+  Still open: arrow-key nav in lists, Enter on clickable rows app-wide.
+- ✅ **Empty vs error vs no-permission states** — unified StateMessage component
+  (empty / error / permission variants). (Completed)
 - 🟡 **Large-list performance** — long tables render all rows; add virtualization or
   server paging for big tenants.
 - ✅ **Favicon + tab branding** — shield SVG favicon, theme-color, apple-touch-icon. (Completed)
@@ -120,8 +127,10 @@ building new pages.
 
 ## D. Data quality / correctness details
 
-- 🟡 **Timezone clarity** — label timestamps UTC vs local; let user pick.
-- 🟡 **Stale-data indicator** — banner when last collection is older than the interval.
+- 🟡 **Timezone clarity** — label timestamps UTC vs local; let user pick. (Formats are
+  now unified: two formatters, year-aware, en-US pinned — timezone labeling still open.)
+- ✅ **Stale-data indicator** — Overview status banner: in-progress / failed / stale
+  (>3 cycles) / fresh, with source-failure counts. (Completed)
 - 🟢 **Pagination/total counts** consistent across every list.
 - 🟢 **CSV export parity** — ensure every table's export matches the visible/filtered rows.
 - 🟢 **Deep-link correctness** — verify each "View in M365 portal" link resolves.
@@ -131,7 +140,9 @@ building new pages.
 **Alert workflow** (core to an alerting product)
 - 🔴 Assignment / ownership per alert.
 - 🟡 SLA tracking (time-to-ack / time-to-resolve) + escalation if unacked.
-- 🟡 Deduplication / correlation — group alerts with the same root cause.
+- ✅ Deduplication (policy alerts) — one open alert per policy, updated in place
+  while breached; duplicates auto-collapsed. (Completed. Cross-source root-cause
+  correlation still open.)
 - 🟡 Comments / notes on an alert (collaboration).
 - 🟡 Maintenance windows / quiet hours (deferred from the snooze PR).
 
@@ -161,7 +172,8 @@ building new pages.
 
 **Session & quality**
 - 🟡 Idle timeout / auto sign-out.
-- 🟢 In-app version + changelog; opt-in telemetry; i18n; formal WCAG audit.
+- 🟢 In-app version ✅ (sidebar + login footer chip) · changelog; opt-in telemetry;
+  i18n; formal WCAG audit — still open.
 
 ## E. Enterprise plumbing (tracked, lower priority for this product pass)
 
@@ -173,7 +185,8 @@ building new pages.
 - 🟡 **Setup permission verification** — check each required Graph permission is granted
   (fixes ambiguous "Needs permission" on Secure Score).
 - ✅ **Structured logging + correlation IDs** (JSON console outside Dev, X-Correlation-Id
-  echo + logging scope). Basic rate limiting still open. (Completed)
+  echo + logging scope). (Completed)
+- ✅ **Rate limiting** — fixed-window 300 req/min per client IP. (Completed)
 - ✅ **Data retention/pruning** — nightly worker, per-dataset day windows in the
   `Retention` config section; open alerts never pruned. (Completed)
 - 🟢 **EF migrations** instead of EnsureCreated + raw DDL for versioned upgrades.
