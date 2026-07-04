@@ -108,20 +108,14 @@ export function LineChart({ data, color = "#3b82f6", onClick }: { data: { date: 
   const vals = data.map(d => d.value);
   const rawMin = Math.min(...vals), rawMax = Math.max(...vals) || 1;
   
-  // Enforce sensible bounds so percentage metrics and stable scores stay grounded as per Microsoft
+  // Domain padding: the lowest point must never sit on the plot floor —
+  // a real dip then reads as "crashed to zero" even when the value is 38%.
   const diff = rawMax - rawMin;
-  const span = Math.max(diff, rawMax <= 100 ? 15 : Math.max(10, diff * 0.2));
-  const mid = (rawMax + rawMin) / 2;
-  let min = mid - span / 2;
-  let max = mid + span / 2;
-  if (rawMin >= 0 && rawMax <= 100) {
-    min = Math.max(0, min);
-    max = Math.min(100, max);
-    if (max - min < 15) {
-      if (min === 0) max = Math.min(100, 15);
-      else if (max === 100) min = Math.max(0, 85);
-    }
-  }
+  const padAmt = Math.max(diff * 0.35, rawMax <= 100 ? 4 : Math.max(1, diff * 0.35));
+  let min = rawMin - padAmt;
+  let max = rawMax + padAmt * 0.6;
+  if (rawMin >= 0) min = Math.max(0, min);
+  if (rawMax <= 100 && rawMax > 1) max = Math.min(100, max);
   const range = max - min || 1;
 
   const pts = data.map((d, i) => ({

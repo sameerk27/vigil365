@@ -26,38 +26,6 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
   const activeAlerts = useMemo(() => alerts.filter(a => !a.isResolved && a.service !== "ServiceHealth"), [alerts]);
   const advisories = useMemo(() => alerts.filter(a => !a.isResolved && a.service === "ServiceHealth"), [alerts]);
 
-  // The triage feed: open critical/high security alerts + unacknowledged policy
-  // alerts, ranked by severity then recency. This is the first thing on the page.
-  const needsAttention = useMemo(() => {
-    const sevRank = (s: string) => ({ critical: 0, high: 1, medium: 2, low: 3, informational: 4 } as Record<string, number>)[s.toLowerCase()] ?? 5;
-    const fromAlerts = activeAlerts
-      .filter(a => a.severity === "Critical" || a.severity === "High")
-      .map(a => ({
-        key: `a-${a.id}`, severity: a.severity, title: a.title,
-        source: fmtService(a.service), when: a.detectedAt,
-        onClick: () => onAlertClick(a),
-      }));
-    // One row per policy, not one per firing — a policy that has fired 40 times
-    // unacknowledged is one problem, not 40. Show the latest firing + count.
-    const openByPolicy = new Map<string, { latest: typeof overviewTriggered[number]; count: number }>();
-    for (const t of overviewTriggered) {
-      if (t.status !== "new") continue;
-      const entry = openByPolicy.get(t.policyId);
-      if (!entry) openByPolicy.set(t.policyId, { latest: t, count: 1 });
-      else {
-        entry.count++;
-        if (new Date(t.triggeredAt) > new Date(entry.latest.triggeredAt)) entry.latest = t;
-      }
-    }
-    const fromPolicies = [...openByPolicy.values()].map(({ latest: t, count }) => ({
-      key: `p-${t.policyId}`, severity: t.severity,
-      title: `Policy firing: ${t.policyName}${count > 1 ? ` (${count} open occurrences)` : ""}`,
-      source: "Alert Center", when: t.triggeredAt,
-      onClick: onNavigateAlertCenter,
-    }));
-    return [...fromAlerts, ...fromPolicies]
-      .sort((a, b) => sevRank(a.severity) - sevRank(b.severity) || new Date(b.when).getTime() - new Date(a.when).getTime());
-  }, [activeAlerts, overviewTriggered, onAlertClick, onNavigateAlertCenter]);
   const mfaMissingCount = useMemo(() => activeAlerts.filter(a=>a.alertType==="MfaStatus").length, [activeAlerts]);
   const mfaPct = (identity?.mfa.total??0) > 0 ? (identity?.mfa.percentage??0) : 0;
   const mfaKnown = (identity?.mfa.total??0) > 0;
@@ -109,43 +77,6 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
           </div>
         );
       })()}
-      {/* ── Needs attention: the triage feed comes before any metric ─────────── */}
-      <Card title="Needs Attention"
-        badge={needsAttention.length > 0
-          ? <Badge label={`${needsAttention.filter(x => x.severity.toLowerCase() === "critical").length} critical · ${needsAttention.filter(x => x.severity.toLowerCase() === "high").length} high`} tone="error"/>
-          : <Badge label="All clear" tone="good"/>}
-        action={needsAttention.length > 0
-          ? <button className="btn-export" onClick={onNavigateAlertCenter}>Open Alert Center <ChevronRight size={13}/></button>
-          : undefined}>
-        {needsAttention.length === 0 ? (
-          <EmptyState icon={<CheckCircle size={24} color="var(--status-good-icon)"/>}
-            message="Nothing needs attention — no open critical or high-severity alerts and no unacknowledged policy alerts."/>
-        ) : (
-          <div className="alert-list">
-            {needsAttention.slice(0, 8).map(item => (
-              <div key={item.key} className="al-item" onClick={item.onClick} role="button" tabIndex={0}
-                onKeyDown={e => { if (e.key === "Enter") item.onClick(); }}>
-                <span className={sevClass(item.severity)}/>
-                <div className="al-body">
-                  <div className="al-title">{item.title}</div>
-                  <div className="row-meta">
-                    <Badge label={item.severity.toUpperCase()} tone={item.severity.toLowerCase() === "critical" ? "error" : "warning"}/>
-                    <span className="row-meta-item">{item.source}</span>
-                    <span className="row-meta-item" title={fmtFullTime(item.when)}>{relTime(item.when) || fmtDate(item.when)}</span>
-                  </div>
-                </div>
-                <ChevronRight size={14} style={{ color: "var(--color-faint)", flexShrink: 0, alignSelf: "center" }}/>
-              </div>
-            ))}
-            {needsAttention.length > 8 && (
-              <div className="more-link" onClick={onNavigateAlertCenter}>
-                +{needsAttention.length - 8} more in the Alert Center →
-              </div>
-            )}
-          </div>
-        )}
-      </Card>
-
       <div className="kpi-row">
         <KpiTile icon={<Shield size={18}/>} label="SECURE SCORE"
           value={secureScore?.configured&&!secureScore.error?`${secureScore.percentage}%`:"—"}
