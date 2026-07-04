@@ -586,9 +586,12 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
               {selectedTriggered.acknowledgedAt && <DetailField label="Acknowledged" value={`${relTime(selectedTriggered.acknowledgedAt)} (${fmtDate(selectedTriggered.acknowledgedAt)})`} title={fmtDate(selectedTriggered.acknowledgedAt)}/>}
               {selectedTriggered.snoozedUntil && <DetailField label="Snoozed until" value={`${relTime(selectedTriggered.snoozedUntil)} (${fmtDate(selectedTriggered.snoozedUntil)})`} title={fmtDate(selectedTriggered.snoozedUntil)}/>}
               {selectedTriggered.lastEvaluatedAt && <DetailField label="Last evaluated" value={`${relTime(selectedTriggered.lastEvaluatedAt)} (${fmtDate(selectedTriggered.lastEvaluatedAt)})`} title={fmtDate(selectedTriggered.lastEvaluatedAt)}/>}
+              {/* Triage is the primary action — it comes before the entity list,
+                  never below it (a long entity list buried it off-screen). */}
+              <TriageSection kind="policy" targetId={selectedTriggered.id} assignedTo={selectedTriggered.assignedTo}/>
               {selectedTriggered.affectedEntities && (() => {
                 try {
-                  const entities = JSON.parse(selectedTriggered.affectedEntities) as {
+                  const parsed = JSON.parse(selectedTriggered.affectedEntities) as {
                     id: number;
                     userPrincipalName?: string;
                     deviceName?: string;
@@ -597,10 +600,22 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                     detectedAt?: string;
                     externalId?: string;
                   }[];
-                  if (entities && entities.length > 0) {
+                  // Only rows that actually identify something are worth a table
+                  // row; metric-count matches with no entity detail are noise.
+                  const meaningful = (parsed ?? []).filter(e => e.userPrincipalName || e.deviceName || (e.title && e.title !== "System"));
+                  const MAX_SHOWN = 6;
+                  const entities = meaningful.slice(0, MAX_SHOWN);
+                  if ((parsed?.length ?? 0) > 0 && meaningful.length === 0) {
+                    return (
+                      <div style={{ marginTop: 14, fontSize: 12, color: "var(--color-muted)" }}>
+                        {parsed.length} matching record{parsed.length !== 1 ? "s" : ""} — no entity-level detail is available for this metric.
+                      </div>
+                    );
+                  }
+                  if (entities.length > 0) {
                     return (
                       <div style={{ marginTop: 14 }}>
-                        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, color: "var(--color-text)" }}>Affected Entities ({entities.length})</div>
+                        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, color: "var(--color-text)" }}>Affected Entities ({meaningful.length})</div>
                         <div style={{ border: "1px solid var(--color-border)", borderRadius: 6, overflow: "hidden" }}>
                           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                             <thead>
@@ -659,6 +674,11 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                             </tbody>
                           </table>
                         </div>
+                        {meaningful.length > MAX_SHOWN && (
+                          <div style={{ fontSize: 11.5, color: "var(--color-muted)", marginTop: 6 }}>
+                            +{meaningful.length - MAX_SHOWN} more matching entit{meaningful.length - MAX_SHOWN === 1 ? "y" : "ies"} — export or open the source page for the full list.
+                          </div>
+                        )}
                       </div>
                     );
                   }
@@ -667,7 +687,6 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                 }
                 return null;
               })()}
-              <TriageSection kind="policy" targetId={selectedTriggered.id} assignedTo={selectedTriggered.assignedTo}/>
             </div>
             <div className="detail-modal-footer">
               <button className="dm-close-btn" onClick={() => setSelectedTriggered(null)}>Close</button>
