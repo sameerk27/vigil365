@@ -140,12 +140,12 @@ public sealed class GraphCollector(
             {
                 ExternalId = id,
                 Source = "directoryAudit",
-                Activity = Trim(Get(r, "activityDisplayName") ?? "Unknown activity", 200)!,
-                Category = Trim(Get(r, "category"), 80),
-                ActorUpn = Trim(Get(r, "initiatedBy", "user", "userPrincipalName"), 320),
-                ActorApp = Trim(Get(r, "initiatedBy", "app", "displayName"), 200),
-                TargetName = Trim(targetName, 320),
-                Result = Trim(Get(r, "result"), 20),
+                Activity = Trim(Get(r, "activityDisplayName") ?? "Unknown activity", 200),
+                Category = TrimOrNull(Get(r, "category"), 80),
+                ActorUpn = TrimOrNull(Get(r, "initiatedBy", "user", "userPrincipalName"), 320),
+                ActorApp = TrimOrNull(Get(r, "initiatedBy", "app", "displayName"), 200),
+                TargetName = TrimOrNull(targetName, 320),
+                Result = TrimOrNull(Get(r, "result"), 20),
                 OccurredAt = GetDate(r, "activityDateTime"),
                 CollectedAt = DateTimeOffset.UtcNow,
                 RawJson = r.GetRawText(),
@@ -337,6 +337,7 @@ public sealed class GraphCollector(
         value?.Equals("closed", StringComparison.OrdinalIgnoreCase) == true;
 
     private static string Trim(string s, int max) => s.Length <= max ? s : s[..max];
+    private static string? TrimOrNull(string? s, int max) => s is null ? null : Trim(s, max);
 
     private async Task CaptureTrendSnapshotAsync(CancellationToken ct)
     {
