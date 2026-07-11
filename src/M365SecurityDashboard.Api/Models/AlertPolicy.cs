@@ -21,9 +21,27 @@ public sealed class AlertPolicy
     [MaxLength(300)]
     public string Condition { get; set; } = "";
 
-    /// <summary>Metric key the engine watches, e.g. "criticalAlertCount".</summary>
+    /// <summary>
+    /// "metric" — fires when a computed metric crosses <see cref="Threshold"/>.
+    /// "activity" — fires when tenant audit events matching
+    /// <see cref="ActivityPattern"/> occur ≥ Threshold times within
+    /// <see cref="WindowMinutes"/>. Activity policies alert on WHAT HAPPENED
+    /// (role added, app consent granted), not on state counts.
+    /// </summary>
+    [MaxLength(20)]
+    public string Kind { get; set; } = "metric";
+
+    /// <summary>Metric key the engine watches, e.g. "criticalAlertCount". (Kind=metric)</summary>
     [MaxLength(60)]
     public string Metric { get; set; } = "";
+
+    /// <summary>Activity name to match, * as wildcard — e.g. "Add member to role",
+    /// "*conditional access policy". (Kind=activity)</summary>
+    [MaxLength(200)]
+    public string? ActivityPattern { get; set; }
+
+    /// <summary>Sliding window for activity matching. (Kind=activity)</summary>
+    public int WindowMinutes { get; set; } = 60;
 
     public int Threshold { get; set; }
 

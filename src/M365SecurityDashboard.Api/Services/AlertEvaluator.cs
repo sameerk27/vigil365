@@ -30,14 +30,14 @@ public sealed class AlertEvaluator(
         var now = DateTimeOffset.UtcNow;
         var fired = 0;
 
-        // Map PolicyId -> Metric key so the auto-resolve loop below can look up
-        // each open alert's current metric without re-querying the policy table.
-        var policyMetricById = policies.ToDictionary(p => p.Id, p => p.Metric);
+        // Map PolicyId -> policy so the auto-resolve loop below can recompute
+        // each open alert's current value without re-querying the policy table.
+        var policyById = policies.ToDictionary(p => p.Id);
 
         var collapsed = 0;
         foreach (var policy in policies)
         {
-            var value = metrics.GetValueOrDefault(policy.Metric, 0);
+            var value = await ComputePolicyValueAsync(policy, metrics, now, ct);
             if (value < policy.Threshold) continue;
 
             // One open alert per policy: while the breach persists, the existing
@@ -55,7 +55,7 @@ public sealed class AlertEvaluator(
                 keeper.MetricValue = value;
                 keeper.Threshold = policy.Threshold;
                 keeper.LastEvaluatedAt = now;
-                keeper.AffectedEntities = await GetAffectedEntitiesJsonAsync(policy.Metric, ct);
+                keeper.AffectedEntities = await GetAffectedEntitiesJsonAsync(policy, now, ct);
                 // Collapse duplicates accumulated by the old fire-every-cycle
                 // behaviour — keep the newest, retire the rest silently.
                 foreach (var dup in openForPolicy.Skip(1))
@@ -66,7 +66,7 @@ public sealed class AlertEvaluator(
                 continue;
             }
 
-            var affectedEntitiesJson = await GetAffectedEntitiesJsonAsync(policy.Metric, ct);
+            var affectedEntitiesJson = await GetAffectedEntitiesJsonAsync(policy, now, ct);
             var alert = new TriggeredAlert
             {
                 Id = Guid.NewGuid(),
@@ -107,8 +107,8 @@ public sealed class AlertEvaluator(
         var autoResolved = 0;
         foreach (var alert in openAlerts)
         {
-            if (!policyMetricById.TryGetValue(alert.PolicyId, out var metricKey)) continue;
-            var current = metrics.GetValueOrDefault(metricKey, 0);
+            if (!policyById.TryGetValue(alert.PolicyId, out var alertPolicy)) continue;
+            var current = await ComputePolicyValueAsync(alertPolicy, metrics, now, ct);
 
             if (current < alert.Threshold)
             {
@@ -167,7 +167,54 @@ public sealed class AlertEvaluator(
         };
     }
 
-    private async Task<string?> GetAffectedEntitiesJsonAsync(string metricKey, CancellationToken ct)
+    // The UI parses these camelCase — the default (PascalCase) serialization was
+    // why entity rows rendered as "System / N/A" regardless of real data.
+    private static readonly JsonSerializerOptions EntityJson = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
+    /// <summary>Current value for a policy: metric lookup or activity-window count.</summary>
+    public async Task<int> ComputePolicyValueAsync(
+        AlertPolicy policy, Dictionary<string, int> metrics, DateTimeOffset now, CancellationToken ct)
+    {
+        if (policy.Kind != "activity")
+            return metrics.GetValueOrDefault(policy.Metric, 0);
+
+        var pattern = (policy.ActivityPattern ?? "").Trim();
+        if (pattern.Length == 0) return 0;
+        var like = pattern.Replace("*", "%");
+        var since = now.AddMinutes(-Math.Max(1, policy.WindowMinutes));
+        return await db.AuditEvents.CountAsync(
+            e => e.OccurredAt >= since && EF.Functions.Like(e.Activity, like), ct);
+    }
+
+    private async Task<string?> GetAffectedEntitiesJsonAsync(AlertPolicy policy, DateTimeOffset now, CancellationToken ct)
+    {
+        if (policy.Kind == "activity")
+        {
+            var pattern = (policy.ActivityPattern ?? "").Trim();
+            if (pattern.Length == 0) return null;
+            var like = pattern.Replace("*", "%");
+            var since = now.AddMinutes(-Math.Max(1, policy.WindowMinutes));
+            var events = await db.AuditEvents
+                .Where(e => e.OccurredAt >= since && EF.Functions.Like(e.Activity, like))
+                .OrderByDescending(e => e.OccurredAt)
+                .Take(50)
+                .Select(e => new
+                {
+                    e.Id,
+                    UserPrincipalName = e.ActorUpn ?? e.ActorApp,
+                    DeviceName = (string?)null,
+                    Title = e.TargetName != null ? e.Activity + " → " + e.TargetName : e.Activity,
+                    PortalUrl = (string?)null,
+                    DetectedAt = e.OccurredAt,
+                    e.ExternalId,
+                })
+                .ToListAsync(ct);
+            return events.Count == 0 ? null : JsonSerializer.Serialize(events, EntityJson);
+        }
+        return await GetMetricEntitiesJsonAsync(policy.Metric, ct);
+    }
+
+    private async Task<string?> GetMetricEntitiesJsonAsync(string metricKey, CancellationToken ct)
     {
         var open = db.SecurityAlerts.Where(a => !a.IsResolved);
         IQueryable<SecurityAlert> query = metricKey.ToLowerInvariant() switch
@@ -199,6 +246,6 @@ public sealed class AlertEvaluator(
             .ToListAsync(ct);
 
         if (entities.Count == 0) return null;
-        return JsonSerializer.Serialize(entities);
+        return JsonSerializer.Serialize(entities, EntityJson);
     }
 }

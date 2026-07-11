@@ -16,6 +16,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<GraphConfig> GraphConfig => Set<GraphConfig>();
     public DbSet<AlertNote> AlertNotes => Set<AlertNote>();
+    public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -84,6 +85,15 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         {
             entity.HasKey(n => n.Id);
             entity.HasIndex(n => new { n.TargetKind, n.TargetId });
+        });
+
+        modelBuilder.Entity<AuditEvent>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.Source, e.ExternalId }).IsUnique();
+            entity.HasIndex(e => e.OccurredAt);
+            entity.HasIndex(e => e.Activity);
+            entity.Property(e => e.RawJson).HasColumnType("nvarchar(max)");
         });
     }
 }

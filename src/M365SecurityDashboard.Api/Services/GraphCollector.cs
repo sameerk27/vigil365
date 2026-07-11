@@ -61,15 +61,28 @@ public sealed class GraphCollector(
                 }
             }
 
+            // Tenant audit events feed the activity-based alert policies.
+            // Failures here count as a source failure but never sink the run.
+            try
+            {
+                await CollectAuditEventsAsync(ct);
+            }
+            catch (Exception ex)
+            {
+                run.SourceFailures++;
+                failures.Add(new { source = "Tenant audit events", error = Trim(ex.Message, 300) });
+                logger.LogWarning(ex, "Tenant audit event collection failed");
+            }
+
             run.SourceFailureDetails = failures.Count > 0 ? JsonSerializer.Serialize(failures) : null;
             run.Status = run.SourceFailures == sources.Count ? CollectionStatus.Failed : CollectionStatus.Completed;
             run.CompletedAt = DateTimeOffset.UtcNow;
-            
+
             if (run.Status != CollectionStatus.Failed)
             {
                 await CaptureTrendSnapshotAsync(ct);
             }
-            
+
             await db.SaveChangesAsync(ct);
             return run;
         }
@@ -80,6 +93,69 @@ public sealed class GraphCollector(
             run.Error = ex.Message;
             await db.SaveChangesAsync(CancellationToken.None);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Incrementally pull Entra directory-audit records into the AuditEvents
+    /// store — the raw material for activity-based alert policies. Watermarked
+    /// on the newest stored event (with a 10-minute overlap for late arrivals);
+    /// first run looks back 24h. Records are deduped on (Source, ExternalId).
+    /// </summary>
+    private async Task CollectAuditEventsAsync(CancellationToken ct)
+    {
+        var newest = await db.AuditEvents
+            .Where(e => e.Source == "directoryAudit")
+            .MaxAsync(e => (DateTimeOffset?)e.OccurredAt, ct);
+        var since = (newest?.AddMinutes(-10) ?? DateTimeOffset.UtcNow.AddHours(-24))
+            .UtcDateTime.ToString("O");
+
+        var rows = await graph.GetCollectionAsync(
+            WithFilter("/v1.0/auditLogs/directoryAudits?$top=200", $"activityDateTime ge {since}"), ct);
+        if (rows.Count == 0) return;
+
+        var incomingIds = rows.Select(r => Get(r, "id")).Where(id => id != null).Cast<string>().ToList();
+        var known = (await db.AuditEvents
+            .Where(e => e.Source == "directoryAudit" && incomingIds.Contains(e.ExternalId))
+            .Select(e => e.ExternalId)
+            .ToListAsync(ct)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var added = 0;
+        foreach (var r in rows)
+        {
+            var id = Get(r, "id");
+            if (id is null || !known.Add(id)) continue; // dedupe within batch + store
+
+            string? targetName = null;
+            if (r.TryGetProperty("targetResources", out var targets) && targets.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var t in targets.EnumerateArray())
+                {
+                    targetName = Get(t, "displayName") ?? Get(t, "userPrincipalName");
+                    if (targetName != null) break;
+                }
+            }
+
+            db.AuditEvents.Add(new AuditEvent
+            {
+                ExternalId = id,
+                Source = "directoryAudit",
+                Activity = Trim(Get(r, "activityDisplayName") ?? "Unknown activity", 200)!,
+                Category = Trim(Get(r, "category"), 80),
+                ActorUpn = Trim(Get(r, "initiatedBy", "user", "userPrincipalName"), 320),
+                ActorApp = Trim(Get(r, "initiatedBy", "app", "displayName"), 200),
+                TargetName = Trim(targetName, 320),
+                Result = Trim(Get(r, "result"), 20),
+                OccurredAt = GetDate(r, "activityDateTime"),
+                CollectedAt = DateTimeOffset.UtcNow,
+                RawJson = r.GetRawText(),
+            });
+            added++;
+        }
+        if (added > 0)
+        {
+            await db.SaveChangesAsync(ct);
+            logger.LogInformation("Collected {Count} new tenant audit events", added);
         }
     }
 

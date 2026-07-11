@@ -1706,7 +1706,10 @@ app.MapPut("/api/alert-policies/{id:guid}", async (AppDbContext db, Guid id, Ale
     p.Enabled = input.Enabled;
     p.Category = input.Category;
     p.Condition = input.Condition;
+    p.Kind = string.IsNullOrWhiteSpace(input.Kind) ? "metric" : input.Kind;
     p.Metric = input.Metric;
+    p.ActivityPattern = input.ActivityPattern;
+    p.WindowMinutes = input.WindowMinutes <= 0 ? 60 : input.WindowMinutes;
     p.Threshold = input.Threshold;
     p.Severity = input.Severity;
     p.NotifyEmail = input.NotifyEmail;
@@ -1725,6 +1728,32 @@ app.MapDelete("/api/alert-policies/{id:guid}", async (AppDbContext db, Guid id, 
     await audit.WriteAsync("policy.delete", "policy", id.ToString(), $"Deleted policy {p.Name}", ct);
     return Results.NoContent();
 }).RequireAuthorization("RequireAnalyst");
+
+// ── Tenant audit events (activity feed backing activity-based policies) ─────
+app.MapGet("/api/audit-events", async (
+    AppDbContext db, string? search, string? activity, int days = 7,
+    int page = 1, int pageSize = 50, CancellationToken ct = default) =>
+{
+    page = page < 1 ? 1 : page;
+    pageSize = pageSize is < 1 or > 200 ? 50 : pageSize;
+    var since = DateTimeOffset.UtcNow.AddDays(-Math.Clamp(days, 1, 90));
+
+    var q = db.AuditEvents.AsNoTracking().Where(e => e.OccurredAt >= since);
+    if (!string.IsNullOrWhiteSpace(activity))
+        q = q.Where(e => EF.Functions.Like(e.Activity, activity.Replace("*", "%")));
+    if (!string.IsNullOrWhiteSpace(search))
+        q = q.Where(e =>
+            e.Activity.Contains(search) ||
+            (e.ActorUpn != null && e.ActorUpn.Contains(search)) ||
+            (e.TargetName != null && e.TargetName.Contains(search)));
+
+    var total = await q.CountAsync(ct);
+    var items = await q.OrderByDescending(e => e.OccurredAt)
+        .Skip((page - 1) * pageSize).Take(pageSize)
+        .Select(e => new { e.Id, e.Activity, e.Category, e.ActorUpn, e.ActorApp, e.TargetName, e.Result, e.OccurredAt })
+        .ToListAsync(ct);
+    return Results.Ok(new { total, page, pageSize, items });
+});
 
 // Triggered alerts
 app.MapGet("/api/triggered-alerts", async (AppDbContext db, CancellationToken ct) =>

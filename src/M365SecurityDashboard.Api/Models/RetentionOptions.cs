@@ -25,4 +25,8 @@ public sealed class RetentionOptions
     /// <summary>Audit entries. Pruning removes the oldest rows; chain verification
     /// starts from the first remaining hashed entry, so pruning never "breaks" it.</summary>
     public int AuditEntriesDays { get; set; } = 365;
+
+    /// <summary>Collected tenant audit events (directory audits feeding
+    /// activity-based alert policies).</summary>
+    public int TenantAuditEventsDays { get; set; } = 90;
 }

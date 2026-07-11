@@ -167,27 +167,77 @@ public static class AlertingSchema
         ("Service Health Advisory",     "identity", "serviceIssueCount",  1, "medium",   "Active M365 service issues ≥ 1"),
     ];
 
+    /// <summary>
+    /// Activity-based starter pack: alerts on WHAT HAPPENED in the tenant
+    /// (directory-audit activities), not on metric counts. Pattern supports *
+    /// as wildcard against Graph activityDisplayName.
+    /// </summary>
+    private static readonly (string Name, string Category, string Pattern, string Severity)[] ActivityDefaults =
+    [
+        ("Privileged role assignment",        "identity",   "Add member to role",                              "critical"),
+        ("Eligible role assignment (PIM)",    "identity",   "Add eligible member to role",                     "high"),
+        ("App consent granted",               "identity",   "Consent to application",                          "high"),
+        ("Application credential added",      "identity",   "*Certificates and secrets management*",           "high"),
+        ("Conditional Access policy changed", "identity",   "*conditional access policy",                      "high"),
+        ("Federation settings changed",       "identity",   "Set federation settings on domain",               "critical"),
+        ("New application registered",        "identity",   "Add application",                                 "medium"),
+        ("Service principal added",           "identity",   "Add service principal",                           "medium"),
+        ("User deleted",                      "identity",   "Delete user",                                     "medium"),
+        ("Admin password reset",              "identity",   "Reset user password",                             "medium"),
+        ("Account disabled",                  "identity",   "Disable account",                                 "medium"),
+    ];
+
     public static void SeedDefaultPolicies(AppDbContext db)
     {
-        if (db.AlertPolicies.Any()) return;
         var now = DateTimeOffset.UtcNow;
-        foreach (var d in Defaults)
+
+        if (!db.AlertPolicies.Any())
         {
-            db.AlertPolicies.Add(new AlertPolicy
+            foreach (var d in Defaults)
             {
-                Id = Guid.NewGuid(),
-                Name = d.Name,
-                Enabled = true,
-                Category = d.Category,
-                Metric = d.Metric,
-                Threshold = d.Threshold,
-                Severity = d.Severity,
-                Condition = d.Condition,
-                SuppressionMinutes = 60,
-                CreatedAt = now,
-                TriggerCount = 0,
-            });
+                db.AlertPolicies.Add(new AlertPolicy
+                {
+                    Id = Guid.NewGuid(),
+                    Name = d.Name,
+                    Enabled = true,
+                    Category = d.Category,
+                    Metric = d.Metric,
+                    Threshold = d.Threshold,
+                    Severity = d.Severity,
+                    Condition = d.Condition,
+                    SuppressionMinutes = 60,
+                    CreatedAt = now,
+                    TriggerCount = 0,
+                });
+            }
         }
+
+        // Seed the activity pack independently so existing installs (which
+        // already have metric policies) still receive it once.
+        if (!db.AlertPolicies.Any(p => p.Kind == "activity"))
+        {
+            foreach (var a in ActivityDefaults)
+            {
+                db.AlertPolicies.Add(new AlertPolicy
+                {
+                    Id = Guid.NewGuid(),
+                    Name = a.Name,
+                    Enabled = true,
+                    Kind = "activity",
+                    Category = a.Category,
+                    Metric = "",
+                    ActivityPattern = a.Pattern,
+                    WindowMinutes = 60,
+                    Threshold = 1,
+                    Severity = a.Severity,
+                    Condition = $"Activity \"{a.Pattern}\" ≥ 1 in 60m",
+                    SuppressionMinutes = 60,
+                    CreatedAt = now,
+                    TriggerCount = 0,
+                });
+            }
+        }
+
         if (!db.NotificationSettings.Any())
             db.NotificationSettings.Add(new NotificationSettings { Id = 1 });
         db.SaveChanges();

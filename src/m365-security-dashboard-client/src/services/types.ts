@@ -121,7 +121,13 @@ export interface AlertPolicy {
   enabled: boolean;
   category: "identity" | "devices" | "email" | "compliance" | "licenses";
   condition: string;
+  /** "metric" = threshold on a computed count · "activity" = tenant audit events matching a pattern */
+  kind?: "metric" | "activity";
   metric: string;
+  /** Activity name to match (supports * wildcard) — kind=activity */
+  activityPattern?: string | null;
+  /** Sliding match window in minutes — kind=activity */
+  windowMinutes?: number;
   threshold: number;
   severity: "critical" | "high" | "medium" | "low";
   notifyEmail: string;

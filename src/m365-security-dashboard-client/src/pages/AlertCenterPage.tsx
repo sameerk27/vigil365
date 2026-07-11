@@ -73,16 +73,26 @@ function PolicyModal({ policy, onSave, onClose }: {
     licenses:   [{ label: "Expired license count", value: "expiredLicenseCount" }],
   };
 
+  const kind = form.kind ?? "metric";
+
   const handleSave = () => {
     if (!form.name?.trim()) { showToast("Policy name is required", "error"); return; }
+    if (kind === "activity" && !form.activityPattern?.trim()) { showToast("Activity pattern is required for activity policies", "error"); return; }
+    const threshold = Number(form.threshold ?? 1);
+    const windowMinutes = Number(form.windowMinutes ?? 60);
     const policy: AlertPolicy = {
       id: form.id ?? crypto.randomUUID(),
       name: form.name!.trim(),
       enabled: form.enabled ?? true,
       category: form.category ?? "identity",
-      condition: form.condition ?? `${form.metric} >= ${form.threshold}`,
-      metric: form.metric ?? "criticalAlertCount",
-      threshold: Number(form.threshold ?? 1),
+      kind,
+      condition: kind === "activity"
+        ? `Activity "${form.activityPattern!.trim()}" ≥ ${threshold} in ${windowMinutes}m`
+        : (form.condition ?? `${form.metric} >= ${threshold}`),
+      metric: kind === "activity" ? "" : (form.metric ?? "criticalAlertCount"),
+      activityPattern: kind === "activity" ? form.activityPattern!.trim() : null,
+      windowMinutes,
+      threshold,
       severity: form.severity ?? "medium",
       notifyEmail: form.notifyEmail ?? "",
       createdAt: form.createdAt ?? new Date().toISOString(),
@@ -121,16 +131,43 @@ function PolicyModal({ policy, onSave, onClose }: {
             </select>
           </div>
           <div className="policy-field">
-            <label className="policy-label">Metric to Watch</label>
-            <select className="policy-input" value={form.metric ?? ""} onChange={e => set("metric", e.target.value)}>
-              <option value="">Select metric…</option>
-              {(metricOptions[form.category ?? "identity"] ?? []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            <label className="policy-label">Policy Type</label>
+            <select className="policy-input" value={kind} onChange={e => set("kind", e.target.value)}>
+              <option value="metric">Metric threshold — fire when a count crosses a limit</option>
+              <option value="activity">Tenant activity — fire when something happens (audit event)</option>
             </select>
           </div>
-          <div className="policy-field">
-            <label className="policy-label">Threshold (trigger when metric &ge; this value)</label>
-            <input type="number" className="policy-input" min={1} value={form.threshold ?? 1} onChange={e => set("threshold", Number(e.target.value))}/>
-          </div>
+          {kind === "activity" ? (
+            <>
+              <div className="policy-field">
+                <label className="policy-label">Activity to Match (* = wildcard, e.g. "*conditional access policy")</label>
+                <input className="policy-input" value={form.activityPattern ?? ""} onChange={e => set("activityPattern", e.target.value)}
+                  placeholder='e.g. "Add member to role" or "Consent to application"'/>
+              </div>
+              <div className="policy-field">
+                <label className="policy-label">Time Window (minutes)</label>
+                <input type="number" className="policy-input" min={1} value={form.windowMinutes ?? 60} onChange={e => set("windowMinutes", Number(e.target.value))}/>
+              </div>
+              <div className="policy-field">
+                <label className="policy-label">Threshold (fire when &ge; this many matching events in the window)</label>
+                <input type="number" className="policy-input" min={1} value={form.threshold ?? 1} onChange={e => set("threshold", Number(e.target.value))}/>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="policy-field">
+                <label className="policy-label">Metric to Watch</label>
+                <select className="policy-input" value={form.metric ?? ""} onChange={e => set("metric", e.target.value)}>
+                  <option value="">Select metric…</option>
+                  {(metricOptions[form.category ?? "identity"] ?? []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+              <div className="policy-field">
+                <label className="policy-label">Threshold (trigger when metric &ge; this value)</label>
+                <input type="number" className="policy-input" min={1} value={form.threshold ?? 1} onChange={e => set("threshold", Number(e.target.value))}/>
+              </div>
+            </>
+          )}
           <div className="policy-field">
             <label className="policy-label">Severity</label>
             <select className="policy-input" value={form.severity ?? "medium"} onChange={e => set("severity", e.target.value)}>

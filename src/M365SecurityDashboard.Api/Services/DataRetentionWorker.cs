@@ -107,6 +107,13 @@ public sealed class DataRetentionWorker(
                 db.AuditEntries.Where(a => a.Timestamp < cutoff), ct);
         }
 
+        if (o.TenantAuditEventsDays > 0)
+        {
+            var cutoff = now.AddDays(-o.TenantAuditEventsDays);
+            summary.TenantAuditEvents = await DeleteBatchedAsync(db,
+                db.AuditEvents.Where(e => e.OccurredAt < cutoff), ct);
+        }
+
         return summary;
     }
 
@@ -135,13 +142,15 @@ public sealed class DataRetentionWorker(
         public int CollectionRuns { get; set; }
         public int TrendSnapshots { get; set; }
         public int AuditEntries { get; set; }
+        public int TenantAuditEvents { get; set; }
 
         public int TotalDeleted =>
-            ResolvedAlerts + TriggeredAlerts + NotificationLogs + CollectionRuns + TrendSnapshots + AuditEntries;
+            ResolvedAlerts + TriggeredAlerts + NotificationLogs + CollectionRuns + TrendSnapshots + AuditEntries + TenantAuditEvents;
 
         public string Describe() =>
             $"resolved alerts {ResolvedAlerts}, triggered alerts {TriggeredAlerts}, " +
             $"notification logs {NotificationLogs}, collection runs {CollectionRuns}, " +
-            $"trend snapshots {TrendSnapshots}, audit entries {AuditEntries}";
+            $"trend snapshots {TrendSnapshots}, audit entries {AuditEntries}, " +
+            $"tenant audit events {TenantAuditEvents}";
     }
 }

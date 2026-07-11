@@ -365,7 +365,7 @@ public class AlertEvaluatorAutoResolveTests
         Assert.Equal(3, array.GetArrayLength());
         
         var first = array[0];
-        Assert.StartsWith("risky-", first.GetProperty("Title").GetString());
+        Assert.StartsWith("risky-", first.GetProperty("title").GetString()); // camelCase — PascalCase here was the "System / N/A" entity-row bug
     }
 
     /// <summary>No-op <see cref="IHttpClientFactory"/> for tests that never make HTTP calls.</summary>
