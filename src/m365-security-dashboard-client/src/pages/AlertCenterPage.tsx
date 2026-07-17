@@ -453,11 +453,13 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
 }) {
   const { canMutate } = useAuth();
 
-  const [tab, setTab] = useState<AcTab>("dashboard");
+  // The product is alert-first: land an analyst in the open, worst-first queue.
+  // The dashboard remains available when they need the aggregate view.
+  const [tab, setTab] = useState<AcTab>("alerts");
   const [search, setSearch] = useState("");
   const [sevFilter, setSevFilter] = useState("");
   const [catFilter, setCatFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("new");
   const [dateFilter, setDateFilter] = useState<string>("");
   const [assignedFilter, setAssignedFilter] = useState("");
   const [ageFilter, setAgeFilter] = useState("");
@@ -509,8 +511,8 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
   const assignees = useMemo(() => [...new Set(triggeredAlerts.map(a => a.assignedTo).filter((email): email is string => !!email))].sort(), [triggeredAlerts]);
 
   // ── Active alerts: filter → sort → paginate ──────────────────────────────
-  const [sortBy, setSortBy] = useState<"severity" | "policyName" | "triggeredAt" | "status" | "assignedTo">("triggeredAt");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [sortBy, setSortBy] = useState<"severity" | "policyName" | "triggeredAt" | "status" | "assignedTo">("severity");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [pageNum, setPageNum] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const PAGE_SIZE = 25;
