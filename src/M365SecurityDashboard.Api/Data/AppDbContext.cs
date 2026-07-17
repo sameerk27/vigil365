@@ -17,6 +17,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<GraphConfig> GraphConfig => Set<GraphConfig>();
     public DbSet<AlertNote> AlertNotes => Set<AlertNote>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
+    public DbSet<ReportSchedule> ReportSchedules => Set<ReportSchedule>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

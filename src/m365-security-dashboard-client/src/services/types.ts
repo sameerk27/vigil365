@@ -1,4 +1,4 @@
-export type NavPage = "overview" | "recommendations" | "trends" | "identity" | "devices" | "email" | "incidents" | "alertcenter" | "activityfeed" | "compliance" | "servicehealth" | "network" | "licenses" | "conditionalaccess" | "auditlog" | "signinmap" | "users" | "setup";
+export type NavPage = "overview" | "recommendations" | "trends" | "reports" | "identity" | "devices" | "email" | "incidents" | "alertcenter" | "activityfeed" | "compliance" | "servicehealth" | "network" | "licenses" | "conditionalaccess" | "auditlog" | "signinmap" | "users" | "setup";
 export type AlertSeverity = "Informational" | "Low" | "Medium" | "High" | "Critical";
 export type ServiceArea = "EntraId" | "Intune" | "DefenderXdr" | "ExchangeOnline" | "ServiceHealth";
 export type Tone = "good" | "warning" | "error" | "neutral" | "info";
@@ -179,6 +179,34 @@ export interface NotificationSettings {
   fromAddress?: string; defaultRecipient?: string;
   webhookEnabled: boolean; webhookUrl?: string;
   minSeverity: string;
+}
+
+export interface ReportSchedule {
+  id: string;
+  name: string;
+  reportType: string;
+  cadence: "daily" | "weekly" | "monthly";
+  dayOfWeek: number;
+  dayOfMonth: number;
+  hourUtc: number;
+  recipients: string;
+  includeCsv: boolean;
+  enabled: boolean;
+  lastRunAt?: string | null;
+  lastRunStatus?: string | null;
+  createdBy?: string | null;
+  createdAt: string;
+}
+
+export interface DigestMetric {
+  label: string; value: string; delta?: number | null; deltaLabel: string; higherIsWorse: boolean;
+}
+export interface DigestTopAlert {
+  policyName: string; severity: string; condition: string; metricValue: number; triggeredAt: string;
+}
+export interface DigestPreview {
+  subject: string; htmlBody: string; csv?: string | null; generatedAt: string;
+  hasData: boolean; metrics: DigestMetric[]; topAlerts: DigestTopAlert[];
 }
 
 export interface NotificationLogEntry {

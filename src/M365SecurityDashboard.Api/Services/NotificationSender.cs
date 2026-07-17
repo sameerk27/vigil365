@@ -123,6 +123,61 @@ public sealed class NotificationSender(
         }
     }
 
+    /// <summary>
+    /// Sends a scheduled/report email (e.g. the executive digest) over the configured
+    /// SMTP settings, with an optional CSV attachment. Returns (ok, error) rather than
+    /// writing a NotificationLog row (those are keyed to triggered alerts).
+    /// </summary>
+    public async Task<(bool ok, string? error)> SendReportEmailAsync(
+        NotificationSettings cfg, IEnumerable<string> recipients, string subject,
+        string htmlBody, string? csv, string csvFileName, CancellationToken ct)
+    {
+        if (!cfg.EmailEnabled || string.IsNullOrWhiteSpace(cfg.SmtpHost))
+            return (false, "SMTP email is not configured. Set it up in Settings → Notifications first.");
+
+        var to = recipients.Where(r => !string.IsNullOrWhiteSpace(r)).Select(r => r.Trim()).Distinct().ToList();
+        if (to.Count == 0) return (false, "No recipients configured for this report.");
+
+        var smtpPassword = protector.Unprotect(cfg.SmtpPassword);
+        System.IO.MemoryStream? attachmentStream = null;
+        try
+        {
+            using var msg = new MailMessage
+            {
+                From = new MailAddress(cfg.FromAddress ?? cfg.SmtpUsername ?? "vigil365@localhost"),
+                Subject = subject,
+                IsBodyHtml = true,
+                Body = htmlBody,
+            };
+            foreach (var r in to) msg.To.Add(r);
+
+            if (!string.IsNullOrEmpty(csv))
+            {
+                attachmentStream = new System.IO.MemoryStream(Encoding.UTF8.GetBytes(csv));
+                msg.Attachments.Add(new Attachment(attachmentStream, csvFileName, "text/csv"));
+            }
+
+            using var client = new SmtpClient(cfg.SmtpHost, cfg.SmtpPort)
+            {
+                EnableSsl = cfg.SmtpUseSsl,
+                Credentials = string.IsNullOrWhiteSpace(cfg.SmtpUsername)
+                    ? CredentialCache.DefaultNetworkCredentials
+                    : new NetworkCredential(cfg.SmtpUsername, smtpPassword),
+            };
+            await client.SendMailAsync(msg, ct);
+            return (true, null);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Report email '{Subject}' failed", subject);
+            return (false, ex.Message);
+        }
+        finally
+        {
+            attachmentStream?.Dispose();
+        }
+    }
+
     private static string SevColor(string sev) => sev?.ToLowerInvariant() switch
     {
         "critical" => "dc2626",

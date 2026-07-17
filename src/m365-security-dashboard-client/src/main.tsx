@@ -44,6 +44,7 @@ import { SignInLocationsPage } from "./pages/SignInLocationsPage";
 import { UserManagementPage } from "./pages/UserManagementPage";
 import { SetupPage } from "./pages/SetupPage";
 import { TrendsPage } from "./pages/TrendsPage";
+import { ReportsPage } from "./pages/ReportsPage";
 import { ActivityFeedPage } from "./pages/ActivityFeedPage";
 
 // App version — surfaced in the sidebar so the running build is always identifiable.
@@ -76,7 +77,8 @@ const SECTIONS: SectionDef[] = [
   { id:"posture",  label:"Posture",        icon:<CheckSquare size={17}/>,   pages:[
       { id:"compliance",      label:"Compliance" },
       { id:"recommendations", label:"Recommendations" },
-      { id:"trends",          label:"Trends & History" }] },
+      { id:"trends",          label:"Trends & History" },
+      { id:"reports",         label:"Reports" }] },
   { id:"health",   label:"M365 Health",    icon:<Activity size={17}/>,      pages:[
       { id:"servicehealth", label:"Service Health" },
       { id:"network",       label:"Connectivity" }] },
@@ -534,6 +536,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
             {page==="overview"&&<OverviewPage overview={overview} secureScore={secureScore} identity={identity} devices={devices} serviceHealth={serviceHealth} alerts={allAlerts} defenderAlerts={defenderAlerts} securityIncidents={securityIncidents} onAlertClick={setSelectedAlert} onNavigateAlertCenter={()=>setPage("alertcenter")} alertPolicies={alertPolicies} overviewTriggered={triggeredAlerts} healthRefreshKey={refreshKey}/>}
             {page==="recommendations"&&<RecommendationsPage />}
             {page==="trends"&&<TrendsPage />}
+            {page==="reports"&&<ReportsPage />}
             {page==="identity"&&<IdentityPage identity={identity} alerts={allAlerts} privilegedRoles={privilegedRoles} pimData={pimData} mdiAlerts={mdiAlerts} riskDetections={riskDetections} identityHealth={identityHealth} onAlertClick={setSelectedAlert}/>}
             {page==="devices"&&<DevicesPage devices={devices} alerts={allAlerts} mdeVulnerabilities={mdeVulnerabilities} onAlertClick={setSelectedAlert}/>}
             {page==="email"&&<EmailPage alerts={allAlerts} emailProtection={emailProtection} onAlertClick={setSelectedAlert}/>}

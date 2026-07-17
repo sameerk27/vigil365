@@ -122,6 +122,28 @@ export const recApi = {
   },
 };
 
+// ─── Scheduled reports (executive digest) ─────────────────────────────────────
+export const reportApi = {
+  async list(): Promise<import("./types").ReportSchedule[]> {
+    try { const r = await apiFetch(`${apiBase}/api/report-schedules`); return r.ok ? await r.json() : []; } catch { return []; }
+  },
+  async preview(windowDays = 7): Promise<import("./types").DigestPreview | null> {
+    try { const r = await apiFetch(`${apiBase}/api/reports/exec-digest/preview?windowDays=${windowDays}`); return r.ok ? await r.json() : null; } catch { return null; }
+  },
+  async create(s: Partial<import("./types").ReportSchedule>): Promise<import("./types").ReportSchedule | null> {
+    try { const r = await apiFetch(`${apiBase}/api/report-schedules`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(s) }); return r.ok ? await r.json() : null; } catch { return null; }
+  },
+  async update(s: import("./types").ReportSchedule): Promise<import("./types").ReportSchedule | null> {
+    try { const r = await apiFetch(`${apiBase}/api/report-schedules/${s.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(s) }); return r.ok ? await r.json() : null; } catch { return null; }
+  },
+  async remove(id: string): Promise<boolean> {
+    try { const r = await apiFetch(`${apiBase}/api/report-schedules/${id}`, { method: "DELETE" }); return r.ok; } catch { return false; }
+  },
+  async runNow(id: string): Promise<{ ok: boolean; status?: string }> {
+    try { const r = await apiFetch(`${apiBase}/api/report-schedules/${id}/run-now`, { method: "POST" }); return r.ok ? await r.json() : { ok: false }; } catch { return { ok: false }; }
+  },
+};
+
 // ─── In-app cross-navigation ────────────────────────────────────────────────────
 // Lets one page deep-link into another with a search/filter seed (e.g. Alert Center
 // "view user in Identity"). App registers the page-setter; pages read & consume the

@@ -1082,6 +1082,25 @@ select, input { font: inherit; }
 .evidence-event-meta span, .evidence-event-detail { color: var(--color-muted); font-size: 11px; }
 .evidence-event-detail { margin-top: 2px; white-space: pre-wrap; }
 
+/* ── Reports page ────────────────────────────────────────────────────────── */
+.page-intro { font-size: 13px; color: var(--color-muted); margin: 0 0 14px; max-width: 760px; line-height: 1.5; }
+.digest-preview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+@media (max-width: 720px) { .digest-preview-grid { grid-template-columns: 1fr; } }
+.digest-metric-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.digest-metric-table td { padding: 5px 8px; border-bottom: 1px solid var(--color-border-subtle); }
+.digest-metric-table td:first-child { color: var(--color-muted); }
+.digest-metric-table td:last-child { text-align: right; white-space: nowrap; }
+.digest-alert-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.digest-alert-list li { display: flex; align-items: baseline; gap: 8px; font-size: 13px; flex-wrap: wrap; }
+.digest-alert-name { font-weight: 600; }
+.digest-alert-cond { color: var(--color-muted); font-size: 12px; }
+.report-editor { border: 1px solid var(--color-border-subtle); border-radius: 8px; padding: 14px; margin-bottom: 16px; background: var(--color-raised); }
+.report-editor-grid { display: flex; gap: 12px; flex-wrap: wrap; }
+.report-editor label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--color-muted); }
+.report-editor input, .report-editor select { font-size: 13px; padding: 5px 8px; }
+.report-editor input[type="number"] { width: 90px; }
+.btn-danger-icon:hover { color: var(--sev-high-text); }
+
 /* ── Card count badge ────────────────────────────────────────────────────── */
 .card-count {
   display: inline-flex; align-items: center; justify-content: center;
