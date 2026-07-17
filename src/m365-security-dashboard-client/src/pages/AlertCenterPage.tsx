@@ -7,6 +7,7 @@ import { DetailField, KpiTile, Card, Badge, EmptyState, MiniBarChart, ExportDrop
 import { CollectionHealthCard } from "../components/CollectionHealthCard";
 import { CollectionStatusBanner } from "../components/CollectionStatusBanner";
 import { CollectionRunHistory } from "../components/CollectionRunHistory";
+import { FilterPresets } from "../components/FilterPresets";
 import { relTime, fmtDate, fmtShort, sevTone } from "../services/utils";
 
 /** Human-readable status labels — raw enums like "auto_resolved" never reach the UI. */
@@ -458,6 +459,8 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
   const [catFilter, setCatFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [dateFilter, setDateFilter] = useState<string>("");
+  const [assignedFilter, setAssignedFilter] = useState("");
+  const [ageFilter, setAgeFilter] = useState("");
   const [editPolicy, setEditPolicy] = useState<Partial<AlertPolicy> | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [selectedTriggered, setSelectedTriggered] = useState<TriggeredAlert | null>(null);
@@ -503,6 +506,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
   }, [triggeredAlerts]);
 
   const catColors: Record<string, string> = { identity: "#3b82f6", devices: "#8b5cf6", email: "#f59e0b", compliance: "#10b981", licenses: "#ec4899" };
+  const assignees = useMemo(() => [...new Set(triggeredAlerts.map(a => a.assignedTo).filter((email): email is string => !!email))].sort(), [triggeredAlerts]);
 
   // ── Active alerts: filter → sort → paginate ──────────────────────────────
   const [sortBy, setSortBy] = useState<"severity" | "policyName" | "triggeredAt" | "status" | "assignedTo">("triggeredAt");
@@ -524,6 +528,18 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
     if (catFilter) items = items.filter(a => a.category === catFilter);
     if (statusFilter) items = items.filter(a => a.status === statusFilter);
     if (dateFilter) items = items.filter(a => a.triggeredAt.startsWith(dateFilter));
+    if (assignedFilter) items = items.filter(a => a.assignedTo === assignedFilter);
+    if (ageFilter) {
+      const now = Date.now();
+      items = items.filter(a => {
+        const ageHours = (now - new Date(a.triggeredAt).getTime()) / 3_600_000;
+        return ageFilter === "under4" ? ageHours < 4
+          : ageFilter === "4to24" ? ageHours >= 4 && ageHours < 24
+          : ageFilter === "over24" ? ageHours >= 24
+          : ageFilter === "overdue" ? a.status === "new" && ageHours >= 24
+          : true;
+      });
+    }
     const sevRank: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
     const statusRank: Record<string, number> = { new: 0, acknowledged: 1, snoozed: 2, auto_resolved: 3, resolved: 4 };
     const dir = sortDir === "asc" ? 1 : -1;
@@ -536,7 +552,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
         default:           return (new Date(a.triggeredAt).getTime() - new Date(b.triggeredAt).getTime()) * dir;
       }
     });
-  }, [triggeredAlerts, search, sevFilter, catFilter, statusFilter, dateFilter, sortBy, sortDir]);
+  }, [triggeredAlerts, search, sevFilter, catFilter, statusFilter, dateFilter, assignedFilter, ageFilter, sortBy, sortDir]);
 
   const pageCount = Math.max(1, Math.ceil(filteredTA.length / PAGE_SIZE));
   const safePage = Math.min(pageNum, pageCount);
@@ -924,8 +940,23 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                 <option value="auto_resolved">Auto-resolved</option>
                 <option value="resolved">Resolved</option>
               </select>
+              <select className="filter-sel" value={assignedFilter} onChange={e=>setAssignedFilter(e.target.value)}>
+                <option value="">All owners</option>
+                {assignees.map(email => <option key={email} value={email}>{email}</option>)}
+              </select>
+              <select className="filter-sel" value={ageFilter} onChange={e=>setAgeFilter(e.target.value)}>
+                <option value="">Any age</option>
+                <option value="under4">Under 4 hours</option>
+                <option value="4to24">4–24 hours</option>
+                <option value="over24">Over 24 hours</option>
+                <option value="overdue">Unacknowledged over 24 hours</option>
+              </select>
+              <FilterPresets pageKey="alert-center" filters={{ search, sevFilter, catFilter, statusFilter, dateFilter, assignedFilter, ageFilter }} onLoad={f => {
+                setSearch(f.search ?? ""); setSevFilter(f.sevFilter ?? ""); setCatFilter(f.catFilter ?? "");
+                setStatusFilter(f.statusFilter ?? ""); setDateFilter(f.dateFilter ?? ""); setAssignedFilter(f.assignedFilter ?? ""); setAgeFilter(f.ageFilter ?? ""); setPageNum(1);
+              }}/>
               <ExportDropdown rows={filteredTA.map(a=>({ Policy:a.policyName, Severity:a.severity, Category:a.category, Condition:a.condition, MetricValue:a.metricValue, Threshold:a.threshold, Triggered:a.triggeredAt, Status:a.status }))} filename="triggered-alerts.csv"/>
-              {(search||sevFilter||catFilter||statusFilter||dateFilter)&&<button className="btn-apply" style={{padding:"5px 10px",fontSize:12}} onClick={()=>{setSearch("");setSevFilter("");setCatFilter("");setStatusFilter("");setDateFilter("");}}>Clear</button>}
+              {(search||sevFilter||catFilter||statusFilter||dateFilter||assignedFilter||ageFilter)&&<button className="btn-apply" style={{padding:"5px 10px",fontSize:12}} onClick={()=>{setSearch("");setSevFilter("");setCatFilter("");setStatusFilter("");setDateFilter("");setAssignedFilter("");setAgeFilter("");setPageNum(1);}}>Clear</button>}
             </div>
             }>
           {canMutate && selected.size > 0 && (
