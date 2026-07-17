@@ -5,6 +5,9 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.Identity.Web;
+using Serilog;
+using Serilog.Events;
+using Serilog.Formatting.Compact;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -12,20 +15,30 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseWindowsService();
 
-// Structured logging: single-line JSON to stdout outside Development so log
-// shippers (Docker, journald, Splunk/Sentinel forwarders) can parse without
-// multi-line heuristics. Scopes carry the per-request correlation id.
-// Set Logging:Json=false to fall back to human-readable console output.
-if (builder.Configuration.GetValue("Logging:Json", !builder.Environment.IsDevelopment()))
-{
-    builder.Logging.ClearProviders();
-    builder.Logging.AddJsonConsole(o =>
-    {
-        o.IncludeScopes = true;
-        o.UseUtcTimestamp = true;
-        o.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ";
-    });
-}
+// JSON logs preserve correlation IDs and structured fields for Docker,
+// journald, Splunk, or Sentinel. Files roll daily and at a size limit so logs
+// remain useful without consuming the host disk indefinitely.
+var configuredLogPath = builder.Configuration["Logging:File:Path"] ?? "logs/vigil365-.json";
+var logPath = Path.GetFullPath(configuredLogPath, AppContext.BaseDirectory);
+Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+var retainedLogFiles = Math.Max(1, builder.Configuration.GetValue("Logging:File:RetainedFileCountLimit", 14));
+var maxLogFileBytes = Math.Max(1_048_576, builder.Configuration.GetValue("Logging:File:FileSizeLimitBytes", 10 * 1024 * 1024));
+
+builder.Host.UseSerilog((context, _, logger) => logger
+    .MinimumLevel.Information()
+    .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.AspNetCore.Hosting", LogEventLevel.Warning)
+    .Enrich.FromLogContext()
+    .Enrich.WithProperty("Application", "Vigil365")
+    .Enrich.WithProperty("Environment", context.HostingEnvironment.EnvironmentName)
+    .WriteTo.Console(new RenderedCompactJsonFormatter())
+    .WriteTo.File(new RenderedCompactJsonFormatter(), logPath,
+        rollingInterval: RollingInterval.Day,
+        fileSizeLimitBytes: maxLogFileBytes,
+        rollOnFileSizeLimit: true,
+        retainedFileCountLimit: retainedLogFiles,
+        shared: true,
+        flushToDiskInterval: TimeSpan.FromSeconds(1)));
 builder.Services.Configure<GraphOptions>(builder.Configuration.GetSection("Graph"));
 builder.Services.Configure<AlertingOptions>(builder.Configuration.GetSection("Alerting"));
 builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection("Retention"));

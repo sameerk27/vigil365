@@ -31,7 +31,7 @@ ENV ASPNETCORE_URLS=http://+:8080 \
     DataProtection__KeyPath=/keys
 
 # Persist the Data Protection key ring so encrypted secrets survive restarts.
-VOLUME ["/keys"]
+VOLUME ["/keys", "/app/logs"]
 EXPOSE 8080
 
 ENTRYPOINT ["dotnet", "M365SecurityDashboard.Api.dll"]

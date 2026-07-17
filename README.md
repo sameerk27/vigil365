@@ -231,7 +231,7 @@ HTTPS URL (e.g. `https://vigil365.yourcompany.com`).
 
 - The Graph client secret is **never** committed to source. Use .NET User Secrets (dev) or `appsettings.Production.json` / environment variables (prod, both gitignored).
 - Notification secrets stored in the database (SMTP password, Teams/Slack & generic webhook URLs) are **encrypted at rest with the Windows Data Protection API (DPAPI), machine scope** — a leaked database row cannot be decrypted on another machine. Secrets are decrypted only in memory at send time and the SMTP password is never returned by the API.
-- **Recommended:** use **certificate-based authentication** instead of a client secret for production (planned/optional). A non-exportable certificate in the Windows cert store removes the plaintext shared secret entirely. _(Not yet wired into the app — track this in Issues.)_
+- **Recommended:** use **certificate-based authentication** instead of a client secret for production. A non-exportable certificate in the Windows cert store removes the plaintext shared secret entirely; Vigil365 supports a certificate thumbprint or PFX path, with a secret only as a fallback.
 
 ### Host hardening checklist (your responsibility)
 
@@ -250,6 +250,8 @@ The security of this app is only as good as the box it runs on. Before productio
 
 - Rate limiting is handled automatically (429 `Retry-After` respected).
 - A failed individual Graph source does not stop the whole collection run; each card degrades independently.
+- Logs are newline-delimited JSON on stdout and in `logs/vigil365-.json` beside the app. Files roll daily (and at 10 MB) with the newest 14 files retained. Configure `Logging__File__Path`, `Logging__File__RetainedFileCountLimit`, and `Logging__File__FileSizeLimitBytes` for the host policy. Docker persists them in the `vigil365-logs` volume at `/app/logs`.
+- Log events include request correlation IDs and structured fields. Do not put access tokens, client secrets, or notification credentials in log messages.
 
 > Found a security issue? See [SECURITY.md](SECURITY.md) — please report privately, not in a public issue.
 

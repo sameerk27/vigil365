@@ -31,10 +31,13 @@ services:
       AzureAd__Audience: "api://${CLIENT_ID}"
       Auth__RedirectUri: "${REDIRECT_URI:-http://localhost:8080}"
       Auth__BootstrapAdminEmail: "${ADMIN_EMAIL}"
+      Logging__File__Path: "/app/logs/vigil365-.json"
     volumes:
       - dp-keys:/keys
+      - vigil365-logs:/app/logs
     restart: unless-stopped
 
 volumes:
   mssql-data:
   dp-keys:
+  vigil365-logs:
