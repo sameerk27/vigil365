@@ -4,6 +4,7 @@ import { AlertPolicy, TriggeredAlert, NotificationSettings, NotificationLogEntry
 import { acApi, recApi, useAuth, crossNavigate } from "../services/api";
 import { showToast } from "../services/toast";
 import { DetailField, KpiTile, Card, Badge, EmptyState, MiniBarChart, ExportDropdown, ProgressBar, CopyButton, LoadingSkeleton, TriageSection } from "../components/SharedComponents";
+import { CollectionHealthCard } from "../components/CollectionHealthCard";
 import { relTime, fmtDate, fmtShort, sevTone } from "../services/utils";
 
 /** Human-readable status labels — raw enums like "auto_resolved" never reach the UI. */
@@ -797,6 +798,10 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
             <KpiTile icon={<AlertCircle size={18}/>}  label="ACTIVE ALERTS"     value={activeAlertsCount} sub="Unacknowledged"                              tone={activeAlertsCount>0?"error":"good"} onClick={() => { setSevFilter(""); setDateFilter(""); setStatusFilter("new"); setTab("alerts"); }}/>
             <KpiTile icon={<Clock size={18}/>}        label="TRIGGERED TODAY"   value={triggeredToday}    sub={fmtShort(new Date().toISOString())}          tone={triggeredToday>0?"warning":"good"} onClick={() => { setSevFilter(""); setStatusFilter(""); setDateFilter(new Date().toLocaleDateString("en-CA")); setTab("alerts"); }}/>
             <KpiTile icon={<ShieldAlert size={18}/>}  label="CRITICAL ALERTS"   value={criticalCount}     sub="Severity: critical"                          tone={criticalCount>0?"error":"good"} onClick={() => { setDateFilter(""); setSevFilter("critical"); setStatusFilter("new"); setTab("alerts"); }}/>
+          </div>
+
+          <div className="ac-collection-health">
+            <CollectionHealthCard refreshKey={triggeredAlerts.length}/>
           </div>
 
           <div className="mid-row">

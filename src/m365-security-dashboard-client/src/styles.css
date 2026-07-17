@@ -488,6 +488,7 @@ select, input { font: inherit; }
 
 /* ── Mid Row ─────────────────────────────────────────────────────────────── */
 .mid-row { display: grid; grid-template-columns: 2fr 1fr 1.6fr; gap: 16px; }
+.ac-collection-health { margin-top: 16px; }
 
 /* Secure Score */
 .score-hero { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
