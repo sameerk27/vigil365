@@ -6,6 +6,7 @@ import { showToast } from "../services/toast";
 import { DetailField, KpiTile, Card, Badge, EmptyState, MiniBarChart, ExportDropdown, ProgressBar, CopyButton, LoadingSkeleton, TriageSection } from "../components/SharedComponents";
 import { CollectionHealthCard } from "../components/CollectionHealthCard";
 import { CollectionStatusBanner } from "../components/CollectionStatusBanner";
+import { CollectionRunHistory } from "../components/CollectionRunHistory";
 import { relTime, fmtDate, fmtShort, sevTone } from "../services/utils";
 
 /** Human-readable status labels — raw enums like "auto_resolved" never reach the UI. */
@@ -15,7 +16,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 export const fmtStatus = (s: string) => STATUS_LABELS[s] ?? s.replace(/_/g, " ");
 
-type AcTab = "dashboard" | "alerts" | "policies" | "templates" | "coverage" | "notifications";
+type AcTab = "dashboard" | "alerts" | "policies" | "templates" | "coverage" | "notifications" | "runs";
 
 export const POLICY_TEMPLATES_CATALOG = [
   { name: "Critical Alerts Monitor",   desc: "Triggers when any critical security alert is detected",              metric: "criticalAlertCount", threshold: 1, severity: "critical" as const, category: "identity"   as const },
@@ -778,9 +779,9 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
 
       {/* Tabs — underline style so they read as a level below the section tabs */}
       <div className="ac-tabs ac-tabs-underline" role="tablist" aria-label="Alert Center views">
-        {(["dashboard","alerts","policies","templates","coverage","notifications"] as AcTab[]).map(t => (
+        {(["dashboard","alerts","policies","templates","coverage","notifications","runs"] as AcTab[]).map(t => (
           <button key={t} className={`ac-tab${tab===t?" active":""}`} onClick={() => { setTab(t); if (t === "alerts" || t === "dashboard") refresh(); }}>
-            {t === "dashboard" ? "Dashboard" : t === "alerts" ? "Active Alerts" : t === "policies" ? "Policies" : t === "templates" ? "Templates" : t === "coverage" ? "Coverage Scorecard" : "Notifications"}
+            {t === "dashboard" ? "Dashboard" : t === "alerts" ? "Active Alerts" : t === "policies" ? "Policies" : t === "templates" ? "Templates" : t === "coverage" ? "Coverage Scorecard" : t === "notifications" ? "Notifications" : "Collection Runs"}
           </button>
         ))}
       </div>
@@ -790,6 +791,9 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
 
       {/* ── TAB: Notifications ── */}
       {tab === "notifications" && <NotificationSettingsTab/>}
+
+      {/* ── TAB: Collection Runs ── */}
+      {tab === "runs" && <CollectionRunHistory/>}
 
       {/* ── TAB: Dashboard ── */}
       {tab === "dashboard" && (

@@ -1070,6 +1070,8 @@ select, input { font: inherit; }
   background: var(--status-error-bg); border: 1px solid var(--status-error-border); color: var(--status-error-text);
 }
 .collector-status-banner { margin-bottom: 12px; }
+.collection-failure-details summary { cursor: pointer; color: var(--sev-medium-text); }
+.collection-failure-details pre { max-width: 340px; max-height: 120px; margin: 6px 0; overflow: auto; white-space: pre-wrap; font: inherit; font-size: 11px; color: var(--color-muted); }
 
 /* ── Card count badge ────────────────────────────────────────────────────── */
 .card-count {
