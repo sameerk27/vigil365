@@ -238,6 +238,39 @@ public static class AlertingSchema
             }
         }
 
+        // Anomaly starter pack: fire on spikes vs the tenant's own 30-day
+        // baseline, not on absolute numbers — catches "3× more risky users
+        // than normal" even in tenants where "normal" isn't zero.
+        if (!db.AlertPolicies.Any(p => p.Kind == "anomaly"))
+        {
+            (string Name, string Metric, int Floor, string Severity)[] anomalies =
+            [
+                ("Risky user spike",           "riskyUsersCount",          3,  "high"),
+                ("High-severity alert spike",  "highAlertCount",           10, "high"),
+                ("Non-compliant device spike", "nonCompliantDevicesCount", 5,  "medium"),
+            ];
+            foreach (var a in anomalies)
+            {
+                db.AlertPolicies.Add(new AlertPolicy
+                {
+                    Id = Guid.NewGuid(),
+                    Name = a.Name,
+                    Enabled = true,
+                    Kind = "anomaly",
+                    Category = "identity",
+                    Metric = a.Metric,
+                    Threshold = a.Floor,
+                    BaselineMultiplier = 3.0,
+                    BaselineDays = 30,
+                    Severity = a.Severity,
+                    Condition = $"{a.Metric} ≥ 3× 30-day baseline (floor {a.Floor})",
+                    SuppressionMinutes = 60,
+                    CreatedAt = now,
+                    TriggerCount = 0,
+                });
+            }
+        }
+
         if (!db.NotificationSettings.Any())
             db.NotificationSettings.Add(new NotificationSettings { Id = 1 });
         db.SaveChanges();

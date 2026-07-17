@@ -70,6 +70,12 @@ namespace M365SecurityDashboard.Api.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<int>("BaselineDays")
+                        .HasColumnType("int");
+
+                    b.Property<double>("BaselineMultiplier")
+                        .HasColumnType("float");
+
                     b.Property<string>("Category")
                         .IsRequired()
                         .HasMaxLength(40)

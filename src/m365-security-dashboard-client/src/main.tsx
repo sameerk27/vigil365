@@ -44,6 +44,7 @@ import { SignInLocationsPage } from "./pages/SignInLocationsPage";
 import { UserManagementPage } from "./pages/UserManagementPage";
 import { SetupPage } from "./pages/SetupPage";
 import { TrendsPage } from "./pages/TrendsPage";
+import { ActivityFeedPage } from "./pages/ActivityFeedPage";
 
 // App version — surfaced in the sidebar so the running build is always identifiable.
 export const APP_VERSION = "1.0.0";
@@ -62,8 +63,9 @@ type SectionDef = {
 const SECTIONS: SectionDef[] = [
   { id:"overview", label:"Overview",       icon:<Home size={17}/>,          pages:[{ id:"overview", label:"Overview" }] },
   { id:"alerts",   label:"Alerts",         icon:<AlertTriangle size={17}/>, pages:[
-      { id:"incidents",   label:"Alert Queue" },
-      { id:"alertcenter", label:"Alert Center" }] },
+      { id:"incidents",    label:"Alert Queue" },
+      { id:"alertcenter",  label:"Alert Center" },
+      { id:"activityfeed", label:"Tenant Activity" }] },
   { id:"identity", label:"Identity",       icon:<Users size={17}/>,         pages:[
       { id:"identity",          label:"Overview" },
       { id:"signinmap",         label:"Sign-in Locations" },
@@ -538,6 +540,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
             {page==="incidents"&&<IncidentsPage alerts={allAlerts} serviceHealth={serviceHealth} defenderAlerts={defenderAlerts} securityIncidents={securityIncidents} onAlertClick={setSelectedAlert}/>}
             {page==="alertcenter"&&<AlertCenterPage policies={alertPolicies} triggeredAlerts={triggeredAlerts} onChanged={refreshAlertCenter}
               deepLinkAlertId={pendingTriggeredId} onDeepLinkConsumed={() => setPendingTriggeredId(null)}/>}
+            {page==="activityfeed"&&<ActivityFeedPage/>}
             {page==="compliance"&&<CompliancePage secureScore={secureScore} overview={overview} dlpAlerts={dlpAlerts} purview={purview} mcasAlerts={mcasAlerts} insiderRisk={insiderRisk} attackSimulation={attackSimulation} identity={identity} devices={devices} ca={conditionalAccess} securityIncidents={securityIncidents} privilegedRoles={privilegedRoles} emailProtection={emailProtection}/>}
             {page==="servicehealth"&&<ServiceHealthPage serviceHealth={serviceHealth}/>}
             {page==="network"&&<NetworkPage serviceHealth={serviceHealth} signInLocations={signInLocations}/>}
@@ -547,6 +550,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
             {page==="signinmap"&&<SignInLocationsPage data={signInLocations}/>}
             {page==="users"&&<UserManagementPage/>}
             {page==="setup"&&<SetupPage/>}
+            {page==="activityfeed"&&<ActivityFeedPage/>}
           </>
         )}
       </div>

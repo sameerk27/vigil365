@@ -36,6 +36,15 @@ public class ActivityPolicyTests
         SuppressionMinutes = 60, CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
     };
 
+    private static AlertPolicy AnomalyPolicy(string metric, int threshold = 10, double multiplier = 3, int baselineDays = 30) => new()
+    {
+        Id = Guid.NewGuid(), Name = $"Spike: {metric}", Enabled = true, Kind = "anomaly",
+        Category = "identity", Metric = metric, Threshold = threshold,
+        BaselineMultiplier = multiplier, BaselineDays = baselineDays,
+        Severity = "high", Condition = $"{metric} ≥ {threshold} and ≥ {multiplier}× {baselineDays}d baseline",
+        SuppressionMinutes = 60, CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
+    };
+
     private static void AddEvent(AppDbContext db, string activity, DateTimeOffset when, string? actor = "admin@contoso.com", string? target = null)
     {
         db.AuditEvents.Add(new AuditEvent
@@ -45,6 +54,21 @@ public class ActivityPolicyTests
             Result = "success", OccurredAt = when, CollectedAt = DateTimeOffset.UtcNow,
         });
         db.SaveChanges();
+    }
+
+    private static void AddTrend(AppDbContext db, DateTimeOffset capturedAt, int failedSignInProxy)
+    {
+        db.TrendSnapshots.Add(new TrendSnapshot
+        {
+            CapturedAt = capturedAt,
+            HighAlertsCount = failedSignInProxy,
+            CriticalAlertsCount = failedSignInProxy,
+            RiskyUsersCount = failedSignInProxy,
+            NonCompliantDevicesCount = failedSignInProxy,
+            ComplianceIssuesCount = failedSignInProxy,
+            MfaCoveragePct = 95,
+            SecureScorePct = 70,
+        });
     }
 
     [Fact]
@@ -116,5 +140,44 @@ public class ActivityPolicyTests
         await evaluator.EvaluateAsync(CancellationToken.None);
         await evaluator.EvaluateAsync(CancellationToken.None);
         Assert.Equal("auto_resolved", (await db.TriggeredAlerts.SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task AnomalyPolicy_Fires_WhenLatestTrendSpikesAboveBaselineAndFloor()
+    {
+        using var db = TestAppDbContextFactory.Create();
+        db.AlertPolicies.Add(AnomalyPolicy("highAlertCount", threshold: 10, multiplier: 3, baselineDays: 30));
+        var now = DateTimeOffset.UtcNow;
+        AddTrend(db, now.AddDays(-10), 4);
+        AddTrend(db, now.AddDays(-8), 5);
+        AddTrend(db, now.AddDays(-6), 3);
+        AddTrend(db, now.AddMinutes(-5), 20);
+        await db.SaveChangesAsync();
+
+        var fired = await BuildEvaluator(db).EvaluateAsync(CancellationToken.None);
+
+        Assert.Equal(1, fired);
+        var alert = await db.TriggeredAlerts.SingleAsync();
+        Assert.Equal(20, alert.MetricValue);
+        Assert.Contains("highAlertCount", alert.AffectedEntities);
+        Assert.Contains("baselineAverage", alert.AffectedEntities);
+    }
+
+    [Fact]
+    public async Task AnomalyPolicy_DoesNotFire_WhenLatestDoesNotClearBaselineMultiplier()
+    {
+        using var db = TestAppDbContextFactory.Create();
+        db.AlertPolicies.Add(AnomalyPolicy("highAlertCount", threshold: 10, multiplier: 3, baselineDays: 30));
+        var now = DateTimeOffset.UtcNow;
+        AddTrend(db, now.AddDays(-10), 8);
+        AddTrend(db, now.AddDays(-8), 9);
+        AddTrend(db, now.AddDays(-6), 10);
+        AddTrend(db, now.AddMinutes(-5), 20);
+        await db.SaveChangesAsync();
+
+        var fired = await BuildEvaluator(db).EvaluateAsync(CancellationToken.None);
+
+        Assert.Equal(0, fired);
+        Assert.Empty(await db.TriggeredAlerts.ToListAsync());
     }
 }

@@ -171,11 +171,14 @@ public sealed class AlertEvaluator(
     // why entity rows rendered as "System / N/A" regardless of real data.
     private static readonly JsonSerializerOptions EntityJson = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
-    /// <summary>Current value for a policy: metric lookup or activity-window count.</summary>
+    /// <summary>Current value for a policy: metric lookup, activity-window count, or anomaly spike value.</summary>
     public async Task<int> ComputePolicyValueAsync(
         AlertPolicy policy, Dictionary<string, int> metrics, DateTimeOffset now, CancellationToken ct)
     {
-        if (policy.Kind != "activity")
+        if (policy.Kind.Equals("anomaly", StringComparison.OrdinalIgnoreCase))
+            return await ComputeAnomalyPolicyValueAsync(policy, now, ct);
+
+        if (!policy.Kind.Equals("activity", StringComparison.OrdinalIgnoreCase))
             return metrics.GetValueOrDefault(policy.Metric, 0);
 
         var pattern = (policy.ActivityPattern ?? "").Trim();
@@ -188,7 +191,7 @@ public sealed class AlertEvaluator(
 
     private async Task<string?> GetAffectedEntitiesJsonAsync(AlertPolicy policy, DateTimeOffset now, CancellationToken ct)
     {
-        if (policy.Kind == "activity")
+        if (policy.Kind.Equals("activity", StringComparison.OrdinalIgnoreCase))
         {
             var pattern = (policy.ActivityPattern ?? "").Trim();
             if (pattern.Length == 0) return null;
@@ -211,8 +214,82 @@ public sealed class AlertEvaluator(
                 .ToListAsync(ct);
             return events.Count == 0 ? null : JsonSerializer.Serialize(events, EntityJson);
         }
+        if (policy.Kind.Equals("anomaly", StringComparison.OrdinalIgnoreCase))
+        {
+            var details = await GetAnomalyDetailsAsync(policy, now, ct);
+            return details is null ? null : JsonSerializer.Serialize(new[] { details }, EntityJson);
+        }
         return await GetMetricEntitiesJsonAsync(policy.Metric, ct);
     }
+
+    private async Task<int> ComputeAnomalyPolicyValueAsync(AlertPolicy policy, DateTimeOffset now, CancellationToken ct)
+    {
+        var details = await GetAnomalyDetailsAsync(policy, now, ct);
+        return details?.CurrentValueRounded ?? 0;
+    }
+
+    private async Task<AnomalyDetails?> GetAnomalyDetailsAsync(AlertPolicy policy, DateTimeOffset now, CancellationToken ct)
+    {
+        var metric = (policy.Metric ?? "").Trim();
+        if (metric.Length == 0) return null;
+
+        var latest = await db.TrendSnapshots
+            .OrderByDescending(s => s.CapturedAt)
+            .FirstOrDefaultAsync(ct);
+        if (latest is null) return null;
+
+        var baselineDays = Math.Max(1, policy.BaselineDays);
+        var baselineStart = now.AddDays(-baselineDays);
+        var baselineEnd = now.AddHours(-24);
+        if (baselineEnd <= baselineStart) return null;
+
+        var baselineSnapshots = await db.TrendSnapshots
+            .Where(s => s.CapturedAt >= baselineStart && s.CapturedAt < baselineEnd)
+            .ToListAsync(ct);
+        if (baselineSnapshots.Count == 0) return null;
+
+        var current = GetTrendValue(latest, metric);
+        var baselineAverage = baselineSnapshots.Average(s => GetTrendValue(s, metric));
+        var baselineFloor = Math.Max(1.0, baselineAverage);
+        var multiplier = policy.BaselineMultiplier <= 0 ? 3.0 : policy.BaselineMultiplier;
+        var requiredByBaseline = baselineFloor * multiplier;
+        var absoluteThreshold = Math.Max(1, policy.Threshold);
+
+        if (current < absoluteThreshold || current < requiredByBaseline) return null;
+
+        return new AnomalyDetails(
+            metric,
+            Math.Round(current, 2),
+            (int)Math.Round(current, MidpointRounding.AwayFromZero),
+            Math.Round(baselineAverage, 2),
+            multiplier,
+            baselineDays,
+            latest.CapturedAt,
+            $"Anomalous {metric}: {current:0.##} vs {baselineAverage:0.##} baseline");
+    }
+
+    private static double GetTrendValue(TrendSnapshot snapshot, string metricKey) =>
+        metricKey.ToLowerInvariant() switch
+        {
+            "riskyuserscount" => snapshot.RiskyUsersCount,
+            "mfacoveragepct" => snapshot.MfaCoveragePct,
+            "noncompliantcount" or "noncompliantdevicescount" => snapshot.NonCompliantDevicesCount,
+            "criticalalertcount" or "criticalalertscount" => snapshot.CriticalAlertsCount,
+            "highalertcount" or "highalertscount" => snapshot.HighAlertsCount,
+            "securescorepct" => snapshot.SecureScorePct,
+            "complianceissuescount" => snapshot.ComplianceIssuesCount,
+            _ => 0
+        };
+
+    private sealed record AnomalyDetails(
+        string Metric,
+        double CurrentValue,
+        int CurrentValueRounded,
+        double BaselineAverage,
+        double BaselineMultiplier,
+        int BaselineDays,
+        DateTimeOffset DetectedAt,
+        string Title);
 
     private async Task<string?> GetMetricEntitiesJsonAsync(string metricKey, CancellationToken ct)
     {

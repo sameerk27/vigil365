@@ -80,6 +80,8 @@ function PolicyModal({ policy, onSave, onClose }: {
     if (kind === "activity" && !form.activityPattern?.trim()) { showToast("Activity pattern is required for activity policies", "error"); return; }
     const threshold = Number(form.threshold ?? 1);
     const windowMinutes = Number(form.windowMinutes ?? 60);
+    const baselineMultiplier = Number(form.baselineMultiplier ?? 3);
+    const baselineDays = Number(form.baselineDays ?? 30);
     const policy: AlertPolicy = {
       id: form.id ?? crypto.randomUUID(),
       name: form.name!.trim(),
@@ -88,10 +90,14 @@ function PolicyModal({ policy, onSave, onClose }: {
       kind,
       condition: kind === "activity"
         ? `Activity "${form.activityPattern!.trim()}" ≥ ${threshold} in ${windowMinutes}m`
+        : kind === "anomaly"
+        ? `${form.metric} ≥ ${threshold} and ≥ ${baselineMultiplier}× ${baselineDays}d baseline`
         : (form.condition ?? `${form.metric} >= ${threshold}`),
       metric: kind === "activity" ? "" : (form.metric ?? "criticalAlertCount"),
       activityPattern: kind === "activity" ? form.activityPattern!.trim() : null,
       windowMinutes,
+      baselineMultiplier,
+      baselineDays,
       threshold,
       severity: form.severity ?? "medium",
       notifyEmail: form.notifyEmail ?? "",
@@ -135,6 +141,7 @@ function PolicyModal({ policy, onSave, onClose }: {
             <select className="policy-input" value={kind} onChange={e => set("kind", e.target.value)}>
               <option value="metric">Metric threshold — fire when a count crosses a limit</option>
               <option value="activity">Tenant activity — fire when something happens (audit event)</option>
+              <option value="anomaly">Anomaly — fire when a trend spikes above baseline</option>
             </select>
           </div>
           {kind === "activity" ? (
@@ -151,6 +158,30 @@ function PolicyModal({ policy, onSave, onClose }: {
               <div className="policy-field">
                 <label className="policy-label">Threshold (fire when &ge; this many matching events in the window)</label>
                 <input type="number" className="policy-input" min={1} value={form.threshold ?? 1} onChange={e => set("threshold", Number(e.target.value))}/>
+              </div>
+            </>
+          ) : kind === "anomaly" ? (
+            <>
+              <div className="policy-field">
+                <label className="policy-label">Trend Metric to Watch</label>
+                <select className="policy-input" value={form.metric ?? ""} onChange={e => set("metric", e.target.value)}>
+                  <option value="">Select metric…</option>
+                  {(metricOptions[form.category ?? "identity"] ?? []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  <option value="complianceIssuesCount">Compliance issues</option>
+                  <option value="secureScorePct">Secure score percentage</option>
+                </select>
+              </div>
+              <div className="policy-field">
+                <label className="policy-label">Absolute Floor (latest value must be ≥ this)</label>
+                <input type="number" className="policy-input" min={1} value={form.threshold ?? 1} onChange={e => set("threshold", Number(e.target.value))}/>
+              </div>
+              <div className="policy-field">
+                <label className="policy-label">Baseline Multiplier</label>
+                <input type="number" className="policy-input" min={1} step={0.5} value={form.baselineMultiplier ?? 3} onChange={e => set("baselineMultiplier", Number(e.target.value))}/>
+              </div>
+              <div className="policy-field">
+                <label className="policy-label">Baseline Lookback (days, excluding last 24h)</label>
+                <input type="number" className="policy-input" min={1} value={form.baselineDays ?? 30} onChange={e => set("baselineDays", Number(e.target.value))}/>
               </div>
             </>
           ) : (

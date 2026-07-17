@@ -1,4 +1,4 @@
-export type NavPage = "overview" | "recommendations" | "trends" | "identity" | "devices" | "email" | "incidents" | "alertcenter" | "compliance" | "servicehealth" | "network" | "licenses" | "conditionalaccess" | "auditlog" | "signinmap" | "users" | "setup";
+export type NavPage = "overview" | "recommendations" | "trends" | "identity" | "devices" | "email" | "incidents" | "alertcenter" | "activityfeed" | "compliance" | "servicehealth" | "network" | "licenses" | "conditionalaccess" | "auditlog" | "signinmap" | "users" | "setup";
 export type AlertSeverity = "Informational" | "Low" | "Medium" | "High" | "Critical";
 export type ServiceArea = "EntraId" | "Intune" | "DefenderXdr" | "ExchangeOnline" | "ServiceHealth";
 export type Tone = "good" | "warning" | "error" | "neutral" | "info";
@@ -121,13 +121,17 @@ export interface AlertPolicy {
   enabled: boolean;
   category: "identity" | "devices" | "email" | "compliance" | "licenses";
   condition: string;
-  /** "metric" = threshold on a computed count · "activity" = tenant audit events matching a pattern */
-  kind?: "metric" | "activity";
+  /** "metric" = threshold count · "activity" = audit event match · "anomaly" = latest trend spike vs baseline */
+  kind?: "metric" | "activity" | "anomaly";
   metric: string;
   /** Activity name to match (supports * wildcard) — kind=activity */
   activityPattern?: string | null;
   /** Sliding match window in minutes — kind=activity */
   windowMinutes?: number;
+  /** Spike multiplier over historical baseline — kind=anomaly */
+  baselineMultiplier?: number;
+  /** Historical baseline lookback in days — kind=anomaly */
+  baselineDays?: number;
   threshold: number;
   severity: "critical" | "high" | "medium" | "low";
   notifyEmail: string;

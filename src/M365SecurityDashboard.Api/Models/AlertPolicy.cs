@@ -43,6 +43,12 @@ public sealed class AlertPolicy
     /// <summary>Sliding window for activity matching. (Kind=activity)</summary>
     public int WindowMinutes { get; set; } = 60;
 
+    /// <summary>How many times above baseline counts as anomalous. (Kind=anomaly)</summary>
+    public double BaselineMultiplier { get; set; } = 3.0;
+
+    /// <summary>Baseline lookback window in days. (Kind=anomaly)</summary>
+    public int BaselineDays { get; set; } = 30;
+
     public int Threshold { get; set; }
 
     [MaxLength(20)]

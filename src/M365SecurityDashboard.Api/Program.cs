@@ -281,14 +281,8 @@ app.Use(async (ctx, next) =>
     }
 });
 
-app.UseDefaultFiles();
-app.UseStaticFiles();
-app.UseCors();
-app.UseRateLimiter();
-app.UseAuthentication();
-app.UseAuthorization();
-
-// Security headers
+// Security headers must run before static files so the SPA shell and bundled
+// assets receive the same browser protections as API responses.
 app.Use(async (ctx, next) =>
 {
     ctx.Response.Headers["X-Frame-Options"] = "DENY";
@@ -298,6 +292,13 @@ app.Use(async (ctx, next) =>
     ctx.Response.Headers["Permissions-Policy"] = "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()";
     await next();
 });
+
+app.UseDefaultFiles();
+app.UseStaticFiles();
+app.UseCors();
+app.UseRateLimiter();
+app.UseAuthentication();
+app.UseAuthorization();
 
 if (app.Environment.IsDevelopment())
 {
@@ -1692,6 +1693,9 @@ app.MapPost("/api/alert-policies", async (AppDbContext db, AlertPolicy input, Au
     input.CreatedAt = DateTimeOffset.UtcNow;
     input.TriggerCount = 0;
     if (input.SuppressionMinutes <= 0) input.SuppressionMinutes = 60;
+    if (input.WindowMinutes <= 0) input.WindowMinutes = 60;
+    if (input.BaselineMultiplier <= 0) input.BaselineMultiplier = 3.0;
+    if (input.BaselineDays <= 0) input.BaselineDays = 30;
     db.AlertPolicies.Add(input);
     await db.SaveChangesAsync(ct);
     await audit.WriteAsync("policy.create", "policy", input.Id.ToString(), $"Created policy {input.Name} ({input.Category})", ct);
@@ -1710,6 +1714,8 @@ app.MapPut("/api/alert-policies/{id:guid}", async (AppDbContext db, Guid id, Ale
     p.Metric = input.Metric;
     p.ActivityPattern = input.ActivityPattern;
     p.WindowMinutes = input.WindowMinutes <= 0 ? 60 : input.WindowMinutes;
+    p.BaselineMultiplier = input.BaselineMultiplier <= 0 ? 3.0 : input.BaselineMultiplier;
+    p.BaselineDays = input.BaselineDays <= 0 ? 30 : input.BaselineDays;
     p.Threshold = input.Threshold;
     p.Severity = input.Severity;
     p.NotifyEmail = input.NotifyEmail;

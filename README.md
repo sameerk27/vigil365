@@ -125,105 +125,24 @@ This prints your **Tenant ID**, **Client ID**, and **Client Secret** — keep th
 Then pick the install that fits you. **You never edit a config file for Graph
 credentials** — you enter them in the in-app Setup wizard after first sign-in.
 
-### Option 1 — Docker (any OS, recommended)
+### Install (enterprise)
+
+Before installing, have a SQL Server database, a public HTTPS URL, and an Entra
+app registration ready. Then run one command. The installer asks for the rest.
+
+```powershell
+# Windows — run PowerShell as Administrator
+.\enterprise-install.ps1
+```
 
 ```bash
-git clone https://github.com/sameerk27/vigil365.git
-cd vigil365
-cp .env.example .env        # fill in TENANT_ID, CLIENT_ID, ADMIN_EMAIL
-docker compose up -d
-```
-Open **http://localhost:8080** → sign in (first user becomes Admin) → enter the
-client secret in **Setup**. Done. App + SQL Server both run in containers.
-
-### Option 2 — Windows, one script
-
-```powershell
-git clone https://github.com/sameerk27/vigil365.git
-cd vigil365
-.\deploy.ps1 -TenantId <tenant-id> -ClientId <client-id> -AdminEmail you@yourorg.com
-```
-Builds the frontend, publishes the API, generates config, sets up HTTPS, and runs
-in Production. Add `-Hostname vigil365.local` for an internal hostname, or
-`-InstallService` to register a Windows Service. Then open the printed URL and
-finish in the Setup wizard.
-
-### Option 3 — Manual / development (advanced)
-
-<details><summary>Run from source with hot-reload</summary>
-
-```powershell
-git clone https://github.com/sameerk27/vigil365.git
-cd vigil365\src\M365SecurityDashboard.Api
-dotnet user-secrets set "AzureAd:TenantId"  "<tenant-id>"
-dotnet user-secrets set "AzureAd:ClientId"  "<client-id>"
-dotnet user-secrets set "AzureAd:Audience"  "api://<client-id>"
-
-# Terminal 1 — backend (auto-creates the DB on first run)
-$env:ASPNETCORE_ENVIRONMENT = "Development"; dotnet run
-
-# Terminal 2 — frontend hot-reload
-cd ..\m365-security-dashboard-client; npm install; npm run dev
-```
-Backend serves http://localhost:5000; the Vite dev server proxies to it on http://localhost:5173.
-Enter Graph credentials in the in-app Setup wizard.
-</details>
-
----
-
-## Production Deployment
-
-The simplest path is **Option 1 (Docker)** or **Option 2 (`deploy.ps1`)** above —
-both run in Production. To install as a **Windows Service** on a server:
-
-```powershell
-.\deploy.ps1 -TenantId <id> -ClientId <id> -AdminEmail you@org.com -Hostname vigil365.yourco.local -InstallService
+# Linux
+sudo ./enterprise-install.sh
 ```
 
-This builds, publishes, generates `appsettings.Production.json`, sets up the
-certificate, and registers the service. See the **[HTTPS / TLS](#https--tls-required-for-production)**
-section for real-domain certificates (reverse proxy / Let's Encrypt).
-
-<details><summary>Manual publish (if you don't want the script)</summary>
-
-```powershell
-cd src\m365-security-dashboard-client; npm install; npm run build
-cd ..\M365SecurityDashboard.Api; dotnet publish -c Release -o C:\Apps\Vigil365
-# create appsettings.Production.json in the publish folder (template below), then:
-sc.exe create Vigil365 binPath= "C:\Apps\Vigil365\M365SecurityDashboard.Api.exe --environment Production --urls http://localhost:8080" start= auto
-sc.exe start Vigil365
-```
-</details>
-
-**`appsettings.Production.json` template** (only needed for the manual path — the scripts generate it):
-
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Server=.\\SQLEXPRESS;Database=M365SecurityDashboard;Trusted_Connection=True;Encrypt=True;TrustServerCertificate=True"
-  },
-  "Graph": {
-    "TenantId": "YOUR_TENANT_ID",
-    "ClientId": "YOUR_CLIENT_ID",
-    "ClientSecret": "YOUR_CLIENT_SECRET",
-    "CollectionIntervalMinutes": 15,
-    "DevicesNotCheckedInDays": 7,
-    "SignInLookbackHours": 24
-  },
-  "AzureAd": {
-    "Instance": "https://login.microsoftonline.com/",
-    "TenantId": "YOUR_TENANT_ID",
-    "ClientId": "YOUR_CLIENT_ID",
-    "Audience": "api://YOUR_CLIENT_ID"
-  },
-  "Auth": {
-    "RedirectUri": "https://vigil365.yourcompany.com",
-    "BootstrapAdminEmail": "you@yourcompany.com"
-  }
-}
-```
-
----
+After it finishes: point your HTTPS proxy to `http://127.0.0.1:8080`, add the
+same public URL to Entra as a SPA redirect URI, then open the app and finish
+**Setup**.
 
 ## HTTPS / TLS (required for production)
 

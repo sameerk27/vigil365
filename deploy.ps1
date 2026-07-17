@@ -41,6 +41,23 @@ if (-not $PublishPath) { $PublishPath = Join-Path $RepoRoot "publish" }
 # When a hostname is given, serve HTTPS on that name with a self-signed cert.
 if ($Hostname) { $Url = "https://${Hostname}:${Port}" }
 
+# If a custom HTTPS host is supplied through -Url, generate/trust a certificate
+# for that host instead of falling back to the localhost dev certificate.
+if (-not $Hostname) {
+    try {
+        $uri = [Uri]$Url
+        if ($uri.Scheme -eq "https" -and
+            $uri.Host -and
+            $uri.Host -notin @("localhost", "127.0.0.1", "::1")) {
+            $Hostname = $uri.Host
+            $Port = $uri.Port
+            Write-Host "Using hostname '$Hostname' from -Url for HTTPS certificate generation." -ForegroundColor DarkGray
+        }
+    } catch {
+        # Leave validation to Kestrel/.NET later; this block only improves cert selection.
+    }
+}
+
 Write-Host "`n=== Vigil365 production deploy ===`n" -ForegroundColor Cyan
 
 # 1. Publish if requested or if no artifact exists yet
