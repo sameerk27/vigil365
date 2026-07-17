@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore.Migrations;
+﻿using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
@@ -15,14 +15,14 @@ namespace M365SecurityDashboard.Api.Data.Migrations
                 table: "AlertPolicies",
                 type: "int",
                 nullable: false,
-                defaultValue: 30);
+                defaultValue: 0);
 
             migrationBuilder.AddColumn<double>(
                 name: "BaselineMultiplier",
                 table: "AlertPolicies",
                 type: "float",
                 nullable: false,
-                defaultValue: 3.0);
+                defaultValue: 0.0);
         }
 
         /// <inheritdoc />
