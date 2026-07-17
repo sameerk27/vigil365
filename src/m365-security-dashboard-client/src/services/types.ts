@@ -179,6 +179,16 @@ export interface NotificationSettings {
   fromAddress?: string; defaultRecipient?: string;
   webhookEnabled: boolean; webhookUrl?: string;
   minSeverity: string;
+  teamsDigest?: boolean; emailDigest?: boolean; webhookDigest?: boolean;
+  digestHourUtc?: number; failureAlertThreshold?: number;
+}
+
+export interface ChannelHealth {
+  channel: string; consecutiveFailures: number; healthy: boolean;
+  lastAttemptAt?: string | null; lastSuccessAt?: string | null; lastError?: string | null;
+}
+export interface NotificationHealth {
+  threshold: number; channels: ChannelHealth[]; anyFailing: boolean;
 }
 
 export interface ReportSchedule {

@@ -90,6 +90,7 @@ builder.Services.AddScoped<AuditLogger>();
 builder.Services.AddHostedService<GraphCollectionWorker>();
 builder.Services.AddHostedService<DataRetentionWorker>();
 builder.Services.AddHostedService<ReportScheduleWorker>();
+builder.Services.AddHostedService<NotificationDigestWorker>();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddEndpointsApiExplorer();
@@ -1945,6 +1946,7 @@ app.MapGet("/api/notification-settings", async (AppDbContext db, SecretProtector
         s.FromAddress, s.DefaultRecipient,
         s.WebhookEnabled, WebhookUrl = protector.Unprotect(s.WebhookUrl),
         s.MinSeverity,
+        s.TeamsDigest, s.EmailDigest, s.WebhookDigest, s.DigestHourUtc, s.FailureAlertThreshold,
     });
 }).RequireAuthorization("RequireAdmin");
 
@@ -1965,6 +1967,11 @@ app.MapPut("/api/notification-settings", async (AppDbContext db, SecretProtector
     s.WebhookEnabled = input.WebhookEnabled;
     s.WebhookUrl = protector.Protect(input.WebhookUrl);
     s.MinSeverity = string.IsNullOrWhiteSpace(input.MinSeverity) ? "low" : input.MinSeverity;
+    s.TeamsDigest = input.TeamsDigest;
+    s.EmailDigest = input.EmailDigest;
+    s.WebhookDigest = input.WebhookDigest;
+    s.DigestHourUtc = Math.Clamp(input.DigestHourUtc, 0, 23);
+    s.FailureAlertThreshold = input.FailureAlertThreshold <= 0 ? 3 : input.FailureAlertThreshold;
     await db.SaveChangesAsync(ct);
     await audit.WriteAsync("settings.update", "settings", "notifications", "notification settings updated", ct);
     return Results.Ok(new { ok = true });
@@ -1997,6 +2004,16 @@ app.MapPost("/api/notification-settings/test", async (AppDbContext db, Notificat
 app.MapGet("/api/notification-log", async (AppDbContext db, CancellationToken ct) =>
     Results.Ok(await db.NotificationLogs.OrderByDescending(l => l.SentAt).Take(200).ToListAsync(ct)))
     .RequireAuthorization("RequireAnalyst");
+
+// Per-channel delivery health (consecutive failures, last success/error).
+app.MapGet("/api/notification-health", async (AppDbContext db, CancellationToken ct) =>
+{
+    var cfg = await db.NotificationSettings.AsNoTracking().FirstOrDefaultAsync(ct);
+    var recent = await db.NotificationLogs.AsNoTracking().OrderByDescending(l => l.SentAt).Take(200).ToListAsync(ct);
+    var health = NotificationHealth.Compute(recent);
+    var threshold = cfg?.FailureAlertThreshold ?? 3;
+    return Results.Ok(new { threshold, channels = health, anyFailing = health.Any(h => h.ConsecutiveFailures >= threshold) });
+}).RequireAuthorization("RequireAnalyst");
 
 // ── Scheduled reports (executive digest) ───────────────────────────────────
 

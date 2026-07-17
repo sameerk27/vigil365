@@ -77,6 +77,9 @@ export const acApi = {
   async getLog(): Promise<NotificationLogEntry[]> {
     try { const r = await apiFetch(`${apiBase}/api/notification-log`); return r.ok ? await r.json() : []; } catch { return []; }
   },
+  async getHealth(): Promise<import("./types").NotificationHealth | null> {
+    try { const r = await apiFetch(`${apiBase}/api/notification-health`); return r.ok ? await r.json() : null; } catch { return null; }
+  },
   async snooze(id: string, durationHours: 4 | 24 | 168): Promise<boolean> {
     try { const r = await apiFetch(`${apiBase}/api/triggered-alerts/${id}/snooze`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ durationHours }) }); return r.ok; } catch { return false; }
   },

@@ -45,4 +45,25 @@ public sealed class NotificationSettings
     /// <summary>Only send notifications at or above this severity (low|medium|high|critical).</summary>
     [MaxLength(20)]
     public string MinSeverity { get; set; } = "low";
+
+    // ── Digest mode (daily rollup) ──
+    // When a channel's digest flag is on, individual alerts are NOT sent instantly
+    // on that channel; instead they are batched into a single daily rollup sent at
+    // DigestHourUtc by the NotificationDigestWorker.
+    public bool TeamsDigest { get; set; }
+    public bool EmailDigest { get; set; }
+    public bool WebhookDigest { get; set; }
+
+    /// <summary>Hour of day (UTC, 0–23) at which the daily digest rollup is sent.</summary>
+    public int DigestHourUtc { get; set; } = 8;
+
+    /// <summary>Watermark: alerts triggered after this instant are pending inclusion in the next digest.</summary>
+    public DateTimeOffset? LastDigestAt { get; set; }
+
+    // ── Delivery-failure alerting ──
+    /// <summary>Raise a delivery-failure alert once a channel reaches this many consecutive failed attempts.</summary>
+    public int FailureAlertThreshold { get; set; } = 3;
+
+    /// <summary>When the last delivery-failure alert was raised (debounce so we don't re-alert every cycle).</summary>
+    public DateTimeOffset? LastFailureAlertAt { get; set; }
 }

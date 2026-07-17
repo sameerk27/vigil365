@@ -43,13 +43,15 @@ public sealed class NotificationSender(
         var webhookUrl = protector.Unprotect(cfg.WebhookUrl);
         var smtpPassword = protector.Unprotect(cfg.SmtpPassword);
 
-        if (cfg.TeamsEnabled && !string.IsNullOrWhiteSpace(teamsUrl))
+        // Channels in digest mode are skipped here — the NotificationDigestWorker
+        // batches their alerts into a single daily rollup instead.
+        if (cfg.TeamsEnabled && !cfg.TeamsDigest && !string.IsNullOrWhiteSpace(teamsUrl))
             await SendTeamsAsync(db, teamsUrl!, alert, ct);
 
-        if (cfg.WebhookEnabled && !string.IsNullOrWhiteSpace(webhookUrl))
+        if (cfg.WebhookEnabled && !cfg.WebhookDigest && !string.IsNullOrWhiteSpace(webhookUrl))
             await SendWebhookAsync(db, webhookUrl!, alert, ct);
 
-        if (cfg.EmailEnabled && !string.IsNullOrWhiteSpace(cfg.SmtpHost))
+        if (cfg.EmailEnabled && !cfg.EmailDigest && !string.IsNullOrWhiteSpace(cfg.SmtpHost))
         {
             var to = alert.Status == "new"
                 ? (FirstNonEmpty(cfg.DefaultRecipient) ?? cfg.FromAddress)
@@ -61,6 +63,30 @@ public sealed class NotificationSender(
 
     private static string? FirstNonEmpty(params string?[] vals)
         => vals.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+
+    /// <summary>
+    /// Dispatches a delivery-failure heads-up, deliberately skipping the channels that
+    /// are themselves failing (no point retrying a broken webhook to announce it is
+    /// broken). Digest mode is ignored — this is an operational alert, always instant.
+    /// </summary>
+    public async Task DispatchDeliveryFailureAsync(
+        AppDbContext db, NotificationSettings cfg, TriggeredAlert notice, ISet<string> failingChannels, CancellationToken ct)
+    {
+        var teamsUrl = protector.Unprotect(cfg.TeamsWebhookUrl);
+        var webhookUrl = protector.Unprotect(cfg.WebhookUrl);
+        var smtpPassword = protector.Unprotect(cfg.SmtpPassword);
+
+        if (cfg.TeamsEnabled && !failingChannels.Contains("teams") && !string.IsNullOrWhiteSpace(teamsUrl))
+            await SendTeamsAsync(db, teamsUrl!, notice, ct);
+        if (cfg.WebhookEnabled && !failingChannels.Contains("webhook") && !string.IsNullOrWhiteSpace(webhookUrl))
+            await SendWebhookAsync(db, webhookUrl!, notice, ct);
+        if (cfg.EmailEnabled && !failingChannels.Contains("email") && !string.IsNullOrWhiteSpace(cfg.SmtpHost))
+        {
+            var to = FirstNonEmpty(cfg.DefaultRecipient, cfg.FromAddress);
+            if (!string.IsNullOrWhiteSpace(to))
+                await SendEmailAsync(db, cfg, smtpPassword, to!, notice, ct);
+        }
+    }
 
     /// <summary>
     /// Sends a one-off access-notification ("invite") email to a pre-provisioned user,
@@ -176,6 +202,120 @@ public sealed class NotificationSender(
         {
             attachmentStream?.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Sends a batched daily digest of triggered alerts to whichever channels have
+    /// digest mode enabled. Each channel attempt is logged (TriggeredAlertId = empty
+    /// so digest rows are distinguishable from per-alert rows). Returns the number of
+    /// channel sends that succeeded.
+    /// </summary>
+    public async Task<int> SendDigestRollupAsync(AppDbContext db, NotificationSettings cfg, IReadOnlyList<TriggeredAlert> alerts, CancellationToken ct)
+    {
+        if (alerts.Count == 0) return 0;
+        var teamsUrl = protector.Unprotect(cfg.TeamsWebhookUrl);
+        var webhookUrl = protector.Unprotect(cfg.WebhookUrl);
+        var smtpPassword = protector.Unprotect(cfg.SmtpPassword);
+        var sent = 0;
+
+        var ordered = alerts.OrderByDescending(a => Rank(a.Severity)).ThenByDescending(a => a.TriggeredAt).ToList();
+        var title = $"Vigil365 daily digest — {alerts.Count} alert{(alerts.Count == 1 ? "" : "s")}";
+
+        if (cfg.TeamsEnabled && cfg.TeamsDigest && !string.IsNullOrWhiteSpace(teamsUrl))
+        {
+            var facts = ordered.Take(20).Select(a => new { title = a.Severity.ToUpperInvariant(), value = a.PolicyName }).ToArray();
+            var card = new
+            {
+                type = "message",
+                attachments = new[] { new {
+                    contentType = "application/vnd.microsoft.card.adaptive",
+                    content = new {
+                        type = "AdaptiveCard", version = "1.4",
+                        body = new object[] {
+                            new { type = "TextBlock", text = title, weight = "Bolder", size = "Medium" },
+                            new { type = "FactSet", facts },
+                        },
+                    },
+                } },
+            };
+            if (await PostDigestAsync(db, "teams", teamsUrl!, JsonSerializer.Serialize(card), alerts.Count, ct)) sent++;
+        }
+
+        if (cfg.WebhookEnabled && cfg.WebhookDigest && !string.IsNullOrWhiteSpace(webhookUrl))
+        {
+            var payload = JsonSerializer.Serialize(new
+            {
+                source = "Vigil365", kind = "digest", count = alerts.Count,
+                alerts = ordered.Select(a => new { a.PolicyName, a.Severity, a.Category, a.MetricValue, a.Threshold, a.TriggeredAt }),
+            });
+            if (await PostDigestAsync(db, "webhook", webhookUrl!, payload, alerts.Count, ct)) sent++;
+        }
+
+        if (cfg.EmailEnabled && cfg.EmailDigest && !string.IsNullOrWhiteSpace(cfg.SmtpHost))
+        {
+            var to = FirstNonEmpty(cfg.DefaultRecipient, cfg.FromAddress);
+            if (!string.IsNullOrWhiteSpace(to) && await SendDigestEmailAsync(db, cfg, smtpPassword, to!, title, ordered, ct)) sent++;
+        }
+        return sent;
+    }
+
+    private async Task<bool> PostDigestAsync(AppDbContext db, string channel, string url, string json, int count, CancellationToken ct)
+    {
+        var log = new NotificationLog { TriggeredAlertId = Guid.Empty, PolicyName = $"Daily digest ({count})", Channel = channel, Target = Truncate(url, 120) };
+        try
+        {
+            var http = httpFactory.CreateClient();
+            http.Timeout = TimeSpan.FromSeconds(15);
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+            using var resp = await http.PostAsync(url, content, ct);
+            log.Success = resp.IsSuccessStatusCode;
+            if (!resp.IsSuccessStatusCode) log.Error = Truncate($"{(int)resp.StatusCode} {resp.ReasonPhrase}", 1000);
+        }
+        catch (Exception ex)
+        {
+            log.Success = false;
+            log.Error = Truncate(ex.Message, 1000);
+            logger.LogWarning(ex, "Digest {Channel} send failed", channel);
+        }
+        db.NotificationLogs.Add(log);
+        return log.Success;
+    }
+
+    private async Task<bool> SendDigestEmailAsync(AppDbContext db, NotificationSettings cfg, string? smtpPassword, string to, string title, IReadOnlyList<TriggeredAlert> alerts, CancellationToken ct)
+    {
+        var log = new NotificationLog { TriggeredAlertId = Guid.Empty, PolicyName = $"Daily digest ({alerts.Count})", Channel = "email", Target = Truncate(to, 120) };
+        try
+        {
+            var rows = new StringBuilder();
+            foreach (var a in alerts.Take(50))
+                rows.Append($"<tr><td style=\"padding:4px 10px 4px 0\"><b style=\"color:#{SevColor(a.Severity)}\">{a.Severity.ToUpperInvariant()}</b></td>"
+                    + $"<td style=\"padding:4px 10px 4px 0\">{WebUtility.HtmlEncode(a.PolicyName)}</td>"
+                    + $"<td style=\"padding:4px 0;color:#64748b\">{a.TriggeredAt:dd MMM HH:mm}</td></tr>");
+            using var msg = new MailMessage
+            {
+                From = new MailAddress(cfg.FromAddress ?? cfg.SmtpUsername ?? "vigil365@localhost"),
+                Subject = $"[Vigil365] {title}",
+                IsBodyHtml = true,
+                Body = $"<div style=\"font-family:Segoe UI,Arial,sans-serif\"><h2 style=\"color:#2563eb;margin:0 0 12px\">{WebUtility.HtmlEncode(title)}</h2>"
+                    + $"<table style=\"border-collapse:collapse;font-size:14px\">{rows}</table></div>",
+            };
+            msg.To.Add(to);
+            using var client = new SmtpClient(cfg.SmtpHost, cfg.SmtpPort)
+            {
+                EnableSsl = cfg.SmtpUseSsl,
+                Credentials = string.IsNullOrWhiteSpace(cfg.SmtpUsername) ? CredentialCache.DefaultNetworkCredentials : new NetworkCredential(cfg.SmtpUsername, smtpPassword),
+            };
+            await client.SendMailAsync(msg, ct);
+            log.Success = true;
+        }
+        catch (Exception ex)
+        {
+            log.Success = false;
+            log.Error = Truncate(ex.Message, 1000);
+            logger.LogWarning(ex, "Digest email send failed");
+        }
+        db.NotificationLogs.Add(log);
+        return log.Success;
     }
 
     private static string SevColor(string sev) => sev?.ToLowerInvariant() switch

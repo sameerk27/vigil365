@@ -265,13 +265,15 @@ function PolicyModal({ policy, onSave, onClose }: {
 function NotificationSettingsTab() {
   const [cfg, setCfg] = useState<NotificationSettings | null>(null);
   const [log, setLog] = useState<NotificationLogEntry[]>([]);
+  const [health, setHealth] = useState<import("../services/types").NotificationHealth | null>(null);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
 
   const reload = useCallback(async () => {
-    const [s, l] = await Promise.all([acApi.getSettings(), acApi.getLog()]);
+    const [s, l, h] = await Promise.all([acApi.getSettings(), acApi.getLog(), acApi.getHealth()]);
     setCfg(s ?? { teamsEnabled:false, emailEnabled:false, smtpPort:587, smtpUseSsl:true, webhookEnabled:false, minSeverity:"low" });
     setLog(l);
+    setHealth(h);
   }, []);
   useEffect(() => { reload(); }, [reload]);
 
@@ -300,14 +302,27 @@ function NotificationSettingsTab() {
     reload();
   };
 
+  const digestChip = (key: "teamsDigest"|"emailDigest"|"webhookDigest") => (
+    <label className="toggle-label" style={{fontSize:12}} title="Batch this channel's alerts into a single daily rollup instead of sending each one instantly.">
+      <input type="checkbox" checked={!!cfg[key]} onChange={e=>set(key, e.target.checked)}/> Daily digest
+    </label>
+  );
+
   return (
     <>
+      {health?.anyFailing && (
+        <div className="err-banner" role="alert" style={{marginBottom:12}}>
+          <AlertTriangle size={15} style={{verticalAlign:"-2px",marginRight:6}}/>
+          Notification delivery is failing on: {health.channels.filter(c=>c.consecutiveFailures>=health.threshold).map(c=>`${c.channel} (${c.consecutiveFailures}×)`).join(", ")}. Check the endpoint URL/credentials below.
+        </div>
+      )}
       <div className="two-col">
         <Card title="Microsoft Teams / Slack" badge={<label className="toggle-label"><input type="checkbox" checked={cfg.teamsEnabled} onChange={e=>set("teamsEnabled", e.target.checked)}/> Enabled</label>}>
           <div className="policy-field">
             <span className="policy-label">Incoming Webhook URL</span>
             <input className="policy-input" placeholder="https://outlook.office.com/webhook/…" value={cfg.teamsWebhookUrl ?? ""} onChange={e=>set("teamsWebhookUrl", e.target.value)}/>
           </div>
+          <div style={{marginTop:8}}>{digestChip("teamsDigest")}</div>
           <p className="hdr-sub">Paste a Teams channel "Incoming Webhook" connector URL (or a Slack incoming webhook). A formatted alert card is posted on each trigger.</p>
         </Card>
 
@@ -316,11 +331,12 @@ function NotificationSettingsTab() {
             <span className="policy-label">Endpoint URL</span>
             <input className="policy-input" placeholder="https://…  (Sentinel, Splunk HEC, Power Automate)" value={cfg.webhookUrl ?? ""} onChange={e=>set("webhookUrl", e.target.value)}/>
           </div>
+          <div style={{marginTop:8}}>{digestChip("webhookDigest")}</div>
           <p className="hdr-sub">Each alert is POSTed as JSON. Use for SIEM ingestion or custom automation.</p>
         </Card>
       </div>
 
-      <Card title="Email (SMTP)" badge={<label className="toggle-label"><input type="checkbox" checked={cfg.emailEnabled} onChange={e=>set("emailEnabled", e.target.checked)}/> Enabled</label>}>
+      <Card title="Email (SMTP)" badge={<div style={{display:"flex",gap:14,alignItems:"center"}}>{digestChip("emailDigest")}<label className="toggle-label"><input type="checkbox" checked={cfg.emailEnabled} onChange={e=>set("emailEnabled", e.target.checked)}/> Enabled</label></div>}>
         <div className="settings-grid">
           <div className="policy-field"><span className="policy-label">SMTP Host</span><input className="policy-input" placeholder="smtp.office365.com" value={cfg.smtpHost ?? ""} onChange={e=>set("smtpHost", e.target.value)}/></div>
           <div className="policy-field"><span className="policy-label">Port</span><input className="policy-input" type="number" value={cfg.smtpPort} onChange={e=>set("smtpPort", Number(e.target.value))}/></div>
@@ -336,15 +352,26 @@ function NotificationSettingsTab() {
         <button className="btn-export" onClick={test} disabled={testing}>{testing ? "Testing…" : "Send test"}</button>
         <button className="btn-run" style={{padding:"7px 18px",fontSize:13}} onClick={save} disabled={saving}>{saving ? "Saving…" : "Save settings"}</button>
       </div>}>
-        <div className="policy-field" style={{maxWidth:280}}>
-          <span className="policy-label">Minimum severity to notify</span>
-          <select className="policy-input" value={cfg.minSeverity} onChange={e=>set("minSeverity", e.target.value)}>
-            <option value="low">Low and above</option>
-            <option value="medium">Medium and above</option>
-            <option value="high">High and above</option>
-            <option value="critical">Critical only</option>
-          </select>
+        <div className="settings-grid">
+          <div className="policy-field">
+            <span className="policy-label">Minimum severity to notify</span>
+            <select className="policy-input" value={cfg.minSeverity} onChange={e=>set("minSeverity", e.target.value)}>
+              <option value="low">Low and above</option>
+              <option value="medium">Medium and above</option>
+              <option value="high">High and above</option>
+              <option value="critical">Critical only</option>
+            </select>
+          </div>
+          <div className="policy-field">
+            <span className="policy-label">Daily digest send hour (UTC)</span>
+            <input className="policy-input" type="number" min={0} max={23} value={cfg.digestHourUtc ?? 8} onChange={e=>set("digestHourUtc", Number(e.target.value))}/>
+          </div>
+          <div className="policy-field">
+            <span className="policy-label">Alert after N consecutive channel failures</span>
+            <input className="policy-input" type="number" min={1} value={cfg.failureAlertThreshold ?? 3} onChange={e=>set("failureAlertThreshold", Number(e.target.value))}/>
+          </div>
         </div>
+        <p className="hdr-sub">Digest channels batch their alerts into one daily message at the send hour. If a channel fails to deliver this many times in a row, Vigil365 raises a high-severity delivery-failure alert on the still-working channels.</p>
       </Card>
 
       <Card title="Notification History" badge={<Badge label={`${log.length} sent`} tone="neutral"/>}>
