@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: npm
+          cache-dependency-path: src/m365-security-dashboard-client/package-lock.json
+
+      - name: Restore frontend dependencies
+        working-directory: src/m365-security-dashboard-client
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: src/m365-security-dashboard-client
+        run: npm run build
+
+      - name: Restore .NET dependencies
+        run: dotnet restore M365SecurityAlertDashboard.sln
+
+      - name: Build .NET solution
+        run: dotnet build M365SecurityAlertDashboard.sln --configuration Release --no-restore
+
+      - name: Run .NET tests
+        run: dotnet test M365SecurityAlertDashboard.sln --configuration Release --no-build --verbosity normal
