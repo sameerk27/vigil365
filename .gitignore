@@ -52,3 +52,5 @@ keys/
 
 *.pfx
 vigil365.pfx
+# Local SQL backups and exported key rings are operational secrets.
+backups/

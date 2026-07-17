@@ -252,6 +252,7 @@ The security of this app is only as good as the box it runs on. Before productio
 - A failed individual Graph source does not stop the whole collection run; each card degrades independently.
 - Logs are newline-delimited JSON on stdout and in `logs/vigil365-.json` beside the app. Files roll daily (and at 10 MB) with the newest 14 files retained. Configure `Logging__File__Path`, `Logging__File__RetainedFileCountLimit`, and `Logging__File__FileSizeLimitBytes` for the host policy. Docker persists them in the `vigil365-logs` volume at `/app/logs`.
 - Log events include request correlation IDs and structured fields. Do not put access tokens, client secrets, or notification credentials in log messages.
+- Follow the [Operations Runbook](docs/OPERATIONS_RUNBOOK.md) for SQL/key-ring backups, restore drills, and upgrades.
 
 > Found a security issue? See [SECURITY.md](SECURITY.md) — please report privately, not in a public issue.
 

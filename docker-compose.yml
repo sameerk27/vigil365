@@ -15,6 +15,7 @@ services:
       MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD}"
     volumes:
       - mssql-data:/var/opt/mssql
+      - ./backups:/var/opt/mssql/backup
     restart: unless-stopped
 
   app:
