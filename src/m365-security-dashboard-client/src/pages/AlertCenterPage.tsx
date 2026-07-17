@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { X, Bell, AlertCircle, Clock, ShieldAlert, Activity, CheckCircle, Search, ExternalLink, ArrowRight, ShieldCheck, AlertTriangle, PlusCircle, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { AlertPolicy, TriggeredAlert, NotificationSettings, NotificationLogEntry, Tone, AlertCoverageScorecard, AlertBaselineRule } from "../services/types";
-import { acApi, recApi, useAuth, crossNavigate } from "../services/api";
+import { acApi, recApi, wbApi, useAuth, crossNavigate } from "../services/api";
 import { showToast } from "../services/toast";
 import { DetailField, KpiTile, Card, Badge, EmptyState, MiniBarChart, ExportDropdown, ProgressBar, CopyButton, LoadingSkeleton, TriageSection } from "../components/SharedComponents";
 import { CollectionHealthCard } from "../components/CollectionHealthCard";
@@ -42,6 +42,42 @@ function statusTone(s: string): Tone {
     : s === "snoozed" ? "neutral"
     : s === "auto_resolved" ? "info"
     : "good"; // resolved
+}
+
+function AlertEvidenceTimeline({ alert, noteVersion }: { alert: TriggeredAlert; noteVersion: number }) {
+  const [notes, setNotes] = useState<import("../services/types").AlertNote[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    wbApi.listNotes("policy", alert.id).then(items => { if (!cancelled) setNotes(items); });
+    return () => { cancelled = true; };
+  }, [alert.id, noteVersion]);
+
+  const events = useMemo(() => {
+    const items: { at: string; label: string; detail: string; kind: "trigger" | "action" | "note" }[] = [
+      { at: alert.triggeredAt, label: "Alert triggered", detail: `${alert.metricValue} observed; threshold ${alert.threshold}.`, kind: "trigger" },
+    ];
+    if (alert.acknowledgedAt) items.push({ at: alert.acknowledgedAt, label: "Alert acknowledged", detail: alert.acknowledgedBy ? `By ${alert.acknowledgedBy}.` : "", kind: "action" });
+    if (alert.lastEvaluatedAt) items.push({ at: alert.lastEvaluatedAt, label: "Last evaluated", detail: `Current state: ${fmtStatus(alert.status)}.`, kind: "action" });
+    if (alert.snoozedUntil) items.push({ at: alert.snoozedUntil, label: "Snooze active until", detail: alert.snoozedBy ? `Set by ${alert.snoozedBy}.` : "", kind: "action" });
+    for (const note of notes ?? []) items.push({ at: note.createdAt, label: `Note by ${note.author}`, detail: note.text, kind: "note" });
+    return items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+  }, [alert, notes]);
+
+  return (
+    <section className="alert-evidence-timeline" aria-label="Alert evidence timeline">
+      <div className="dm-section-hdr">Evidence timeline</div>
+      {events.map((event, index) => (
+        <div className="evidence-event" key={`${event.kind}-${event.at}-${index}`}>
+          <span className={`evidence-dot evidence-${event.kind}`} aria-hidden="true"/>
+          <div>
+            <div className="evidence-event-meta"><strong>{event.label}</strong><span title={fmtDate(event.at)}>{relTime(event.at)}</span></div>
+            {event.detail && <div className="evidence-event-detail">{event.detail}</div>}
+          </div>
+        </div>
+      ))}
+    </section>
+  );
 }
 
 /** Sortable table header — click to sort, click again to flip direction. */
@@ -466,6 +502,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
   const [editPolicy, setEditPolicy] = useState<Partial<AlertPolicy> | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [selectedTriggered, setSelectedTriggered] = useState<TriggeredAlert | null>(null);
+  const [noteVersion, setNoteVersion] = useState(0);
 
   // Notification permalink (#/alertcenter?alert={guid}): open that alert's
   // detail directly once the data is available.
@@ -685,10 +722,11 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
               <DetailField label="Triggered" value={`${relTime(selectedTriggered.triggeredAt)} (${fmtDate(selectedTriggered.triggeredAt)})`} title={fmtDate(selectedTriggered.triggeredAt)}/>
               {selectedTriggered.acknowledgedAt && <DetailField label="Acknowledged" value={`${relTime(selectedTriggered.acknowledgedAt)} (${fmtDate(selectedTriggered.acknowledgedAt)})`} title={fmtDate(selectedTriggered.acknowledgedAt)}/>}
               {selectedTriggered.snoozedUntil && <DetailField label="Snoozed until" value={`${relTime(selectedTriggered.snoozedUntil)} (${fmtDate(selectedTriggered.snoozedUntil)})`} title={fmtDate(selectedTriggered.snoozedUntil)}/>}
-              {selectedTriggered.lastEvaluatedAt && <DetailField label="Last evaluated" value={`${relTime(selectedTriggered.lastEvaluatedAt)} (${fmtDate(selectedTriggered.lastEvaluatedAt)})`} title={fmtDate(selectedTriggered.lastEvaluatedAt)}/>}
-              {/* Triage is the primary action — it comes before the entity list,
-                  never below it (a long entity list buried it off-screen). */}
-              <TriageSection kind="policy" targetId={selectedTriggered.id} assignedTo={selectedTriggered.assignedTo}/>
+               {selectedTriggered.lastEvaluatedAt && <DetailField label="Last evaluated" value={`${relTime(selectedTriggered.lastEvaluatedAt)} (${fmtDate(selectedTriggered.lastEvaluatedAt)})`} title={fmtDate(selectedTriggered.lastEvaluatedAt)}/>}
+               <AlertEvidenceTimeline alert={selectedTriggered} noteVersion={noteVersion}/>
+               {/* Triage is the primary action — it comes before the entity list,
+                   never below it (a long entity list buried it off-screen). */}
+               <TriageSection kind="policy" targetId={selectedTriggered.id} assignedTo={selectedTriggered.assignedTo} showNotes={false} onNoteAdded={() => setNoteVersion(v => v + 1)}/>
               {selectedTriggered.affectedEntities && (() => {
                 try {
                   const parsed = JSON.parse(selectedTriggered.affectedEntities) as {

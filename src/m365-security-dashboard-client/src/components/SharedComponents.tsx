@@ -462,12 +462,14 @@ export function InfoRow({ label, value, tone }: { label: string; value: React.Re
 
 // ─── Triage section: assignment + disposition + analyst notes ─────────────────
 // Local workbench state only — nothing here writes to Microsoft 365.
-export function TriageSection({ kind, targetId, assignedTo, disposition, showDisposition = false }: {
+export function TriageSection({ kind, targetId, assignedTo, disposition, showDisposition = false, showNotes = true, onNoteAdded }: {
   kind: "security" | "policy";
   targetId: string;
   assignedTo?: string | null;
   disposition?: string | null;
   showDisposition?: boolean;
+  showNotes?: boolean;
+  onNoteAdded?: () => void;
 }) {
   const { email: myEmail, canMutate } = useAuth();
   const [curAssignee, setCurAssignee] = useState<string | null>(assignedTo ?? null);
@@ -511,7 +513,7 @@ export function TriageSection({ kind, targetId, assignedTo, disposition, showDis
     setBusy(true);
     const ok = await wbApi.addNote(kind, targetId, t);
     setBusy(false);
-    if (ok) { setNoteText(""); setNotes(await wbApi.listNotes(kind, targetId)); }
+    if (ok) { setNoteText(""); setNotes(await wbApi.listNotes(kind, targetId)); onNoteAdded?.(); }
     else showToast("Could not add note", "error");
   };
 
@@ -555,6 +557,7 @@ export function TriageSection({ kind, targetId, assignedTo, disposition, showDis
         </div>
       )}
 
+      {showNotes && <>
       <div className="dm-section-hdr" style={{ marginTop: 12 }}><MessageSquare size={13} style={{ verticalAlign: "-2px", marginRight: 5 }}/>Notes {notes ? `(${notes.length})` : ""}</div>
       {notes === null ? (
         <div style={{ fontSize: 12, color: "var(--color-muted)", padding: "4px 0" }}>Loading notes…</div>
@@ -582,6 +585,7 @@ export function TriageSection({ kind, targetId, assignedTo, disposition, showDis
           <button className="btn-apply" style={{ padding: "6px 14px", fontSize: 12 }} disabled={busy || !noteText.trim()} onClick={addNote}>Add</button>
         </div>
       )}
+      </>}
     </div>
   );
 }

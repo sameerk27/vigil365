@@ -1072,6 +1072,15 @@ select, input { font: inherit; }
 .collector-status-banner { margin-bottom: 12px; }
 .collection-failure-details summary { cursor: pointer; color: var(--sev-medium-text); }
 .collection-failure-details pre { max-width: 340px; max-height: 120px; margin: 6px 0; overflow: auto; white-space: pre-wrap; font: inherit; font-size: 11px; color: var(--color-muted); }
+.alert-evidence-timeline { margin: 16px 0; border-top: 1px solid var(--color-border-subtle); padding-top: 12px; }
+.evidence-event { display: grid; grid-template-columns: 14px 1fr; gap: 8px; padding: 6px 0; }
+.evidence-dot { width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: var(--color-faint); box-shadow: 0 0 0 3px var(--color-raised); }
+.evidence-trigger { background: var(--sev-high-icon); }
+.evidence-action { background: var(--color-primary); }
+.evidence-note { background: var(--status-good-icon); }
+.evidence-event-meta { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; color: var(--color-text); }
+.evidence-event-meta span, .evidence-event-detail { color: var(--color-muted); font-size: 11px; }
+.evidence-event-detail { margin-top: 2px; white-space: pre-wrap; }
 
 /* ── Card count badge ────────────────────────────────────────────────────── */
 .card-count {
