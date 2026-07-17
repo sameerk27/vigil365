@@ -1066,6 +1066,10 @@ select, input { font: inherit; }
 .sys-status-banner.status-ok {
   background: var(--status-good-bg); border: 1px solid var(--status-good-border); color: var(--status-good-text);
 }
+.sys-status-banner.status-error {
+  background: var(--status-error-bg); border: 1px solid var(--status-error-border); color: var(--status-error-text);
+}
+.collector-status-banner { margin-bottom: 12px; }
 
 /* ── Card count badge ────────────────────────────────────────────────────── */
 .card-count {

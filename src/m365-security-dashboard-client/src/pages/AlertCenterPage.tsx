@@ -5,6 +5,7 @@ import { acApi, recApi, useAuth, crossNavigate } from "../services/api";
 import { showToast } from "../services/toast";
 import { DetailField, KpiTile, Card, Badge, EmptyState, MiniBarChart, ExportDropdown, ProgressBar, CopyButton, LoadingSkeleton, TriageSection } from "../components/SharedComponents";
 import { CollectionHealthCard } from "../components/CollectionHealthCard";
+import { CollectionStatusBanner } from "../components/CollectionStatusBanner";
 import { relTime, fmtDate, fmtShort, sevTone } from "../services/utils";
 
 /** Human-readable status labels — raw enums like "auto_resolved" never reach the UI. */
@@ -893,8 +894,10 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
 
       {/* ── TAB: Active Alerts ── */}
       {tab === "alerts" && (
-        <Card title="Active Alerts" badge={<Badge label={`${filteredTA.length} shown`} tone="neutral"/>}
-          action={
+        <>
+          <CollectionStatusBanner refreshKey={triggeredAlerts.length}/>
+          <Card title="Active Alerts" badge={<Badge label={`${filteredTA.length} shown`} tone="neutral"/>}
+            action={
             <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
               <label className="search-box">
                 <Search size={14}/>
@@ -920,7 +923,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
               <ExportDropdown rows={filteredTA.map(a=>({ Policy:a.policyName, Severity:a.severity, Category:a.category, Condition:a.condition, MetricValue:a.metricValue, Threshold:a.threshold, Triggered:a.triggeredAt, Status:a.status }))} filename="triggered-alerts.csv"/>
               {(search||sevFilter||catFilter||statusFilter||dateFilter)&&<button className="btn-apply" style={{padding:"5px 10px",fontSize:12}} onClick={()=>{setSearch("");setSevFilter("");setCatFilter("");setStatusFilter("");setDateFilter("");}}>Clear</button>}
             </div>
-          }>
+            }>
           {canMutate && selected.size > 0 && (
             <div className="bulk-bar">
               <span className="bulk-count">{selected.size} selected</span>
@@ -1007,7 +1010,8 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
             </div>
             </>
           )}
-        </Card>
+          </Card>
+        </>
       )}
 
       {/* ── TAB: Policies ── */}
