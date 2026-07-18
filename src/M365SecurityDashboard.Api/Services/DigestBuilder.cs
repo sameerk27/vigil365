@@ -43,10 +43,15 @@ public sealed class DigestBuilder(AppDbContext db)
 
         var metrics = BuildMetrics(latest, prior);
 
+        // Open alerts, excluding those currently snoozed — a snoozed alert has been
+        // deliberately silenced and shouldn't surface in an executive summary as if
+        // it were unhandled.
+        var openAlerts = (await db.TriggeredAlerts.AsNoTracking()
+                .Where(t => t.Status == "new" || t.Status == "acknowledged")
+                .ToListAsync(ct))
+            .Where(t => t.SnoozedUntil == null || t.SnoozedUntil <= now)
+            .ToList();
         // Top open alerts by severity then recency, capped so the email stays scannable.
-        var openAlerts = await db.TriggeredAlerts.AsNoTracking()
-            .Where(t => t.Status == "new" || t.Status == "acknowledged")
-            .ToListAsync(ct);
         var topAlerts = openAlerts
             .OrderByDescending(a => SeverityRank(a.Severity))
             .ThenByDescending(a => a.TriggeredAt)

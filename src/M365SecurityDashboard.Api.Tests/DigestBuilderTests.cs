@@ -43,6 +43,22 @@ public class DigestBuilderTests
     }
 
     [Fact]
+    public async Task BuildAsync_ExcludesCurrentlySnoozedAlertsFromTopList()
+    {
+        using var db = TestAppDbContextFactory.Create();
+        db.TriggeredAlerts.Add(new TriggeredAlert { Id = Guid.NewGuid(), PolicyName = "snoozed", Severity = "critical", Status = "new", TriggeredAt = DateTimeOffset.UtcNow, SnoozedUntil = DateTimeOffset.UtcNow.AddHours(4) });
+        db.TriggeredAlerts.Add(new TriggeredAlert { Id = Guid.NewGuid(), PolicyName = "active", Severity = "high", Status = "new", TriggeredAt = DateTimeOffset.UtcNow });
+        db.TriggeredAlerts.Add(new TriggeredAlert { Id = Guid.NewGuid(), PolicyName = "snooze-expired", Severity = "medium", Status = "new", TriggeredAt = DateTimeOffset.UtcNow, SnoozedUntil = DateTimeOffset.UtcNow.AddHours(-1) });
+        await db.SaveChangesAsync();
+
+        var digest = await new DigestBuilder(db).BuildAsync(7, CancellationToken.None);
+
+        Assert.DoesNotContain(digest.TopAlerts, a => a.PolicyName == "snoozed"); // still snoozed → excluded
+        Assert.Contains(digest.TopAlerts, a => a.PolicyName == "active");
+        Assert.Contains(digest.TopAlerts, a => a.PolicyName == "snooze-expired"); // snooze lapsed → included
+    }
+
+    [Fact]
     public async Task BuildAsync_CsvEscapesCommasInFields()
     {
         using var db = TestAppDbContextFactory.Create();

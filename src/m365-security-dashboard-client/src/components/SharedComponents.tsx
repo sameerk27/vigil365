@@ -557,6 +557,8 @@ export function TriageSection({ kind, targetId, assignedTo, disposition, showDis
         </div>
       )}
 
+      {/* Notes list — hidden when a parent (e.g. the evidence timeline) already
+          renders the notes. The add-note input below stays available either way. */}
       {showNotes && <>
       <div className="dm-section-hdr" style={{ marginTop: 12 }}><MessageSquare size={13} style={{ verticalAlign: "-2px", marginRight: 5 }}/>Notes {notes ? `(${notes.length})` : ""}</div>
       {notes === null ? (
@@ -576,8 +578,9 @@ export function TriageSection({ kind, targetId, assignedTo, disposition, showDis
           ))}
         </div>
       )}
+      </>}
       {canMutate && (
-        <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+        <div style={{ display: "flex", gap: 6, marginTop: showNotes ? 8 : 12 }}>
           <input className="form-input" style={{ flex: 1, fontSize: 12 }} placeholder="Add a note — what did you find?"
             value={noteText} maxLength={2000}
             onChange={e => setNoteText(e.target.value)}
@@ -585,7 +588,6 @@ export function TriageSection({ kind, targetId, assignedTo, disposition, showDis
           <button className="btn-apply" style={{ padding: "6px 14px", fontSize: 12 }} disabled={busy || !noteText.trim()} onClick={addNote}>Add</button>
         </div>
       )}
-      </>}
     </div>
   );
 }
