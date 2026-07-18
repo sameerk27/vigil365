@@ -1128,6 +1128,33 @@ app.MapGet("/api/dashboard/conditional-access", async (
     catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", enabled = 0, disabled = 0, reportOnly = 0, policies = Array.Empty<object>() }); }
 });
 
+// Conditional Access gap analysis — coverage holes across the CA policy set.
+app.MapGet("/api/dashboard/ca-gaps", async (
+    IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
+{
+    if (!options.Value.IsConfigured())
+        return Results.Ok(new { configured = false, policyCount = 0, findings = Array.Empty<object>() });
+    try
+    {
+        var graph = services.GetRequiredService<GraphApiClient>();
+        var raw = await graph.GetCollectionAsync("/v1.0/identity/conditionalAccess/policies", ct);
+        var views = raw.Select(ConditionalAccessGapAnalyzer.Parse).ToList();
+        var findings = ConditionalAccessGapAnalyzer.Analyze(views);
+        return Results.Ok(new
+        {
+            configured = true,
+            policyCount = views.Count,
+            enabledCount = views.Count(v => string.Equals(v.State, "enabled", StringComparison.OrdinalIgnoreCase)),
+            findings,
+        });
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogError(ex, "CA gap analysis error");
+        return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", policyCount = 0, findings = Array.Empty<object>() });
+    }
+}).RequireAuthorization("RequireAnalyst");
+
 // Admin audit log
 app.MapGet("/api/dashboard/audit-log", async (
     IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>

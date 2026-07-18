@@ -147,6 +147,13 @@ export const reportApi = {
   },
 };
 
+// ─── Conditional Access gap analysis ──────────────────────────────────────────
+export const caApi = {
+  async getGaps(): Promise<import("./types").CaGapAnalysis | null> {
+    try { const r = await apiFetch(`${apiBase}/api/dashboard/ca-gaps`); return r.ok ? await r.json() : null; } catch { return null; }
+  },
+};
+
 // ─── Entity investigation profile (drill-down) ────────────────────────────────
 export const entityApi = {
   async getProfile(kind: "user" | "device", id: string): Promise<import("./types").EntityProfile | null> {

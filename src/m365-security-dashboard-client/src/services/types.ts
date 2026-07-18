@@ -219,6 +219,14 @@ export interface DigestPreview {
   hasData: boolean; metrics: DigestMetric[]; topAlerts: DigestTopAlert[];
 }
 
+export interface CaGapFinding {
+  severity: string; title: string; detail: string; recommendation: string;
+}
+export interface CaGapAnalysis {
+  configured: boolean; policyCount: number; enabledCount?: number;
+  findings: CaGapFinding[]; error?: string;
+}
+
 export interface EntityTimelineItem {
   at: string; type: "alert" | "activity"; severity: string; title: string; detail: string; alertId?: number | null;
 }
