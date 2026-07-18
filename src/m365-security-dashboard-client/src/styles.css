@@ -1109,6 +1109,23 @@ select, input { font: inherit; }
 .member-alert-date { font-size: 11px; color: var(--color-muted); white-space: nowrap; }
 .incident-alert-count { color: var(--color-primary); font-weight: 600; white-space: nowrap; }
 
+/* ── Entity investigation drill-down (P4.1) ────────────────────────────────── */
+.entity-back { margin-bottom: 12px; display: inline-flex; align-items: center; gap: 6px; }
+.entity-header { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+.entity-avatar { width: 44px; height: 44px; flex: none; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: var(--color-raised); border: 1px solid var(--color-border-subtle); color: var(--color-primary); }
+.entity-name { font-size: 20px; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.entity-kind { font-size: 12px; color: var(--color-muted); }
+.entity-timeline { display: flex; flex-direction: column; }
+.entity-tl-item { display: grid; grid-template-columns: 28px 1fr; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--color-border-subtle); }
+.entity-tl-item:last-child { border-bottom: none; }
+.entity-tl-marker { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.entity-tl-alert { background: var(--sev-high-bg, rgba(234,88,12,.15)); color: var(--sev-high-text); }
+.entity-tl-activity { background: var(--color-raised); color: var(--color-muted); border: 1px solid var(--color-border-subtle); }
+.entity-tl-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.entity-tl-title { font-weight: 600; font-size: 13px; }
+.entity-tl-time { font-size: 11px; color: var(--color-muted); margin-left: auto; }
+.entity-tl-detail { font-size: 12px; color: var(--color-muted); margin-top: 2px; }
+
 /* ── Card count badge ────────────────────────────────────────────────────── */
 .card-count {
   display: inline-flex; align-items: center; justify-content: center;

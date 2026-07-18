@@ -219,6 +219,19 @@ export interface DigestPreview {
   hasData: boolean; metrics: DigestMetric[]; topAlerts: DigestTopAlert[];
 }
 
+export interface EntityTimelineItem {
+  at: string; type: "alert" | "activity"; severity: string; title: string; detail: string; alertId?: number | null;
+}
+export interface EntitySummary {
+  kind: "user" | "device"; id: string;
+  alertCount: number; openAlertCount: number; activityCount: number;
+  firstSeen?: string | null; lastSeen?: string | null;
+  alertsBySeverity: Record<string, number>;
+}
+export interface EntityProfile {
+  summary: EntitySummary; timeline: EntityTimelineItem[]; found: boolean;
+}
+
 export interface NotificationLogEntry {
   id: number; triggeredAlertId: string; policyName: string;
   channel: string; target?: string; success: boolean; error?: string; sentAt: string;

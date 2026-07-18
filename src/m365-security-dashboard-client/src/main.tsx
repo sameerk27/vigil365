@@ -45,6 +45,7 @@ import { UserManagementPage } from "./pages/UserManagementPage";
 import { SetupPage } from "./pages/SetupPage";
 import { TrendsPage } from "./pages/TrendsPage";
 import { ReportsPage } from "./pages/ReportsPage";
+import { EntityPage } from "./pages/EntityPage";
 import { ActivityFeedPage } from "./pages/ActivityFeedPage";
 
 // App version — surfaced in the sidebar so the running build is always identifiable.
@@ -99,7 +100,15 @@ const VALID_PAGES = new Set<string>(SECTIONS.flatMap(s => s.pages.map(p => p.id)
 // URL shape: #/{pageId} with an optional ?alert={id} permalink. Numeric ids are
 // collected M365 security alerts; GUIDs are triggered policy alerts (the kind
 // notifications link to). Keeps pages refresh-safe, bookmarkable, shareable.
-function parseHash(): { page: NavPage | null; alertId: number | null; triggeredId: string | null } {
+type EntityRef = { kind: "user" | "device"; id: string };
+function parseHash(): { page: NavPage | null; alertId: number | null; triggeredId: string | null; entity: EntityRef | null } {
+  // Entity drill-down route: #/entity/{user|device}/{encoded-id}
+  const ent = window.location.hash.match(/^#\/entity\/(user|device)\/(.+)$/);
+  if (ent) {
+    let id = ent[2];
+    try { id = decodeURIComponent(id); } catch { /* leave raw if malformed */ }
+    return { page: null, alertId: null, triggeredId: null, entity: { kind: ent[1] as "user" | "device", id } };
+  }
   const m = window.location.hash.match(/^#\/([a-z]+)(?:\?alert=([0-9a-fA-F-]+))?/);
   const page = m && VALID_PAGES.has(m[1]) ? (m[1] as NavPage) : null;
   const raw = m?.[2] ?? null;
@@ -108,6 +117,7 @@ function parseHash(): { page: NavPage | null; alertId: number | null; triggeredI
     page,
     alertId: raw && !isGuid ? Number(raw) : null,
     triggeredId: isGuid ? raw : null,
+    entity: null,
   };
 }
 
@@ -184,14 +194,17 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
   const [page, setPageState] = useState<NavPage>(() => parseHash().page ?? "overview");
   const [pendingAlertId, setPendingAlertId] = useState<number | null>(() => parseHash().alertId);
   const [pendingTriggeredId, setPendingTriggeredId] = useState<string | null>(() => parseHash().triggeredId);
+  const [entity, setEntity] = useState<EntityRef | null>(() => parseHash().entity);
   const setPage = useCallback((p: NavPage) => {
     setPageState(p);
+    setEntity(null);
     if (window.location.hash !== `#/${p}`) window.history.pushState(null, "", `#/${p}`);
   }, []);
   useEffect(() => {
     if (!window.location.hash) window.history.replaceState(null, "", `#/${parseHash().page ?? "overview"}`);
     const sync = () => {
-      const { page: p, alertId, triggeredId } = parseHash();
+      const { page: p, alertId, triggeredId, entity: e } = parseHash();
+      setEntity(e);
       if (p) setPageState(p);
       if (alertId != null) setPendingAlertId(alertId);
       if (triggeredId != null) setPendingTriggeredId(triggeredId);
@@ -531,6 +544,9 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
         {error&&<div className="err-banner">{error} <button style={{marginLeft:8,textDecoration:"underline",background:"none",border:"none",color:"inherit",cursor:"pointer"}} onClick={()=>setError("")}>Dismiss</button></div>}
         {isInitialLoad ? (
           <DashboardSkeleton />
+        ) : entity ? (
+          <EntityPage kind={entity.kind} id={entity.id}
+            onBack={() => { if (window.history.length > 1) window.history.back(); else setPage("overview"); }}/>
         ) : (
           <>
             {page==="overview"&&<OverviewPage overview={overview} secureScore={secureScore} identity={identity} devices={devices} serviceHealth={serviceHealth} alerts={allAlerts} defenderAlerts={defenderAlerts} securityIncidents={securityIncidents} onAlertClick={setSelectedAlert} onNavigateAlertCenter={()=>setPage("alertcenter")} alertPolicies={alertPolicies} overviewTriggered={triggeredAlerts} healthRefreshKey={refreshKey}/>}

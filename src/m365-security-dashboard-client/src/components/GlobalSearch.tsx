@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Search, FileText, ShieldAlert, User, Monitor } from "lucide-react";
 import { NavPage, SecurityAlert } from "../services/types";
-import { crossNavigate } from "../services/api";
+import { openEntity } from "../services/api";
 import { sevClass } from "../services/utils";
 
 type Result =
@@ -70,8 +70,8 @@ export function GlobalSearch({ open, onClose, alerts, pages, onOpenAlert, onNavi
     switch (r.kind) {
       case "page":   onNavigatePage(r.page); break;
       case "alert":  onOpenAlert(r.alert); break;
-      case "user":   crossNavigate({ page: "identity", search: r.label }); break;
-      case "device": crossNavigate({ page: "devices", search: r.label }); break;
+      case "user":   openEntity("user", r.label); break;
+      case "device": openEntity("device", r.label); break;
     }
   };
 

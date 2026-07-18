@@ -84,6 +84,7 @@ builder.Services.AddSingleton<SecretProtector>();
 builder.Services.AddScoped<GraphCollector>();
 builder.Services.AddScoped<NotificationSender>();
 builder.Services.AddScoped<DigestBuilder>();
+builder.Services.AddScoped<EntityProfileBuilder>();
 builder.Services.AddScoped<AlertEvaluator>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<AuditLogger>();
@@ -2013,6 +2014,16 @@ app.MapGet("/api/notification-health", async (AppDbContext db, CancellationToken
     var health = NotificationHealth.Compute(recent);
     var threshold = cfg?.FailureAlertThreshold ?? 3;
     return Results.Ok(new { threshold, channels = health, anyFailing = health.Any(h => h.ConsecutiveFailures >= threshold) });
+}).RequireAuthorization("RequireAnalyst");
+
+// ── Entity investigation profile (drill-down) ──────────────────────────────
+// GET /api/entity/{kind}/{id} — kind = user|device. Merges the entity's alerts
+// and tenant audit activity into one reverse-chronological timeline.
+app.MapGet("/api/entity/{kind}/{id}", async (EntityProfileBuilder builder, string kind, string id, CancellationToken ct) =>
+{
+    if (string.IsNullOrWhiteSpace(id)) return Results.BadRequest(new { error = "Entity id is required." });
+    var profile = await builder.BuildAsync(kind, id, maxItems: 300, ct);
+    return Results.Ok(profile);
 }).RequireAuthorization("RequireAnalyst");
 
 // ── Scheduled reports (executive digest) ───────────────────────────────────

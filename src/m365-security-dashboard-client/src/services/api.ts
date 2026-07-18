@@ -147,6 +147,16 @@ export const reportApi = {
   },
 };
 
+// ─── Entity investigation profile (drill-down) ────────────────────────────────
+export const entityApi = {
+  async getProfile(kind: "user" | "device", id: string): Promise<import("./types").EntityProfile | null> {
+    try {
+      const r = await apiFetch(`${apiBase}/api/entity/${kind}/${encodeURIComponent(id)}`);
+      return r.ok ? await r.json() : null;
+    } catch { return null; }
+  },
+};
+
 // ─── In-app cross-navigation ────────────────────────────────────────────────────
 // Lets one page deep-link into another with a search/filter seed (e.g. Alert Center
 // "view user in Identity"). App registers the page-setter; pages read & consume the
@@ -165,6 +175,14 @@ export function crossNavigate(target: CrossNavTarget): void {
   _navHandler?.(target);
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("nav-seed-update", { detail: target }));
+  }
+}
+
+// Navigate to the entity investigation drill-down. Sets the hash; App's
+// hashchange listener renders the EntityPage overlay.
+export function openEntity(kind: "user" | "device", id: string): void {
+  if (typeof window !== "undefined" && id) {
+    window.location.hash = `#/entity/${kind}/${encodeURIComponent(id)}`;
   }
 }
 
