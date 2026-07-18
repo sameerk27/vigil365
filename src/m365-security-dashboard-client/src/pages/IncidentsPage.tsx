@@ -13,7 +13,8 @@ export type UnifiedItem =
 
 export type IncidentFilter = "all" | "alerts" | "defender" | "incidents" | "advisories";
 
-export function DefenderAlertModal({ alert, onClose }: { alert: DefenderAlert; onClose: () => void }) {
+export function DefenderAlertModal({ alert, onClose, parentIncident, onOpenIncident }:
+  { alert: DefenderAlert; onClose: () => void; parentIncident?: SecurityIncident | null; onOpenIncident?: () => void }) {
   const portalUrl = alert.alertWebUrl ?? (alert.id ? `https://security.microsoft.com/alerts/${alert.id}` : "https://security.microsoft.com/alerts");
   const sev = alert.severity.charAt(0).toUpperCase() + alert.severity.slice(1);
   return (
@@ -34,7 +35,11 @@ export function DefenderAlertModal({ alert, onClose }: { alert: DefenderAlert; o
       <DetailField label="Assigned To" value={alert.assignedTo}/>
       <DetailField label="Threat Actor" value={alert.actorDisplayName}/>
       <DetailField label="Threat" value={alert.threatDisplayName}/>
-      <DetailField label="Incident ID" value={alert.incidentId} copy={!!alert.incidentId}/>
+      {alert.incidentId && parentIncident && onOpenIncident ? (
+        <DetailField label="Incident" value={parentIncident.displayName ?? "Security Incident"} onNavigate={onOpenIncident} navLabel="Open incident →"/>
+      ) : (
+        <DetailField label="Incident ID" value={alert.incidentId} copy={!!alert.incidentId}/>
+      )}
       <DetailField label="Detected" value={alert.createdDateTime ? `${relTime(alert.createdDateTime)} (${fmtDate(alert.createdDateTime)})` : undefined} title={fmtDate(alert.createdDateTime)}/>
       <DetailField label="Last Updated" value={alert.lastUpdateDateTime ? `${relTime(alert.lastUpdateDateTime)} (${fmtDate(alert.lastUpdateDateTime)})` : undefined} title={fmtDate(alert.lastUpdateDateTime)}/>
       {alert.description && (
@@ -71,6 +76,21 @@ export function IncidentsPage({ alerts, serviceHealth, defenderAlerts, securityI
   const [dateRange, setDateRange] = useState<"all"|"24h"|"7d"|"30d">("all");
   const [selectedDefender, setSelectedDefender] = useState<DefenderAlert|null>(null);
   const [selectedIncident, setSelectedIncident] = useState<SecurityIncident|null>(null);
+
+  // Incident ↔ alert join (P4.2): defender alerts carry incidentId; incidents have id.
+  const allDefenderAlerts = defenderAlerts?.alerts ?? [];
+  const allIncidents = securityIncidents?.incidents ?? [];
+  const memberAlerts = useMemo(
+    () => selectedIncident ? allDefenderAlerts.filter(a => a.incidentId && a.incidentId === selectedIncident.id) : [],
+    [selectedIncident, allDefenderAlerts]);
+  const parentIncident = useMemo(
+    () => selectedDefender?.incidentId ? allIncidents.find(i => i.id === selectedDefender.incidentId) ?? null : null,
+    [selectedDefender, allIncidents]);
+  const alertCountByIncident = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const a of allDefenderAlerts) if (a.incidentId) m[a.incidentId] = (m[a.incidentId] ?? 0) + 1;
+    return m;
+  }, [allDefenderAlerts]);
 
   const unified = useMemo((): UnifiedItem[] => {
     const alertItems: UnifiedItem[] = alerts.map(a=>({ kind:"alert", data:a }));
@@ -144,7 +164,9 @@ export function IncidentsPage({ alerts, serviceHealth, defenderAlerts, securityI
 
   return (
     <div className="page">
-      {selectedDefender&&<DefenderAlertModal alert={selectedDefender} onClose={()=>setSelectedDefender(null)}/>}
+      {selectedDefender&&<DefenderAlertModal alert={selectedDefender} onClose={()=>setSelectedDefender(null)}
+        parentIncident={parentIncident}
+        onOpenIncident={parentIncident ? () => { const inc = parentIncident; setSelectedDefender(null); setSelectedIncident(inc); } : undefined}/>}
       {selectedIncident && (
         <DetailModal
           title={selectedIncident.displayName ?? "Security Incident"}
@@ -162,6 +184,26 @@ export function IncidentsPage({ alerts, serviceHealth, defenderAlerts, securityI
           <DetailField label="Created" value={selectedIncident.createdDateTime ? `${relTime(selectedIncident.createdDateTime)} (${fmtDate(selectedIncident.createdDateTime)})` : undefined} title={fmtDate(selectedIncident.createdDateTime)}/>
           <DetailField label="Last Updated" value={selectedIncident.lastUpdateDateTime ? `${relTime(selectedIncident.lastUpdateDateTime)} (${fmtDate(selectedIncident.lastUpdateDateTime)})` : undefined} title={fmtDate(selectedIncident.lastUpdateDateTime)}/>
           {(selectedIncident.customTags?.length ?? 0) > 0 && <DetailField label="Tags" value={selectedIncident.customTags.join(", ")}/>}
+          <div className="dm-section-hdr">Member alerts {memberAlerts.length ? `(${memberAlerts.length})` : ""}</div>
+          {memberAlerts.length === 0 ? (
+            <div style={{ fontSize: 12, color: "var(--color-muted)", padding: "2px 0 4px" }}>
+              {defenderAlerts?.error ? "Defender alerts unavailable." : "No correlated Defender alerts loaded for this incident."}
+            </div>
+          ) : (
+            <div className="incident-member-alerts">
+              {memberAlerts.map((a, i) => {
+                const sev = a.severity.charAt(0).toUpperCase() + a.severity.slice(1);
+                return (
+                  <button type="button" key={a.id ?? i} className="member-alert-row"
+                    onClick={() => { const al = a; setSelectedIncident(null); setSelectedDefender(al); }}>
+                    <span className={`sev-pill sev-pill-${sev.toLowerCase()==="informational"?"info":sev.toLowerCase()}`}>{sev}</span>
+                    <span className="member-alert-title trunc" title={a.title ?? undefined}>{a.title ?? "Defender alert"}</span>
+                    <span className="member-alert-date">{relTime(a.createdDateTime) || fmtDate(a.createdDateTime)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {selectedIncident.description && <><div className="dm-section-hdr">Description</div><div className="dm-desc-block">{selectedIncident.description}</div></>}
           {selectedIncident.recommendedActions && <><div className="dm-section-hdr">Recommended Actions</div><div className="dm-desc-block">{selectedIncident.recommendedActions}</div></>}
         </DetailModal>
@@ -285,7 +327,9 @@ export function IncidentsPage({ alerts, serviceHealth, defenderAlerts, securityI
                         <div className="al-title trunc" title={i.displayName??undefined}>{i.displayName??'Security Incident'}</div>
                         {i.assignedTo&&<div className="al-desc">Assigned: {i.assignedTo}</div>}
                       </td>
-                      <td className="al-desc">{i.status} {i.classification ? `· ${i.classification}` : ""}</td>
+                      <td className="al-desc">{i.status} {i.classification ? `· ${i.classification}` : ""}
+                        {i.id && (alertCountByIncident[i.id] ?? 0) > 0 && <span className="incident-alert-count" title="Correlated Defender alerts loaded">· {alertCountByIncident[i.id]} alert{alertCountByIncident[i.id]===1?"":"s"}</span>}
+                      </td>
                       <td className="al-date">{relTime(i.createdDateTime) || fmtDate(i.createdDateTime)}</td>
                       <td><Eye size={13} className="tbl-eye"/></td>
                     </tr>
