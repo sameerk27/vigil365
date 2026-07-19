@@ -1,54 +1,5 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo } from "react";
 import { Shield, FileText, Star, Search, ShieldAlert, ShieldCheck, Flag, ExternalLink, CheckCircle2, XCircle } from "lucide-react";
-import { SharingPosture } from "../services/types";
-import { caApi } from "../services/api";
-import { LoadingSkeleton } from "../components/SharedComponents";
-
-// SharePoint/OneDrive external-sharing posture (P4.4) — self-contained fetch,
-// reuses the CA gap card styling for findings.
-function SharingPostureCard() {
-  const [posture, setPosture] = useState<SharingPosture | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    caApi.getSharingPosture().then(p => { if (!cancelled) { setPosture(p); setLoading(false); } });
-    return () => { cancelled = true; };
-  }, []);
-
-  if (!loading && (!posture || !posture.configured)) return null;
-
-  const findings = posture?.findings ?? [];
-  const worst = findings[0]?.severity;
-  const badge = loading ? <Badge label="Analyzing…" tone="neutral"/>
-    : posture?.error ? <Badge label="Unavailable" tone="neutral"/>
-    : findings.length === 0 ? <Badge label="Healthy" tone="good"/>
-    : <Badge label={`${findings.length} finding${findings.length === 1 ? "" : "s"}`} tone={sevTone(worst)}/>;
-
-  return (
-    <Card title="SharePoint / OneDrive Sharing Posture" badge={badge} id="sharing-posture">
-      {loading ? <LoadingSkeleton type="list"/>
-        : posture?.error ? <EmptyState message={posture.error}/>
-        : findings.length === 0 ? (
-          <div className="ca-gap-clean"><CheckCircle2 size={16}/> External-sharing settings look healthy ({posture?.sharingCapability ?? "unknown capability"}).</div>
-        ) : (
-          <div className="ca-gap-list">
-            {findings.map((f, i) => (
-              <div className={`ca-gap-item ca-gap-${f.severity}`} key={i}>
-                <div className="ca-gap-head">
-                  <ShieldAlert size={14}/>
-                  <span className="ca-gap-title">{f.title}</span>
-                  <Badge label={f.severity} tone={sevTone(f.severity)}/>
-                </div>
-                <div className="ca-gap-detail">{f.detail}</div>
-                <div className="ca-gap-rec"><b>Recommendation:</b> {f.recommendation}</div>
-              </div>
-            ))}
-          </div>
-        )}
-    </Card>
-  );
-}
 import { SecureScore, Overview, DlpAlertsData, PurviewData, McasAlertsData, InsiderRiskData, AttackSimulationData, DlpAlert, McasAlert, InsiderRiskAlert, AttackSim, Tone, IdentityData, DevicesData, ConditionalAccessData, SecurityIncidentsData, PrivilegedRolesData, EmailProtectionData } from "../services/types";
 import { fmtDate, relTime, pctTone, sevTone } from "../services/utils";
 import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, ProgressBar, ExportDropdown, StatBox, SectHdr } from "../components/SharedComponents";
@@ -132,21 +83,21 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
     { id:"ID.GV-01", cis:"CIS 16.1", iso:"A.5.1", gdpr:"Art. 24", name:"Continuous Posture Optimization", hasData:!!secureScore?.configured, passed:(secureScore?.percentage ?? 0) >= thresholds.minSecureScore, signal: secureScore?.configured ? `Secure Score at ${secureScore.percentage}% (Target: ≥${thresholds.minSecureScore}%)` : "Secure Score not collected", fix:"Complete recommended improvement actions in Microsoft Defender", link:"https://security.microsoft.com/securescore?viewid=actions" }
   ], [identity, identityData, devices, devicesData, dlpAlerts, ca, caData, purview, secureScore, overview, insiderRisk, attackSimulation, mcasAlerts, securityIncidents, privilegedRoles, emailProtection, thresholds]);
 
-  // Scores are computed only over controls with data — "insufficient data" never
-  // counts as pass OR fail. A framework with no measurable controls shows N/A.
-  const frameworks = useMemo(() => [
-    { name:"NIST CSF 2.0 (2024)", desc:"National Institute of Standards & Technology Core Framework", controls: allControls },
-    { name:"CIS Controls v8.1", desc:"Center for Internet Security Critical Security Controls v8.1", controls: allControls.filter(c => c.cis) },
-    { name:"ISO/IEC 27001:2022/Amd 1:2024", desc:"Information Security Management Systems Annex A (2024 Amendment)", controls: allControls.filter(c => c.iso) },
-    { name:"GDPR Art. 32 (2016/679)", desc:"EU General Data Protection Regulation Security of Processing", controls: allControls.filter(c => c.gdpr) }
-  ].map(fw => {
-    const measured = fw.controls.filter(c => c.hasData);
+  // ONE honest assessment over the 16 controls. (We used to render four framework
+  // cards — NIST/CIS/ISO/GDPR — but they all derived from these same controls and
+  // showed identical scores, which read as fake differentiation. The framework
+  // cross-references remain visible per control inside the drill-down.)
+  const assessment = useMemo(() => {
+    const measured = allControls.filter(c => c.hasData);
     const passed = measured.filter(c => c.passed).length;
     const score = measured.length > 0 ? Math.round((passed / measured.length) * 100) : 0;
-    const noData = measured.length === 0;
-    return { ...fw, score, passed, total: fw.controls.length, measured: measured.length, noData,
-      status: noData ? "No data" : score >= 80 ? "Compliant" : score >= 50 ? "Action Required" : "High Risk" };
-  }), [allControls]);
+    return {
+      name: "Security Controls Assessment",
+      desc: "16 measurable controls evaluated against collected telemetry",
+      controls: allControls, score, passed,
+      total: allControls.length, measured: measured.length, noData: measured.length === 0,
+    };
+  }, [allControls]);
 
   const controls = useMemo(() => {
     const calc = (ids: string[]) => {
@@ -302,8 +253,8 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <div>
-          <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: "var(--color-text)" }}>Enterprise Compliance Baseline</h2>
-          <div style={{ fontSize: 12, color: "var(--color-muted)" }}>Pinned frameworks: NIST CSF 2.0 (2024), CIS Controls v8.1, ISO/IEC 27001:2022/Amd 1:2024, GDPR Art. 32 (2016/679)</div>
+          <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: "var(--color-text)" }}>Security Posture Baseline</h2>
+          <div style={{ fontSize: 12, color: "var(--color-muted)" }}>Microsoft Secure Score plus 16 measurable controls evaluated against collected telemetry (NIST/CIS/ISO/GDPR references shown per control)</div>
         </div>
         <button className="btn-export" onClick={() => setShowThresholdModal(true)} style={{ display: "flex", alignItems: "center", gap: 6 }}>
           Configure Thresholds
@@ -314,66 +265,38 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
         <KpiTile icon={<Shield size={18}/>} label="SECURE SCORE"
           value={secureScore?.configured&&!secureScore.error?`${secureScore.percentage}%`:"—"}
           sub="Microsoft 365 posture" tone={pctTone(secureScore?.percentage??0)}/>
-        <KpiTile icon={<FileText size={18}/>} label="FRAMEWORKS" value={`${frameworks.filter(f=>!f.noData&&f.score>=80).length}/${frameworks.length}`}
-          sub="Compliant standards" tone="info"/>
+        <KpiTile icon={<Star size={18}/>} label="CONTROLS PASSING" value={assessment.noData ? "—" : `${assessment.score}%`}
+          sub={`${assessment.passed} of ${assessment.measured} assessed controls`}
+          tone={assessment.noData ? "neutral" : pctTone(assessment.score)}
+          onClick={()=>setSelectedFw(assessment)}/>
+        <KpiTile icon={<FileText size={18}/>} label="DATA COVERAGE" value={`${assessment.measured}/${assessment.total}`}
+          sub="Controls with telemetry" tone={assessment.measured === assessment.total ? "good" : "info"}
+          onClick={()=>setSelectedFw(assessment)}/>
         <KpiTile icon={<FileText size={18}/>} label="DLP VIOLATIONS" value={dlpAlerts?.configured&&!dlpAlerts.error?dlpAlerts.total:"—"}
           sub={dlpAlerts?.error?"Needs SecurityAlert.Read.All":"Data loss prevention alerts"} needsPerm={!!dlpAlerts?.error}
           tone={(dlpAlerts?.total??0)===0?"good":"warning"}/>
-        {(() => {
-          const assessed = frameworks.filter(f => !f.noData);
-          const avg = assessed.length ? Math.round(assessed.reduce((a,b)=>a+b.score,0)/assessed.length) : 0;
-          const totalMeasured = allControls.filter(c => c.hasData).length;
-          return (
-            <KpiTile icon={<Star size={18}/>} label="AVG FRAMEWORK SCORE" value={assessed.length ? `${avg}%` : "—"}
-              sub={`${totalMeasured} of ${allControls.length} controls assessed`}
-              tone={assessed.length ? pctTone(avg) : "neutral"}/>
-          );
-        })()}
       </div>
 
-      <SharingPostureCard/>
-
-      <div className="two-col">
-        <Card title="Security Control Areas">
-          <div className="controls-list">
-            {controls.map((c,i)=>(
-              <div key={i} className="control-item">
-                <div className="control-head">
-                  <span className="control-name">{c.area}</span>
-                  <span className="control-score" style={{color:c.score>=80?"var(--status-good-text)":c.score>=60?"var(--status-warn-text)":"var(--status-error-text)"}}>{c.score}%</span>
-                </div>
-                <ProgressBar pct={c.score}/>
-                <div className="control-items">
-                  {c.items.map((item,j)=>(
-                    <span key={j} className="control-tag">{item}</span>
-                  ))}
-                </div>
+      <Card title="Security Control Areas"
+        badge={<Badge label={assessment.noData ? "No data" : `${assessment.passed}/${assessment.measured} passing`} tone={assessment.noData ? "neutral" : assessment.score >= 80 ? "good" : assessment.score >= 50 ? "warning" : "error"}/>}
+        action={<button className="btn-export" onClick={()=>setSelectedFw(assessment)}>View all 16 controls</button>}>
+        <div className="controls-list controls-list-grid">
+          {controls.map((c,i)=>(
+            <div key={i} className="control-item">
+              <div className="control-head">
+                <span className="control-name">{c.area}</span>
+                <span className="control-score" style={{color:c.score>=80?"var(--status-good-text)":c.score>=60?"var(--status-warn-text)":"var(--status-error-text)"}}>{c.score}%</span>
               </div>
-            ))}
-          </div>
-        </Card>
-
-        <Card title="Compliance Frameworks (Click to Drill Down)">
-          <div className="frameworks-list">
-            {frameworks.map((f,i)=>(
-              <div key={i} className="framework-item al-clickable" onClick={()=>setSelectedFw(f)} style={{ cursor: "pointer", padding: "10px 12px", borderRadius: 6, transition: "background 0.15s", border: "1px solid var(--color-border-subtle)", marginBottom: 8 }}>
-                <div className="fw-head" style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                  <div>
-                    <div className="fw-name" style={{ fontWeight: 600, fontSize: 14, color: "var(--color-text)" }}>{f.name}</div>
-                    <div style={{ fontSize: 11, color: "var(--color-muted)" }}>{f.desc}</div>
-                  </div>
-                  <Badge label={f.noData ? "No data" : f.status} tone={f.noData ? "neutral" : f.score>=80?"good":f.score>=50?"warning":"error"}/>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{ flex: 1 }}><ProgressBar pct={f.noData ? 0 : f.score}/></div>
-                  <span style={{ fontSize: 13, fontWeight: 700, minWidth: 38, textAlign: "right", color: f.noData ? "var(--color-muted)" : f.score>=80?"var(--status-good-text)":f.score>=50?"var(--status-warn-text)":"var(--status-error-text)" }}>{f.noData ? "N/A" : `${f.score}%`}</span>
-                </div>
-                {!f.noData && <div style={{ fontSize: 10.5, color: "var(--color-faint)", marginTop: 4 }}>{f.measured} of {f.total} controls assessed</div>}
+              <ProgressBar pct={c.score}/>
+              <div className="control-items">
+                {c.items.map((item,j)=>(
+                  <span key={j} className="control-tag">{item}</span>
+                ))}
               </div>
-            ))}
-          </div>
-        </Card>
-      </div>
+            </div>
+          ))}
+        </div>
+      </Card>
 
       <div className="sticky-filter-bar filters-bar">
         <label className="search-box">

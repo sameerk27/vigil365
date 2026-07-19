@@ -1,4 +1,4 @@
-export type NavPage = "overview" | "recommendations" | "trends" | "reports" | "identity" | "devices" | "email" | "incidents" | "alertcenter" | "activityfeed" | "compliance" | "servicehealth" | "network" | "licenses" | "conditionalaccess" | "auditlog" | "signinmap" | "users" | "setup";
+export type NavPage = "overview" | "recommendations" | "trends" | "reports" | "identity" | "devices" | "email" | "incidents" | "alertcenter" | "activityfeed" | "compliance" | "servicehealth" | "network" | "licenses" | "conditionalaccess" | "signinmap" | "users" | "setup";
 export type AlertSeverity = "Informational" | "Low" | "Medium" | "High" | "Critical";
 export type ServiceArea = "EntraId" | "Intune" | "DefenderXdr" | "ExchangeOnline" | "ServiceHealth";
 export type Tone = "good" | "warning" | "error" | "neutral" | "info";
@@ -61,8 +61,6 @@ export type PasswordExpiryData = { configured: boolean; error?: string; expiring
 export type CAPolicy = { name: string; state: string; inclUsers: string; exclUsers: string; apps: string; controls: string[] };
 export type ConditionalAccessData = { configured: boolean; error?: string; enabled: number; disabled: number; reportOnly: number; policies: CAPolicy[] };
 
-export type AuditEvent = { activityDateTime?: string; activityDisplayName?: string; category?: string; result?: string; resultReason?: string; initiatedByUser?: string; targetResources: string[] };
-export type AuditLogData = { configured: boolean; error?: string; total: number; failures: number; events: AuditEvent[] };
 
 export type SignInEntry = { upn?: string; app?: string; created?: string; city?: string; country?: string; success: boolean };
 export type SignInLocationsData = { configured: boolean; error?: string; total: number; countries: number; failures: number; byCountry: { country: string; count: number; failures: number }[]; recent: SignInEntry[] };

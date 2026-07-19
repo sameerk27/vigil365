@@ -1,7 +1,29 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { ShieldAlert, ExternalLink, Lightbulb, CheckCircle2, AlertTriangle, ChevronRight, Layers, ShieldCheck, RefreshCw } from "lucide-react";
-import { SecurityRecommendation } from "../services/types";
-import { recApi } from "../services/api";
+import { SecurityRecommendation, CaGapFinding } from "../services/types";
+import { recApi, caApi } from "../services/api";
+
+// ─── Findings hub: fold analyzer findings into the recommendation format ──────
+// CA gap analysis and SharePoint/OneDrive sharing posture produce the same
+// shape of insight (finding + why + remediation). Surfacing them here keeps ONE
+// place to answer "what should I fix?", instead of three scattered cards.
+const sevRank = (s: string) => ({ critical: 0, high: 1, medium: 2, low: 3 } as Record<string, number>)[s] ?? 4;
+
+function findingToRec(f: CaGapFinding, idx: number, source: "ca" | "sharing"): SecurityRecommendation {
+  return {
+    id: `${source}-${idx}`,
+    category: source === "ca" ? "Conditional Access" : "SharePoint & OneDrive",
+    title: f.title,
+    severity: f.severity,
+    affectedCount: 0,
+    whyItMatters: f.detail,
+    remediationSteps: [f.recommendation],
+    portalBladeName: source === "ca" ? "Entra — Conditional Access" : "SharePoint admin — Sharing",
+    portalDeepLink: source === "ca"
+      ? "https://entra.microsoft.com/#view/Microsoft_AAD_ConditionalAccess/ConditionalAccessBlade/~/Policies"
+      : "https://admin.microsoft.com/sharepoint?page=sharing&modern=true",
+  };
+}
 import { KpiTile, Card, Badge, EmptyState, LoadingSkeleton } from "../components/SharedComponents";
 import { sevTone } from "../services/utils";
 
@@ -15,17 +37,25 @@ export function RecommendationsPage() {
   const loadData = async () => {
     setLoading(true);
     setError(null);
-    try {
-      const data = await recApi.getRecommendations();
-      setRecommendations(data);
-      if (data.length > 0 && !expandedId) {
-        setExpandedId(data[0].id);
-      }
-    } catch {
+    // Each source loads independently — a failing analyzer never blanks the hub.
+    const [recs, gaps, sharing] = await Promise.all([
+      recApi.getRecommendations().catch(() => null),
+      caApi.getGaps().catch(() => null),
+      caApi.getSharingPosture().catch(() => null),
+    ]);
+    const merged: SecurityRecommendation[] = [
+      ...(recs ?? []),
+      ...(gaps?.findings ?? []).map((f, i) => findingToRec(f, i, "ca")),
+      ...(sharing?.findings ?? []).map((f, i) => findingToRec(f, i, "sharing")),
+    ].sort((a, b) => sevRank(a.severity) - sevRank(b.severity));
+
+    if (recs === null && gaps === null && sharing === null) {
       setError("Could not load recommendations — the API request failed. Refresh to retry.");
-    } finally {
-      setLoading(false);
+    } else {
+      setRecommendations(merged);
+      if (merged.length > 0 && !expandedId) setExpandedId(merged[0].id);
     }
+    setLoading(false);
   };
 
   useEffect(() => {

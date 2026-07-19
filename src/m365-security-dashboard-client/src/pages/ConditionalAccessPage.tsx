@@ -1,57 +1,8 @@
-import React, { useState, useMemo, useEffect } from "react";
-import { ShieldCheck, Eye, ShieldOff, Shield, Search, ShieldAlert, CheckCircle2 } from "lucide-react";
-import { ConditionalAccessData, CAPolicy, CaGapAnalysis, Tone } from "../services/types";
-import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, ExportDropdown, InfoRow, LoadingSkeleton } from "../components/SharedComponents";
+import React, { useState, useMemo } from "react";
+import { ShieldCheck, Eye, ShieldOff, Shield, Search } from "lucide-react";
+import { ConditionalAccessData, CAPolicy, Tone } from "../services/types";
+import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, ExportDropdown, InfoRow } from "../components/SharedComponents";
 import { FilterPresets } from "../components/FilterPresets";
-import { caApi } from "../services/api";
-import { sevTone } from "../services/utils";
-
-// Conditional Access gap analysis — self-contained; fetches its own findings so it
-// does not depend on the parent's dashboard fetch orchestration.
-function CaGapCard({ configured }: { configured: boolean }) {
-  const [gaps, setGaps] = useState<CaGapAnalysis | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!configured) { setLoading(false); return; }
-    let cancelled = false;
-    caApi.getGaps().then(g => { if (!cancelled) { setGaps(g); setLoading(false); } });
-    return () => { cancelled = true; };
-  }, [configured]);
-
-  if (!configured) return null;
-
-  const findings = gaps?.findings ?? [];
-  const worst = findings[0]?.severity;
-  const badge = loading ? <Badge label="Analyzing…" tone="neutral"/>
-    : gaps?.error ? <Badge label="Unavailable" tone="error"/>
-    : findings.length === 0 ? <Badge label="No gaps found" tone="good"/>
-    : <Badge label={`${findings.length} gap${findings.length === 1 ? "" : "s"}`} tone={sevTone(worst)}/>;
-
-  return (
-    <Card title="Gap Analysis" badge={badge} id="ca-gap-analysis">
-      {loading ? <LoadingSkeleton type="list"/>
-        : gaps?.error ? <EmptyState message={`Could not analyze Conditional Access (${gaps.error}).`}/>
-        : findings.length === 0 ? (
-          <div className="ca-gap-clean"><CheckCircle2 size={16}/> No coverage gaps detected across {gaps?.policyCount ?? 0} Conditional Access policies.</div>
-        ) : (
-          <div className="ca-gap-list">
-            {findings.map((f, i) => (
-              <div className={`ca-gap-item ca-gap-${f.severity}`} key={i}>
-                <div className="ca-gap-head">
-                  <ShieldAlert size={14}/>
-                  <span className="ca-gap-title">{f.title}</span>
-                  <Badge label={f.severity} tone={sevTone(f.severity)}/>
-                </div>
-                <div className="ca-gap-detail">{f.detail}</div>
-                <div className="ca-gap-rec"><b>Recommendation:</b> {f.recommendation}</div>
-              </div>
-            ))}
-          </div>
-        )}
-    </Card>
-  );
-}
 
 export function ConditionalAccessPage({ data }: { data: ConditionalAccessData|null }) {
   const [selectedPolicy, setSelectedPolicy] = useState<CAPolicy|null>(null);
@@ -107,8 +58,6 @@ export function ConditionalAccessPage({ data }: { data: ConditionalAccessData|nu
           sub="All CA policies" tone={total>0?"neutral":"warning"}
           active={!stateFilter&&!policySearch} onClick={()=>{setPolicySearch("");setStateFilter("");}}/>
       </div>
-
-      <CaGapCard configured={!!data?.configured}/>
 
       <Card title="Conditional Access Policies"
         badge={<Badge label={`${filteredPolicies.length} / ${data?.policies.length??0} policies`} tone="neutral"/>}

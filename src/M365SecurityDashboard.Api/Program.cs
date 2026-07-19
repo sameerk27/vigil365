@@ -1187,34 +1187,6 @@ app.MapGet("/api/dashboard/sharing-posture", async (
     }
 }).RequireAuthorization("RequireAnalyst");
 
-// Admin audit log
-app.MapGet("/api/dashboard/audit-log", async (
-    IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
-{
-    if (!options.Value.IsConfigured())
-        return Results.Ok(new { configured = false, total = 0, failures = 0, events = Array.Empty<object>() });
-    try
-    {
-        var graph = services.GetRequiredService<GraphApiClient>();
-        var audits = await graph.GetSinglePageAsync(
-            "/v1.0/auditLogs/directoryAudits?$top=50&$orderby=activityDateTime desc", ct);
-        var events = audits.Select(a => new
-        {
-            activityDateTime = a.TryGetProperty("activityDateTime", out var dt) ? dt.GetString() : null,
-            activityDisplayName = a.TryGetProperty("activityDisplayName", out var n) ? n.GetString() : null,
-            category = a.TryGetProperty("category", out var cat) ? cat.GetString() : null,
-            result = a.TryGetProperty("result", out var r) ? r.GetString() : null,
-            resultReason = a.TryGetProperty("resultReason", out var rr) && rr.ValueKind == JsonValueKind.String ? rr.GetString() : null,
-            initiatedByUser = a.TryGetProperty("initiatedBy", out var ib) && ib.TryGetProperty("user", out var u) && u.ValueKind == JsonValueKind.Object && u.TryGetProperty("userPrincipalName", out var upn) ? upn.GetString() : null,
-            targetResources = a.TryGetProperty("targetResources", out var tr) && tr.ValueKind == JsonValueKind.Array
-                ? tr.EnumerateArray().Take(2).Select(t => t.TryGetProperty("displayName", out var dn) ? dn.GetString() : null).OfType<string>().ToArray()
-                : Array.Empty<string>()
-        }).ToList();
-        return Results.Ok(new { configured = true, total = events.Count, failures = events.Count(e => e.result == "failure"), events });
-    }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, failures = 0, events = Array.Empty<object>() }); }
-});
-
 // Sign-in locations
 app.MapGet("/api/dashboard/signin-locations", async (
     IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>

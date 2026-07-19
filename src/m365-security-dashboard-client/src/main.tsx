@@ -13,7 +13,7 @@ import "./styles.css";
 import {
   NavPage, AppRole, AuthInfo, SecurityAlert, Overview, SecureScore, IdentityData,
   DevicesData, ServiceHealthData, LicenseData, InactiveUsersData, PasswordExpiryData,
-  ConditionalAccessData, AuditLogData, SignInLocationsData, DefenderAlertsData,
+  ConditionalAccessData, SignInLocationsData, DefenderAlertsData,
   SecurityIncidentsData, PrivilegedRolesData, DlpAlertsData, MdeVulnerabilitiesData,
   PimData, EmailProtectionData, MdiAlertsData, McasAlertsData, InsiderRiskData,
   RiskDetectionsData, IdentityHealthData, AttackSimulationData, AlertPolicy, TriggeredAlert,
@@ -39,7 +39,6 @@ import { ServiceHealthPage } from "./pages/ServiceHealthPage";
 import { NetworkPage } from "./pages/NetworkPage";
 import { LicensesPage } from "./pages/LicensesPage";
 import { ConditionalAccessPage } from "./pages/ConditionalAccessPage";
-import { AuditLogPage } from "./pages/AuditLogPage";
 import { SignInLocationsPage } from "./pages/SignInLocationsPage";
 import { UserManagementPage } from "./pages/UserManagementPage";
 import { SetupPage } from "./pages/SetupPage";
@@ -66,13 +65,12 @@ const SECTIONS: SectionDef[] = [
   { id:"overview", label:"Overview",       icon:<Home size={17}/>,          pages:[{ id:"overview", label:"Overview" }] },
   { id:"alerts",   label:"Alerts",         icon:<AlertTriangle size={17}/>, pages:[
       { id:"incidents",    label:"Alert Queue" },
-      { id:"alertcenter",  label:"Alert Center" },
+      { id:"alertcenter",  label:"Rules & Notifications" },
       { id:"activityfeed", label:"Tenant Activity" }] },
   { id:"identity", label:"Identity",       icon:<Users size={17}/>,         pages:[
       { id:"identity",          label:"Overview" },
       { id:"signinmap",         label:"Sign-in Locations" },
-      { id:"conditionalaccess", label:"Conditional Access" },
-      { id:"auditlog",          label:"Audit Log" }] },
+      { id:"conditionalaccess", label:"Conditional Access" }] },
   { id:"devices",  label:"Devices",        icon:<Monitor size={17}/>,       pages:[{ id:"devices", label:"Devices" }] },
   { id:"email",    label:"Email",          icon:<Mail size={17}/>,          pages:[{ id:"email", label:"Email" }] },
   { id:"posture",  label:"Posture",        icon:<CheckSquare size={17}/>,   pages:[
@@ -243,7 +241,6 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
   const [inactiveUsers, setInactiveUsers] = useState<InactiveUsersData|null>(null);
   const [passwordExpiry, setPasswordExpiry] = useState<PasswordExpiryData|null>(null);
   const [conditionalAccess, setConditionalAccess] = useState<ConditionalAccessData|null>(null);
-  const [auditLog, setAuditLog] = useState<AuditLogData|null>(null);
   const [signInLocations, setSignInLocations] = useState<SignInLocationsData|null>(null);
   const [defenderAlerts, setDefenderAlerts] = useState<DefenderAlertsData|null>(null);
   const [privilegedRoles, setPrivilegedRoles] = useState<PrivilegedRolesData|null>(null);
@@ -328,7 +325,6 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
         fetchOne(`${apiBase}/api/dashboard/inactive-users`, setInactiveUsers),
         fetchOne(`${apiBase}/api/dashboard/password-expiry`, setPasswordExpiry),
         fetchOne(`${apiBase}/api/dashboard/conditional-access`, setConditionalAccess),
-        fetchOne(`${apiBase}/api/dashboard/audit-log`, setAuditLog),
         fetchOne(`${apiBase}/api/dashboard/signin-locations`, setSignInLocations),
         fetchOne(`${apiBase}/api/dashboard/defender-alerts`, setDefenderAlerts),
         fetchOne(`${apiBase}/api/dashboard/security-incidents`, setSecurityIncidents),
@@ -414,11 +410,10 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
     servicehealth: serviceHealth?.total??0,
     licenses: (inactiveUsers?.inactive90Count??0)+(passwordExpiry?.expiringSoonCount??0),
     conditionalaccess: conditionalAccess?.disabled??0,
-    auditlog: auditLog?.failures??0,
     signinmap: signInLocations?.failures??0,
     compliance: (mcasAlerts?.total??0) + (insiderRisk?.total??0),
     overview:0, network:0, users:0, setup:0
-  }), [allAlerts, serviceHealth, defenderAlerts, securityIncidents, inactiveUsers, passwordExpiry, conditionalAccess, auditLog, signInLocations, mdiAlerts, riskDetections, identityHealth, mcasAlerts, insiderRisk, newTriggeredCount]);
+  }), [allAlerts, serviceHealth, defenderAlerts, securityIncidents, inactiveUsers, passwordExpiry, conditionalAccess, signInLocations, mdiAlerts, riskDetections, identityHealth, mcasAlerts, insiderRisk, newTriggeredCount]);
 
   // When you're on a page (or navigate to one), mark that page's current count as "seen".
   useEffect(() => {
@@ -565,7 +560,6 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
             {page==="network"&&<NetworkPage serviceHealth={serviceHealth} signInLocations={signInLocations}/>}
             {page==="licenses"&&<LicensesPage licenses={licenses} inactive={inactiveUsers} passwords={passwordExpiry}/>}
             {page==="conditionalaccess"&&<ConditionalAccessPage data={conditionalAccess}/>}
-            {page==="auditlog"&&<AuditLogPage data={auditLog}/>}
             {page==="signinmap"&&<SignInLocationsPage data={signInLocations}/>}
             {page==="users"&&<UserManagementPage/>}
             {page==="setup"&&<SetupPage/>}

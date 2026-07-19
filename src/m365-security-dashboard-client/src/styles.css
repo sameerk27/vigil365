@@ -1126,18 +1126,9 @@ select, input { font: inherit; }
 .entity-tl-time { font-size: 11px; color: var(--color-muted); margin-left: auto; }
 .entity-tl-detail { font-size: 12px; color: var(--color-muted); margin-top: 2px; }
 
-/* ── Conditional Access gap analysis (P4.3) ────────────────────────────────── */
-.ca-gap-clean { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--status-good-text); padding: 4px 0; }
-.ca-gap-list { display: flex; flex-direction: column; gap: 10px; }
-.ca-gap-item { border: 1px solid var(--color-border-subtle); border-left-width: 3px; border-radius: 8px; padding: 10px 12px; background: var(--color-raised); }
-.ca-gap-critical { border-left-color: var(--sev-critical-icon, #dc2626); }
-.ca-gap-high { border-left-color: var(--sev-high-icon, #ea580c); }
-.ca-gap-medium { border-left-color: var(--sev-medium-icon, #d97706); }
-.ca-gap-low { border-left-color: var(--color-primary); }
-.ca-gap-head { display: flex; align-items: center; gap: 8px; }
-.ca-gap-title { font-weight: 600; font-size: 13px; flex: 1; min-width: 0; }
-.ca-gap-detail { font-size: 12px; color: var(--color-text); margin: 5px 0 4px; }
-.ca-gap-rec { font-size: 12px; color: var(--color-muted); }
+/* Full-width control-areas card lays out in two columns on wide screens. */
+.controls-list-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 28px; }
+@media (max-width: 900px) { .controls-list-grid { grid-template-columns: 1fr; } }
 
 /* ── Card count badge ────────────────────────────────────────────────────── */
 .card-count {

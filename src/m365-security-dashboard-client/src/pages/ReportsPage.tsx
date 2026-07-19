@@ -71,7 +71,11 @@ export function ReportsPage() {
 
   return (
     <div className="page">
-      <p className="page-intro"><FileText size={15} style={{ verticalAlign: "-2px", marginRight: 6 }}/>Scheduled executive security digests — posture, week-over-week trends, and the top open alerts, delivered by email. Read-only; nothing is changed in your tenant.</p>
+      <p className="page-intro"><FileText size={15} style={{ verticalAlign: "-2px", marginRight: 6 }}/>
+        <b>What this page does:</b> it emails a weekly/daily/monthly executive summary of your security posture
+        (the preview below is exactly what recipients get). Create a schedule, add recipients, and Vigil365
+        sends it automatically — using the SMTP settings under <b>Alerts → Rules &amp; Notifications</b>.
+        Read-only; nothing is changed in your tenant.</p>
 
       {/* ── Live preview of the executive digest ─────────────────────────────── */}
       <Card title="Executive digest — preview" id="digest-preview" action={
