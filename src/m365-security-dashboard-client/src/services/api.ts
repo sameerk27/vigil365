@@ -152,6 +152,9 @@ export const caApi = {
   async getGaps(): Promise<import("./types").CaGapAnalysis | null> {
     try { const r = await apiFetch(`${apiBase}/api/dashboard/ca-gaps`); return r.ok ? await r.json() : null; } catch { return null; }
   },
+  async getSharingPosture(): Promise<import("./types").SharingPosture | null> {
+    try { const r = await apiFetch(`${apiBase}/api/dashboard/sharing-posture`); return r.ok ? await r.json() : null; } catch { return null; }
+  },
 };
 
 // ─── Entity investigation profile (drill-down) ────────────────────────────────
@@ -202,5 +205,5 @@ export function consumeNavSeed(page: string): string | null {
 }
 
 export const SEVERITIES = ["Critical", "High", "Medium", "Low", "Informational"];
-export const SERVICES = ["EntraId", "Intune", "DefenderXdr", "ExchangeOnline", "ServiceHealth"];
+export const SERVICES = ["EntraId", "Intune", "DefenderXdr", "ExchangeOnline", "ServiceHealth", "SharePoint"];
 export const AUTO_REFRESH_SEC = 15 * 60; // 15 minutes

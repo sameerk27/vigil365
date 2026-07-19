@@ -177,7 +177,10 @@ public sealed class GraphCollector(
             new("Malware detections", WithFilter("/v1.0/security/alerts_v2?$top=50", "category eq 'Malware'"), MapMalwareDetection),
             new("Quarantined messages", _options.ExchangeQuarantinePath, MapQuarantinedMessage),
             new("Mail flow issues", _options.MailFlowIssuesPath, MapMailFlowIssue),
-            new("Service health issues", WithFilter("/v1.0/admin/serviceAnnouncement/issues?$top=50", "isResolved eq false"), MapServiceHealth)
+            new("Service health issues", WithFilter("/v1.0/admin/serviceAnnouncement/issues?$top=50", "isResolved eq false"), MapServiceHealth),
+            // Single-object endpoint: GetCollectionAsync yields the settings object once.
+            // Requires SharePointTenantSettings.Read.All (counts as a source failure if missing).
+            new("SharePoint sharing posture", "/v1.0/admin/sharepoint/settings", MapSharingPosture)
         ];
     }
 
@@ -256,6 +259,25 @@ public sealed class GraphCollector(
     private static SecurityAlert MapMailFlowIssue(JsonElement e) => Alert(e, M365ServiceArea.ExchangeOnline, "MailFlowIssue",
         Get(e, "id"), AlertSeverity.High, $"Exchange issue: {Get(e, "title") ?? Get(e, "id")}",
         Get(e, "impactDescription"), null, null, GetDate(e, "startDateTime"), Get(e, "details", "url"), GetBool(e, "isResolved"));
+
+    /// <summary>
+    /// One tenant-wide posture alert (fixed ExternalId so it upserts in place):
+    /// open at the worst finding's severity while the sharing posture is risky,
+    /// auto-resolved once the findings clear.
+    /// </summary>
+    private static SecurityAlert MapSharingPosture(JsonElement e)
+    {
+        var findings = SharingPostureAnalyzer.Analyze(SharingPostureAnalyzer.Parse(e));
+        var worst = findings.FirstOrDefault();
+        var clean = worst is null;
+        return Alert(e, M365ServiceArea.SharePoint, "SharingPosture", "tenant-sharing-settings",
+            clean ? AlertSeverity.Informational : SeverityFromString(worst!.Severity),
+            clean ? "SharePoint/OneDrive sharing posture is healthy"
+                  : $"Risky sharing posture: {worst!.Title}",
+            clean ? "No risky external-sharing settings detected."
+                  : string.Join(" | ", findings.Select(f => f.Title)),
+            null, null, DateTimeOffset.UtcNow, null, isResolved: clean);
+    }
 
     private static SecurityAlert MapServiceHealth(JsonElement e) => Alert(e, M365ServiceArea.ServiceHealth, "ServiceHealthIssue",
         Get(e, "id"), SeverityFromClassification(Get(e, "classification")), $"{Get(e, "service")}: {Get(e, "title") ?? Get(e, "id")}",

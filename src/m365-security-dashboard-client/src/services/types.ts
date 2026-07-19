@@ -222,6 +222,11 @@ export interface DigestPreview {
 export interface CaGapFinding {
   severity: string; title: string; detail: string; recommendation: string;
 }
+export interface SharingPosture {
+  configured: boolean; error?: string;
+  sharingCapability?: string | null; oneDriveSharingCapability?: string | null; defaultLinkType?: string | null;
+  findings: CaGapFinding[];
+}
 export interface CaGapAnalysis {
   configured: boolean; policyCount: number; enabledCount?: number;
   findings: CaGapFinding[]; error?: string;

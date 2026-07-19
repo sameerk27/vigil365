@@ -1,7 +1,7 @@
 import { Tone } from "./types";
 
 export function fmtService(s: string): string {
-  return ({ EntraId: "Entra ID", Intune: "Intune", DefenderXdr: "Defender XDR", ExchangeOnline: "Exchange Online", ServiceHealth: "Service Health" } as Record<string, string>)[s] ?? s;
+  return ({ EntraId: "Entra ID", Intune: "Intune", DefenderXdr: "Defender XDR", ExchangeOnline: "Exchange Online", ServiceHealth: "Service Health", SharePoint: "SharePoint" } as Record<string, string>)[s] ?? s;
 }
 
 export function fmtDefenderSource(s: string): string {

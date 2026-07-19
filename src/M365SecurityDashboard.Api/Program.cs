@@ -1155,6 +1155,38 @@ app.MapGet("/api/dashboard/ca-gaps", async (
     }
 }).RequireAuthorization("RequireAnalyst");
 
+// SharePoint/OneDrive external-sharing posture (tenant settings analysis).
+app.MapGet("/api/dashboard/sharing-posture", async (
+    IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
+{
+    if (!options.Value.IsConfigured())
+        return Results.Ok(new { configured = false, findings = Array.Empty<object>() });
+    try
+    {
+        var graph = services.GetRequiredService<GraphApiClient>();
+        var items = await graph.GetCollectionAsync("/v1.0/admin/sharepoint/settings", ct);
+        if (items.Count == 0)
+            return Results.Ok(new { configured = true, error = "SharePoint settings returned no data.", findings = Array.Empty<object>() });
+        var view = SharingPostureAnalyzer.Parse(items[0]);
+        var findings = SharingPostureAnalyzer.Analyze(view);
+        return Results.Ok(new
+        {
+            configured = true,
+            sharingCapability = view.SharingCapability,
+            oneDriveSharingCapability = view.OneDriveSharingCapability,
+            defaultLinkType = view.DefaultSharingLinkType,
+            findings,
+        });
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogError(ex, "Sharing posture analysis error");
+        // Most common cause: SharePointTenantSettings.Read.All not granted.
+        var perm = ex.Message.Contains("403") ? "Grant SharePointTenantSettings.Read.All to enable this check." : null;
+        return Results.Ok(new { configured = true, error = perm ?? "An error occurred. Check server logs for details.", findings = Array.Empty<object>() });
+    }
+}).RequireAuthorization("RequireAnalyst");
+
 // Admin audit log
 app.MapGet("/api/dashboard/audit-log", async (
     IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>

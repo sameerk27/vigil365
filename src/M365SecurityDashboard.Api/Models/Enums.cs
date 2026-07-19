@@ -6,7 +6,8 @@ public enum M365ServiceArea
     Intune = 2,
     DefenderXdr = 3,
     ExchangeOnline = 4,
-    ServiceHealth = 5
+    ServiceHealth = 5,
+    SharePoint = 6
 }
 
 public enum AlertSeverity

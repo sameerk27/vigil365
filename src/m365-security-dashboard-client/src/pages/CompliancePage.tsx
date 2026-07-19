@@ -1,5 +1,54 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { Shield, FileText, Star, Search, ShieldAlert, ShieldCheck, Flag, ExternalLink, CheckCircle2, XCircle } from "lucide-react";
+import { SharingPosture } from "../services/types";
+import { caApi } from "../services/api";
+import { LoadingSkeleton } from "../components/SharedComponents";
+
+// SharePoint/OneDrive external-sharing posture (P4.4) — self-contained fetch,
+// reuses the CA gap card styling for findings.
+function SharingPostureCard() {
+  const [posture, setPosture] = useState<SharingPosture | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    caApi.getSharingPosture().then(p => { if (!cancelled) { setPosture(p); setLoading(false); } });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!loading && (!posture || !posture.configured)) return null;
+
+  const findings = posture?.findings ?? [];
+  const worst = findings[0]?.severity;
+  const badge = loading ? <Badge label="Analyzing…" tone="neutral"/>
+    : posture?.error ? <Badge label="Unavailable" tone="neutral"/>
+    : findings.length === 0 ? <Badge label="Healthy" tone="good"/>
+    : <Badge label={`${findings.length} finding${findings.length === 1 ? "" : "s"}`} tone={sevTone(worst)}/>;
+
+  return (
+    <Card title="SharePoint / OneDrive Sharing Posture" badge={badge} id="sharing-posture">
+      {loading ? <LoadingSkeleton type="list"/>
+        : posture?.error ? <EmptyState message={posture.error}/>
+        : findings.length === 0 ? (
+          <div className="ca-gap-clean"><CheckCircle2 size={16}/> External-sharing settings look healthy ({posture?.sharingCapability ?? "unknown capability"}).</div>
+        ) : (
+          <div className="ca-gap-list">
+            {findings.map((f, i) => (
+              <div className={`ca-gap-item ca-gap-${f.severity}`} key={i}>
+                <div className="ca-gap-head">
+                  <ShieldAlert size={14}/>
+                  <span className="ca-gap-title">{f.title}</span>
+                  <Badge label={f.severity} tone={sevTone(f.severity)}/>
+                </div>
+                <div className="ca-gap-detail">{f.detail}</div>
+                <div className="ca-gap-rec"><b>Recommendation:</b> {f.recommendation}</div>
+              </div>
+            ))}
+          </div>
+        )}
+    </Card>
+  );
+}
 import { SecureScore, Overview, DlpAlertsData, PurviewData, McasAlertsData, InsiderRiskData, AttackSimulationData, DlpAlert, McasAlert, InsiderRiskAlert, AttackSim, Tone, IdentityData, DevicesData, ConditionalAccessData, SecurityIncidentsData, PrivilegedRolesData, EmailProtectionData } from "../services/types";
 import { fmtDate, relTime, pctTone, sevTone } from "../services/utils";
 import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, ProgressBar, ExportDropdown, StatBox, SectHdr } from "../components/SharedComponents";
@@ -281,6 +330,8 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
           );
         })()}
       </div>
+
+      <SharingPostureCard/>
 
       <div className="two-col">
         <Card title="Security Control Areas">
