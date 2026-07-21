@@ -3,7 +3,7 @@ import { Download, ChevronRight, Copy, ClipboardCheck, ExternalLink, AlertTriang
 import { Tone, SecurityAlert, AlertNote } from "../services/types";
 import { fmtService, fmtDate, relTime, downloadCsv, copyToClipboard } from "../services/utils";
 import { showToast } from "../services/toast";
-import { useAuth, acApi, wbApi } from "../services/api";
+import { useAuth, acApi, wbApi, openEntity } from "../services/api";
 
 // ─── Export dropdown ──────────────────────────────────────────────────────────
 export function ExportDropdown({ rows, filename }: { rows: Record<string, unknown>[]; filename: string }) {
@@ -641,8 +641,14 @@ export function AlertDetailModal({ alert, allAlerts, onSelectAlert, onClose }: {
       <DetailField label="Severity" value={alert.severity}/>
       <DetailField label="Service" value={fmtService(alert.service)}/>
       <DetailField label="Status" value={alert.isResolved ? "Resolved" : "Active"}/>
-      <DetailField label="User" value={alert.userPrincipalName} copy={!!alert.userPrincipalName}/>
-      <DetailField label="Device" value={alert.deviceName} copy={!!alert.deviceName}/>
+      {/* The entity investigation profile was previously reachable only from the
+          Ctrl+K palette — surface it where an analyst actually is: on the alert. */}
+      <DetailField label="User" value={alert.userPrincipalName} copy={!!alert.userPrincipalName}
+        onNavigate={alert.userPrincipalName ? () => { onClose(); openEntity("user", alert.userPrincipalName!); } : undefined}
+        navLabel="Investigate →"/>
+      <DetailField label="Device" value={alert.deviceName} copy={!!alert.deviceName}
+        onNavigate={alert.deviceName ? () => { onClose(); openEntity("device", alert.deviceName!); } : undefined}
+        navLabel="Investigate →"/>
       <DetailField label="External ID" value={alert.externalId} copy={!!alert.externalId}/>
       <DetailField label="Detected" value={alert.detectedAt ? `${relTime(alert.detectedAt)} (${fmtDate(alert.detectedAt)})` : undefined} title={fmtDate(alert.detectedAt)}/>
       <DetailField label="Last Updated" value={alert.lastUpdatedAt ? `${relTime(alert.lastUpdatedAt)} (${fmtDate(alert.lastUpdatedAt)})` : undefined} title={fmtDate(alert.lastUpdatedAt)}/>

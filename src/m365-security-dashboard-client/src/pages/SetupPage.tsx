@@ -27,7 +27,7 @@ export function SetupPage() {
   useEffect(() => { loadStatus(); }, [loadStatus]);
 
   const save = async () => {
-    if (!tenantId.trim() || !clientId.trim()) { showToast("Tenant ID and Client ID are required"); return; }
+    if (!tenantId.trim() || !clientId.trim()) { showToast("Tenant ID and Client ID are required", "error"); return; }
     setSaving(true); setResult(null);
     try {
       const r = await apiFetch(`${apiBase}/api/setup/graph`, {

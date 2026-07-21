@@ -144,9 +144,13 @@ export function UserManagementPage() {
       if (!r.ok) { showToast("Verification request failed", "error"); return; }
       const d: VerifyResult = await r.json();
       setVerify(d);
-      showToast(d.valid
-        ? `Chain intact — ${d.verified} entries verified`
-        : `Tampering detected at entry #${d.firstBrokenId}`);
+      // Severity must match meaning: a broken chain is the single most serious
+      // signal this product emits — it must never render as a green success toast.
+      showToast(
+        d.valid
+          ? `Chain intact — ${d.verified} entries verified`
+          : `Tampering detected at entry #${d.firstBrokenId}`,
+        d.valid ? "success" : "error");
     } catch { showToast("Verification request failed", "error"); }
     finally { setVerifying(false); }
   };

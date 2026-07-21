@@ -758,6 +758,14 @@ select, input { font: inherit; }
   padding: 32px 16px; color: var(--color-faint); font-size: 13px; text-align: center; gap: 10px;
 }
 
+/* Honest truncation notice — shown when a server-capped list is hiding rows. */
+.trunc-notice {
+  margin-bottom: 10px; padding: 8px 12px;
+  border-radius: var(--radius-ctl);
+  background: var(--sev-info-bg); border: 1px solid var(--sev-info-border);
+  color: var(--sev-info-text); font-size: 12px;
+}
+
 /* ── MFA hero ────────────────────────────────────────────────────────────── */
 .mfa-hero  { display: flex; align-items: center; gap: 20px; margin-bottom: 12px; }
 .mfa-stats { flex: 1; display: flex; flex-direction: column; gap: 8px; }
@@ -1028,6 +1036,7 @@ select, input { font: inherit; }
 }
 .toast.toast-success { border-left-color: var(--status-good-icon); }
 .toast.toast-error   { border-left-color: var(--status-error-icon); }
+.toast.toast-info    { border-left-color: var(--sev-info-icon); }
 .toast-action {
   background: none; border: 1px solid var(--color-border); border-radius: 6px;
   padding: 3px 10px; font-size: 12px; font-weight: 600;

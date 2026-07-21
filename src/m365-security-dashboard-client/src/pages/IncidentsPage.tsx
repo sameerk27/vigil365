@@ -68,8 +68,11 @@ export function DefenderAlertModal({ alert, onClose, parentIncident, onOpenIncid
   );
 }
 
-export function IncidentsPage({ alerts, serviceHealth, defenderAlerts, securityIncidents, onAlertClick }:
-  { alerts: SecurityAlert[]; serviceHealth: ServiceHealthData|null; defenderAlerts: DefenderAlertsData|null; securityIncidents: SecurityIncidentsData|null; onAlertClick:(a:SecurityAlert)=>void }) {
+export function IncidentsPage({ alerts, alertsTotal, serviceHealth, defenderAlerts, securityIncidents, onAlertClick }:
+  { alerts: SecurityAlert[]; alertsTotal?: number; serviceHealth: ServiceHealthData|null; defenderAlerts: DefenderAlertsData|null; securityIncidents: SecurityIncidentsData|null; onAlertClick:(a:SecurityAlert)=>void }) {
+  // The alert list is server-capped (200). When more exist, say so rather than
+  // letting this page silently disagree with Overview's full-database count.
+  const truncated = (alertsTotal ?? 0) > alerts.length;
   const [search, setSearch] = useState("");
   const [severity, setSeverity] = useState("");
   const [typeFilter, setTypeFilter] = useState<IncidentFilter>("all");
@@ -251,6 +254,12 @@ export function IncidentsPage({ alerts, serviceHealth, defenderAlerts, securityI
       )}
 
       <Card title="All Incidents & Advisories" badge={<Badge label={`${filtered.length} shown`} tone="neutral"/>}>
+        {truncated && (
+          <div className="trunc-notice">
+            Showing the {alerts.length} most recent open Vigil365 alerts of {alertsTotal} total.
+            Narrow the filters or export to see the rest.
+          </div>
+        )}
         <div className="filters-bar">
           <div className="pill-group">
             {(["all","defender","incidents","alerts","advisories"] as IncidentFilter[]).map(t=>(

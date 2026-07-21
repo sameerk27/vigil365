@@ -237,6 +237,10 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
   const [devices, setDevices] = useState<DevicesData|null>(null);
   const [serviceHealth, setServiceHealth] = useState<ServiceHealthData|null>(null);
   const [allAlerts, setAllAlerts] = useState<SecurityAlert[]>([]);
+  // Server-side total for the open-alert query. The list itself is capped at 200,
+  // so this is what lets the UI say "showing 200 of N" instead of quietly
+  // disagreeing with Overview's full-DB count.
+  const [alertsTotal, setAlertsTotal] = useState(0);
   const [licenses, setLicenses] = useState<LicenseData|null>(null);
   const [inactiveUsers, setInactiveUsers] = useState<InactiveUsersData|null>(null);
   const [passwordExpiry, setPasswordExpiry] = useState<PasswordExpiryData|null>(null);
@@ -296,20 +300,26 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
     const safeJson = (r: Response) => r.ok ? r.json() : Promise.resolve(null);
     const sig = ctrl.signal;
 
+    // Failure accounting: a silently-swallowed fetch used to leave stale cards on
+    // screen under a fresh "Updated HH:MM" stamp. Track outcomes so the UI can tell
+    // the truth about what actually loaded.
+    let attempted = 0, failed = 0;
+
     // Helper: fetch one endpoint and update state immediately on resolve
     // Each request has a 20-second timeout so slow Graph calls don't block the loading bar
     const fetchOne = <T,>(url: string, setter: (v: T) => void, transform?: (v: T) => T) => {
+      attempted++;
       const timeoutSig = AbortSignal.timeout(20_000);
       const combinedSig = (AbortSignal as { any?: (sigs: AbortSignal[]) => AbortSignal }).any
         ? (AbortSignal as { any: (sigs: AbortSignal[]) => AbortSignal }).any([sig, timeoutSig])
         : sig;
       return apiFetch(url, { signal: combinedSig })
-        .then(safeJson)
+        .then(r => { if (!r.ok) failed++; return safeJson(r); })
         .then((v: T) => {
           if (!ctrl.signal.aborted && v != null)
             setter(transform ? transform(v) : v);
         })
-        .catch(() => { /* individual failure or timeout — silently skip */ });
+        .catch(() => { failed++; /* individual failure or timeout */ });
     };
 
     try {
@@ -320,7 +330,8 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
         fetchOne(`${apiBase}/api/dashboard/identity`, setIdentity),
         fetchOne(`${apiBase}/api/dashboard/devices`, setDevices),
         fetchOne(`${apiBase}/api/dashboard/servicehealth`, setServiceHealth),
-        fetchOne<{items: SecurityAlert[]}>(`${apiBase}/api/alerts?page=1&pageSize=200&resolved=false`, v => setAllAlerts(v.items ?? [])),
+        fetchOne<{items: SecurityAlert[]; total: number}>(`${apiBase}/api/alerts?page=1&pageSize=200&resolved=false`,
+          v => { setAllAlerts(v.items ?? []); setAlertsTotal(v.total ?? (v.items?.length ?? 0)); }),
         fetchOne(`${apiBase}/api/dashboard/licenses`, setLicenses),
         fetchOne(`${apiBase}/api/dashboard/inactive-users`, setInactiveUsers),
         fetchOne(`${apiBase}/api/dashboard/password-expiry`, setPasswordExpiry),
@@ -342,7 +353,16 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
         fetchOne(`${apiBase}/api/dashboard/attack-simulation`, setAttackSimulation),
       ]);
       if (ctrl.signal.aborted) return;
-      setLastRefresh(new Date());
+
+      // Total failure: the API is unreachable/down. Do NOT advance the refresh
+      // stamp — the cards on screen are stale and must not look current.
+      if (attempted > 0 && failed >= attempted) {
+        setError("Failed to load dashboard data. Is the API running?");
+      } else {
+        if (failed > 0)
+          setError(`${failed} of ${attempted} data sources failed to load — some cards may be out of date.`);
+        setLastRefresh(new Date());
+      }
       setCountdown(AUTO_REFRESH_SEC);
     } catch(e: unknown) {
       if (e instanceof Error && e.name !== "AbortError")
@@ -551,7 +571,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
             {page==="identity"&&<IdentityPage identity={identity} alerts={allAlerts} privilegedRoles={privilegedRoles} pimData={pimData} mdiAlerts={mdiAlerts} riskDetections={riskDetections} identityHealth={identityHealth} onAlertClick={setSelectedAlert}/>}
             {page==="devices"&&<DevicesPage devices={devices} alerts={allAlerts} mdeVulnerabilities={mdeVulnerabilities} onAlertClick={setSelectedAlert}/>}
             {page==="email"&&<EmailPage alerts={allAlerts} emailProtection={emailProtection} onAlertClick={setSelectedAlert}/>}
-            {page==="incidents"&&<IncidentsPage alerts={allAlerts} serviceHealth={serviceHealth} defenderAlerts={defenderAlerts} securityIncidents={securityIncidents} onAlertClick={setSelectedAlert}/>}
+            {page==="incidents"&&<IncidentsPage alerts={allAlerts} alertsTotal={alertsTotal} serviceHealth={serviceHealth} defenderAlerts={defenderAlerts} securityIncidents={securityIncidents} onAlertClick={setSelectedAlert}/>}
             {page==="alertcenter"&&<AlertCenterPage policies={alertPolicies} triggeredAlerts={triggeredAlerts} onChanged={refreshAlertCenter}
               deepLinkAlertId={pendingTriggeredId} onDeepLinkConsumed={() => setPendingTriggeredId(null)}/>}
             {page==="activityfeed"&&<ActivityFeedPage/>}
@@ -563,7 +583,6 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
             {page==="signinmap"&&<SignInLocationsPage data={signInLocations}/>}
             {page==="users"&&<UserManagementPage/>}
             {page==="setup"&&<SetupPage/>}
-            {page==="activityfeed"&&<ActivityFeedPage/>}
           </>
         )}
       </div>

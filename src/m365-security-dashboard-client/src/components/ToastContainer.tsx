@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from "react";
-import { XCircle, CheckCircle } from "lucide-react";
+import { XCircle, CheckCircle, Info } from "lucide-react";
 import { ToastEntry, registerToastHandler } from "../services/toast";
 
 export function ToastContainer() {
@@ -23,7 +23,9 @@ export function ToastContainer() {
         <div key={t.id} className={`toast toast-${t.type ?? "success"}`}>
           {t.type === "error"
             ? <XCircle size={15} color="var(--status-error-icon)" />
-            : <CheckCircle size={15} color="var(--status-good-icon)" />}
+            : t.type === "info"
+              ? <Info size={15} color="var(--sev-info-icon)" />
+              : <CheckCircle size={15} color="var(--status-good-icon)" />}
           <span style={{ flex: 1 }}>{t.message}</span>
           {t.action && (
             <button className="toast-action"
