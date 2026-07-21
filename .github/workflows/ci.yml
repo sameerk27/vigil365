@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # This repository's default branch is master; listing only main meant
+    # push-triggered CI never actually ran.
+    branches: [master, main]
   pull_request:
 
 permissions:
@@ -37,15 +39,32 @@ jobs:
         working-directory: src/m365-security-dashboard-client
         run: npm ci
 
+      - name: Type-check frontend
+        working-directory: src/m365-security-dashboard-client
+        run: npx tsc --noEmit
+
       - name: Build frontend
         working-directory: src/m365-security-dashboard-client
         run: npm run build
+
+      # Supply-chain gates. A security product should not ship on top of
+      # known-vulnerable dependencies; fail the build rather than warn.
+      - name: Audit npm dependencies
+        working-directory: src/m365-security-dashboard-client
+        run: npm audit --audit-level=high
 
       - name: Restore .NET dependencies
         run: dotnet restore M365SecurityAlertDashboard.sln
 
       - name: Build .NET solution
         run: dotnet build M365SecurityAlertDashboard.sln --configuration Release --no-restore
+
+      - name: Audit NuGet dependencies
+        run: |
+          dotnet list M365SecurityAlertDashboard.sln package --vulnerable --include-transitive 2>&1 | tee audit.txt
+          if grep -q "has the following vulnerable packages" audit.txt; then
+            echo "::error::Vulnerable NuGet packages detected"; exit 1
+          fi
 
       - name: Run .NET tests
         run: dotnet test M365SecurityAlertDashboard.sln --configuration Release --no-build --verbosity normal

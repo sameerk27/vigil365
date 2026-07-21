@@ -2,8 +2,10 @@ import React, { useState, useEffect, useCallback } from "react";
 import { FileText, Mail, Plus, Play, Trash2, Clock, Download } from "lucide-react";
 import { ReportSchedule, DigestPreview } from "../services/types";
 import { reportApi, useAuth } from "../services/api";
+import { fmtShort } from "../services/utils";
 import { Card, Badge, EmptyState, LoadingSkeleton } from "../components/SharedComponents";
 import { showToast } from "../services/toast";
+import { confirmAction } from "../services/confirm";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -42,7 +44,13 @@ export function ReportsPage() {
   };
 
   const remove = async (s: ReportSchedule) => {
-    if (!window.confirm(`Delete the report schedule "${s.name}"?`)) return;
+    const ok = await confirmAction({
+      title: "Delete report schedule?",
+      message: `"${s.name}" will stop sending. Reports already delivered are unaffected.`,
+      confirmLabel: "Delete schedule",
+      danger: true,
+    });
+    if (!ok) return;
     if (await reportApi.remove(s.id)) { showToast("Schedule deleted", "success"); loadSchedules(); }
     else showToast("Could not delete the schedule", "error");
   };
@@ -186,7 +194,7 @@ export function ReportsPage() {
                   <td><b>{s.name}</b>{!s.enabled && <span style={{ fontSize: 11, color: "var(--color-muted)", marginLeft: 6 }}>(disabled)</span>}</td>
                   <td style={{ whiteSpace: "nowrap" }}><Clock size={12} style={{ verticalAlign: "-2px", marginRight: 4, color: "var(--color-muted)" }}/>{cadenceLabel(s)}</td>
                   <td style={{ fontSize: 12, color: "var(--color-muted)" }}><Mail size={12} style={{ verticalAlign: "-2px", marginRight: 4 }}/>{s.recipients || "—"}</td>
-                  <td style={{ fontSize: 12, color: "var(--color-muted)" }}>{s.lastRunAt ? `${new Date(s.lastRunAt).toLocaleDateString()} · ${s.lastRunStatus ?? ""}` : "never"}</td>
+                  <td style={{ fontSize: 12, color: "var(--color-muted)" }}>{s.lastRunAt ? `${fmtShort(s.lastRunAt)} · ${s.lastRunStatus ?? ""}` : "never"}</td>
                   <td style={{ whiteSpace: "nowrap", textAlign: "right" }}>
                     {canMutate && <>
                       <button className="icon-btn" title="Send now" disabled={busy} onClick={() => runNow(s)}><Play size={14}/></button>

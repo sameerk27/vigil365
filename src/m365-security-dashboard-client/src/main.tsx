@@ -22,9 +22,10 @@ import {
 import { apiBase, apiFetch, AuthContext, initMsal, acApi, AUTO_REFRESH_SEC, useAuth, registerNavHandler } from "./services/api";
 import { showToast } from "./services/toast";
 import { ToastContainer } from "./components/ToastContainer";
+import { ConfirmDialog } from "./components/ConfirmDialog";
 import { GlobalSearch } from "./components/GlobalSearch";
 import { Badge, AlertDetailModal, DashboardSkeleton } from "./components/SharedComponents";
-import { fmtDate, fmtCountdown } from "./services/utils";
+import { fmtDate, fmtCountdown, tzLabel, fmtUtc } from "./services/utils";
 
 // Import pages
 import { OverviewPage } from "./pages/OverviewPage";
@@ -264,6 +265,9 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
   const [triggeredAlerts, setTriggeredAlerts] = useState<TriggeredAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // Correlation id of the failing request, so the banner can tell an admin
+  // exactly which server-log entry to look up.
+  const [errorId, setErrorId] = useState("");
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [running, setRunning] = useState(false);
   const [selectedAlert, setSelectedAlert] = useState<SecurityAlert|null>(null);
@@ -304,6 +308,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
     // screen under a fresh "Updated HH:MM" stamp. Track outcomes so the UI can tell
     // the truth about what actually loaded.
     let attempted = 0, failed = 0;
+    let correlationId = "";
 
     // Helper: fetch one endpoint and update state immediately on resolve
     // Each request has a 20-second timeout so slow Graph calls don't block the loading bar
@@ -314,7 +319,17 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
         ? (AbortSignal as { any: (sigs: AbortSignal[]) => AbortSignal }).any([sig, timeoutSig])
         : sig;
       return apiFetch(url, { signal: combinedSig })
-        .then(r => { if (!r.ok) failed++; return safeJson(r); })
+        .then(r => {
+          if (!r.ok) {
+            failed++;
+            // The API stamps every response with a correlation id and logs under
+            // it. Capturing it here turns "something broke" into a support ticket
+            // an admin can actually trace in the server log.
+            const cid = r.headers.get("X-Correlation-Id");
+            if (cid) correlationId = cid;
+          }
+          return safeJson(r);
+        })
         .then((v: T) => {
           if (!ctrl.signal.aborted && v != null)
             setter(transform ? transform(v) : v);
@@ -356,6 +371,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
 
       // Total failure: the API is unreachable/down. Do NOT advance the refresh
       // stamp — the cards on screen are stale and must not look current.
+      setErrorId(correlationId);
       if (attempted > 0 && failed >= attempted) {
         setError("Failed to load dashboard data. Is the API running?");
       } else {
@@ -484,7 +500,11 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
           <div>
             <h1 className="hdr-title">{pageLabel(page)}</h1>
             <p className="hdr-sub">
-              Vigil365 · M365 Security Operations · Updated {lastRefresh.toLocaleTimeString()}
+              Vigil365 · M365 Security Operations · Updated{" "}
+              <span title={fmtUtc(lastRefresh.toISOString())}>
+                {lastRefresh.toLocaleTimeString("en-US")}
+              </span>
+              {" "}<span className="hdr-tz" title="All timestamps in this app use your local timezone">{tzLabel()}</span>
               {" · "}
               <button className="countdown-chip" onClick={() => setRefreshPaused(p => !p)}
                 title={refreshPaused ? "Resume auto-refresh" : "Pause auto-refresh"}
@@ -556,7 +576,13 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
           </div>
         )}
         {loading && !isInitialLoad && <div className="loading-bar"><div className="loading-bar-fill"/></div>}
-        {error&&<div className="err-banner">{error} <button style={{marginLeft:8,textDecoration:"underline",background:"none",border:"none",color:"inherit",cursor:"pointer"}} onClick={()=>setError("")}>Dismiss</button></div>}
+        {error && (
+          <div className="err-banner" role="alert">
+            <span className="err-banner-msg">{error}</span>
+            {errorId && <code className="err-banner-id" title="Quote this reference when reporting the problem — it matches the server log entry">Ref {errorId}</code>}
+            <button type="button" className="err-banner-dismiss" onClick={() => { setError(""); setErrorId(""); }}>Dismiss</button>
+          </div>
+        )}
         {isInitialLoad ? (
           <DashboardSkeleton />
         ) : entity ? (
@@ -590,6 +616,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
       <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} alerts={allAlerts}
         pages={searchPages} onOpenAlert={a => setSelectedAlert(a)} onNavigatePage={setPage}/>
       <ToastContainer/>
+      <ConfirmDialog/>
     </div>
   );
 }

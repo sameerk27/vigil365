@@ -3,6 +3,7 @@ import { CheckCircle, AlertCircle } from "lucide-react";
 import { AppRole, Tone } from "../services/types";
 import { apiBase, apiFetch, useAuth } from "../services/api";
 import { showToast } from "../services/toast";
+import { confirmAction } from "../services/confirm";
 import { Card, Badge, EmptyState, LoadingSkeleton } from "../components/SharedComponents";
 import { relTime, fmtDate } from "../services/utils";
 
@@ -73,7 +74,13 @@ export function UserManagementPage() {
   };
 
   const removeUser = async (u: ManagedUser) => {
-    if (!window.confirm(`Remove ${u.email}? They will lose access to Vigil365 (their Microsoft account is not affected).`)) return;
+    const ok = await confirmAction({
+      title: `Remove ${u.email}?`,
+      message: "They will immediately lose access to Vigil365. Their Microsoft 365 account is not affected, and the audit trail of their past actions is kept.",
+      confirmLabel: "Remove access",
+      danger: true,
+    });
+    if (!ok) return;
     setBusy(u.email);
     try {
       const r = await apiFetch(`${apiBase}/api/admin/users/${encodeURIComponent(u.email)}`, { method: "DELETE" });

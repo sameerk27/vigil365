@@ -236,7 +236,7 @@ export function TrendsPage() {
             <BarChart3 size={22} color="var(--color-primary)" /> Trends & History
           </h2>
           <p style={{ fontSize: 13, color: "var(--color-muted)", margin: "4px 0 0" }}>
-            Security posture tracking across {filteredSnapshots.length} snapshots · Last capture: {latest?.capturedAt ? new Date(latest.capturedAt).toLocaleString() : "—"}
+            Security posture tracking across {filteredSnapshots.length} snapshots · Last capture: {latest?.capturedAt ? fmtDate(latest.capturedAt) : "—"}
           </p>
         </div>
         <div className="trends-controls no-print" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>

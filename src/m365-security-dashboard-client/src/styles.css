@@ -758,6 +758,52 @@ select, input { font: inherit; }
   padding: 32px 16px; color: var(--color-faint); font-size: 13px; text-align: center; gap: 10px;
 }
 
+/* Error banner internals — tokenized (was inline styles on the dismiss link). */
+.err-banner { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.err-banner-msg { flex: 1; min-width: 0; }
+.err-banner-id {
+  font-family: "Consolas", monospace; font-size: 11px;
+  padding: 2px 6px; border-radius: 4px;
+  background: var(--color-card); border: 1px solid var(--sev-critical-border);
+  cursor: help; white-space: nowrap;
+}
+.err-banner-dismiss {
+  background: none; border: none; color: inherit;
+  text-decoration: underline; cursor: pointer; font: inherit; padding: 0;
+}
+
+/* Timezone hint in the header — states once that all times are local. */
+.hdr-tz { color: var(--color-faint); font-size: 11px; cursor: help; }
+
+/* ── Confirmation dialog (replaces native window.confirm) ─────────────────── */
+.confirm-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(15,23,42,.45);
+  z-index: 400;                     /* above detail panels (250) and toasts (300) */
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.confirm-dialog {
+  width: 100%; max-width: 420px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-modal);
+  padding: 18px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.confirm-hdr { display: flex; align-items: center; gap: 8px; }
+.confirm-title { font-size: 15px; font-weight: 700; color: var(--color-text); margin: 0; }
+.confirm-msg { font-size: 13px; color: var(--color-text-secondary); line-height: 1.55; margin: 0; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.btn-cancel {
+  padding: 7px 14px;
+  border: 1px solid var(--color-border); border-radius: var(--radius-ctl);
+  background: var(--color-card); color: var(--color-text-secondary);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.btn-cancel:hover { background: var(--color-raised); }
+
 /* Honest truncation notice — shown when a server-capped list is hiding rows. */
 .trunc-notice {
   margin-bottom: 10px; padding: 8px 12px;

@@ -570,13 +570,9 @@ app.MapGet("/api/admin/audit-log/export", async (AppDbContext db, AuditLogger au
         .Take(100_000)
         .ToListAsync(ct);
 
-    static string Csv(string? v)
-    {
-        if (string.IsNullOrEmpty(v)) return "";
-        return v.Contains(',') || v.Contains('"') || v.Contains('\n') || v.Contains('\r')
-            ? '"' + v.Replace("\"", "\"\"") + '"'
-            : v;
-    }
+    // Shared encoder: RFC-4180 quoting + formula-injection guard. Audit actor
+    // names and details are tenant-controlled, so this export is a live vector.
+    static string Csv(string? v) => CsvSanitizer.Field(v);
 
     var sb = new System.Text.StringBuilder();
     sb.AppendLine("Id,TimestampUtc,ActorEmail,Action,TargetType,TargetId,Details,IpAddress,UserAgent,PrevHash,EntryHash");
@@ -2132,6 +2128,16 @@ app.MapPost("/api/report-schedules/{id:guid}/run-now", async (IServiceProvider s
     await audit.WriteAsync("report.schedule.run", "report", id.ToString(), status, ct);
     return Results.Ok(new { ok, status });
 }).RequireAuthorization("RequireAdmin");
+
+// Unknown /api/* paths must 404 as JSON, not fall through to the SPA. Returning
+// 200 text/html for a mistyped endpoint confuses scanners, breaks integrations
+// and masks broken clients (a failed call looks like a successful page load).
+app.Map("/api/{**rest}", (HttpContext ctx) =>
+{
+    ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+    return Results.Json(new { error = "No such API endpoint.", path = ctx.Request.Path.Value },
+        statusCode: StatusCodes.Status404NotFound);
+}).AllowAnonymous();
 
 app.MapFallbackToFile("index.html").AllowAnonymous();
 

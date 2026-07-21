@@ -48,6 +48,7 @@ dotnet
 *.mdf
 *.ldf
 publish/
+publish-install-test/
 keys/
 
 *.pfx

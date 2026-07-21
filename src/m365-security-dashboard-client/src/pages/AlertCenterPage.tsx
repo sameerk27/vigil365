@@ -3,6 +3,7 @@ import { X, Bell, AlertCircle, Clock, ShieldAlert, Activity, CheckCircle, Search
 import { AlertPolicy, TriggeredAlert, NotificationSettings, NotificationLogEntry, Tone, AlertCoverageScorecard, AlertBaselineRule } from "../services/types";
 import { acApi, recApi, wbApi, useAuth, crossNavigate } from "../services/api";
 import { showToast } from "../services/toast";
+import { confirmAction } from "../services/confirm";
 import { DetailField, KpiTile, Card, Badge, EmptyState, MiniBarChart, ExportDropdown, ProgressBar, CopyButton, LoadingSkeleton, TriageSection } from "../components/SharedComponents";
 import { CollectionHealthCard } from "../components/CollectionHealthCard";
 import { CollectionStatusBanner } from "../components/CollectionStatusBanner";
@@ -696,7 +697,16 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
   };
 
   const handleDeletePolicy = async (id: string) => {
-    if (!confirm("Delete this policy?")) return;
+    const policy = policies.find(p => p.id === id);
+    const ok = await confirmAction({
+      title: "Delete alert policy?",
+      message: policy
+        ? `"${policy.name}" will stop evaluating and no new alerts will be raised for it. Alerts it already triggered are kept.`
+        : "This policy will stop evaluating. Alerts it already triggered are kept.",
+      confirmLabel: "Delete policy",
+      danger: true,
+    });
+    if (!ok) return;
     if (await acApi.deletePolicy(id)) { showToast("Policy deleted"); await onChanged(); }
   };
 

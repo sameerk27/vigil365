@@ -36,6 +36,30 @@ export function fmtShort(iso?: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }) });
 }
 
+/**
+ * All timestamps render in the viewer's local zone. In a security timeline
+ * "14:32" is meaningless without knowing the zone, so the app states it once
+ * (in the header) rather than suffixing every row. Returns e.g. "IST (UTC+5:30)".
+ */
+export function tzLabel(): string {
+  const d = new Date();
+  const name = new Intl.DateTimeFormat("en-US", { timeZoneName: "short" })
+    .formatToParts(d).find(p => p.type === "timeZoneName")?.value ?? "local";
+  // getTimezoneOffset is minutes *behind* UTC, so the sign is inverted.
+  const mins = -d.getTimezoneOffset();
+  const sign = mins < 0 ? "-" : "+";
+  const abs = Math.abs(mins);
+  const offset = `UTC${sign}${String(Math.floor(abs / 60)).padStart(2, "0")}:${String(abs % 60).padStart(2, "0")}`;
+  return name === offset ? name : `${name} (${offset})`;
+}
+
+/** Exact UTC instant for tooltips — the unambiguous form for evidence. */
+export function fmtUtc(iso?: string): string {
+  if (!iso) return "–";
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? "–" : `${d.toISOString().slice(0, 19).replace("T", " ")} UTC`;
+}
+
 export function sevColor(s: string): string {
   const key = s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
   return ({
@@ -116,11 +140,21 @@ export function fmtFullTime(iso?: string | null): string {
   return rel ? `${rel} (${abs})` : abs;
 }
 
+/**
+ * Neutralises spreadsheet formula injection. Alert titles, display names and
+ * audit actors are tenant-controlled: a value beginning =, +, - or @ is executed
+ * as a formula when the export is opened in Excel/Sheets. Prefixing an
+ * apostrophe forces the cell to text without changing what the reader sees.
+ */
+export function csvSafe(s: string): string {
+  return /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+}
+
 export function downloadCsv(rows: Record<string, unknown>[], filename: string): void {
   if (!rows.length) return;
   const keys = Object.keys(rows[0]);
   const escape = (v: unknown) => {
-    const s = String(v ?? "").replace(/"/g, '""');
+    const s = csvSafe(String(v ?? "")).replace(/"/g, '""');
     return s.includes(",") || s.includes("\n") || s.includes('"') ? `"${s}"` : s;
   };
   const csv = [keys.join(","), ...rows.map(r => keys.map(k => escape(r[k])).join(","))].join("\n");

@@ -187,12 +187,9 @@ public sealed class DigestBuilder(AppDbContext db)
         return sb.ToString();
     }
 
-    /// <summary>RFC-4180 field escaping.</summary>
+    /// <summary>RFC-4180 field escaping + formula-injection guard.</summary>
     private static string Csv(string? s)
     {
-        s ??= "";
-        return s.Contains(',') || s.Contains('"') || s.Contains('\n') || s.Contains('\r')
-            ? "\"" + s.Replace("\"", "\"\"") + "\""
-            : s;
+        return CsvSanitizer.Field(s);
     }
 }
