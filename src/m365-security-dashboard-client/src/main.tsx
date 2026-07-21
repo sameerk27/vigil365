@@ -376,7 +376,10 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
         setError("Failed to load dashboard data. Is the API running?");
       } else {
         if (failed > 0)
-          setError(`${failed} of ${attempted} data sources failed to load — some cards may be out of date.`);
+          // Deliberately worded as "dashboard panels", not "data sources": the
+          // collection banner already says "N sources failed" about Graph
+          // collectors. These are different failures and must not read alike.
+          setError(`${failed} of ${attempted} dashboard panels failed to load — those cards may be out of date.`);
         setLastRefresh(new Date());
       }
       setCountdown(AUTO_REFRESH_SEC);

@@ -50,7 +50,10 @@ export function tzLabel(): string {
   const sign = mins < 0 ? "-" : "+";
   const abs = Math.abs(mins);
   const offset = `UTC${sign}${String(Math.floor(abs / 60)).padStart(2, "0")}:${String(abs % 60).padStart(2, "0")}`;
-  return name === offset ? name : `${name} (${offset})`;
+  // Many zones have no real abbreviation and Intl just echoes the offset
+  // ("GMT+5:30"). Showing "GMT+5:30 (UTC+05:30)" says the same thing twice —
+  // only pair them when the name is a genuine abbreviation (IST, PDT, JST).
+  return /^(GMT|UTC)/i.test(name) ? offset : `${name} (${offset})`;
 }
 
 /** Exact UTC instant for tooltips — the unambiguous form for evidence. */
