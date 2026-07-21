@@ -171,9 +171,13 @@ export const entityApi = {
 // Lets one page deep-link into another with a search/filter seed (e.g. Alert Center
 // "view user in Identity"). App registers the page-setter; pages read & consume the
 // pending seed on mount.
-export type CrossNavTarget = { page: string; search?: string };
+export type CrossNavTarget = { page: string; search?: string; tab?: string };
 let _navHandler: ((target: CrossNavTarget) => void) | null = null;
 let _pendingSeed: Record<string, string> = {};
+// Several pages host their own inner tab bar. Without this, cross-navigation
+// could only reach a page's default tab, so "take me to the collection runs"
+// dumped the user on the page and left them to find the tab themselves.
+let _pendingTab: Record<string, string> = {};
 
 export function registerNavHandler(handler: (target: CrossNavTarget) => void): () => void {
   _navHandler = handler;
@@ -182,6 +186,7 @@ export function registerNavHandler(handler: (target: CrossNavTarget) => void): (
 
 export function crossNavigate(target: CrossNavTarget): void {
   if (target.search != null) _pendingSeed[target.page] = target.search;
+  if (target.tab != null) _pendingTab[target.page] = target.tab;
   _navHandler?.(target);
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("nav-seed-update", { detail: target }));
@@ -201,6 +206,14 @@ export function consumeNavSeed(page: string): string | null {
   const v = _pendingSeed[page];
   if (v == null) return null;
   delete _pendingSeed[page];
+  return v;
+}
+
+/** Same contract as consumeNavSeed, for pages with an inner tab bar. */
+export function consumeNavTab(page: string): string | null {
+  const v = _pendingTab[page];
+  if (v == null) return null;
+  delete _pendingTab[page];
   return v;
 }
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Database, AlertTriangle } from "lucide-react";
-import { apiBase, apiFetch } from "../services/api";
+import { apiBase, apiFetch, crossNavigate } from "../services/api";
 import { Card, Badge, EmptyState, StatBox, SectHdr } from "./SharedComponents";
 import { relTime } from "../services/utils";
 
@@ -43,7 +43,16 @@ export function CollectionHealthCard({ refreshKey }: { refreshKey: number }) {
     <Card title="Collection Health"
       id="collection-health-card"
       className="act-collection-card"
-      badge={<Badge label={!last ? "No runs" : healthy ? "Healthy" : last.status === "Failed" ? "Failed" : `${last.sourceFailures} source issue${last.sourceFailures!==1?"s":""}`} tone={tone}/>}>
+      badge={<Badge label={!last ? "No runs" : healthy ? "Healthy" : last.status === "Failed" ? "Failed" : `${last.sourceFailures} source issue${last.sourceFailures!==1?"s":""}`} tone={tone}/>}
+      action={
+        // The card summarises; the Collection Runs tab has the full history and
+        // the untruncated error text. Without this the card is a dead end —
+        // a 403 renders as '403 Forbidden: {"error":{"c…' with nowhere to go.
+        <button type="button" className="card-link-btn"
+          onClick={() => crossNavigate({ page: "alertcenter", tab: "runs" })}>
+          View runs →
+        </button>
+      }>
       {err ? (
         <EmptyState message="Could not load collection status"/>
       ) : !runs ? (
@@ -65,11 +74,12 @@ export function CollectionHealthCard({ refreshKey }: { refreshKey: number }) {
             <div className="mini-list" style={{marginTop:8}}>
               <SectHdr>FAILING SOURCES</SectHdr>
               {failures.map((f,i)=>(
-                <div key={i} className="mini-row" title={f.error}>
+                <button key={i} type="button" className="mini-row failing-source-row" title={f.error}
+                  onClick={() => crossNavigate({ page: "alertcenter", tab: "runs" })}>
                   <AlertTriangle size={11} color="var(--sev-high-icon)"/>
                   <span className="mr-user">{f.source}</span>
                   <span className="mr-date trunc" style={{maxWidth:140}}>{f.error}</span>
-                </div>
+                </button>
               ))}
             </div>
           ) : (

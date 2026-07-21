@@ -399,6 +399,22 @@ select, input { font: inherit; }
 .card-title { font-size: 13px; font-weight: 600; color: var(--color-text); margin: 0; line-height: 1.4; }
 .card-head-right { display: flex; align-items: center; gap: 6px; }
 
+/* Drill-down link in a card header ("View runs →"). */
+.card-link-btn {
+  background: none; border: none; padding: 0;
+  color: var(--color-primary); font-size: 12px; font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+}
+.card-link-btn:hover { text-decoration: underline; }
+
+/* Failing-source rows are drill-downs, not static text. */
+.failing-source-row {
+  width: 100%; text-align: left; font: inherit;
+  background: none; border: none; padding: 3px 0; cursor: pointer;
+  border-radius: 4px;
+}
+.failing-source-row:hover { background: var(--color-raised); }
+
 /* ── Badge ───────────────────────────────────────────────────────────────── */
 .badge {
   display: inline-flex; align-items: center;

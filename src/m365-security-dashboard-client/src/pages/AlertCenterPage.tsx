@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { X, Bell, AlertCircle, Clock, ShieldAlert, Activity, CheckCircle, Search, ExternalLink, ArrowRight, ShieldCheck, AlertTriangle, PlusCircle, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { AlertPolicy, TriggeredAlert, NotificationSettings, NotificationLogEntry, Tone, AlertCoverageScorecard, AlertBaselineRule } from "../services/types";
-import { acApi, recApi, wbApi, useAuth, crossNavigate } from "../services/api";
+import { acApi, recApi, wbApi, useAuth, crossNavigate, consumeNavTab } from "../services/api";
 import { showToast } from "../services/toast";
 import { confirmAction } from "../services/confirm";
 import { DetailField, KpiTile, Card, Badge, EmptyState, MiniBarChart, ExportDropdown, ProgressBar, CopyButton, LoadingSkeleton, TriageSection } from "../components/SharedComponents";
@@ -519,7 +519,22 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
 
   // The product is alert-first: land an analyst in the open, worst-first queue.
   // The dashboard remains available when they need the aggregate view.
-  const [tab, setTab] = useState<AcTab>("alerts");
+  // A cross-navigation may request a specific tab (e.g. "show me the collection
+  // runs"); honour it on mount instead of dropping them on the default.
+  const [tab, setTab] = useState<AcTab>(() => (consumeNavTab("alertcenter") as AcTab) ?? "alerts");
+
+  // Later cross-navigations arrive while this page is already mounted.
+  useEffect(() => {
+    const listener = (e: Event) => {
+      const target = (e as CustomEvent<{ page: string; tab?: string }>).detail;
+      if (target?.page === "alertcenter" && target.tab) {
+        consumeNavTab("alertcenter");
+        setTab(target.tab as AcTab);
+      }
+    };
+    window.addEventListener("nav-seed-update", listener);
+    return () => window.removeEventListener("nav-seed-update", listener);
+  }, []);
   const [search, setSearch] = useState("");
   const [sevFilter, setSevFilter] = useState("");
   const [catFilter, setCatFilter] = useState("");
