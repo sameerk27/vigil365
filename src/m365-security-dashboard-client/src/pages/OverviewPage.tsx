@@ -71,10 +71,10 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
             {(stale || failed > 0) && (
               // A failed *collector source* is a Vigil365 data-collection problem,
               // not a Microsoft service advisory — this used to jump to Service
-              // Health, which answers a completely different question. The real
-              // answer (which source failed and why) is in the Collection Health
-              // card further down this same page.
-              <button onClick={() => document.getElementById("collection-health-card")?.scrollIntoView({ behavior: "smooth", block: "center" })}
+              // Health, which answers a completely different question. Go to the
+              // Collection Runs view, the same destination as the Collection
+              // Health card, where the full per-source error is readable.
+              <button onClick={() => crossNavigate({ page: "alertcenter", tab: "runs" })}
                 style={{ marginLeft: "auto", background: "none", border: "none", color: c.fg, textDecoration: "underline", cursor: "pointer", fontSize: 12 }}>
                 {failed > 0 ? "Which source? →" : "Details →"}
               </button>

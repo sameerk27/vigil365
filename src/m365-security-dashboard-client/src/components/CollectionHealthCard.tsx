@@ -41,7 +41,6 @@ export function CollectionHealthCard({ refreshKey }: { refreshKey: number }) {
 
   return (
     <Card title="Collection Health"
-      id="collection-health-card"
       className="act-collection-card"
       badge={<Badge label={!last ? "No runs" : healthy ? "Healthy" : last.status === "Failed" ? "Failed" : `${last.sourceFailures} source issue${last.sourceFailures!==1?"s":""}`} tone={tone}/>}
       action={
