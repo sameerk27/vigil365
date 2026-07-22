@@ -26,6 +26,7 @@ import { ConfirmDialog } from "./components/ConfirmDialog";
 import { GlobalSearch } from "./components/GlobalSearch";
 import { Badge, AlertDetailModal, DashboardSkeleton } from "./components/SharedComponents";
 import { fmtDate, fmtCountdown, tzLabel, fmtUtc } from "./services/utils";
+import { useSessionTimeout, clearSessionStart, IDLE_TIMEOUT_MIN, type ExpiryReason } from "./services/session";
 
 // Import pages
 import { OverviewPage } from "./pages/OverviewPage";
@@ -631,6 +632,26 @@ function AuthGate() {
   const [authEnabled, setAuthEnabled] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [me, setMe] = useState<{ email: string; name: string; role: AppRole } | null>(null);
+  // Read once and clear: explains the *next* login screen, not every later one.
+  const [signOutReason] = useState<string | null>(() => {
+    const r = sessionStorage.getItem("vigil365-signout-reason");
+    if (r) sessionStorage.removeItem("vigil365-signout-reason");
+    return r;
+  });
+
+  // Bound how long an unattended browser keeps showing tenant security data.
+  // Declared before any conditional return so hook order stays stable, and
+  // only armed once a session actually exists.
+  const expireSession = useCallback(async (reason: ExpiryReason) => {
+    clearSessionStart();
+    sessionStorage.setItem("vigil365-signout-reason", reason);
+    if (_msalInstance) {
+      await _msalInstance.logoutRedirect({ postLogoutRedirectUri: window.location.origin });
+    } else {
+      window.location.reload();
+    }
+  }, []);
+  useSessionTimeout(expireSession, !!account);
 
   // Once signed in, fetch the in-app role (Admin/Analyst/Viewer).
   useEffect(() => {
@@ -742,6 +763,16 @@ function AuthGate() {
               <div className="login-error" role="alert"><AlertTriangle size={14}/> {loginError}</div>
             )}
 
+            {/* An unexplained sign-out reads as a bug. Say which limit was hit. */}
+            {signOutReason && (
+              <div className="login-note" role="status">
+                <Lock size={13} style={{ flexShrink: 0, marginTop: 2 }}/>
+                <span>{signOutReason === "idle"
+                  ? `You were signed out after ${IDLE_TIMEOUT_MIN} minutes of inactivity.`
+                  : "You were signed out because the maximum session length was reached."}</span>
+              </div>
+            )}
+
             <button className="login-ms-btn" onClick={handleLogin}>
               <svg width="18" height="18" viewBox="0 0 21 21" fill="none" aria-hidden="true">
                 <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
@@ -764,6 +795,7 @@ function AuthGate() {
 
   const handleSignOut = async () => {
     if (!_msalInstance) return;
+    clearSessionStart();
     await _msalInstance.logoutRedirect({ postLogoutRedirectUri: window.location.origin });
   };
 
