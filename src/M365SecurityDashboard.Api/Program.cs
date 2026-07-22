@@ -823,7 +823,7 @@ app.MapGet("/api/dashboard/securescore", async (
     catch (Exception ex)
     {
         logger.LogError(ex, "Failed to retrieve secure score trend from Graph.");
-        return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", currentScore = 0.0, maxScore = 100.0, percentage = 0.0, trend = Array.Empty<object>() });
+        return Results.Ok(new { configured = true, error = GraphErrorHint.DescribeOrNull(ex.Message) ?? "An error occurred. Check server logs for details.", currentScore = 0.0, maxScore = 100.0, percentage = 0.0, trend = Array.Empty<object>() });
     }
 });
 
@@ -1013,7 +1013,7 @@ app.MapGet("/api/dashboard/licenses", async (
         }).Where(s => s.purchased > 0).ToList();
         return Results.Ok(new { configured = true, skus = result, totalPurchased = result.Sum(s => s.purchased), totalConsumed = result.Sum(s => s.consumed) });
     }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", skus = Array.Empty<object>(), totalPurchased = 0, totalConsumed = 0 }); }
+    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = GraphErrorHint.DescribeOrNull(ex.Message) ?? "An error occurred. Check server logs for details.", skus = Array.Empty<object>(), totalPurchased = 0, totalConsumed = 0 }); }
 });
 
 // Inactive users (last sign-in > 90 days)
@@ -1046,7 +1046,7 @@ app.MapGet("/api/dashboard/inactive-users", async (
         var neverSignedIn = result.Where(u => u.lastSignIn == null).Take(20).ToList();
         return Results.Ok(new { configured = true, inactive90Count = inactive90.Count, neverSignedInCount = neverSignedIn.Count, totalUsers = result.Count, inactive90, neverSignedIn });
     }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", inactive90Count = 0, neverSignedInCount = 0, totalUsers = 0, inactive90 = Array.Empty<object>(), neverSignedIn = Array.Empty<object>() }); }
+    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = GraphErrorHint.DescribeOrNull(ex.Message) ?? "An error occurred. Check server logs for details.", inactive90Count = 0, neverSignedInCount = 0, totalUsers = 0, inactive90 = Array.Empty<object>(), neverSignedIn = Array.Empty<object>() }); }
 });
 
 // Password expiry
@@ -1081,7 +1081,7 @@ app.MapGet("/api/dashboard/password-expiry", async (
         var neverExpire = result.Where(u => u.neverExpires).Take(10).ToList();
         return Results.Ok(new { configured = true, expiringSoonCount = expiringSoon.Count, expiredCount = expired.Count, neverExpiresCount = neverExpire.Count, totalUsers = result.Count, expiringSoon, expired, neverExpire });
     }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", expiringSoonCount = 0, expiredCount = 0, neverExpiresCount = 0, totalUsers = 0, expiringSoon = Array.Empty<object>(), expired = Array.Empty<object>(), neverExpire = Array.Empty<object>() }); }
+    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = GraphErrorHint.DescribeOrNull(ex.Message) ?? "An error occurred. Check server logs for details.", expiringSoonCount = 0, expiredCount = 0, neverExpiresCount = 0, totalUsers = 0, expiringSoon = Array.Empty<object>(), expired = Array.Empty<object>(), neverExpire = Array.Empty<object>() }); }
 });
 
 // Conditional Access policies
@@ -1121,7 +1121,7 @@ app.MapGet("/api/dashboard/conditional-access", async (
         }).ToList();
         return Results.Ok(new { configured = true, enabled = result.Count(p => p.state == "enabled"), disabled = result.Count(p => p.state == "disabled"), reportOnly = result.Count(p => p.state == "enabledForReportingButNotEnforced"), policies = result });
     }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", enabled = 0, disabled = 0, reportOnly = 0, policies = Array.Empty<object>() }); }
+    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = GraphErrorHint.DescribeOrNull(ex.Message) ?? "An error occurred. Check server logs for details.", enabled = 0, disabled = 0, reportOnly = 0, policies = Array.Empty<object>() }); }
 });
 
 // Conditional Access gap analysis — coverage holes across the CA policy set.
@@ -1147,7 +1147,7 @@ app.MapGet("/api/dashboard/ca-gaps", async (
     catch (Exception ex)
     {
         app.Logger.LogError(ex, "CA gap analysis error");
-        return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", policyCount = 0, findings = Array.Empty<object>() });
+        return Results.Ok(new { configured = true, error = GraphErrorHint.DescribeOrNull(ex.Message) ?? "An error occurred. Check server logs for details.", policyCount = 0, findings = Array.Empty<object>() });
     }
 }).RequireAuthorization("RequireAnalyst");
 
@@ -1178,7 +1178,7 @@ app.MapGet("/api/dashboard/sharing-posture", async (
     {
         app.Logger.LogError(ex, "Sharing posture analysis error");
         // Most common cause: SharePointTenantSettings.Read.All not granted.
-        var perm = ex.Message.Contains("403") ? "Grant SharePointTenantSettings.Read.All to enable this check." : null;
+        var perm = GraphErrorHint.DescribeOrNull(ex.Message, "SharePointTenantSettings.Read.All");
         return Results.Ok(new { configured = true, error = perm ?? "An error occurred. Check server logs for details.", findings = Array.Empty<object>() });
     }
 }).RequireAuthorization("RequireAnalyst");
@@ -1217,7 +1217,7 @@ app.MapGet("/api/dashboard/signin-locations", async (
             .OrderByDescending(g => g.count).Take(15).ToList();
         return Results.Ok(new { configured = true, total = result.Count, countries = byCountry.Count, failures = result.Count(s => !s.success), byCountry, recent = result.Take(20).ToList() });
     }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, countries = 0, failures = 0, byCountry = Array.Empty<object>(), recent = Array.Empty<object>() }); }
+    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = GraphErrorHint.DescribeOrNull(ex.Message) ?? "An error occurred. Check server logs for details.", total = 0, countries = 0, failures = 0, byCountry = Array.Empty<object>(), recent = Array.Empty<object>() }); }
 });
 
 // Unified Defender alerts (alerts_v2 — all products)
@@ -1260,7 +1260,7 @@ app.MapGet("/api/dashboard/defender-alerts", async (
         var bySource = alerts.GroupBy(a => a.serviceSource ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
         return Results.Ok(new { configured = true, total = alerts.Count, bySeverity, bySource, alerts });
     }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, alerts = Array.Empty<object>() }); }
+    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = GraphErrorHint.DescribeOrNull(ex.Message) ?? "An error occurred. Check server logs for details.", total = 0, alerts = Array.Empty<object>() }); }
 });
 
 // Security incidents (grouped correlated alerts)
@@ -1296,7 +1296,7 @@ app.MapGet("/api/dashboard/security-incidents", async (
         var bySeverity = incidents.GroupBy(i => i.severity ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
         return Results.Ok(new { configured = true, total = incidents.Count, bySeverity, incidents });
     }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, incidents = Array.Empty<object>() }); }
+    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = GraphErrorHint.DescribeOrNull(ex.Message) ?? "An error occurred. Check server logs for details.", total = 0, incidents = Array.Empty<object>() }); }
 });
 
 // Privileged roles
@@ -1341,7 +1341,7 @@ app.MapGet("/api/dashboard/privileged-roles", async (
         }
         return Results.Ok(new { configured = true, roles, totalPrivilegedUsers });
     }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", roles = Array.Empty<object>(), totalPrivilegedUsers = 0 }); }
+    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = GraphErrorHint.DescribeOrNull(ex.Message) ?? "An error occurred. Check server logs for details.", roles = Array.Empty<object>(), totalPrivilegedUsers = 0 }); }
 });
 
 // DLP alerts
@@ -1371,7 +1371,7 @@ app.MapGet("/api/dashboard/dlp-alerts", async (
         var bySource = alerts.GroupBy(a => a.serviceSource ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
         return Results.Ok(new { configured = true, total = alerts.Count, bySeverity, bySource, alerts });
     }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, alerts = Array.Empty<object>() }); }
+    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = GraphErrorHint.DescribeOrNull(ex.Message) ?? "An error occurred. Check server logs for details.", total = 0, alerts = Array.Empty<object>() }); }
 });
 
 // MDE vulnerabilities / endpoint alerts
@@ -1403,7 +1403,7 @@ app.MapGet("/api/dashboard/mde-vulnerabilities", async (
         var byCategory = alerts.GroupBy(a => a.category ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
         return Results.Ok(new { configured = true, total = alerts.Count, bySeverity, byCategory, alerts });
     }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, alerts = Array.Empty<object>() }); }
+    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = GraphErrorHint.DescribeOrNull(ex.Message) ?? "An error occurred. Check server logs for details.", total = 0, alerts = Array.Empty<object>() }); }
 });
 
 // PIM role activations
@@ -1441,7 +1441,7 @@ app.MapGet("/api/dashboard/pim", async (
         }).ToList();
         return Results.Ok(new { configured = true, total = activations.Count, activations });
     }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, activations = Array.Empty<object>() }); }
+    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = GraphErrorHint.DescribeOrNull(ex.Message) ?? "An error occurred. Check server logs for details.", total = 0, activations = Array.Empty<object>() }); }
 });
 
 // Email protection (Defender for Office 365)
@@ -1470,7 +1470,7 @@ app.MapGet("/api/dashboard/email-protection", async (
         var bySeverity = alerts.GroupBy(a => a.severity ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
         return Results.Ok(new { configured = true, total = alerts.Count, byCategory, bySeverity, alerts });
     }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, alerts = Array.Empty<object>() }); }
+    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = GraphErrorHint.DescribeOrNull(ex.Message) ?? "An error occurred. Check server logs for details.", total = 0, alerts = Array.Empty<object>() }); }
 });
 
 // Purview sensitivity labels
@@ -1494,7 +1494,7 @@ app.MapGet("/api/dashboard/purview", async (
         }).ToList();
         return Results.Ok(new { configured = true, labelCount = labels.Count, labels });
     }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", labelCount = 0, labels = Array.Empty<object>() }); }
+    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = GraphErrorHint.DescribeOrNull(ex.Message) ?? "An error occurred. Check server logs for details.", labelCount = 0, labels = Array.Empty<object>() }); }
 });
 
 // MDI alerts (Defender for Identity — on-prem AD lateral movement, credential theft)
@@ -1526,7 +1526,7 @@ app.MapGet("/api/dashboard/mdi-alerts", async (
         var byCategory = alerts.GroupBy(a => a.category ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
         return Results.Ok(new { configured = true, total = alerts.Count, bySeverity, byCategory, alerts });
     }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, alerts = Array.Empty<object>() }); }
+    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = GraphErrorHint.DescribeOrNull(ex.Message) ?? "An error occurred. Check server logs for details.", total = 0, alerts = Array.Empty<object>() }); }
 });
 
 // MCAS alerts (Defender for Cloud Apps — SaaS anomalies, impossible travel, mass download)
@@ -1555,7 +1555,7 @@ app.MapGet("/api/dashboard/mcas-alerts", async (
         var byCategory = alerts.GroupBy(a => a.category ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
         return Results.Ok(new { configured = true, total = alerts.Count, bySeverity, byCategory, alerts });
     }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, alerts = Array.Empty<object>() }); }
+    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = GraphErrorHint.DescribeOrNull(ex.Message) ?? "An error occurred. Check server logs for details.", total = 0, alerts = Array.Empty<object>() }); }
 });
 
 // Insider Risk Management (Purview IRM — data exfiltration, departing employees)
@@ -1583,7 +1583,7 @@ app.MapGet("/api/dashboard/insider-risk", async (
         var bySeverity = alerts.GroupBy(a => a.severity ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
         return Results.Ok(new { configured = true, total = alerts.Count, bySeverity, alerts });
     }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, alerts = Array.Empty<object>() }); }
+    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = GraphErrorHint.DescribeOrNull(ex.Message) ?? "An error occurred. Check server logs for details.", total = 0, alerts = Array.Empty<object>() }); }
 });
 
 // Entra ID Risk Detections (25+ specific detection types: leaked creds, password spray, nation-state IPs)
@@ -1623,7 +1623,7 @@ app.MapGet("/api/dashboard/risk-detections", async (
         var byLevel = detections.GroupBy(d => d.riskLevel ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
         return Results.Ok(new { configured = true, total = detections.Count, byType, byLevel, detections });
     }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, detections = Array.Empty<object>() }); }
+    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = GraphErrorHint.DescribeOrNull(ex.Message) ?? "An error occurred. Check server logs for details.", total = 0, detections = Array.Empty<object>() }); }
 });
 
 // MDI Identity Sensor Health Issues (requires IdentityBaseline.Read.All)
@@ -1656,7 +1656,7 @@ app.MapGet("/api/dashboard/identity-health", async (
         var bySeverity = issues.GroupBy(i => i.severity ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
         return Results.Ok(new { configured = true, total = issues.Count, bySeverity, issues });
     }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, issues = Array.Empty<object>() }); }
+    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = GraphErrorHint.DescribeOrNull(ex.Message) ?? "An error occurred. Check server logs for details.", total = 0, issues = Array.Empty<object>() }); }
 });
 
 // Attack Simulation & Training (requires AttackSimulation.ReadWrite.All)
@@ -1702,7 +1702,7 @@ app.MapGet("/api/dashboard/attack-simulation", async (
             ? Math.Round(simulations.Average(s => s.compromisedRate), 1) : 0.0;
         return Results.Ok(new { configured = true, total = simulations.Count, totalTargeted, avgCompromiseRate, simulations });
     }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, simulations = Array.Empty<object>() }); }
+    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = GraphErrorHint.DescribeOrNull(ex.Message) ?? "An error occurred. Check server logs for details.", total = 0, simulations = Array.Empty<object>() }); }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -56,7 +56,9 @@ public sealed class GraphCollector(
                 catch (Exception ex)
                 {
                     run.SourceFailures++;
-                    failures.Add(new { source = source.Name, error = Trim(ex.Message, 300) });
+                    // Store an actionable sentence, not the raw Graph JSON — this
+                    // string is what the Collection Health card and Runs view show.
+                    failures.Add(new { source = source.Name, error = GraphErrorHint.Describe(ex.Message, source.Name) });
                     logger.LogWarning(ex, "Graph source {SourceName} failed", source.Name);
                 }
             }
@@ -70,7 +72,7 @@ public sealed class GraphCollector(
             catch (Exception ex)
             {
                 run.SourceFailures++;
-                failures.Add(new { source = "Tenant audit events", error = Trim(ex.Message, 300) });
+                failures.Add(new { source = "Tenant audit events", error = GraphErrorHint.Describe(ex.Message, "Tenant audit events") });
                 logger.LogWarning(ex, "Tenant audit event collection failed");
             }
 
