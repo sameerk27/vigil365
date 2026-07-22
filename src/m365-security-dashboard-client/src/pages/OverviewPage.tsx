@@ -3,7 +3,7 @@ import { Shield, Lock, Monitor, Activity, ShieldAlert, Flag, TrendingUp, Chevron
 import { Overview, SecureScore, IdentityData, DevicesData, ServiceHealthData, SecurityAlert, DefenderAlertsData, SecurityIncidentsData, AlertPolicy, TriggeredAlert } from "../services/types";
 import { pctTone, fmtShort, fmtService, fmtDefenderSource, relTime, fmtDate, fmtFullTime, sevClass } from "../services/utils";
 import { crossNavigate } from "../services/api";
-import { Card, KpiTile, CircleGauge, LineChart, StatBox, SectHdr, Badge, EmptyState } from "../components/SharedComponents";
+import { Card, KpiTile, CircleGauge, LineChart, StatBox, SectHdr, Badge, EmptyState, RelativeTime } from "../components/SharedComponents";
 import { CollectionHealthCard } from "../components/CollectionHealthCard";
 
 export function OverviewPage({ overview, secureScore, identity, devices, serviceHealth, alerts, defenderAlerts, securityIncidents, onAlertClick, onNavigateAlertCenter, alertPolicies, overviewTriggered, healthRefreshKey }:
@@ -55,13 +55,15 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
           warn:    { bg: "var(--status-warn-bg)",  bd: "var(--status-warn-border)",  fg: "var(--status-warn-text)",  dot: "var(--status-warn-icon)" },
           neutral: { bg: "var(--color-raised)",    bd: "var(--color-border)",        fg: "var(--color-muted)",       dot: "var(--color-faint)" },
         }[tone];
+        // Relative times here are wrapped in RelativeTime so they keep ticking —
+        // a frozen "2m ago" on a banner about data freshness is self-defeating.
         const msg = !lr
-          ? "No collection yet — run a collection to populate the dashboard"
+          ? <>No collection yet — run a collection to populate the dashboard</>
           : running
-          ? `Collection in progress — started ${relTime(lr.startedAt)}`
+          ? <>Collection in progress — started <RelativeTime iso={lr.startedAt}/></>
           : runFailed
-          ? `Last collection failed${lr.completedAt ? ` ${relTime(lr.completedAt)}` : ""} — run a collection to retry`
-          : `Data collected ${relTime(completed)}${stale ? " — stale, run a collection" : ""}${failed > 0 ? ` · ${failed} source${failed > 1 ? "s" : ""} failed` : " · all sources OK"}`;
+          ? <>Last collection failed {lr.completedAt && <RelativeTime iso={lr.completedAt}/>} — run a collection to retry</>
+          : <>Data collected <RelativeTime iso={completed}/>{stale ? " — stale, run a collection" : ""}{failed > 0 ? ` · ${failed} source${failed > 1 ? "s" : ""} failed` : " · all sources OK"}</>;
         return (
           <div role="status" aria-live="polite"
             style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 14px", marginBottom: 12,
@@ -269,10 +271,10 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
             </div>
           ):(
             !devices
-              ?<div className="empty-state" style={{paddingTop:8}}><p>Run a collection to load device data</p></div>
+              ?<EmptyState message="Run a collection to load device data"/>
               :devNonCompliant===0
-                ?<div className="empty-state" style={{paddingTop:8}}><p>All devices are compliant</p></div>
-                :<div className="empty-state" style={{paddingTop:8}}><p>{devNonCompliant} non-compliant reported by Intune summary</p></div>
+                ?<EmptyState message="All devices are compliant"/>
+                :<EmptyState message={`${devNonCompliant} non-compliant reported by Intune summary`}/>
           )}
         </Card>
         <CollectionHealthCard refreshKey={healthRefreshKey}/>

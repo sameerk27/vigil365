@@ -3,7 +3,7 @@ import { Key, UserX, Globe, Users, Search, CheckCircle, XCircle, UserCheck, Shie
 import { IdentityData, SecurityAlert, PrivilegedRolesData, PimData, MdiAlertsData, RiskDetectionsData, IdentityHealthData, MdiAlert, RiskDetection, Tone } from "../services/types";
 import { pctTone, fmtDate, sevColor, relTime, fmtFullTime } from "../services/utils";
 import { consumeNavSeed, crossNavigate } from "../services/api";
-import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, InfoRow, ProgressBar, ExportDropdown, CircleGauge, StatBox, SectHdr } from "../components/SharedComponents";
+import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, InlineError, InfoRow, ProgressBar, ExportDropdown, CircleGauge, StatBox, SectHdr } from "../components/SharedComponents";
 import { FilterPresets } from "../components/FilterPresets";
 
 export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAlerts, riskDetections, identityHealth, onAlertClick }:
@@ -220,11 +220,11 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
               {mfaMissing.length>8&&<div className="more-link">+{mfaMissing.length-8} more</div>}
             </div>
           ):!identity?(
-            <div className="empty-state" style={{paddingTop:8}}><p>Run a collection to load MFA data</p></div>
+            <EmptyState message="Run a collection to load MFA data"/>
           ):mfaPct===0&&(identity?.mfa.total??0)===0?(
-            <div className="empty-state" style={{paddingTop:8}}><p>No MFA data collected — check AuditLog.Read.All permission</p></div>
+            <InlineError title="No MFA data collected" perm="AuditLog.Read.All"/>
           ):(
-            <div className="empty-state" style={{paddingTop:8}}><p>All users have MFA registered</p></div>
+            <EmptyState message="All users have MFA registered"/>
           )}
         </Card>
 

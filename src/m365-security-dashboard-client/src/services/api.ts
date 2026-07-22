@@ -209,6 +209,19 @@ export function consumeNavSeed(page: string): string | null {
   return v;
 }
 
+// Global data refresh. An error state that cannot be retried leaves the user
+// with only F5 — App owns the fetch loop, so it registers the trigger here and
+// any card deep in the tree can offer "Retry".
+let _refreshHandler: (() => void) | null = null;
+
+export function registerRefreshHandler(handler: () => void): () => void {
+  _refreshHandler = handler;
+  return () => { if (_refreshHandler === handler) _refreshHandler = null; };
+}
+
+/** Re-runs the dashboard data load. No-op if App has not mounted yet. */
+export function requestRefresh(): void { _refreshHandler?.(); }
+
 /** Same contract as consumeNavSeed, for pages with an inner tab bar. */
 export function consumeNavTab(page: string): string | null {
   const v = _pendingTab[page];

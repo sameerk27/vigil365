@@ -399,6 +399,9 @@ select, input { font: inherit; }
 .card-title { font-size: 13px; font-weight: 600; color: var(--color-text); margin: 0; line-height: 1.4; }
 .card-head-right { display: flex; align-items: center; gap: 6px; }
 
+/* Per-card freshness stamp — quiet by design; it should not compete with the badge. */
+.card-freshness { font-size: 11px; color: var(--color-faint); cursor: help; white-space: nowrap; }
+
 /* Drill-down link in a card header ("View runs →"). */
 .card-link-btn {
   background: none; border: none; padding: 0;
@@ -1583,7 +1586,7 @@ button.countdown-chip:hover { color: var(--color-text); }
   background: var(--color-primary); color: #fff; border: none; padding: 6px 14px; border-radius: 4px;
   font-size: 13px; font-weight: 500; cursor: pointer; transition: background 0.15s;
 }
-.state-message .sm-action button:hover { background: #2563eb; }
+.state-message .sm-action button:hover { background: var(--color-primary-hover); }
 
 /* Loading Skeletons */
 @keyframes skeleton-pulse {

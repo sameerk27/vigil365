@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Download, ChevronRight, Copy, ClipboardCheck, ExternalLink, AlertTriangle, Activity, X, Lock, UserCheck, MessageSquare } from "lucide-react";
 import { Tone, SecurityAlert, AlertNote } from "../services/types";
-import { fmtService, fmtDate, relTime, downloadCsv, copyToClipboard } from "../services/utils";
+import { fmtService, fmtDate, relTime, fmtUtc, downloadCsv, copyToClipboard } from "../services/utils";
 import { showToast } from "../services/toast";
-import { useAuth, acApi, wbApi, openEntity } from "../services/api";
+import { useAuth, acApi, wbApi, openEntity, requestRefresh } from "../services/api";
 
 // ─── Export dropdown ──────────────────────────────────────────────────────────
 export function ExportDropdown({ rows, filename }: { rows: Record<string, unknown>[]; filename: string }) {
@@ -249,13 +249,31 @@ export function StatBox({ value, label, color, sub }: { value: string|number; la
   );
 }
 
-export function Card({ title, badge, action, children, className="", id }:
-  { title: string; badge?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode; className?: string; id?: string }) {
+/**
+ * Relative timestamp that keeps itself honest. A plain relTime() string is
+ * rendered once and then frozen — a card can sit reading "2m ago" for an hour,
+ * which is worse than showing nothing because it looks fresh.
+ */
+export function RelativeTime({ iso, prefix }: { iso?: string | null; prefix?: string }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const t = window.setInterval(() => tick(n => n + 1), 30_000);
+    return () => window.clearInterval(t);
+  }, []);
+  if (!iso) return null;
+  return <span title={fmtUtc(iso)}>{prefix}{relTime(iso)}</span>;
+}
+
+export function Card({ title, badge, action, children, className="", id, updatedAt }:
+  { title: string; badge?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode; className?: string; id?: string; updatedAt?: string | null }) {
   return (
     <div className={`card ${className}`} id={id}>
       <div className="card-head">
         <h2 className="card-title">{title}</h2>
-        <div className="card-head-right">{badge}{action}</div>
+        <div className="card-head-right">
+          {updatedAt && <span className="card-freshness"><RelativeTime iso={updatedAt} prefix="updated "/></span>}
+          {badge}{action}
+        </div>
       </div>
       {children}
     </div>
@@ -347,9 +365,12 @@ export function DashboardSkeleton() {
   );
 }
 
-export function InlineError({ title, perm, message }: { title: string; perm?: string; message?: string }) {
+export function InlineError({ title, perm, message, onRetry }: { title: string; perm?: string; message?: string; onRetry?: () => void }) {
+  // A permission problem is not fixed by retrying — it needs an admin to grant
+  // consent — so only transient errors get the Retry affordance.
+  const retry = perm ? undefined : (onRetry ?? requestRefresh);
   return (
-    <StateMessage 
+    <StateMessage
       type={perm ? "permission" : "error"}
       title={title}
       message={
@@ -358,6 +379,8 @@ export function InlineError({ title, perm, message }: { title: string; perm?: st
           {perm && <> Add <code>{perm}</code> permission in Azure Portal &rarr; App Registrations &rarr; API Permissions, grant admin consent, then restart the API.</>}
         </>
       }
+      onAction={retry}
+      actionLabel={retry ? "Retry" : undefined}
     />
   );
 }

@@ -19,7 +19,7 @@ import {
   RiskDetectionsData, IdentityHealthData, AttackSimulationData, AlertPolicy, TriggeredAlert,
   PurviewData
 } from "./services/types";
-import { apiBase, apiFetch, AuthContext, initMsal, acApi, AUTO_REFRESH_SEC, useAuth, registerNavHandler } from "./services/api";
+import { apiBase, apiFetch, AuthContext, initMsal, acApi, AUTO_REFRESH_SEC, useAuth, registerNavHandler, registerRefreshHandler } from "./services/api";
 import { showToast } from "./services/toast";
 import { ToastContainer } from "./components/ToastContainer";
 import { ConfirmDialog } from "./components/ConfirmDialog";
@@ -407,6 +407,10 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
 
   // Initial load + re-fetch whenever refreshKey increments
   useEffect(() => { load(); return () => abortRef.current?.abort(); }, [load, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Let any card offer a working "Retry" without threading a callback through
+  // every level of props.
+  useEffect(() => registerRefreshHandler(() => setRefreshKey(k => k + 1)), []);
 
   // Pull alert policies + triggered alerts from the backend
   const refreshAlertCenter = useCallback(async () => {

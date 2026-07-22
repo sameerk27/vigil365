@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Database, AlertTriangle } from "lucide-react";
 import { apiBase, apiFetch, crossNavigate } from "../services/api";
-import { Card, Badge, EmptyState, StatBox, SectHdr } from "./SharedComponents";
-import { relTime } from "../services/utils";
+import { Card, Badge, EmptyState, StatBox, SectHdr, RelativeTime } from "./SharedComponents";
 
 interface CollectionRunInfo {
   id: number;
@@ -66,7 +65,7 @@ export function CollectionHealthCard({ refreshKey }: { refreshKey: number }) {
             <StatBox value={last.sourceFailures} label="Source Failures" color={last.sourceFailures>0?"var(--status-error-text)":undefined}/>
           </div>
           <div className="mini-row" style={{marginTop:10, justifyContent:"space-between"}}>
-            <span className="mr-date">Last run {relTime(last.completedAt ?? last.startedAt)}</span>
+            <span className="mr-date"><RelativeTime iso={last.completedAt ?? last.startedAt} prefix="Last run "/></span>
             <Badge label={`${finished.length} recent run${finished.length!==1?"s":""}`} tone="neutral"/>
           </div>
           {failures.length > 0 ? (
