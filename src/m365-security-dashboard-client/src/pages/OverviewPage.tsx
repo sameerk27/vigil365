@@ -4,6 +4,7 @@ import { Overview, SecureScore, IdentityData, DevicesData, ServiceHealthData, Se
 import { pctTone, fmtShort, fmtService, fmtDefenderSource, relTime, fmtDate, fmtFullTime, sevClass } from "../services/utils";
 import { crossNavigate } from "../services/api";
 import { Card, KpiTile, CircleGauge, LineChart, StatBox, SectHdr, Badge, EmptyState, RelativeTime } from "../components/SharedComponents";
+import { SetupChecklist } from "../components/SetupChecklist";
 import { CollectionHealthCard } from "../components/CollectionHealthCard";
 
 export function OverviewPage({ overview, secureScore, identity, devices, serviceHealth, alerts, defenderAlerts, securityIncidents, onAlertClick, onNavigateAlertCenter, alertPolicies, overviewTriggered, healthRefreshKey }:
@@ -38,6 +39,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
 
   return (
     <div className="page">
+      <SetupChecklist refreshKey={healthRefreshKey}/>
       {(() => {
         // Branch on the run's status, not just completedAt — an in-progress or
         // failed run is not "no collection yet" (the header shows its start time).

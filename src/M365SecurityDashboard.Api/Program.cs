@@ -377,6 +377,55 @@ app.MapGet("/health", async (AppDbContext db, IOptions<GraphOptions> options, Ca
     return dbOk ? Results.Ok(body) : Results.Json(body, statusCode: StatusCodes.Status503ServiceUnavailable);
 }).AllowAnonymous();
 
+// First-run / setup progress. Drives the onboarding checklist so a fresh install
+// gets "do these things" instead of a dashboard full of empty cards. Analyst-
+// readable; every signal comes from state the app already persists.
+app.MapGet("/api/setup/status", async (AppDbContext db, IOptions<GraphOptions> options, CancellationToken ct) =>
+{
+    var graphConfigured = options.Value.IsConfigured();
+
+    var lastRun = await db.CollectionRuns.AsNoTracking()
+        .OrderByDescending(r => r.Id)
+        .FirstOrDefaultAsync(ct);
+    var hasCollected = lastRun is { Status: CollectionStatus.Completed };
+
+    // A permission gap shows up as a source failure on an otherwise-complete run.
+    var permissionGaps = lastRun?.SourceFailures ?? 0;
+
+    var cfg = await db.NotificationSettings.AsNoTracking().FirstOrDefaultAsync(ct);
+    var notificationsConfigured =
+        (cfg?.EmailEnabled == true && !string.IsNullOrWhiteSpace(cfg.SmtpHost)) ||
+        (cfg?.TeamsEnabled == true) ||
+        (cfg?.WebhookEnabled == true);
+
+    var policyCount = await db.AlertPolicies.CountAsync(p => p.Enabled, ct);
+    var userCount = await db.AppUsers.CountAsync(ct);
+
+    var steps = new[]
+    {
+        new { key = "graph", label = "Connect Microsoft Graph", done = graphConfigured,
+              hint = "Complete the setup wizard with your tenant and app registration.", page = "setup" },
+        new { key = "collection", label = "Run the first collection", done = hasCollected,
+              hint = "Collect alerts from your tenant so the dashboard has data.", page = "overview" },
+        new { key = "permissions", label = "Grant all required permissions", done = graphConfigured && permissionGaps == 0,
+              hint = "One or more Graph sources were denied. Open Collection Runs to see which permission is missing.", page = "alertcenter" },
+        new { key = "notifications", label = "Set up a notification channel", done = notificationsConfigured,
+              hint = "Add email (SMTP), Teams, or a webhook so alerts reach you.", page = "alertcenter" },
+        new { key = "policies", label = "Enable alert policies", done = policyCount > 0,
+              hint = "Enable at least one alert policy so Vigil365 raises alerts.", page = "alertcenter" },
+        new { key = "users", label = "Invite your team", done = userCount > 1,
+              hint = "Add analysts and viewers so you are not the only account.", page = "users" },
+    };
+
+    return Results.Ok(new
+    {
+        complete = steps.All(s => s.done),
+        completedCount = steps.Count(s => s.done),
+        totalCount = steps.Length,
+        steps,
+    });
+}).RequireAuthorization("RequireAnalyst");
+
 // Public endpoint — returns only the non-secret config needed to initialise MSAL in the browser.
 // The login identity comes from AzureAd (set in appsettings.Production.json / user secrets);
 // fall back to Graph for older single-section setups.
