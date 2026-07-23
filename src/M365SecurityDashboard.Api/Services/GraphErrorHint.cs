@@ -38,6 +38,11 @@ public static class GraphErrorHint
     public static string? PermissionFor(string? sourceName)
         => sourceName is not null && PermissionBySource.TryGetValue(sourceName, out var p) ? p : null;
 
+    /// <summary>Every (source, required permission) pair — the authoritative list
+    /// behind the in-app permissions reference.</summary>
+    public static IReadOnlyList<(string Source, string Permission)> AllRequirements()
+        => PermissionBySource.Select(kv => (kv.Key, kv.Value)).ToList();
+
     /// <summary>
     /// Rewrites an exception message into an actionable sentence. Falls back to
     /// the trimmed original when the failure is not one we recognise — never

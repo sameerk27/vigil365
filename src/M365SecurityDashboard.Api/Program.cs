@@ -426,6 +426,45 @@ app.MapGet("/api/setup/status", async (AppDbContext db, IOptions<GraphOptions> o
     });
 }).RequireAuthorization("RequireAnalyst");
 
+// Live permissions reference: every collector source, its required Graph
+// application permission, and whether the last run could actually read it.
+// Turns "which permission do I need?" into a page instead of a support ticket.
+app.MapGet("/api/setup/permissions", async (AppDbContext db, CancellationToken ct) =>
+{
+    var lastRun = await db.CollectionRuns.AsNoTracking()
+        .OrderByDescending(r => r.Id)
+        .FirstOrDefaultAsync(ct);
+
+    // Sources that failed on the most recent run — most commonly a permission gap.
+    var failedSources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    if (lastRun?.SourceFailureDetails is { } details)
+    {
+        try
+        {
+            foreach (var f in JsonSerializer.Deserialize<List<Dictionary<string, string>>>(details) ?? [])
+                if (f.TryGetValue("source", out var s)) failedSources.Add(s);
+        }
+        catch { /* malformed detail — treat as no known failures */ }
+    }
+
+    var items = GraphErrorHint.AllRequirements()
+        .GroupBy(r => r.Permission)
+        .Select(g => new
+        {
+            permission = g.Key,
+            features = g.Select(r => r.Source).OrderBy(s => s).ToArray(),
+            // "granted" is a best-effort inference from the last run: a source that
+            // failed is almost certainly missing its permission; one that ran is fine.
+            // Null when there is no run yet to judge from.
+            status = lastRun is null ? "unknown"
+                : g.Any(r => failedSources.Contains(r.Source)) ? "missing" : "granted",
+        })
+        .OrderBy(x => x.permission)
+        .ToList();
+
+    return Results.Ok(new { hasRun = lastRun is not null, permissions = items });
+}).RequireAuthorization("RequireAnalyst");
+
 // Public endpoint — returns only the non-secret config needed to initialise MSAL in the browser.
 // The login identity comes from AzureAd (set in appsettings.Production.json / user secrets);
 // fall back to Graph for older single-section setups.

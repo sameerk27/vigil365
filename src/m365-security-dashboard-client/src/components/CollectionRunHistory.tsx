@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Database, RefreshCw } from "lucide-react";
 import { apiBase, apiFetch } from "../services/api";
 import { Badge, Card, CopyButton, EmptyState } from "./SharedComponents";
+import { PermissionsReference } from "./PermissionsReference";
 import { fmtDate, relTime } from "../services/utils";
 
 type CollectionRun = {
@@ -47,6 +48,7 @@ export function CollectionRunHistory() {
   const filtered = useMemo(() => (runs ?? []).filter(run => status === "all" || run.status === status), [runs, status]);
 
   return (
+    <>
     <Card title="Collection Runs" badge={<Badge label={`${filtered.length} shown`} tone="neutral"/>}
       action={<div style={{ display: "flex", gap: 6, alignItems: "center" }}>
         <select className="filter-sel" value={status} onChange={e => setStatus(e.target.value as typeof status)} aria-label="Filter collection runs by status">
@@ -76,5 +78,7 @@ export function CollectionRunHistory() {
           })}</tbody>
         </table></div>}
     </Card>
+    <PermissionsReference refreshKey={runs?.length ?? 0}/>
+    </>
   );
 }
