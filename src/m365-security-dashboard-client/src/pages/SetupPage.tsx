@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect } from "react";
-import { CheckCircle, AlertTriangle } from "lucide-react";
-import { apiBase, apiFetch } from "../services/api";
+import { CheckCircle, AlertTriangle, Bell, Users, ShieldCheck, ChevronRight } from "lucide-react";
+import { apiBase, apiFetch, crossNavigate } from "../services/api";
 import { showToast } from "../services/toast";
 import { Card, Badge, CopyButton } from "../components/SharedComponents";
 
@@ -85,6 +85,35 @@ export function SetupPage() {
           )}
         </div>
       </Card>
+
+      {/* Once Graph is connected the wizard used to dead-end. Point the user at
+          the remaining onboarding steps rather than leaving them to find them.
+          The SMTP form itself lives with notification settings — not duplicated
+          here — so there is one place to configure delivery. */}
+      {status?.configured && (
+        <Card title="Next steps">
+          <div className="setup-next-grid">
+            {[
+              { icon: <ShieldCheck size={16}/>, label: "Run your first collection",
+                hint: "Populate the dashboard with your tenant's security data.", page: "overview" },
+              { icon: <Bell size={16}/>, label: "Set up notifications",
+                hint: "Add Teams, email (SMTP), or a webhook so alerts reach you.", page: "alertcenter" },
+              { icon: <Users size={16}/>, label: "Invite your team",
+                hint: "Add analysts and viewers with role-based access.", page: "users" },
+            ].map(s => (
+              <button key={s.page} type="button" className="setup-next-item"
+                onClick={() => crossNavigate({ page: s.page })}>
+                <span className="setup-next-icon">{s.icon}</span>
+                <span className="setup-next-body">
+                  <span className="setup-next-label">{s.label}</span>
+                  <span className="setup-next-hint">{s.hint}</span>
+                </span>
+                <ChevronRight size={15} className="setup-next-chevron"/>
+              </button>
+            ))}
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

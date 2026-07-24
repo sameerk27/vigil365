@@ -409,6 +409,21 @@ select, input { font: inherit; }
 .perm-status.missing { color: var(--status-error-text); }
 .perm-status.unknown { color: var(--color-muted); }
 
+/* ── Setup wizard "next steps" ────────────────────────────────────────────── */
+.setup-next-grid { display: flex; flex-direction: column; gap: 8px; }
+.setup-next-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px; text-align: left; width: 100%;
+  background: var(--color-raised); border: 1px solid var(--color-border-subtle);
+  border-radius: 8px; cursor: pointer; font: inherit; color: inherit;
+}
+.setup-next-item:hover { border-color: var(--color-primary); background: var(--color-primary-subtle); }
+.setup-next-icon { flex-shrink: 0; color: var(--color-primary); display: grid; place-items: center; }
+.setup-next-body { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.setup-next-label { font-size: 13px; font-weight: 600; color: var(--color-text); }
+.setup-next-hint { font-size: 12px; color: var(--color-muted); }
+.setup-next-chevron { flex-shrink: 0; color: var(--color-faint); }
+
 /* ── First-run setup checklist ────────────────────────────────────────────── */
 .setup-progress-chip { font-size: 12px; font-weight: 600; color: var(--color-primary); }
 .setup-dismiss {
