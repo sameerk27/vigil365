@@ -1,6 +1,6 @@
 # M365 Security Alert Dashboard
 
-A self-hosted, real-time Microsoft 365 security monitoring dashboard that aggregates alerts from Defender XDR, Entra ID Protection, Intune, Exchange Online, Compliance, and more — all in one place.
+A self-hosted Microsoft 365 security monitoring dashboard that aggregates alerts from Defender XDR, Entra ID Protection, Intune, Exchange Online, Compliance, and more — all in one place, collected on a schedule (every 15 minutes by default).
 
 > **No third-party SaaS required.** Runs entirely on your own Windows host using Microsoft Graph API.
 
@@ -23,22 +23,24 @@ A self-hosted, real-time Microsoft 365 security monitoring dashboard that aggreg
 | **Service Health** | M365 service advisories and incidents, per-service health status |
 | **M365 Connectivity** | Sign-in health, connectivity issues |
 | **Licenses & Users** | License SKU breakdown, inactive users, expiring licenses |
-| **Conditional Access** | Policy list, state breakdown (Enabled/Report-only/Disabled), per-policy detail |
-| **Audit Log** | Unified audit log with category filter, actor/target detail |
-| **Sign-in Locations** | Geographic sign-in map, success/failure breakdown, country drill-down |
+| **Conditional Access** | Policy list, state breakdown (Enabled/Report-only/Disabled), per-policy detail, gap analysis |
+| **Tenant Activity** | Directory audit events with search, day-range filter, and CSV export — the audit surface behind activity-based alerting |
+| **Sign-in Locations** | Success/failure breakdown and country drill-down (tabular; no map) |
 
 ### Enterprise Features
 
-- **Alert Policy Engine** — define custom policies (MFA drop, risky user spike, device breach) with thresholds; auto-evaluates against live data and tracks triggered alerts in browser localStorage
-- **9 Pre-built Alert Templates** — one-click templates for common security scenarios
-- **Detail Modals** — click any alert, user, device, or policy to see all available fields and a direct "View in M365 Portal →" deep link
-- **Search, Filter, Sort, Export** — every page has full-text search, dropdown filters, sortable columns, and CSV export
-- **Saved Filter Presets** — save and reload custom filter combinations per page (localStorage)
-- **Dark Mode** — full dark/light theme toggle, persisted across sessions
-- **Collapsible Sidebar** — icon-only collapsed mode with hover tooltips
-- **Toast Notifications** — on export, preset save, policy actions
-- **Sticky Filter Bars** — filter controls stay visible while scrolling long lists
-- **Responsive Layout** — collapses to single-column below 900px
+- **Alert Policy Engine** — metric, activity, and anomaly policies (MFA drop, risky-user spike, role assignment, app-consent, PIM changes, and more) with thresholds; auto-evaluates against live data. Triggered alerts are stored server-side in SQL Server with a full acknowledge / snooze / resolve / assign / notes workflow.
+- **Activity & Anomaly Alerting** — alerts on tenant *audit activity* (privileged role changes, app credential adds, CA policy edits) and on statistical spikes, not just static thresholds.
+- **Notifications** — Microsoft Teams, email (SMTP), and generic webhook delivery, with per-channel digest mode and delivery-failure self-alerting.
+- **Reports** — scheduled executive digest (daily/weekly/monthly) over email with a CSV attachment, plus a live preview.
+- **Trends** — historical posture tracking (Secure Score, risky users, compliance) from periodic snapshots.
+- **Recommendations** — a single findings hub folding in Conditional Access gaps and SharePoint/OneDrive sharing posture.
+- **Entity Investigation** — drill into any user or device for a merged timeline of its alerts and audit activity.
+- **RBAC & User Management** — in-app Admin / Analyst / Viewer roles, invitations, and a tamper-evident (SHA-256 hash-chained) audit trail of privileged actions.
+- **Global Search** — Ctrl+K palette across alerts, users, devices, and pages.
+- **Detail Panels** — click any alert, user, device, or policy for all fields and a direct "View in M365 Portal →" deep link.
+- **Search, Filter, Export** — full-text search, dropdown filters, and CSV export on every page (sortable columns on the active-alert queue).
+- **Dark Mode**, **collapsible sidebar**, **toast notifications**, **saved filter presets**, and a **responsive layout**.
 
 ---
 
@@ -48,9 +50,10 @@ A self-hosted, real-time Microsoft 365 security monitoring dashboard that aggreg
 |-------|-----------|
 | Backend | ASP.NET Core 8 Minimal API |
 | Frontend | React 18 + TypeScript + Vite |
-| Auth | Microsoft Graph — Client Credentials (app-only) |
+| Sign-in | Microsoft Entra sign-in (MSAL) + in-app RBAC |
+| Collection | Graph app-only — client secret **or** certificate |
 | Scheduler | .NET BackgroundService — every 15 minutes |
-| Storage | SQL Server Express (alerts + collection runs) |
+| Storage | SQL Server Express (EF Core migrations) |
 | Icons | lucide-react |
 
 ---
@@ -105,6 +108,11 @@ Grant **admin consent** for all of these:
 | `PrivilegedAccess.Read.AzureAD` | PIM assignments |
 | `ThreatHunting.Read.All` | Advanced hunting / MDI |
 | `UserAuthenticationMethod.Read.All` | MFA method details |
+| `SharePointTenantSettings.Read.All` | SharePoint/OneDrive sharing posture |
+| `AttackSimulation.ReadWrite.All` | Attack-simulation results (read-only in-app; Graph has no read-only variant — optional) |
+
+The in-app **Graph Permissions** reference (below Collection Runs) shows each of
+these with a live granted/missing status inferred from the last collection run.
 
 > Some features (IRM, Attack Simulation, Identity Health) require additional Purview/Defender licensing in your tenant. The dashboard gracefully shows a permission error card for unavailable features.
 
@@ -197,22 +205,28 @@ HTTPS URL (e.g. `https://vigil365.yourcompany.com`).
 | `GET` | `/api/dashboard/overview` | Aggregated overview data |
 | `GET` | `/api/dashboard/identity` | Identity & MFA data |
 | `GET` | `/api/dashboard/devices` | Intune device compliance |
-| `GET` | `/api/dashboard/email` | MDO email alerts |
-| `GET` | `/api/dashboard/compliance` | DLP/MCAS/IRM alerts |
-| `GET` | `/api/dashboard/incidents` | Defender XDR incidents |
+| `GET` | `/api/dashboard/email-protection` | MDO email alerts |
+| `GET` | `/api/dashboard/security-incidents` | Defender XDR incidents |
+| `GET` | `/api/dashboard/defender-alerts` | Defender XDR alerts |
 | `GET` | `/api/dashboard/mdi-alerts` | Microsoft Defender for Identity alerts |
 | `GET` | `/api/dashboard/mcas-alerts` | Defender for Cloud Apps alerts |
-| `GET` | `/api/dashboard/insider-risk` | Insider Risk Management alerts |
 | `GET` | `/api/dashboard/risk-detections` | Entra ID risk detections |
-| `GET` | `/api/dashboard/identity-health` | Identity health issues |
 | `GET` | `/api/dashboard/attack-simulation` | Attack simulation results |
-| `GET` | `/api/dashboard/service-health` | M365 service health |
+| `GET` | `/api/dashboard/servicehealth` | M365 service health |
 | `GET` | `/api/dashboard/licenses` | License SKU usage |
 | `GET` | `/api/dashboard/conditional-access` | CA policies |
-| `GET` | `/api/dashboard/audit-log` | Unified audit log |
-| `GET` | `/api/dashboard/sign-ins` | Sign-in locations |
+| `GET` | `/api/dashboard/ca-gaps` | Conditional Access gap analysis |
+| `GET` | `/api/dashboard/sharing-posture` | SharePoint/OneDrive sharing posture |
+| `GET` | `/api/dashboard/signin-locations` | Sign-in locations |
+| `GET` | `/api/audit-events` | Tenant directory audit events |
+| `GET` | `/api/entity/{kind}/{id}` | Entity investigation timeline (user/device) |
+| `GET` | `/api/setup/status` | First-run setup progress |
+| `GET` | `/api/setup/permissions` | Graph permission reference + status |
 | `POST` | `/api/collector/run` | Trigger manual data collection |
 | `GET` | `/api/collector/runs` | Collection run history |
+
+> Unknown `/api/*` paths return `404` JSON. The full surface (alerts workbench,
+> notification settings, report schedules, RBAC) is larger than this excerpt.
 
 ---
 
@@ -222,10 +236,10 @@ HTTPS URL (e.g. `https://vigil365.yourcompany.com`).
 
 ### What is in scope by design
 
-- **Read-only, least privilege.** Every Graph permission requested is `*.Read.All`. The app **cannot modify** users, devices, policies, or tenant settings even if the host is compromised.
-- **No remediation automation.** "View in M365 Portal →" links only deep-link you to the correct blade. The app never tells you what to change and never makes changes — remediation stays in Microsoft's tooling where it belongs.
-- **No inbound exposure by default.** The API binds to `localhost`. Remote access requires you to deliberately open a firewall port (and you should front it with TLS + auth if you do).
-- **App-only client-credentials flow** via MSAL (`Azure.Identity`). Standard Microsoft auth, not a homegrown scheme. All Graph traffic is HTTPS/TLS.
+- **Read-only, least privilege.** Nearly every Graph permission requested is `*.Read.All`. The one exception is `AttackSimulation.ReadWrite.All`, which Microsoft Graph offers with no read-only variant — the app only reads with it and never launches simulations. If you don't use the attack-simulation view, don't grant it. The app **cannot modify** users, devices, policies, or tenant settings.
+- **Recommends, never remediates.** The Recommendations view and "Fix in M365 Portal →" links tell you what to change and deep-link you to the right blade, but the app makes **no** changes itself — every remediation happens in Microsoft's tooling, by you.
+- **No inbound exposure by default.** In development the API binds to `localhost`. A production deployment (`deploy.ps1`) runs behind Kestrel with a TLS certificate; anything beyond localhost is a deliberate choice you make.
+- **App-only collection** via MSAL (`Azure.Identity`) using a client secret or certificate; **user sign-in** via Entra with in-app RBAC. Standard Microsoft auth, not a homegrown scheme. All Graph traffic is HTTPS/TLS.
 
 ### How credentials and secrets are handled
 
