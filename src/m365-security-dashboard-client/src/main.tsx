@@ -23,6 +23,7 @@ import { apiBase, apiFetch, AuthContext, initMsal, acApi, AUTO_REFRESH_SEC, useA
 import { showToast } from "./services/toast";
 import { ToastContainer } from "./components/ToastContainer";
 import { ConfirmDialog } from "./components/ConfirmDialog";
+import { PageHelp } from "./components/PageHelp";
 import { GlobalSearch } from "./components/GlobalSearch";
 import { Badge, AlertDetailModal, DashboardSkeleton } from "./components/SharedComponents";
 import { fmtDate, fmtCountdown, tzLabel, fmtUtc } from "./services/utils";
@@ -506,7 +507,10 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
         <div className="mobile-notice">Vigil365 is optimised for desktop — navigation is limited on small screens.</div>
         <header className="main-hdr">
           <div>
-            <h1 className="hdr-title">{pageLabel(page)}</h1>
+            <div className="hdr-title-row">
+              <h1 className="hdr-title">{pageLabel(page)}</h1>
+              <PageHelp page={page}/>
+            </div>
             <p className="hdr-sub">
               Vigil365 · M365 Security Operations · Updated{" "}
               <span title={fmtUtc(lastRefresh.toISOString())}>

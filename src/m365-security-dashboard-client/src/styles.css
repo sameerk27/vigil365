@@ -409,6 +409,36 @@ select, input { font: inherit; }
 .perm-status.missing { color: var(--status-error-text); }
 .perm-status.unknown { color: var(--color-muted); }
 
+/* ── Contextual page help ─────────────────────────────────────────────────── */
+.hdr-title-row { display: flex; align-items: center; gap: 6px; }
+.page-help { position: relative; display: inline-flex; }
+.page-help-btn {
+  background: none; border: none; padding: 2px; cursor: pointer;
+  color: var(--color-faint); display: grid; place-items: center; border-radius: 4px;
+}
+.page-help-btn:hover { color: var(--color-primary); background: var(--color-raised); }
+.page-help-pop {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 260;
+  width: 340px; max-width: 90vw;
+  background: var(--color-card); border: 1px solid var(--color-border);
+  border-radius: var(--radius-card); box-shadow: var(--shadow-modal);
+  padding: 12px 14px;
+}
+.page-help-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--color-faint); margin-bottom: 6px;
+}
+.page-help-head button { background: none; border: none; cursor: pointer; color: var(--color-faint); padding: 0; display: grid; place-items: center; }
+.page-help-head button:hover { color: var(--color-muted); }
+.page-help-body { font-size: 12.5px; color: var(--color-text-secondary); line-height: 1.55; margin: 0; }
+.page-help-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.page-help-links a {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 12px; font-weight: 600; color: var(--color-primary); text-decoration: none;
+}
+.page-help-links a:hover { text-decoration: underline; }
+
 /* ── Setup wizard "next steps" ────────────────────────────────────────────── */
 .setup-next-grid { display: flex; flex-direction: column; gap: 8px; }
 .setup-next-item {
