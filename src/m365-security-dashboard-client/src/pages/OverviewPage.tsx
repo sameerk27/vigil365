@@ -31,6 +31,14 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
   const mfaPct = (identity?.mfa.total??0) > 0 ? (identity?.mfa.percentage??0) : 0;
   const mfaKnown = (identity?.mfa.total??0) > 0;
 
+  // A null dataset means one of three things — never loaded, failed to load this
+  // cycle, or genuinely not configured. If a collection has completed, "run a
+  // collection" / "configure Graph" is wrong and alarming; it was a transient
+  // panel failure (the load banner already reports the count). Use the run state
+  // to tell an unhelpful "set it up" message apart from an honest "retry" one.
+  const collectionDone = !!overview?.lastRun?.completedAt;
+  const unloadedSub = collectionDone ? "Couldn't load this cycle — retry" : "Run collection to load";
+
   const devNonCompliant = devices?.nonCompliant??0;
   const devEffectiveTotal = Math.max(devices?.totalDevices??0, devNonCompliant);
   const devComplPct = devEffectiveTotal > 0
@@ -89,19 +97,19 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
       <div className="kpi-row">
         <KpiTile icon={<Shield size={18}/>} label="SECURE SCORE" help="Microsoft Secure Score — your tenant's security configuration posture as a percentage of achievable points. Click to open Compliance."
           value={secureScore?.configured&&!secureScore.error?`${secureScore.percentage}%`:"—"}
-          sub={secureScore?.configured&&!secureScore.error?`${Math.round(secureScore.currentScore)} / ${Math.round(secureScore.maxScore)} pts`:"Run collection to load"}
+          sub={secureScore?.configured&&!secureScore.error?`${Math.round(secureScore.currentScore)} / ${Math.round(secureScore.maxScore)} pts`:(secureScore?.error?"Couldn't load this cycle — retry":unloadedSub)}
           needsPerm={!!secureScore && (!secureScore.configured || !!secureScore.error)}
           tone={secureScore?.configured&&!secureScore.error?pctTone(secureScore.percentage):"neutral"}
           onClick={() => crossNavigate({ page: "compliance" })}/>
         <KpiTile icon={<Lock size={18}/>} label="MFA COVERAGE" help="Share of enabled users registered for multi-factor authentication. Target ≥95%. Click to open Identity filtered to MFA."
           value={mfaKnown ? `${mfaPct}%` : mfaMissingCount > 0 ? `${mfaMissingCount}` : identity?.configured ? "—" : "—"}
-          sub={mfaKnown ? `${identity!.mfa.registered}/${identity!.mfa.total} users` : mfaMissingCount > 0 ? `users missing MFA` : identity?.configured ? "Needs Reports.Read.All" : "Run collection"}
+          sub={mfaKnown ? `${identity!.mfa.registered}/${identity!.mfa.total} users` : mfaMissingCount > 0 ? `users missing MFA` : identity?.configured ? "Needs Reports.Read.All" : unloadedSub}
           needsPerm={!!identity && identity.configured && !mfaKnown && mfaMissingCount === 0}
           tone={mfaKnown ? pctTone(mfaPct,95,80) : mfaMissingCount > 0 ? "error" : "neutral"}
           onClick={() => crossNavigate({ page: "identity", search: "mfa" })}/>
         <KpiTile icon={<Monitor size={18}/>} label="DEVICE COMPLIANCE" help="Devices failing one or more Intune compliance policies (encryption, OS version, PIN…). Click to open Devices."
           value={devices ? (devNonCompliant===0 && devEffectiveTotal===0 ? "—" : devNonCompliant===0 ? "All OK" : `${devNonCompliant} issues`) : "—"}
-          sub={devices ? (devEffectiveTotal>0 ? `${Math.max(0,devEffectiveTotal-devNonCompliant)}/${devEffectiveTotal} compliant` : `${devNonCompliant} non-compliant`) : "Run collection"}
+          sub={devices ? (devEffectiveTotal>0 ? `${Math.max(0,devEffectiveTotal-devNonCompliant)}/${devEffectiveTotal} compliant` : `${devNonCompliant} non-compliant`) : unloadedSub}
           tone={devNonCompliant===0?"good":devNonCompliant<=3?"warning":"error"}
           onClick={() => crossNavigate({ page: "devices" })}/>
         <KpiTile icon={<Activity size={18}/>} label="POSTURE RISK" help="Share of open security alerts that are high or critical severity — a quick read on how serious the current queue is. Click for Trends."
@@ -113,7 +121,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
           value={defenderAlerts?.configured && !defenderAlerts.error ? `${defenderAlerts.total}` : "—"}
           sub={defenderAlerts?.configured && !defenderAlerts.error
             ? `${defenderAlerts.bySeverity?.["high"]??0} high / ${defenderAlerts.bySeverity?.["critical"]??0} critical`
-            : defenderAlerts?.error ? "Needs SecurityAlert.Read.All" : "Run collection"}
+            : defenderAlerts?.error ? "Needs SecurityAlert.Read.All" : unloadedSub}
           needsPerm={!!defenderAlerts?.error}
           tone={!defenderAlerts?.configured||defenderAlerts.error?"neutral":(defenderAlerts.bySeverity?.["critical"]??0)>0?"error":(defenderAlerts.bySeverity?.["high"]??0)>0?"warning":"good"}
           onClick={onNavigateAlertCenter}/>
@@ -121,7 +129,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
           value={securityIncidents?.configured && !securityIncidents.error ? `${securityIncidents.total}` : "—"}
           sub={securityIncidents?.configured && !securityIncidents.error
             ? `${securityIncidents.bySeverity?.["high"]??0} high / ${securityIncidents.bySeverity?.["critical"]??0} critical`
-            : securityIncidents?.error ? "Needs SecurityIncident.Read.All" : "Run collection"}
+            : securityIncidents?.error ? "Needs SecurityIncident.Read.All" : unloadedSub}
           needsPerm={!!securityIncidents?.error}
           tone={!securityIncidents?.configured||securityIncidents.error?"neutral":(securityIncidents.bySeverity?.["critical"]??0)>0?"error":(securityIncidents.bySeverity?.["high"]??0)>0?"warning":"good"}
           onClick={() => crossNavigate({ page: "incidents" })}/>
@@ -142,7 +150,12 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
               <LineChart data={trendData}/>
             </>
           ):(
-            <EmptyState message={secureScore?.configured?"Collecting trend data — check back after first run":"Configure Graph credentials then run a collection"}/>
+            <EmptyState message={
+              secureScore?.configured ? "Collecting trend data — check back after first run"
+              : secureScore?.error ? "Couldn't load Secure Score this cycle — retry the refresh"
+              : collectionDone ? "Secure Score data unavailable — retry the refresh"
+              : "Configure Graph credentials then run a collection"
+            }/>
           )}
         </Card>
         <Card title="Defender Alerts"
