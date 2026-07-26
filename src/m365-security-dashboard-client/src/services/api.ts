@@ -1,6 +1,6 @@
 import { PublicClientApplication } from "@azure/msal-browser";
 import { createContext, useContext } from "react";
-import { AlertPolicy, TriggeredAlert, NotificationSettings, NotificationLogEntry, AuthInfo } from "./types";
+import { AlertPolicy, TriggeredAlert, NotificationSettings, NotificationLogEntry, AuthInfo, SuppressionRule } from "./types";
 
 export const apiBase = import.meta.env.VITE_API_BASE ?? "";
 
@@ -39,6 +39,30 @@ export const AuthContext = createContext<AuthInfo>({
 export function useAuth(): AuthInfo {
   return useContext(AuthContext);
 }
+
+// Standing suppression rules. Reads are Analyst; mutations are Admin-only
+// server-side — the UI hides the controls, the API enforces it.
+export const suppressionApi = {
+  async list(): Promise<SuppressionRule[]> {
+    try { const r = await apiFetch(`${apiBase}/api/suppression-rules`); return r.ok ? await r.json() : []; } catch { return []; }
+  },
+  async create(rule: Partial<SuppressionRule>): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const r = await apiFetch(`${apiBase}/api/suppression-rules`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(rule),
+      });
+      if (r.ok) return { ok: true };
+      const body = await r.json().catch(() => ({}));
+      return { ok: false, error: body.error ?? "Could not create the suppression rule." };
+    } catch { return { ok: false, error: "Could not reach the API." }; }
+  },
+  async update(id: string, rule: Partial<SuppressionRule>): Promise<boolean> {
+    try { const r = await apiFetch(`${apiBase}/api/suppression-rules/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(rule) }); return r.ok; } catch { return false; }
+  },
+  async remove(id: string): Promise<boolean> {
+    try { const r = await apiFetch(`${apiBase}/api/suppression-rules/${id}`, { method: "DELETE" }); return r.ok; } catch { return false; }
+  },
+};
 
 export const acApi = {
   async getPolicies(): Promise<AlertPolicy[]> {

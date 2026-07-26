@@ -113,6 +113,22 @@ export type IdentityHealthData = { configured: boolean; error?: string; total: n
 export type AttackSim = { id?: string; displayName?: string; attackType?: string; status: string; createdDateTime?: string; completionDateTime?: string; numberOfUsersTargeted: number; compromisedRate: number; clickedPhishingLinkCount: number; didNotClickLinkCount: number };
 export type AttackSimulationData = { configured: boolean; error?: string; total: number; totalTargeted: number; avgCompromiseRate: number; simulations: AttackSim[] };
 
+/** A standing rule that stops matching alerts being raised at all. */
+export interface SuppressionRule {
+  id: string;
+  policyId: string | null;
+  policyName: string | null;
+  entityPattern: string | null;
+  reason: string;
+  expiresAt: string | null;
+  enabled: boolean;
+  createdAt: string;
+  createdBy: string | null;
+  suppressedCount: number;
+  lastSuppressedAt: string | null;
+  expired: boolean;
+}
+
 export interface AlertPolicy {
   id: string;
   name: string;

@@ -16,6 +16,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<GraphConfig> GraphConfig => Set<GraphConfig>();
     public DbSet<AlertNote> AlertNotes => Set<AlertNote>();
+    public DbSet<SuppressionRule> SuppressionRules => Set<SuppressionRule>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<ReportSchedule> ReportSchedules => Set<ReportSchedule>();
 
@@ -49,6 +50,14 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.HasIndex(t => t.TriggeredAt);
             entity.HasIndex(t => t.Status);
             entity.HasIndex(t => t.PolicyId);
+        });
+
+        modelBuilder.Entity<SuppressionRule>(entity =>
+        {
+            entity.HasKey(s => s.Id);
+            // The evaluator loads enabled rules on every cycle.
+            entity.HasIndex(s => s.Enabled);
+            entity.HasIndex(s => s.PolicyId);
         });
 
         modelBuilder.Entity<NotificationSettings>(entity =>

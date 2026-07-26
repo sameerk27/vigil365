@@ -1867,6 +1867,86 @@ app.MapDelete("/api/alert-policies/{id:guid}", async (AppDbContext db, Guid id, 
     return Results.NoContent();
 }).RequireAuthorization("RequireAnalyst");
 
+// ── Suppression rules ───────────────────────────────────────────────────────
+// Standing rules that stop known-noisy alerts being raised at all. Mutations are
+// Admin-only and audited: suppressing an alert class is a security decision.
+app.MapGet("/api/suppression-rules", async (AppDbContext db, CancellationToken ct) =>
+{
+    var rules = await db.SuppressionRules.AsNoTracking()
+        .OrderByDescending(s => s.CreatedAt)
+        .ToListAsync(ct);
+    // Join policy names so the UI does not have to resolve GUIDs itself.
+    var names = await db.AlertPolicies.AsNoTracking()
+        .ToDictionaryAsync(p => p.Id, p => p.Name, ct);
+    var now = DateTimeOffset.UtcNow;
+    return Results.Ok(rules.Select(r => new
+    {
+        r.Id, r.PolicyId,
+        policyName = r.PolicyId is Guid pid && names.TryGetValue(pid, out var n) ? n : null,
+        r.EntityPattern, r.Reason, r.ExpiresAt, r.Enabled,
+        r.CreatedAt, r.CreatedBy, r.SuppressedCount, r.LastSuppressedAt,
+        expired = r.ExpiresAt is not null && r.ExpiresAt <= now,
+    }));
+}).RequireAuthorization("RequireAnalyst");
+
+app.MapPost("/api/suppression-rules", async (
+    SuppressionRuleRequest input, AppDbContext db, AuditLogger audit,
+    System.Security.Claims.ClaimsPrincipal caller, CancellationToken ct) =>
+{
+    if (string.IsNullOrWhiteSpace(input.Reason))
+        return Results.BadRequest(new { error = "A reason is required — an unexplained suppression cannot be reviewed later." });
+    if (input.PolicyId is null && string.IsNullOrWhiteSpace(input.EntityPattern))
+        return Results.BadRequest(new { error = "Scope the rule to a policy, an entity pattern, or both. A rule with neither would suppress every alert." });
+
+    var rule = new SuppressionRule
+    {
+        PolicyId = input.PolicyId,
+        EntityPattern = string.IsNullOrWhiteSpace(input.EntityPattern) ? null : input.EntityPattern.Trim(),
+        Reason = input.Reason.Trim(),
+        ExpiresAt = input.ExpiresAt,
+        Enabled = input.Enabled ?? true,
+        CreatedBy = caller.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value ?? caller.Identity?.Name,
+    };
+    db.SuppressionRules.Add(rule);
+    await db.SaveChangesAsync(ct);
+    await audit.WriteAsync("suppression.create", "suppression", rule.Id.ToString(),
+        $"Suppression added (policy={rule.PolicyId?.ToString() ?? "any"}, entity={rule.EntityPattern ?? "any"}): {rule.Reason}", ct);
+    return Results.Ok(rule);
+}).RequireAuthorization("RequireAdmin");
+
+app.MapPut("/api/suppression-rules/{id:guid}", async (
+    Guid id, SuppressionRuleRequest input, AppDbContext db, AuditLogger audit, CancellationToken ct) =>
+{
+    var rule = await db.SuppressionRules.FindAsync([id], ct);
+    if (rule is null) return Results.NotFound();
+
+    if (input.Reason is not null) rule.Reason = input.Reason.Trim();
+    if (input.Enabled is not null) rule.Enabled = input.Enabled.Value;
+    rule.ExpiresAt = input.ExpiresAt;
+    if (input.EntityPattern is not null)
+        rule.EntityPattern = string.IsNullOrWhiteSpace(input.EntityPattern) ? null : input.EntityPattern.Trim();
+
+    if (rule.PolicyId is null && string.IsNullOrWhiteSpace(rule.EntityPattern))
+        return Results.BadRequest(new { error = "A rule must stay scoped to a policy or an entity pattern." });
+
+    await db.SaveChangesAsync(ct);
+    await audit.WriteAsync("suppression.update", "suppression", id.ToString(),
+        $"Suppression updated (enabled={rule.Enabled})", ct);
+    return Results.Ok(rule);
+}).RequireAuthorization("RequireAdmin");
+
+app.MapDelete("/api/suppression-rules/{id:guid}", async (
+    Guid id, AppDbContext db, AuditLogger audit, CancellationToken ct) =>
+{
+    var rule = await db.SuppressionRules.FindAsync([id], ct);
+    if (rule is null) return Results.NotFound();
+    db.SuppressionRules.Remove(rule);
+    await db.SaveChangesAsync(ct);
+    await audit.WriteAsync("suppression.delete", "suppression", id.ToString(),
+        $"Suppression removed: {rule.Reason}", ct);
+    return Results.NoContent();
+}).RequireAuthorization("RequireAdmin");
+
 // ── Tenant audit events (activity feed backing activity-based policies) ─────
 app.MapGet("/api/audit-events", async (
     AppDbContext db, string? search, string? activity, int days = 7,
@@ -2251,6 +2331,11 @@ public sealed record SnoozeRequest(DateTimeOffset? Until, int? DurationHours);
 
 /// <summary>Body shape for PUT /api/admin/users/{email}/role.</summary>
 public sealed record RoleChangeRequest(string Role);
+
+/// <summary>Body shape for POST/PUT /api/suppression-rules.</summary>
+public sealed record SuppressionRuleRequest(
+    Guid? PolicyId, string? EntityPattern, string? Reason,
+    DateTimeOffset? ExpiresAt, bool? Enabled);
 
 /// <summary>Body shape for POST /api/setup/graph (first-run wizard).</summary>
 public sealed record GraphSetupRequest(string TenantId, string ClientId, string? ClientSecret);

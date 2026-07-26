@@ -30,11 +30,18 @@ public sealed class AlertEvaluator(
         var now = DateTimeOffset.UtcNow;
         var fired = 0;
 
+        // Standing suppression rules, loaded once per cycle. Tracked (not
+        // AsNoTracking) so hit counters persist with the rest of this cycle's save.
+        var suppressions = await db.SuppressionRules
+            .Where(s => s.Enabled && (s.ExpiresAt == null || s.ExpiresAt > now))
+            .ToListAsync(ct);
+
         // Map PolicyId -> policy so the auto-resolve loop below can recompute
         // each open alert's current value without re-querying the policy table.
         var policyById = policies.ToDictionary(p => p.Id);
 
         var collapsed = 0;
+        var suppressed = 0;
         foreach (var policy in policies)
         {
             var value = await ComputePolicyValueAsync(policy, metrics, now, ct);
@@ -69,6 +76,23 @@ public sealed class AlertEvaluator(
             }
 
             var affectedEntitiesJson = await GetAffectedEntitiesJsonAsync(policy, now, ct);
+
+            // Standing suppression: stop the alert being raised at all (no row,
+            // no notification). Checked here rather than at display time so a
+            // known-noisy condition costs nothing downstream. The counter makes
+            // an over-broad rule visible instead of silently swallowing alerts.
+            var suppressedBy = SuppressionMatcher.FindMatch(suppressions, policy.Id, affectedEntitiesJson, now);
+            if (suppressedBy is not null)
+            {
+                suppressedBy.SuppressedCount++;
+                suppressedBy.LastSuppressedAt = now;
+                suppressed++;
+                logger.LogInformation(
+                    "Alert for policy {Policy} suppressed by rule {RuleId} ({Reason})",
+                    policy.Name, suppressedBy.Id, suppressedBy.Reason);
+                continue;
+            }
+
             var alert = new TriggeredAlert
             {
                 Id = Guid.NewGuid(),
@@ -138,6 +162,8 @@ public sealed class AlertEvaluator(
             logger.LogInformation("Auto-resolved {Count} alert(s) after metric recovery", autoResolved);
         if (collapsed > 0)
             logger.LogInformation("Collapsed {Count} duplicate open alert(s) into one per policy", collapsed);
+        if (suppressed > 0)
+            logger.LogInformation("Suppressed {Count} alert(s) via standing suppression rules", suppressed);
         return fired;
     }
 
