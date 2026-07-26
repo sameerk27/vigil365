@@ -61,6 +61,8 @@ public sealed class AlertEvaluator(
                 foreach (var dup in openForPolicy.Skip(1))
                 {
                     dup.Status = "auto_resolved";
+                    dup.ResolvedAt ??= now;
+                    dup.ResolvedBy ??= "system";
                     collapsed++;
                 }
                 continue;
@@ -116,6 +118,8 @@ public sealed class AlertEvaluator(
                 if (alert.BelowThresholdStreakCount >= streakTarget)
                 {
                     alert.Status = "auto_resolved";
+                    alert.ResolvedAt = now;
+                    alert.ResolvedBy = "system";
                     autoResolved++;
                 }
             }

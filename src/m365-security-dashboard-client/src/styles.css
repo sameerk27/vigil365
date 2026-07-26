@@ -399,6 +399,22 @@ select, input { font: inherit; }
 .card-title { font-size: 13px; font-weight: 600; color: var(--color-text); margin: 0; line-height: 1.4; }
 .card-head-right { display: flex; align-items: center; gap: 6px; }
 
+/* ── Alert operations metrics ─────────────────────────────────────────────── */
+.metrics-kpi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.metrics-kpi {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px; border-radius: 10px;
+  background: var(--color-raised); border: 1px solid var(--color-border-subtle);
+}
+.metrics-kpi-icon { color: var(--color-primary); display: grid; place-items: center; flex-shrink: 0; }
+.metrics-kpi-val { font-size: 22px; font-weight: 700; color: var(--color-text); line-height: 1.1; }
+.metrics-kpi-lbl { font-size: 11.5px; color: var(--color-muted); margin-top: 2px; }
+.metrics-empty-assignee {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12.5px; color: var(--color-muted); padding: 8px 0;
+}
+@media (max-width: 700px) { .metrics-kpi-row { grid-template-columns: 1fr; } }
+
 /* ── Graph permissions reference ──────────────────────────────────────────── */
 .perm-intro { font-size: 12.5px; color: var(--color-muted); line-height: 1.55; margin: 0 0 12px; }
 .perm-note { font-size: 11.5px; color: var(--color-faint); line-height: 1.5; margin: 10px 0 0; }

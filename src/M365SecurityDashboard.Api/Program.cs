@@ -1910,11 +1910,26 @@ app.MapPost("/api/triggered-alerts/{id:guid}/acknowledge", async (
     return Results.Ok(t);
 }).RequireAuthorization("RequireAnalyst");
 
-app.MapPost("/api/triggered-alerts/{id:guid}/resolve", async (AppDbContext db, Guid id, AuditLogger audit, CancellationToken ct) =>
+// Alert-ops metrics: MTTA, MTTR, resolution rate, analyst workload over a window.
+// Reads timestamps already captured on the triggered-alert workflow.
+app.MapGet("/api/triggered-alerts/metrics", async (AppDbContext db, int? days, CancellationToken ct) =>
+{
+    var windowDays = days is > 0 and <= 365 ? days.Value : 30;
+    var since = DateTimeOffset.UtcNow.AddDays(-windowDays);
+    var rows = await db.TriggeredAlerts.AsNoTracking()
+        .Where(t => t.TriggeredAt >= since)
+        .ToListAsync(ct);
+    return Results.Ok(new { windowDays, metrics = AlertMetrics.Compute(rows) });
+}).RequireAuthorization("RequireAnalyst");
+
+app.MapPost("/api/triggered-alerts/{id:guid}/resolve", async (AppDbContext db, Guid id, AuditLogger audit, System.Security.Claims.ClaimsPrincipal caller, CancellationToken ct) =>
 {
     var t = await db.TriggeredAlerts.FindAsync([id], ct);
     if (t is null) return Results.NotFound();
     t.Status = "resolved";
+    t.ResolvedAt = DateTimeOffset.UtcNow;
+    t.ResolvedBy = caller.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
+        ?? caller.Identity?.Name ?? "dashboard";
     await db.SaveChangesAsync(ct);
     await audit.WriteAsync("alert.resolve", "triggered_alert", id.ToString(), $"Resolved alert for policy {t.PolicyName}", ct);
     return Results.Ok(t);
