@@ -10,6 +10,7 @@ import { CollectionStatusBanner } from "../components/CollectionStatusBanner";
 import { CollectionRunHistory } from "../components/CollectionRunHistory";
 import { AlertMetricsTab } from "../components/AlertMetricsTab";
 import { SuppressionRulesTab } from "../components/SuppressionRulesTab";
+import { PolicyDryRun } from "../components/PolicyDryRun";
 import { FilterPresets } from "../components/FilterPresets";
 import { relTime, fmtDate, fmtShort, sevTone } from "../services/utils";
 
@@ -118,26 +119,27 @@ function PolicyModal({ policy, onSave, onClose }: {
 
   const kind = form.kind ?? "metric";
 
-  const handleSave = () => {
-    if (!form.name?.trim()) { showToast("Policy name is required", "error"); return; }
-    if (kind === "activity" && !form.activityPattern?.trim()) { showToast("Activity pattern is required for activity policies", "error"); return; }
+  // Shared by save and dry-run so the backtest measures exactly the policy that
+  // would be saved — a preview of a different shape than the real thing is worse
+  // than no preview.
+  const buildDraft = (): AlertPolicy => {
     const threshold = Number(form.threshold ?? 1);
     const windowMinutes = Number(form.windowMinutes ?? 60);
     const baselineMultiplier = Number(form.baselineMultiplier ?? 3);
     const baselineDays = Number(form.baselineDays ?? 30);
-    const policy: AlertPolicy = {
+    return {
       id: form.id ?? crypto.randomUUID(),
-      name: form.name!.trim(),
+      name: form.name?.trim() ?? "",
       enabled: form.enabled ?? true,
       category: form.category ?? "identity",
       kind,
       condition: kind === "activity"
-        ? `Activity "${form.activityPattern!.trim()}" ≥ ${threshold} in ${windowMinutes}m`
+        ? `Activity "${form.activityPattern?.trim() ?? ""}" ≥ ${threshold} in ${windowMinutes}m`
         : kind === "anomaly"
         ? `${form.metric} ≥ ${threshold} and ≥ ${baselineMultiplier}× ${baselineDays}d baseline`
         : (form.condition ?? `${form.metric} >= ${threshold}`),
       metric: kind === "activity" ? "" : (form.metric ?? "criticalAlertCount"),
-      activityPattern: kind === "activity" ? form.activityPattern!.trim() : null,
+      activityPattern: kind === "activity" ? (form.activityPattern?.trim() ?? "") : null,
       windowMinutes,
       baselineMultiplier,
       baselineDays,
@@ -148,7 +150,12 @@ function PolicyModal({ policy, onSave, onClose }: {
       lastTriggered: form.lastTriggered,
       triggerCount: form.triggerCount ?? 0,
     };
-    onSave(policy);
+  };
+
+  const handleSave = () => {
+    if (!form.name?.trim()) { showToast("Policy name is required", "error"); return; }
+    if (kind === "activity" && !form.activityPattern?.trim()) { showToast("Activity pattern is required for activity policies", "error"); return; }
+    onSave(buildDraft());
   };
 
   useEffect(() => {
@@ -256,6 +263,7 @@ function PolicyModal({ policy, onSave, onClose }: {
             <input className="policy-input" type="email" value={form.notifyEmail ?? ""} onChange={e => set("notifyEmail", e.target.value)} placeholder="admin@contoso.com"/>
           </div>
         </div>
+        <PolicyDryRun buildDraft={buildDraft}/>
         <div className="detail-modal-footer">
           <button className="dm-close-btn" onClick={onClose}>Cancel</button>
           <button className="btn-run" style={{ padding:"7px 18px", fontSize:13 }} onClick={handleSave}>Save Policy</button>

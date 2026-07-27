@@ -399,6 +399,34 @@ select, input { font: inherit; }
 .card-title { font-size: 13px; font-weight: 600; color: var(--color-text); margin: 0; line-height: 1.4; }
 .card-head-right { display: flex; align-items: center; gap: 6px; }
 
+/* ── Policy dry run (backtest) ────────────────────────────────────────────── */
+.dryrun {
+  margin: 0 16px 12px;
+  padding: 12px 14px;
+  background: var(--color-raised);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 10px;
+}
+.dryrun-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.dryrun-title {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--color-muted);
+}
+.dryrun-hint { font-size: 12px; color: var(--color-faint); margin-top: 8px; line-height: 1.5; }
+.dryrun-msg { display: flex; align-items: flex-start; gap: 7px; font-size: 12px; margin-top: 10px; line-height: 1.5; }
+.dryrun-err { color: var(--status-error-text); }
+.dryrun-unsupported { color: var(--color-muted); }
+.dryrun-result { margin-top: 10px; }
+.dryrun-headline { font-size: 13.5px; color: var(--color-text); }
+.dryrun-headline strong { font-size: 15px; }
+.dryrun-noisy { color: var(--status-warn-text); }
+.dryrun-noisy-hint { color: var(--status-warn-text); font-size: 12px; }
+.dryrun-detail { font-size: 12px; color: var(--color-muted); margin-top: 4px; line-height: 1.5; }
+.dryrun-times { margin-top: 8px; font-size: 12px; color: var(--color-muted); }
+.dryrun-times summary { cursor: pointer; color: var(--color-primary); font-weight: 600; }
+.dryrun-times ul { margin: 6px 0 0; padding-left: 18px; max-height: 140px; overflow-y: auto; }
+
 /* ── Suppression rules ────────────────────────────────────────────────────── */
 .supp-intro { font-size: 12.5px; color: var(--color-muted); line-height: 1.55; margin: 0 0 12px; }
 .supp-form {

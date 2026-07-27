@@ -86,6 +86,7 @@ builder.Services.AddScoped<NotificationSender>();
 builder.Services.AddScoped<DigestBuilder>();
 builder.Services.AddScoped<EntityProfileBuilder>();
 builder.Services.AddScoped<AlertEvaluator>();
+builder.Services.AddScoped<PolicyBacktester>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<AuditLogger>();
 builder.Services.AddHostedService<GraphCollectionWorker>();
@@ -1865,6 +1866,21 @@ app.MapDelete("/api/alert-policies/{id:guid}", async (AppDbContext db, Guid id, 
     await db.SaveChangesAsync(ct);
     await audit.WriteAsync("policy.delete", "policy", id.ToString(), $"Deleted policy {p.Name}", ct);
     return Results.NoContent();
+}).RequireAuthorization("RequireAnalyst");
+
+// Policy dry-run: "if this policy had been enabled, how often would it have
+// fired?" Accepts an unsaved draft so a threshold can be tested before it is
+// committed. Read-only — never writes alerts or touches policy state.
+app.MapPost("/api/alert-policies/backtest", async (
+    AlertPolicy draft, PolicyBacktester backtester, IOptions<GraphOptions> graph,
+    int? days, CancellationToken ct) =>
+{
+    if (draft.Threshold < 1)
+        return Results.BadRequest(new { error = "Threshold must be at least 1." });
+
+    var interval = TimeSpan.FromMinutes(Math.Max(1, graph.Value.CollectionIntervalMinutes));
+    var result = await backtester.RunAsync(draft, days ?? 30, interval, ct);
+    return Results.Ok(result);
 }).RequireAuthorization("RequireAnalyst");
 
 // ── Suppression rules ───────────────────────────────────────────────────────
