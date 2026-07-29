@@ -11,6 +11,7 @@ import { CollectionRunHistory } from "../components/CollectionRunHistory";
 import { AlertMetricsTab } from "../components/AlertMetricsTab";
 import { SuppressionRulesTab } from "../components/SuppressionRulesTab";
 import { PolicyDryRun } from "../components/PolicyDryRun";
+import { PolicyPackControls } from "../components/PolicyPackControls";
 import { FilterPresets } from "../components/FilterPresets";
 import { relTime, fmtDate, fmtShort, sevTone } from "../services/utils";
 
@@ -1160,7 +1161,12 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
       {/* ── TAB: Policies ── */}
       {tab === "policies" && (
         <Card title="Alert Policies" badge={<Badge label={`${policies.length} policies`} tone="neutral"/>}
-          action={<button className="btn-run" style={{ padding:"7px 14px", fontSize:13 }} onClick={() => { setEditPolicy(null); setShowModal(true); }}><Bell size={13}/> New Policy</button>}>
+          action={
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <PolicyPackControls onChanged={onChanged}/>
+              <button className="btn-run" style={{ padding:"7px 14px", fontSize:13 }} onClick={() => { setEditPolicy(null); setShowModal(true); }}><Bell size={13}/> New Policy</button>
+            </div>
+          }>
           {policies.length === 0 ? (
             <EmptyState icon={<Bell size={28}/>} message="No policies yet. Create one or use a template."/>
           ) : (

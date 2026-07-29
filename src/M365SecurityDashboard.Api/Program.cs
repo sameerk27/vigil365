@@ -1868,6 +1868,94 @@ app.MapDelete("/api/alert-policies/{id:guid}", async (AppDbContext db, Guid id, 
     return Results.NoContent();
 }).RequireAuthorization("RequireAnalyst");
 
+// Export the policy set as a portable pack (JSON). Recipients are stripped
+// unless explicitly requested — packs get shared, and NotifyEmail is an
+// internal address.
+app.MapGet("/api/alert-policies/export", async (
+    AppDbContext db, bool? includeRecipients, AuditLogger audit, CancellationToken ct) =>
+{
+    var withRecipients = includeRecipients ?? false;
+    var policies = await db.AlertPolicies.AsNoTracking().OrderBy(p => p.Name).ToListAsync(ct);
+    var pack = new PolicyPack.Pack(
+        PolicyPack.CurrentVersion,
+        DateTimeOffset.UtcNow,
+        $"Vigil365 {typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "1.0.0"}",
+        withRecipients,
+        policies.Select(p => PolicyPack.ToPack(p, withRecipients)).ToList());
+
+    await audit.WriteAsync("policy.export", "policy", "*",
+        $"Exported {pack.Policies.Count} policies (recipients {(withRecipients ? "included" : "stripped")})", ct);
+    return Results.Ok(pack);
+}).RequireAuthorization("RequireAnalyst");
+
+// Import a policy pack. Matches existing policies by name (ids differ across
+// installs). mode=skip keeps existing policies untouched; mode=update overwrites
+// them in place, preserving their id and trigger history. Every entry is
+// validated first — an invalid policy is reported, never coerced into place.
+app.MapPost("/api/alert-policies/import", async (
+    AppDbContext db, PolicyPack.Pack pack, string? mode, AuditLogger audit, CancellationToken ct) =>
+{
+    if (pack is null || pack.Policies is null)
+        return Results.BadRequest(new { error = "Not a valid policy pack." });
+
+    if (pack.PackVersion > PolicyPack.CurrentVersion)
+        return Results.BadRequest(new { error = $"This pack was made by a newer Vigil365 (pack version {pack.PackVersion}; this install supports {PolicyPack.CurrentVersion})." });
+
+    var update = string.Equals(mode, "update", StringComparison.OrdinalIgnoreCase);
+    var existing = await db.AlertPolicies.ToListAsync(ct);
+
+    var imported = new List<string>();
+    var updated = new List<string>();
+    var skipped = new List<string>();
+    var rejected = new List<object>();
+
+    foreach (var entry in pack.Policies)
+    {
+        var error = PolicyPack.Validate(entry);
+        if (error is not null)
+        {
+            rejected.Add(new { name = entry?.Name ?? "(unnamed)", error });
+            continue;
+        }
+
+        var match = existing.FirstOrDefault(p =>
+            string.Equals(p.Name, entry.Name.Trim(), StringComparison.OrdinalIgnoreCase));
+
+        if (match is not null)
+        {
+            if (!update) { skipped.Add(match.Name); continue; }
+            PolicyPack.ApplyTo(match, entry);
+            updated.Add(match.Name);
+        }
+        else
+        {
+            var created = PolicyPack.ToEntity(entry);
+            db.AlertPolicies.Add(created);
+            existing.Add(created);   // a pack with duplicate names must not create both
+            imported.Add(created.Name);
+        }
+    }
+
+    if (imported.Count > 0 || updated.Count > 0)
+    {
+        await db.SaveChangesAsync(ct);
+        await audit.WriteAsync("policy.import", "policy", "*",
+            $"Imported {imported.Count}, updated {updated.Count}, skipped {skipped.Count}, rejected {rejected.Count}", ct);
+    }
+
+    return Results.Ok(new
+    {
+        importedCount = imported.Count,
+        updatedCount = updated.Count,
+        skippedCount = skipped.Count,
+        rejectedCount = rejected.Count,
+        imported,
+        updated,
+        skipped,
+        rejected,
+    });
+}).RequireAuthorization("RequireAnalyst");
+
 // Policy dry-run: "if this policy had been enabled, how often would it have
 // fired?" Accepts an unsaved draft so a threshold can be tested before it is
 // committed. Read-only — never writes alerts or touches policy state.
