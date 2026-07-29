@@ -4,7 +4,7 @@ import { PublicClientApplication, type AccountInfo, type Configuration } from "@
 import {
   Home, Users, Monitor, Mail, AlertTriangle, Bell, CheckSquare, Activity, Wifi,
   Package, ShieldCheck, BookOpen, MapPin, UserCheck, Settings, ChevronRight, ChevronLeft,
-  Clock, RefreshCw, Sun, Moon, LogIn, LogOut, ShieldAlert, Shield, UserX, TrendingUp, Lightbulb, Lock,
+  Clock, RefreshCw, Sun, Moon, Rows2, Rows3, LogIn, LogOut, ShieldAlert, Shield, UserX, TrendingUp, Lightbulb, Lock,
   Search as SearchIcon, Pause, Play
 } from "lucide-react";
 import "./styles.css";
@@ -216,6 +216,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem("m365-theme") === "dark");
+  const [compact, setCompact] = useState(() => localStorage.getItem("m365-density") === "compact");
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false); // false = expanded
 
@@ -230,6 +231,13 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
     document.documentElement.classList.toggle("dark", darkMode);
     localStorage.setItem("m365-theme", darkMode ? "dark" : "light");
   }, [darkMode]);
+
+  // Row density. Analysts scanning queues for hours want more rows per screen;
+  // spacing tightens but type size never does.
+  useEffect(() => {
+    document.documentElement.dataset.density = compact ? "compact" : "comfortable";
+    localStorage.setItem("m365-density", compact ? "compact" : "comfortable");
+  }, [compact]);
 
   // Allow pages to deep-link into one another (e.g. Alert Center → Identity by UPN)
   useEffect(() => registerNavHandler(({ page }) => setPage(page as NavPage)), []);
@@ -540,6 +548,12 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
             )}
             <button className="btn-icon" onClick={() => setRefreshKey(k => k + 1)} title="Refresh data" disabled={loading||running} aria-label="Refresh data">
               <RefreshCw size={15} className={loading?"spin":""}/>
+            </button>
+            <button className="theme-toggle" onClick={() => setCompact(c => !c)}
+              aria-pressed={compact}
+              aria-label={compact ? "Switch to comfortable row spacing" : "Switch to compact row spacing"}
+              title={compact ? "Comfortable rows" : "Compact rows"}>
+              {compact ? <Rows3 size={15}/> : <Rows2 size={15}/>}
             </button>
             <button className="theme-toggle" onClick={() => setDarkMode(d => !d)} aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"} title={darkMode ? "Light mode" : "Dark mode"}>
               {darkMode ? <Sun size={15}/> : <Moon size={15}/>}

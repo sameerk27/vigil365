@@ -14,6 +14,11 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- Applies persisted theme/density before first paint so the app never
+         flashes the wrong one while React mounts. A separate file rather than an
+         inline script because the CSP is script-src 'self' — inline would be
+         silently blocked. -->
+    <script src="/display-prefs.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
