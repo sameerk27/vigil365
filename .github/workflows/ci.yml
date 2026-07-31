@@ -43,6 +43,10 @@ jobs:
         working-directory: src/m365-security-dashboard-client
         run: npx tsc --noEmit
 
+      - name: Run frontend tests
+        working-directory: src/m365-security-dashboard-client
+        run: npm test
+
       - name: Build frontend
         working-directory: src/m365-security-dashboard-client
         run: npm run build
