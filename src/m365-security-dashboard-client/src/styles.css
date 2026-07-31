@@ -528,6 +528,33 @@ select, input { font: inherit; }
 .perm-status.missing { color: var(--status-error-text); }
 .perm-status.unknown { color: var(--color-muted); }
 
+/* ── Accessibility ────────────────────────────────────────────────────────── */
+/* Off-screen until focused, then pinned top-left — the standard skip-link
+   pattern. Hiding it with display:none would remove it from the tab order and
+   defeat the point. */
+.skip-link {
+  position: absolute; left: -9999px; top: 0; z-index: 500;
+  background: var(--color-primary); color: #fff;
+  padding: 10px 16px; border-radius: 0 0 var(--radius-ctl) 0;
+  font-size: var(--fs-base); font-weight: 600; text-decoration: none;
+}
+.skip-link:focus { left: 0; }
+
+/* The <main> landmark is focus target only; it must not draw a ring when the
+   skip link sends focus to it. */
+#main-content:focus { outline: none; }
+
+/* Rows that open a detail panel are keyboard-activatable, so they need a
+   visible focus indicator — without this the caret is invisible to a keyboard
+   user even though the row responds. */
+.al-clickable:focus-visible,
+.tbl-row-click:focus-visible,
+tr.clickable:focus-visible,
+.mini-row[role="button"]:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
 /* ── Contextual page help ─────────────────────────────────────────────────── */
 .hdr-title-row { display: flex; align-items: center; gap: 6px; }
 .page-help { position: relative; display: inline-flex; }

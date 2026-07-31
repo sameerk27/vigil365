@@ -2,7 +2,7 @@ import React, { useState, useMemo } from "react";
 import { Shield, FileText, Star, Search, ShieldAlert, ShieldCheck, Flag, ExternalLink, CheckCircle2, XCircle } from "lucide-react";
 import { SecureScore, Overview, DlpAlertsData, PurviewData, McasAlertsData, InsiderRiskData, AttackSimulationData, DlpAlert, McasAlert, InsiderRiskAlert, AttackSim, Tone, IdentityData, DevicesData, ConditionalAccessData, SecurityIncidentsData, PrivilegedRolesData, EmailProtectionData } from "../services/types";
 import { fmtDate, relTime, pctTone, sevTone } from "../services/utils";
-import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, ProgressBar, ExportDropdown, StatBox, SectHdr } from "../components/SharedComponents";
+import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, ProgressBar, ExportDropdown, StatBox, SectHdr, rowActivation} from "../components/SharedComponents";
 import { FilterPresets } from "../components/FilterPresets";
 
 export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcasAlerts, insiderRisk, attackSimulation, identity, devices, ca, securityIncidents, privilegedRoles, emailProtection }: {
@@ -461,7 +461,7 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
                     <thead><tr><th scope="col">Simulation</th><th scope="col">Type</th><th scope="col">Targeted</th><th scope="col">Clicked</th><th scope="col">Compromise Rate</th><th scope="col">Status</th></tr></thead>
                     <tbody>
                       {attackSimulation!.simulations.slice(0,8).map((s,i)=>(
-                        <tr key={s.id??i} className="tbl-row-click" onClick={()=>setSelectedSim(s)}>
+                        <tr key={s.id??i} className="tbl-row-click" {...rowActivation(()=>setSelectedSim(s), "Open attack simulation detail")}>
                           <td><div className="al-title">{s.displayName??"Unnamed simulation"}</div></td>
                           <td className="al-desc">{s.attackType?.replace(/([A-Z])/g," $1").trim()??s.attackType??"—"}</td>
                           <td>{s.numberOfUsersTargeted}</td>

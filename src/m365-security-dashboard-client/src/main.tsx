@@ -509,6 +509,9 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
 
   return (
     <div className={`app-shell${darkMode ? " dark" : ""}`}>
+      {/* First tab stop: lets keyboard users jump the 8-section sidebar instead
+          of tabbing through it on every page. */}
+      <a className="skip-link" href="#main-content">Skip to main content</a>
       <Sidebar page={page} setPage={setPage} alertCounts={unreadCounts}
         collapsed={sidebarCollapsed} onToggleCollapse={() => setSidebarCollapsed(c => !c)}/>
       <div className="main-area">
@@ -609,6 +612,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
             <button type="button" className="err-banner-dismiss" onClick={() => { setError(""); setErrorId(""); }}>Dismiss</button>
           </div>
         )}
+        <main id="main-content" tabIndex={-1}>
         {isInitialLoad ? (
           <DashboardSkeleton />
         ) : entity ? (
@@ -637,6 +641,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
             {page==="setup"&&<SetupPage/>}
           </>
         )}
+        </main>
       </div>
       {selectedAlert&&<AlertDetailModal alert={selectedAlert} allAlerts={allAlerts} onSelectAlert={setSelectedAlert} onClose={()=>setSelectedAlert(null)}/>}
       <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} alerts={allAlerts}

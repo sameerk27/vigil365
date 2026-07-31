@@ -3,7 +3,7 @@ import { Key, UserX, Globe, Users, Search, CheckCircle, XCircle, UserCheck, Shie
 import { IdentityData, SecurityAlert, PrivilegedRolesData, PimData, MdiAlertsData, RiskDetectionsData, IdentityHealthData, MdiAlert, RiskDetection, Tone } from "../services/types";
 import { pctTone, fmtDate, sevColor, relTime, fmtFullTime } from "../services/utils";
 import { consumeNavSeed, crossNavigate } from "../services/api";
-import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, InlineError, InfoRow, ProgressBar, ExportDropdown, CircleGauge, StatBox, SectHdr } from "../components/SharedComponents";
+import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, InlineError, InfoRow, ProgressBar, ExportDropdown, CircleGauge, StatBox, SectHdr, rowActivation } from "../components/SharedComponents";
 import { FilterPresets } from "../components/FilterPresets";
 
 export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAlerts, riskDetections, identityHealth, onAlertClick }:
@@ -211,7 +211,7 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
             <div className="mini-list" style={{marginTop:14}}>
               <SectHdr>USERS WITHOUT MFA ({mfaMissing.length})</SectHdr>
               {mfaMissing.slice(0,8).map((a,i)=>(
-                <div key={i} className="mini-row al-clickable" onClick={()=>onAlertClick(a)}>
+                <div key={i} className="mini-row al-clickable" {...rowActivation(()=>onAlertClick(a))}>
                   <UserX size={12} color="var(--status-error-icon)"/>
                   <span className="mr-user">{a.userPrincipalName}</span>
                   <Badge label="No MFA" tone="error"/>

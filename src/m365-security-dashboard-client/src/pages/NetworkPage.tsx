@@ -2,7 +2,7 @@ import React, { useState, useMemo } from "react";
 import { Activity, LogIn, XCircle, Globe, AlertCircle, ExternalLink, BarChart2 } from "lucide-react";
 import { ServiceHealthData, SignInLocationsData, SignInEntry } from "../services/types";
 import { fmtDate, relTime, fmtShort, countryFlag, fmtFullTime } from "../services/utils";
-import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, StatusDot, SectHdr, MiniBarChart } from "../components/SharedComponents";
+import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, StatusDot, SectHdr, MiniBarChart, rowActivation} from "../components/SharedComponents";
 import { M365_SVCS, matchSvcIssue } from "./ServiceHealthPage";
 
 export function NetworkPage({ serviceHealth, signInLocations }: { serviceHealth: ServiceHealthData|null; signInLocations: SignInLocationsData|null }) {
@@ -127,7 +127,7 @@ export function NetworkPage({ serviceHealth, signInLocations }: { serviceHealth:
                 <thead><tr><th scope="col">User</th><th scope="col">App</th><th scope="col">Location</th><th scope="col">Time</th><th scope="col">Result</th></tr></thead>
                 <tbody>
                   {signInLocations.recent.map((s,i)=>(
-                    <tr key={i} className="tbl-row-click" onClick={()=>setSelectedSignIn(s)}>
+                    <tr key={i} className="tbl-row-click" {...rowActivation(()=>setSelectedSignIn(s), "Open sign-in detail")}>
                       <td><div className="al-title">{s.upn?.split("@")[0]??"Unknown"}</div></td>
                       <td className="al-desc">{s.app??"—"}</td>
                       <td className="al-desc"><span className="flag-emoji">{countryFlag(s.country) || "—"}</span> {[s.city,s.country].filter(Boolean).join(", ")||"Unknown"}</td>

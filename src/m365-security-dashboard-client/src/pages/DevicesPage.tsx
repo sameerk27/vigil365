@@ -3,7 +3,7 @@ import { Monitor, XCircle, Clock, ShieldAlert, Search, Laptop, CheckCircle, Eye,
 import { DevicesData, SecurityAlert, MdeVulnerabilitiesData, MdeAlert } from "../services/types";
 import { pctTone, fmtDate, relTime, fmtFullTime } from "../services/utils";
 import { consumeNavSeed, crossNavigate } from "../services/api";
-import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, MiniBarChart, InfoRow, CircleGauge, ExportDropdown, StatBox, SectHdr } from "../components/SharedComponents";
+import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, MiniBarChart, InfoRow, CircleGauge, ExportDropdown, StatBox, SectHdr, rowActivation} from "../components/SharedComponents";
 
 export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick }:
   { devices: DevicesData|null; alerts: SecurityAlert[]; mdeVulnerabilities: MdeVulnerabilitiesData|null; onAlertClick:(a:SecurityAlert)=>void }) {
@@ -204,7 +204,7 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
                   <thead><tr><th scope="col">Device</th><th scope="col">User</th><th scope="col">Last Seen</th><th scope="col">Status</th><th scope="col"></th></tr></thead>
                   <tbody>
                     {notCheckedIn.map((a,i)=>(
-                      <tr key={i} className="tbl-row-click" onClick={()=>onAlertClick(a)}>
+                      <tr key={i} className="tbl-row-click" {...rowActivation(()=>onAlertClick(a), `Open alert ${a.title}`)}>
                         <td><div className="al-title trunc" style={{maxWidth:180}} title={a.deviceName??a.title}>{a.deviceName??a.title}</div></td>
                         <td><div className="trunc" style={{maxWidth:160}} title={a.userPrincipalName??undefined}>{a.userPrincipalName??"—"}</div></td>
                         <td className="al-date" title={fmtDate(a.detectedAt)}>{relTime(a.detectedAt)}</td>

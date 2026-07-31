@@ -4,7 +4,7 @@ import { AlertPolicy, TriggeredAlert, NotificationSettings, NotificationLogEntry
 import { acApi, recApi, wbApi, useAuth, crossNavigate, consumeNavTab } from "../services/api";
 import { showToast } from "../services/toast";
 import { confirmAction } from "../services/confirm";
-import { DetailField, KpiTile, Card, Badge, EmptyState, MiniBarChart, ExportDropdown, ProgressBar, CopyButton, LoadingSkeleton, TriageSection } from "../components/SharedComponents";
+import { DetailField, KpiTile, Card, Badge, EmptyState, MiniBarChart, ExportDropdown, ProgressBar, CopyButton, LoadingSkeleton, TriageSection, rowActivation} from "../components/SharedComponents";
 import { CollectionHealthCard } from "../components/CollectionHealthCard";
 import { CollectionStatusBanner } from "../components/CollectionStatusBanner";
 import { CollectionRunHistory } from "../components/CollectionRunHistory";
@@ -1102,7 +1102,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                   {pagedTA.map(a => {
                     const sla = slaAge(a);
                     return (
-                    <tr key={a.id} className="clickable" onClick={() => setSelectedTriggered(a)}>
+                    <tr key={a.id} className="clickable" {...rowActivation(() => setSelectedTriggered(a), `Open triggered alert ${a.policyName}`)}>
                       {canMutate && <td onClick={e=>e.stopPropagation()}>
                         <input type="checkbox" checked={selected.has(a.id)} onChange={() => toggleSelect(a.id)} aria-label={`Select ${a.policyName}`}/>
                       </td>}

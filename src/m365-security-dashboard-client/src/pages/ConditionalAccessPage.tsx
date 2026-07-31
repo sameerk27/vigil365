@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { ShieldCheck, Eye, ShieldOff, Shield, Search } from "lucide-react";
 import { ConditionalAccessData, CAPolicy, Tone } from "../services/types";
-import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, ExportDropdown, InfoRow } from "../components/SharedComponents";
+import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, ExportDropdown, InfoRow, rowActivation} from "../components/SharedComponents";
 import { FilterPresets } from "../components/FilterPresets";
 
 export function ConditionalAccessPage({ data }: { data: ConditionalAccessData|null }) {
@@ -91,7 +91,7 @@ export function ConditionalAccessPage({ data }: { data: ConditionalAccessData|nu
                     <tbody>
                       {filteredPolicies.length===0&&<tr><td colSpan={5} className="td-empty">No policies match the filter.</td></tr>}
                       {filteredPolicies.map((p,i)=>(
-                        <tr key={i} className="tbl-row-click" onClick={()=>setSelectedPolicy(p)}>
+                        <tr key={i} className="tbl-row-click" {...rowActivation(()=>setSelectedPolicy(p), `Open policy ${p.name}`)}>
                           <td>
                             <div className="al-title trunc" style={{maxWidth:200}} title={p.name}>{p.name}</div>
                             <div className="al-desc">{p.inclUsers} → {p.apps}</div>

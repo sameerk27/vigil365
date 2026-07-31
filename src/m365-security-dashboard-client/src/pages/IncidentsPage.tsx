@@ -2,7 +2,7 @@ import React, { useState, useMemo } from "react";
 import { ShieldAlert, AlertCircle, AlertTriangle, Bell, Search, Eye, ExternalLink, Database } from "lucide-react";
 import { SecurityAlert, ServiceHealthData, DefenderAlertsData, SecurityIncidentsData, DefenderAlert, SecurityIncident } from "../services/types";
 import { fmtDate, relTime, fmtDefenderSource, fmtService, sevColor } from "../services/utils";
-import { DetailModal, DetailField, KpiTile, Card, Badge, MiniBarChart, InlineError, ExportDropdown } from "../components/SharedComponents";
+import { DetailModal, DetailField, KpiTile, Card, Badge, MiniBarChart, InlineError, ExportDropdown, rowActivation} from "../components/SharedComponents";
 import { FilterPresets } from "../components/FilterPresets";
 
 export type UnifiedItem =
@@ -312,7 +312,7 @@ export function IncidentsPage({ alerts, alertsTotal, serviceHealth, defenderAler
                   const a=item.data;
                   const sev=a.severity.charAt(0).toUpperCase()+a.severity.slice(1);
                   return (
-                    <tr key={`def-${idx}`} className="tbl-row-click row-border-defender" onClick={()=>setSelectedDefender(a)}>
+                    <tr key={`def-${idx}`} className="tbl-row-click row-border-defender" {...rowActivation(()=>setSelectedDefender(a), `Open Defender alert ${a.title ?? ""}`)}>
                       <td><span className={`sev-pill sev-pill-${(sev||"info").toLowerCase()==="informational"?"info":(sev||"info").toLowerCase()}`}>{sev}</span></td>
                       <td><span className="src-badge src-defender"><ShieldAlert size={10}/>{fmtDefenderSource(a.serviceSource??'Defender')}</span></td>
                       <td>
@@ -329,7 +329,7 @@ export function IncidentsPage({ alerts, alertsTotal, serviceHealth, defenderAler
                   const i=item.data;
                   const sev=i.severity.charAt(0).toUpperCase()+i.severity.slice(1);
                   return (
-                    <tr key={`inc-${idx}`} className="tbl-row-click row-border-incident" onClick={()=>setSelectedIncident(i)}>
+                    <tr key={`inc-${idx}`} className="tbl-row-click row-border-incident" {...rowActivation(()=>setSelectedIncident(i), `Open incident ${i.displayName ?? ""}`)}>
                       <td><span className={`sev-pill sev-pill-${(sev||"info").toLowerCase()==="informational"?"info":(sev||"info").toLowerCase()}`}>{sev}</span></td>
                       <td><span className="src-badge src-incident"><AlertCircle size={10}/>Incident</span></td>
                       <td>
@@ -362,7 +362,7 @@ export function IncidentsPage({ alerts, alertsTotal, serviceHealth, defenderAler
                 }
                 const a=item.data;
                 return (
-                  <tr key={`db-${a.service}-${a.id}`} className="tbl-row-click row-border-db" onClick={()=>onAlertClick(a)}>
+                  <tr key={`db-${a.service}-${a.id}`} className="tbl-row-click row-border-db" {...rowActivation(()=>onAlertClick(a), `Open alert ${a.title}`)}>
                     <td><span className={`sev-pill sev-pill-${(a.severity||"info").toLowerCase()==="informational"?"info":(a.severity||"info").toLowerCase()}`}>{a.severity}</span></td>
                     <td><span className="src-badge src-db"><Database size={10}/>{fmtService(a.service)}</span></td>
                     <td>

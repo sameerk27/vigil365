@@ -3,7 +3,7 @@ import { Shield, Lock, Monitor, Activity, ShieldAlert, Flag, TrendingUp, Chevron
 import { Overview, SecureScore, IdentityData, DevicesData, ServiceHealthData, SecurityAlert, DefenderAlertsData, SecurityIncidentsData, AlertPolicy, TriggeredAlert } from "../services/types";
 import { pctTone, fmtShort, fmtService, fmtDefenderSource, relTime, fmtDate, fmtFullTime, sevClass } from "../services/utils";
 import { crossNavigate } from "../services/api";
-import { Card, KpiTile, CircleGauge, LineChart, StatBox, SectHdr, Badge, EmptyState, RelativeTime } from "../components/SharedComponents";
+import { Card, KpiTile, CircleGauge, LineChart, StatBox, SectHdr, Badge, EmptyState, RelativeTime, rowActivation } from "../components/SharedComponents";
 import { SetupChecklist } from "../components/SetupChecklist";
 import { CollectionHealthCard } from "../components/CollectionHealthCard";
 
@@ -173,7 +173,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
               <div className="mini-list" style={{marginTop:8}}>
                 <SectHdr>RECENT ALERTS</SectHdr>
                 {defenderAlerts.alerts.slice(0,5).map((a,i)=>(
-                  <div key={i} className="mini-row al-clickable" onClick={onNavigateAlertCenter} style={{ cursor: "pointer" }}>
+                  <div key={i} className="mini-row al-clickable" {...rowActivation(onNavigateAlertCenter)} style={{ cursor: "pointer" }}>
                     <span className={sevClass(a.severity)}/>
                     <span className="mr-user" style={{flex:1}}>{a.title??"Unknown"}</span>
                     <Badge label={fmtDefenderSource(a.serviceSource??a.severity)} tone="neutral"/>
@@ -196,7 +196,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
           {advisories.length > 0 ? (
             <div className="mini-list">
               {advisories.slice(0, 5).map((a, i) => (
-                <div key={i} className="mini-row al-clickable" onClick={() => crossNavigate({ page: "servicehealth" })} style={{ cursor: "pointer" }} title={fmtFullTime(a.detectedAt)}>
+                <div key={i} className="mini-row al-clickable" {...rowActivation(() => crossNavigate({ page: "servicehealth" }))} style={{ cursor: "pointer" }} title={fmtFullTime(a.detectedAt)}>
                   <span className={sevClass(a.severity)}/>
                   <span className="mr-user" style={{ flex: 1 }}>{a.title}</span>
                   <span className="mr-date">{fmtShort(a.detectedAt)}</span>
@@ -232,7 +232,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
                   <div className="mini-list">
                     <SectHdr>AT-RISK USERS</SectHdr>
                     {riskyUsers.slice(0,4).map((a,i)=>(
-                      <div key={i} className="mini-row al-clickable" onClick={()=>onAlertClick(a)} style={{cursor:"pointer"}}>
+                      <div key={i} className="mini-row al-clickable" {...rowActivation(()=>onAlertClick(a))} style={{cursor:"pointer"}}>
                         <span className={`sev-dot sev-${a.severity.toLowerCase()}`}/>
                         <span className="mr-user">{a.userPrincipalName??a.title}</span>
                         <Badge label={a.severity} tone={a.severity==="High"||a.severity==="Critical"?"error":"warning"}/>
@@ -254,7 +254,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
             <div className="mini-list">
               <SectHdr>BREAKDOWN BY SERVICE</SectHdr>
               {(overview?.byService??[]).map((s,i)=>(
-                <div key={i} className="mini-row al-clickable" onClick={() => crossNavigate({ page: s.service === "EntraId" ? "identity" : s.service === "DefenderXdr" ? "alertcenter" : s.service === "Intune" ? "devices" : s.service === "ExchangeOnline" ? "email" : "servicehealth" })} style={{ cursor: "pointer" }}>
+                <div key={i} className="mini-row al-clickable" {...rowActivation(() => crossNavigate({ page: s.service === "EntraId" ? "identity" : s.service === "DefenderXdr" ? "alertcenter" : s.service === "Intune" ? "devices" : s.service === "ExchangeOnline" ? "email" : "servicehealth" }))} style={{ cursor: "pointer" }}>
                   <Database size={11} color="var(--color-muted)"/>
                   <span className="mr-user">{fmtService(s.service)}</span>
                   <Badge label={String(s.count)} tone={s.count>10?"error":s.count>3?"warning":"neutral"}/>
@@ -277,7 +277,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
           {(devices?.nonCompliantDevices.length??0)>0?(
             <div className="mini-list">
               {devices!.nonCompliantDevices.slice(0,3).map((d,i)=>(
-                <div key={i} className="mini-row al-clickable" onClick={() => crossNavigate({ page: "devices", search: d.deviceName ?? "" })} style={{ cursor: "pointer" }}>
+                <div key={i} className="mini-row al-clickable" {...rowActivation(() => crossNavigate({ page: "devices", search: d.deviceName ?? "" }))} style={{ cursor: "pointer" }}>
                   <Monitor size={11} color="var(--color-muted)"/>
                   <span className="mr-user">{d.deviceName??"Unknown device"}</span>
                   <span className="mr-date">{d.userPrincipalName?.split("@")[0]}</span>
@@ -322,7 +322,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
             {(overview?.byService??[]).length===0
               ?<EmptyState message="Run a collection to see recommendations"/>
               :overview!.byService.map((s,i)=>(
-                <div key={i} className="impr-row al-clickable" onClick={() => crossNavigate({ page: s.service === "EntraId" ? "identity" : s.service === "DefenderXdr" ? "alertcenter" : s.service === "Intune" ? "devices" : s.service === "ExchangeOnline" ? "email" : "servicehealth" })} style={{ cursor: "pointer" }}>
+                <div key={i} className="impr-row al-clickable" {...rowActivation(() => crossNavigate({ page: s.service === "EntraId" ? "identity" : s.service === "DefenderXdr" ? "alertcenter" : s.service === "Intune" ? "devices" : s.service === "ExchangeOnline" ? "email" : "servicehealth" }))} style={{ cursor: "pointer" }}>
                   <div className="impr-icon"><TrendingUp size={12}/></div>
                   <span className="impr-text">Review {fmtService(s.service)} — {s.count} active alert{s.count!==1?"s":""}</span>
                   <Badge label={`${s.count} open`} tone={s.count>10?"error":s.count>3?"warning":"neutral"}/>
@@ -346,7 +346,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
                 <div className="mini-list" style={{marginTop:8}}>
                   <SectHdr>RECENT TRIGGERED</SectHdr>
                   {recent3.map((a,i)=>(
-                    <div key={i} className="mini-row al-clickable" onClick={onNavigateAlertCenter} style={{ cursor: "pointer" }}>
+                    <div key={i} className="mini-row al-clickable" {...rowActivation(onNavigateAlertCenter)} style={{ cursor: "pointer" }}>
                       <span className={sevClass(a.severity)}/>
                       <span className="mr-user" style={{flex:1}}>{a.policyName}</span>
                       <span className="mr-date" title={fmtFullTime(a.triggeredAt)}>{relTime(a.triggeredAt)}</span>

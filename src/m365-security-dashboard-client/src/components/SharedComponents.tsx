@@ -314,6 +314,31 @@ export function KpiTile({ icon, label, value, sub, tone="neutral", needsPerm, on
   );
 }
 
+/**
+ * Makes a non-button element behave like a button for keyboard and screen-reader
+ * users. Table rows are the reason this exists: a <tr> cannot legally contain a
+ * button wrapping the whole row, so rows that open a detail panel were reachable
+ * by mouse only — a keyboard user simply could not open an alert.
+ *
+ * Spread onto the element: {...rowActivation(() => open(x), "Open alert")}
+ */
+export function rowActivation(onActivate: () => void, label?: string) {
+  return {
+    onClick: onActivate,
+    onKeyDown: (e: React.KeyboardEvent) => {
+      // Enter and Space are what a real button responds to. Space must not also
+      // scroll the page.
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        onActivate();
+      }
+    },
+    tabIndex: 0,
+    role: "button",
+    "aria-label": label,
+  } as const;
+}
+
 export function StateMessage({ type = "empty", title, message, icon, onAction, actionLabel }: { type?: "empty"|"error"|"permission", title?: string, message: React.ReactNode, icon?: React.ReactNode, onAction?: ()=>void, actionLabel?: string }) {
   const defaultIcon = type === "empty" ? <Activity size={28}/> : type === "error" ? <AlertTriangle size={28}/> : <Lock size={28}/>;
   return (
