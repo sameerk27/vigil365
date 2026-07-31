@@ -84,8 +84,10 @@ builder.Services.AddSingleton<SecretProtector>();
 builder.Services.AddScoped<GraphCollector>();
 builder.Services.AddScoped<NotificationSender>();
 builder.Services.AddScoped<DigestBuilder>();
+builder.Services.AddSingleton<DigestPdfRenderer>();
 builder.Services.AddScoped<EntityProfileBuilder>();
 builder.Services.AddScoped<AlertEvaluator>();
+builder.Services.AddScoped<ApiTokenService>();
 builder.Services.AddScoped<PolicyBacktester>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<AuditLogger>();
@@ -2260,6 +2262,7 @@ app.MapGet("/api/notification-settings", async (AppDbContext db, SecretProtector
         hasSmtpPassword = !string.IsNullOrEmpty(s.SmtpPassword),
         s.FromAddress, s.DefaultRecipient,
         s.WebhookEnabled, WebhookUrl = protector.Unprotect(s.WebhookUrl),
+        hasWebhookSigningSecret = !string.IsNullOrEmpty(s.WebhookSigningSecret),
         s.MinSeverity,
         s.TeamsDigest, s.EmailDigest, s.WebhookDigest, s.DigestHourUtc, s.FailureAlertThreshold,
     });
@@ -2281,6 +2284,8 @@ app.MapPut("/api/notification-settings", async (AppDbContext db, SecretProtector
     s.DefaultRecipient = input.DefaultRecipient;
     s.WebhookEnabled = input.WebhookEnabled;
     s.WebhookUrl = protector.Protect(input.WebhookUrl);
+    if (!string.IsNullOrWhiteSpace(input.WebhookSigningSecret))
+        s.WebhookSigningSecret = protector.Protect(input.WebhookSigningSecret);
     s.MinSeverity = string.IsNullOrWhiteSpace(input.MinSeverity) ? "low" : input.MinSeverity;
     s.TeamsDigest = input.TeamsDigest;
     s.EmailDigest = input.EmailDigest;
@@ -2330,6 +2335,76 @@ app.MapGet("/api/notification-health", async (AppDbContext db, CancellationToken
     return Results.Ok(new { threshold, channels = health, anyFailing = health.Any(h => h.ConsecutiveFailures >= threshold) });
 }).RequireAuthorization("RequireAnalyst");
 
+// API tokens for SIEM/read-only machine integrations. The raw token is returned
+// once on create; only a SHA-256 hash is stored.
+app.MapGet("/api/api-tokens", async (AppDbContext db, CancellationToken ct) =>
+    Results.Ok(await db.ApiTokens.AsNoTracking()
+        .OrderByDescending(t => t.CreatedAt)
+        .Select(t => new { t.Id, t.Name, t.Prefix, t.Scopes, t.CreatedAt, t.CreatedBy, t.ExpiresAt, t.LastUsedAt, t.RevokedAt })
+        .ToListAsync(ct)))
+    .RequireAuthorization("RequireAdmin");
+
+app.MapPost("/api/api-tokens", async (
+    AppDbContext db, AuditLogger audit, System.Security.Claims.ClaimsPrincipal user,
+    ApiTokenCreateRequest input, CancellationToken ct) =>
+{
+    var (row, rawToken) = ApiTokenService.Create(
+        input.Name ?? "SIEM integration",
+        input.Scopes ?? "alerts:read,health:read",
+        AuthHelpers.GetEmail(user),
+        input.ExpiresAt);
+    db.ApiTokens.Add(row);
+    await db.SaveChangesAsync(ct);
+    await audit.WriteAsync("api_token.create", "api_token", row.Id.ToString(), row.Name, ct);
+    return Results.Ok(new { row.Id, row.Name, row.Prefix, row.Scopes, row.CreatedAt, row.ExpiresAt, token = rawToken });
+}).RequireAuthorization("RequireAdmin");
+
+app.MapPost("/api/api-tokens/{id:guid}/revoke", async (AppDbContext db, AuditLogger audit, Guid id, CancellationToken ct) =>
+{
+    var token = await db.ApiTokens.FirstOrDefaultAsync(t => t.Id == id, ct);
+    if (token is null) return Results.NotFound();
+    token.RevokedAt ??= DateTimeOffset.UtcNow;
+    await db.SaveChangesAsync(ct);
+    await audit.WriteAsync("api_token.revoke", "api_token", id.ToString(), token.Name, ct);
+    return Results.Ok(new { ok = true });
+}).RequireAuthorization("RequireAdmin");
+
+// SIEM export endpoints use API-token auth, not the browser's Entra delegated token.
+app.MapGet("/api/siem/alerts", async (HttpContext ctx, ApiTokenService tokens, AppDbContext db, CancellationToken ct) =>
+{
+    var token = await tokens.ValidateAsync(ReadApiToken(ctx), "alerts:read", ct);
+    if (token is null) return Results.Unauthorized();
+    var since = DateTimeOffset.UtcNow.AddDays(-7);
+    if (DateTimeOffset.TryParse(ctx.Request.Query["since"], out var parsed)) since = parsed;
+    var alerts = await db.TriggeredAlerts.AsNoTracking()
+        .Where(a => a.TriggeredAt >= since)
+        .OrderByDescending(a => a.TriggeredAt)
+        .Take(1000)
+        .Select(a => new
+        {
+            a.Id, a.PolicyId, a.PolicyName, a.Severity, a.Category, a.Condition,
+            a.MetricValue, a.Threshold, a.TriggeredAt, a.Status, a.AffectedEntities,
+            source = "Vigil365"
+        })
+        .ToListAsync(ct);
+    return Results.Ok(new { generatedAt = DateTimeOffset.UtcNow, count = alerts.Count, alerts });
+}).AllowAnonymous();
+
+app.MapGet("/api/siem/health", async (HttpContext ctx, ApiTokenService tokens, AppDbContext db, CancellationToken ct) =>
+{
+    var token = await tokens.ValidateAsync(ReadApiToken(ctx), "health:read", ct);
+    if (token is null) return Results.Unauthorized();
+    var latestRun = await db.CollectionRuns.AsNoTracking().OrderByDescending(r => r.StartedAt).FirstOrDefaultAsync(ct);
+    var notificationHealth = NotificationHealth.Compute(await db.NotificationLogs.AsNoTracking().OrderByDescending(l => l.SentAt).Take(200).ToListAsync(ct));
+    return Results.Ok(new
+    {
+        generatedAt = DateTimeOffset.UtcNow,
+        latestRun,
+        notificationChannels = notificationHealth,
+        openTriggeredAlerts = await db.TriggeredAlerts.AsNoTracking().CountAsync(a => a.Status == "new" || a.Status == "acknowledged", ct)
+    });
+}).AllowAnonymous();
+
 // ── Entity investigation profile (drill-down) ──────────────────────────────
 // GET /api/entity/{kind}/{id} — kind = user|device. Merges the entity's alerts
 // and tenant audit activity into one reverse-chronological timeline.
@@ -2366,6 +2441,7 @@ app.MapPost("/api/report-schedules", async (AppDbContext db, AuditLogger audit, 
         HourUtc = Math.Clamp(input.HourUtc, 0, 23),
         Recipients = input.Recipients ?? "",
         IncludeCsv = input.IncludeCsv,
+        IncludePdf = input.IncludePdf,
         Enabled = input.Enabled,
         CreatedBy = user.Identity?.Name,
         CreatedAt = DateTimeOffset.UtcNow,
@@ -2387,6 +2463,7 @@ app.MapPut("/api/report-schedules/{id:guid}", async (AppDbContext db, AuditLogge
     s.HourUtc = Math.Clamp(input.HourUtc, 0, 23);
     s.Recipients = input.Recipients ?? "";
     s.IncludeCsv = input.IncludeCsv;
+    s.IncludePdf = input.IncludePdf;
     s.Enabled = input.Enabled;
     await db.SaveChangesAsync(ct);
     await audit.WriteAsync("report.schedule.update", "report", s.Id.ToString(), s.Name, ct);
@@ -2430,6 +2507,16 @@ app.MapFallbackToFile("index.html").AllowAnonymous();
 
 app.Run();
 
+static string? ReadApiToken(HttpContext ctx)
+{
+    var apiKey = ctx.Request.Headers["X-Api-Key"].ToString();
+    if (!string.IsNullOrWhiteSpace(apiKey)) return apiKey.Trim();
+    var auth = ctx.Request.Headers.Authorization.ToString();
+    return auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+        ? auth["Bearer ".Length..].Trim()
+        : null;
+}
+
 /// <summary>Body shape for POST /api/triggered-alerts/{id}/snooze.</summary>
 public sealed record SnoozeRequest(DateTimeOffset? Until, int? DurationHours);
 
@@ -2446,6 +2533,9 @@ public sealed record GraphSetupRequest(string TenantId, string ClientId, string?
 
 /// <summary>Body shape for POST /api/admin/users (pre-provision a user).</summary>
 public sealed record AddUserRequest(string Email, string Role, string? DisplayName, bool SendInvite = false);
+
+/// <summary>Body shape for POST /api/api-tokens.</summary>
+public sealed record ApiTokenCreateRequest(string? Name, string? Scopes, DateTimeOffset? ExpiresAt);
 
 /// <summary>Body shape for the workbench endpoints (assign / disposition).</summary>
 public sealed record WorkbenchRequest(string? AssignedTo, string? Disposition);

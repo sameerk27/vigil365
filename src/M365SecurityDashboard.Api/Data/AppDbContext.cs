@@ -19,6 +19,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<SuppressionRule> SuppressionRules => Set<SuppressionRule>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<ReportSchedule> ReportSchedules => Set<ReportSchedule>();
+    public DbSet<ApiToken> ApiTokens => Set<ApiToken>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -104,6 +105,14 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.HasIndex(e => e.OccurredAt);
             entity.HasIndex(e => e.Activity);
             entity.Property(e => e.RawJson).HasColumnType("nvarchar(max)");
+        });
+
+        modelBuilder.Entity<ApiToken>(entity =>
+        {
+            entity.HasKey(t => t.Id);
+            entity.HasIndex(t => t.TokenHash).IsUnique();
+            entity.HasIndex(t => t.Prefix);
+            entity.HasIndex(t => t.RevokedAt);
         });
     }
 }

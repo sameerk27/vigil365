@@ -39,6 +39,9 @@ public sealed class ReportSchedule
     /// <summary>Whether to attach a CSV summary alongside the HTML body.</summary>
     public bool IncludeCsv { get; set; } = true;
 
+    /// <summary>Whether to attach a PDF executive digest alongside the HTML body.</summary>
+    public bool IncludePdf { get; set; } = true;
+
     public bool Enabled { get; set; } = true;
 
     public DateTimeOffset? LastRunAt { get; set; }

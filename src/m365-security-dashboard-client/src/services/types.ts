@@ -191,7 +191,7 @@ export interface NotificationSettings {
   emailEnabled: boolean; smtpHost?: string; smtpPort: number; smtpUseSsl: boolean;
   smtpUsername?: string; smtpPassword?: string; hasSmtpPassword?: boolean;
   fromAddress?: string; defaultRecipient?: string;
-  webhookEnabled: boolean; webhookUrl?: string;
+  webhookEnabled: boolean; webhookUrl?: string; webhookSigningSecret?: string; hasWebhookSigningSecret?: boolean;
   minSeverity: string;
   teamsDigest?: boolean; emailDigest?: boolean; webhookDigest?: boolean;
   digestHourUtc?: number; failureAlertThreshold?: number;
@@ -215,11 +215,22 @@ export interface ReportSchedule {
   hourUtc: number;
   recipients: string;
   includeCsv: boolean;
+  includePdf: boolean;
   enabled: boolean;
   lastRunAt?: string | null;
   lastRunStatus?: string | null;
   createdBy?: string | null;
   createdAt: string;
+}
+
+export interface ApiTokenInfo {
+  id: string; name: string; prefix: string; scopes: string;
+  createdAt: string; createdBy?: string | null; expiresAt?: string | null;
+  lastUsedAt?: string | null; revokedAt?: string | null;
+}
+
+export interface ApiTokenCreated extends ApiTokenInfo {
+  token: string;
 }
 
 export interface DigestMetric {

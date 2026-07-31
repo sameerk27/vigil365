@@ -10,7 +10,7 @@ import { confirmAction } from "../services/confirm";
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 function blankSchedule(): Partial<ReportSchedule> {
-  return { name: "Weekly executive digest", cadence: "weekly", dayOfWeek: 1, dayOfMonth: 1, hourUtc: 7, recipients: "", includeCsv: true, enabled: true };
+  return { name: "Weekly executive digest", cadence: "weekly", dayOfWeek: 1, dayOfMonth: 1, hourUtc: 7, recipients: "", includeCsv: true, includePdf: true, enabled: true };
 }
 
 function cadenceLabel(s: ReportSchedule): string {
@@ -169,13 +169,14 @@ export function ReportsPage() {
               )}
               <label>Hour (UTC)<input type="number" min={0} max={23} value={editing.hourUtc} onChange={e => setEditing({ ...editing, hourUtc: Number(e.target.value) })}/></label>
             </div>
-            <label style={{ display: "block", marginTop: 10 }}>Recipients (comma-separated)
+            <label className="report-wide-field">Recipients (comma, semicolon, or newline separated)
               <input value={editing.recipients ?? ""} placeholder="ciso@contoso.com, soc@contoso.com" onChange={e => setEditing({ ...editing, recipients: e.target.value })}/>
             </label>
-            <div style={{ display: "flex", gap: 16, marginTop: 10, alignItems: "center" }}>
-              <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}><input type="checkbox" checked={editing.includeCsv ?? true} onChange={e => setEditing({ ...editing, includeCsv: e.target.checked })}/>Attach CSV</label>
-              <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}><input type="checkbox" checked={editing.enabled ?? true} onChange={e => setEditing({ ...editing, enabled: e.target.checked })}/>Enabled</label>
-              <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+            <div className="report-editor-actions">
+              <label className="inline-check"><input type="checkbox" checked={editing.includePdf ?? true} onChange={e => setEditing({ ...editing, includePdf: e.target.checked })}/>Attach PDF</label>
+              <label className="inline-check"><input type="checkbox" checked={editing.includeCsv ?? true} onChange={e => setEditing({ ...editing, includeCsv: e.target.checked })}/>Attach CSV</label>
+              <label className="inline-check"><input type="checkbox" checked={editing.enabled ?? true} onChange={e => setEditing({ ...editing, enabled: e.target.checked })}/>Enabled</label>
+              <div className="report-editor-buttons">
                 <button className="btn-secondary" onClick={() => setEditing(null)}>Cancel</button>
                 <button className="btn-apply" disabled={busy} onClick={save}>{editing.id ? "Save" : "Create"}</button>
               </div>
@@ -187,13 +188,14 @@ export function ReportsPage() {
           <EmptyState message={canMutate ? "No schedules yet — create one to email the executive digest on a recurring cadence." : "No report schedules have been configured."}/>
         ) : (
           <table className="data-table">
-            <thead><tr><th scope="col">Report</th><th scope="col">Cadence</th><th scope="col">Recipients</th><th scope="col">Last run</th><th scope="col"></th></tr></thead>
+            <thead><tr><th scope="col">Report</th><th scope="col">Cadence</th><th scope="col">Recipients</th><th scope="col">Attachments</th><th scope="col">Last run</th><th scope="col"></th></tr></thead>
             <tbody>
               {schedules?.map(s => (
                 <tr key={s.id} style={{ opacity: s.enabled ? 1 : 0.55 }}>
                   <td><b>{s.name}</b>{!s.enabled && <span style={{ fontSize: 11, color: "var(--color-muted)", marginLeft: 6 }}>(disabled)</span>}</td>
                   <td style={{ whiteSpace: "nowrap" }}><Clock size={12} style={{ verticalAlign: "-2px", marginRight: 4, color: "var(--color-muted)" }}/>{cadenceLabel(s)}</td>
                   <td style={{ fontSize: 12, color: "var(--color-muted)" }}><Mail size={12} style={{ verticalAlign: "-2px", marginRight: 4 }}/>{s.recipients || "—"}</td>
+                  <td><Badge label={[s.includePdf ? "PDF" : null, s.includeCsv ? "CSV" : null].filter(Boolean).join(" + ") || "HTML"} tone="neutral"/></td>
                   <td style={{ fontSize: 12, color: "var(--color-muted)" }}>{s.lastRunAt ? `${fmtShort(s.lastRunAt)} · ${s.lastRunStatus ?? ""}` : "never"}</td>
                   <td style={{ whiteSpace: "nowrap", textAlign: "right" }}>
                     {canMutate && <>

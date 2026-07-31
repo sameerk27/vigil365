@@ -1,5 +1,7 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Mail;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using M365SecurityDashboard.Api.Data;
@@ -17,6 +19,8 @@ public sealed class NotificationSender(
     ILogger<NotificationSender> logger,
     IConfiguration? config = null)
 {
+    public sealed record ReportAttachment(string FileName, string ContentType, byte[] Bytes);
+
     private static readonly Dictionary<string, int> SeverityRank = new(StringComparer.OrdinalIgnoreCase)
     {
         ["informational"] = 0, ["low"] = 1, ["medium"] = 2, ["high"] = 3, ["critical"] = 4,
@@ -41,6 +45,7 @@ public sealed class NotificationSender(
         // Sensitive fields are stored DPAPI-encrypted at rest — decrypt for use only.
         var teamsUrl = protector.Unprotect(cfg.TeamsWebhookUrl);
         var webhookUrl = protector.Unprotect(cfg.WebhookUrl);
+        var webhookSecret = protector.Unprotect(cfg.WebhookSigningSecret);
         var smtpPassword = protector.Unprotect(cfg.SmtpPassword);
 
         // Channels in digest mode are skipped here — the NotificationDigestWorker
@@ -49,7 +54,7 @@ public sealed class NotificationSender(
             await SendTeamsAsync(db, teamsUrl!, alert, ct);
 
         if (cfg.WebhookEnabled && !cfg.WebhookDigest && !string.IsNullOrWhiteSpace(webhookUrl))
-            await SendWebhookAsync(db, webhookUrl!, alert, ct);
+            await SendWebhookAsync(db, webhookUrl!, webhookSecret, alert, ct);
 
         if (cfg.EmailEnabled && !cfg.EmailDigest && !string.IsNullOrWhiteSpace(cfg.SmtpHost))
         {
@@ -74,12 +79,13 @@ public sealed class NotificationSender(
     {
         var teamsUrl = protector.Unprotect(cfg.TeamsWebhookUrl);
         var webhookUrl = protector.Unprotect(cfg.WebhookUrl);
+        var webhookSecret = protector.Unprotect(cfg.WebhookSigningSecret);
         var smtpPassword = protector.Unprotect(cfg.SmtpPassword);
 
         if (cfg.TeamsEnabled && !failingChannels.Contains("teams") && !string.IsNullOrWhiteSpace(teamsUrl))
             await SendTeamsAsync(db, teamsUrl!, notice, ct);
         if (cfg.WebhookEnabled && !failingChannels.Contains("webhook") && !string.IsNullOrWhiteSpace(webhookUrl))
-            await SendWebhookAsync(db, webhookUrl!, notice, ct);
+            await SendWebhookAsync(db, webhookUrl!, webhookSecret, notice, ct);
         if (cfg.EmailEnabled && !failingChannels.Contains("email") && !string.IsNullOrWhiteSpace(cfg.SmtpHost))
         {
             var to = FirstNonEmpty(cfg.DefaultRecipient, cfg.FromAddress);
@@ -156,7 +162,7 @@ public sealed class NotificationSender(
     /// </summary>
     public async Task<(bool ok, string? error)> SendReportEmailAsync(
         NotificationSettings cfg, IEnumerable<string> recipients, string subject,
-        string htmlBody, string? csv, string csvFileName, CancellationToken ct)
+        string htmlBody, IEnumerable<ReportAttachment> attachments, CancellationToken ct)
     {
         if (!cfg.EmailEnabled || string.IsNullOrWhiteSpace(cfg.SmtpHost))
             return (false, "SMTP email is not configured. Set it up in Settings → Notifications first.");
@@ -165,7 +171,7 @@ public sealed class NotificationSender(
         if (to.Count == 0) return (false, "No recipients configured for this report.");
 
         var smtpPassword = protector.Unprotect(cfg.SmtpPassword);
-        System.IO.MemoryStream? attachmentStream = null;
+        var attachmentStreams = new List<System.IO.MemoryStream>();
         try
         {
             using var msg = new MailMessage
@@ -177,10 +183,12 @@ public sealed class NotificationSender(
             };
             foreach (var r in to) msg.To.Add(r);
 
-            if (!string.IsNullOrEmpty(csv))
+            foreach (var attachment in attachments)
             {
-                attachmentStream = new System.IO.MemoryStream(Encoding.UTF8.GetBytes(csv));
-                msg.Attachments.Add(new Attachment(attachmentStream, csvFileName, "text/csv"));
+                if (attachment.Bytes.Length == 0) continue;
+                var stream = new System.IO.MemoryStream(attachment.Bytes);
+                attachmentStreams.Add(stream);
+                msg.Attachments.Add(new Attachment(stream, attachment.FileName, attachment.ContentType));
             }
 
             using var client = new SmtpClient(cfg.SmtpHost, cfg.SmtpPort)
@@ -200,7 +208,7 @@ public sealed class NotificationSender(
         }
         finally
         {
-            attachmentStream?.Dispose();
+            foreach (var stream in attachmentStreams) stream.Dispose();
         }
     }
 
@@ -215,6 +223,7 @@ public sealed class NotificationSender(
         if (alerts.Count == 0) return 0;
         var teamsUrl = protector.Unprotect(cfg.TeamsWebhookUrl);
         var webhookUrl = protector.Unprotect(cfg.WebhookUrl);
+        var webhookSecret = protector.Unprotect(cfg.WebhookSigningSecret);
         var smtpPassword = protector.Unprotect(cfg.SmtpPassword);
         var sent = 0;
 
@@ -248,7 +257,7 @@ public sealed class NotificationSender(
                 source = "Vigil365", kind = "digest", count = alerts.Count,
                 alerts = ordered.Select(a => new { a.PolicyName, a.Severity, a.Category, a.MetricValue, a.Threshold, a.TriggeredAt }),
             });
-            if (await PostDigestAsync(db, "webhook", webhookUrl!, payload, alerts.Count, ct)) sent++;
+            if (await PostDigestAsync(db, "webhook", webhookUrl!, payload, alerts.Count, ct, webhookSecret)) sent++;
         }
 
         if (cfg.EmailEnabled && cfg.EmailDigest && !string.IsNullOrWhiteSpace(cfg.SmtpHost))
@@ -259,7 +268,7 @@ public sealed class NotificationSender(
         return sent;
     }
 
-    private async Task<bool> PostDigestAsync(AppDbContext db, string channel, string url, string json, int count, CancellationToken ct)
+    private async Task<bool> PostDigestAsync(AppDbContext db, string channel, string url, string json, int count, CancellationToken ct, string? signingSecret = null)
     {
         var log = new NotificationLog { TriggeredAlertId = Guid.Empty, PolicyName = $"Daily digest ({count})", Channel = channel, Target = Truncate(url, 120) };
         try
@@ -267,6 +276,7 @@ public sealed class NotificationSender(
             var http = httpFactory.CreateClient();
             http.Timeout = TimeSpan.FromSeconds(15);
             using var content = new StringContent(json, Encoding.UTF8, "application/json");
+            AddWebhookSignature(content.Headers, json, signingSecret);
             using var resp = await http.PostAsync(url, content, ct);
             log.Success = resp.IsSuccessStatusCode;
             if (!resp.IsSuccessStatusCode) log.Error = Truncate($"{(int)resp.StatusCode} {resp.ReasonPhrase}", 1000);
@@ -385,7 +395,7 @@ public sealed class NotificationSender(
         await PostJsonAsync(db, "teams", url, JsonSerializer.Serialize(cardPayload), a, ct);
     }
 
-    private async Task SendWebhookAsync(AppDbContext db, string url, TriggeredAlert a, CancellationToken ct)
+    private async Task SendWebhookAsync(AppDbContext db, string url, string? signingSecret, TriggeredAlert a, CancellationToken ct)
     {
         var payload = JsonSerializer.Serialize(new
         {
@@ -401,10 +411,10 @@ public sealed class NotificationSender(
             status = a.Status,
             link = AlertLink(a),
         });
-        await PostJsonAsync(db, "webhook", url, payload, a, ct);
+        await PostJsonAsync(db, "webhook", url, payload, a, ct, signingSecret);
     }
 
-    private async Task PostJsonAsync(AppDbContext db, string channel, string url, string json, TriggeredAlert a, CancellationToken ct)
+    private async Task PostJsonAsync(AppDbContext db, string channel, string url, string json, TriggeredAlert a, CancellationToken ct, string? signingSecret = null)
     {
         var log = new NotificationLog { TriggeredAlertId = a.Id, PolicyName = a.PolicyName, Channel = channel, Target = Truncate(url, 120) };
         try
@@ -412,6 +422,7 @@ public sealed class NotificationSender(
             var http = httpFactory.CreateClient();
             http.Timeout = TimeSpan.FromSeconds(15);
             using var content = new StringContent(json, Encoding.UTF8, "application/json");
+            AddWebhookSignature(content.Headers, json, signingSecret);
             using var resp = await http.PostAsync(url, content, ct);
             log.Success = resp.IsSuccessStatusCode;
             if (!resp.IsSuccessStatusCode)
@@ -424,6 +435,17 @@ public sealed class NotificationSender(
             logger.LogWarning(ex, "Notification {Channel} failed for policy {Policy}", channel, a.PolicyName);
         }
         db.NotificationLogs.Add(log);
+    }
+
+    private static void AddWebhookSignature(HttpContentHeaders headers, string json, string? signingSecret)
+    {
+        if (string.IsNullOrWhiteSpace(signingSecret)) return;
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
+        var body = $"{timestamp}.{json}";
+        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(signingSecret));
+        var signature = Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes(body))).ToLowerInvariant();
+        headers.Add("X-Vigil365-Timestamp", timestamp);
+        headers.Add("X-Vigil365-Signature", $"sha256={signature}");
     }
 
     private async Task SendEmailAsync(AppDbContext db, NotificationSettings cfg, string? smtpPassword, string to, TriggeredAlert a, CancellationToken ct)

@@ -67,12 +67,25 @@ public sealed class ReportScheduleWorker(
         var window = schedule.Cadence switch { "daily" => 1, "monthly" => 30, _ => 7 };
         var builder = sp.GetRequiredService<DigestBuilder>();
         var digest = await builder.BuildAsync(window, ct);
+        var attachments = new List<NotificationSender.ReportAttachment>();
+        if (schedule.IncludeCsv && !string.IsNullOrEmpty(digest.Csv))
+            attachments.Add(new NotificationSender.ReportAttachment(
+                $"vigil365-digest-{digest.GeneratedAt:yyyyMMdd}.csv",
+                "text/csv",
+                System.Text.Encoding.UTF8.GetBytes(digest.Csv)));
+        if (schedule.IncludePdf)
+        {
+            var pdf = sp.GetRequiredService<DigestPdfRenderer>().Render(digest);
+            attachments.Add(new NotificationSender.ReportAttachment(
+                $"vigil365-exec-digest-{digest.GeneratedAt:yyyyMMdd}.pdf",
+                "application/pdf",
+                pdf));
+        }
 
         var sender = sp.GetRequiredService<NotificationSender>();
-        var csvName = $"vigil365-digest-{digest.GeneratedAt:yyyyMMdd}.csv";
         var (ok, error) = await sender.SendReportEmailAsync(
             cfg, recipients, digest.Subject, digest.HtmlBody,
-            schedule.IncludeCsv ? digest.Csv : null, csvName, ct);
+            attachments, ct);
 
         return ok
             ? (true, $"sent to {recipients.Count} recipient{(recipients.Count == 1 ? "" : "s")}")

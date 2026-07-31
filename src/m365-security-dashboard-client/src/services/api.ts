@@ -171,6 +171,24 @@ export const reportApi = {
   },
 };
 
+// ─── API tokens for SIEM/read-only machine integrations ──────────────────────
+export const apiTokenApi = {
+  async list(): Promise<import("./types").ApiTokenInfo[]> {
+    try { const r = await apiFetch(`${apiBase}/api/api-tokens`); return r.ok ? await r.json() : []; } catch { return []; }
+  },
+  async create(input: { name: string; scopes: string; expiresAt?: string | null }): Promise<import("./types").ApiTokenCreated | null> {
+    try {
+      const r = await apiFetch(`${apiBase}/api/api-tokens`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+      });
+      return r.ok ? await r.json() : null;
+    } catch { return null; }
+  },
+  async revoke(id: string): Promise<boolean> {
+    try { const r = await apiFetch(`${apiBase}/api/api-tokens/${id}/revoke`, { method: "POST" }); return r.ok; } catch { return false; }
+  },
+};
+
 // ─── Conditional Access gap analysis ──────────────────────────────────────────
 export const caApi = {
   async getGaps(): Promise<import("./types").CaGapAnalysis | null> {

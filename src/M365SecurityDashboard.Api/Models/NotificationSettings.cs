@@ -42,6 +42,10 @@ public sealed class NotificationSettings
     [MaxLength(2048)]
     public string? WebhookUrl { get; set; }
 
+    /// <summary>Optional DPAPI-protected HMAC secret used to sign SIEM webhook payloads.</summary>
+    [MaxLength(512)]
+    public string? WebhookSigningSecret { get; set; }
+
     /// <summary>Only send notifications at or above this severity (low|medium|high|critical).</summary>
     [MaxLength(20)]
     public string MinSeverity { get; set; } = "low";
