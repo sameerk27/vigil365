@@ -4,6 +4,9 @@ import { LicenseData, InactiveUsersData, PasswordExpiryData } from "../services/
 import { fmtDate, expiryChip } from "../services/utils";
 import { KpiTile, Card, Badge, EmptyState, ProgressBar, MiniBarChart, InlineError, InfoRow, ExportDropdown } from "../components/SharedComponents";
 
+/** Rows shown per password-expiry group before the table says what it is hiding. */
+const PW_ROW_CAP = 10;
+
 export function LicensesPage({ licenses, inactive, passwords }: {
   licenses: LicenseData|null; inactive: InactiveUsersData|null; passwords: PasswordExpiryData|null
 }) {
@@ -141,7 +144,7 @@ export function LicensesPage({ licenses, inactive, passwords }: {
               <table className="data-tbl">
                 <thead><tr><th scope="col">User</th><th scope="col">Days Until Expiry</th><th scope="col">Last Changed</th><th scope="col">Status</th></tr></thead>
                 <tbody>
-                  {passwords.expired.slice(0,5).map((u,i)=>{
+                  {passwords.expired.slice(0,PW_ROW_CAP).map((u,i)=>{
                     const c=expiryChip(u.daysUntilExpiry);
                     return (
                     <tr key={`exp-${i}`}>
@@ -151,7 +154,7 @@ export function LicensesPage({ licenses, inactive, passwords }: {
                       <td><Badge label="Expired" tone="error"/></td>
                     </tr>
                   );})}
-                  {passwords.expiringSoon.map((u,i)=>{
+                  {passwords.expiringSoon.slice(0,PW_ROW_CAP).map((u,i)=>{
                     const c=expiryChip(u.daysUntilExpiry);
                     return (
                     <tr key={`soon-${i}`}>
@@ -161,6 +164,18 @@ export function LicensesPage({ licenses, inactive, passwords }: {
                       <td><Badge label={u.daysUntilExpiry<=3?"Critical":"Expiring Soon"} tone={u.daysUntilExpiry<=3?"error":"warning"}/></td>
                     </tr>
                   );})}
+                  {/* The card badge states the full counts, so a silently capped
+                      table made the two disagree — and it capped the *expired*
+                      list, the more urgent one, while showing every
+                      expiring-soon row. Cap both, and say what is hidden. */}
+                  {(passwords.expired.length>PW_ROW_CAP||passwords.expiringSoon.length>PW_ROW_CAP)&&(
+                    <tr><td colSpan={4} className="td-empty">
+                      Showing the first {PW_ROW_CAP} of each group
+                      {passwords.expired.length>PW_ROW_CAP&&` · ${passwords.expired.length-PW_ROW_CAP} more expired`}
+                      {passwords.expiringSoon.length>PW_ROW_CAP&&` · ${passwords.expiringSoon.length-PW_ROW_CAP} more expiring soon`}
+                      . Export for the full list.
+                    </td></tr>
+                  )}
                   {passwords.expired.length===0&&passwords.expiringSoon.length===0&&(
                     <tr><td colSpan={4} className="td-empty">No passwords expiring in the next 14 days</td></tr>
                   )}

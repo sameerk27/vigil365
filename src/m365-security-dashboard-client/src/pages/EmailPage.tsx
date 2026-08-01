@@ -3,7 +3,7 @@ import { Inbox, AlertTriangle, ShieldAlert, CheckCircle, Archive, Send, XCircle,
 import { SecurityAlert, EmailProtectionData, EmailProtectionAlert, Tone } from "../services/types";
 import { fmtDate, relTime, fmtFullTime } from "../services/utils";
 import { consumeNavSeed } from "../services/api";
-import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, ExportDropdown, SectHdr } from "../components/SharedComponents";
+import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, ExportDropdown, SectHdr , SeverityFilter} from "../components/SharedComponents";
 
 export function EmailPage({ alerts, emailProtection, onAlertClick }:
   { alerts: SecurityAlert[]; emailProtection: EmailProtectionData|null; onAlertClick:(a:SecurityAlert)=>void }) {
@@ -168,13 +168,7 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
               <input value={search} onChange={e=>setSearch(e.target.value)}
                 placeholder="Search alert title, description…" className="search-input"/>
             </label>
-            <select value={sevFilter} onChange={e=>setSevFilter(e.target.value)} className="filter-sel" style={{fontSize:12,padding:"5px 8px"}}>
-              <option value="">All severities</option>
-              <option value="high">High</option>
-              <option value="medium">Medium</option>
-              <option value="low">Low</option>
-              <option value="informational">Informational</option>
-            </select>
+            <SeverityFilter value={sevFilter} onChange={setSevFilter}/>
             {mdoCategories.length>0&&(
               <select value={catFilter} onChange={e=>setCatFilter(e.target.value)} className="filter-sel" style={{fontSize:12,padding:"5px 8px"}}>
                 <option value="">All categories</option>

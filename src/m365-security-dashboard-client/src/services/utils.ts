@@ -63,6 +63,33 @@ export function fmtUtc(iso?: string): string {
   return isNaN(d.getTime()) ? "–" : `${d.toISOString().slice(0, 19).replace("T", " ")} UTC`;
 }
 
+/**
+ * Conditional Access grant/session controls arrive from Graph as raw camelCase
+ * tokens ("mfa", "compliantDevice", "approvedApplication") and were rendered
+ * straight into badges, so the page read like an API response rather than a
+ * policy summary. Unknown tokens fall back to a de-camelCased form rather than
+ * being hidden — a control we cannot name is still a control that applies.
+ */
+const CA_CONTROL_LABELS: Record<string, string> = {
+  mfa: "Require MFA",
+  compliantDevice: "Require compliant device",
+  domainJoinedDevice: "Require hybrid Entra joined device",
+  approvedApplication: "Require approved client app",
+  compliantApplication: "Require app protection policy",
+  passwordChange: "Require password change",
+  block: "Block access",
+  unknownFutureValue: "Unknown control",
+};
+
+export function fmtCaControl(token: string): string {
+  if (!token) return "—";
+  const known = CA_CONTROL_LABELS[token];
+  if (known) return known;
+  // e.g. "someNewControl" -> "Some new control"
+  const spaced = token.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
 export function sevColor(s: string): string {
   const key = s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
   return ({

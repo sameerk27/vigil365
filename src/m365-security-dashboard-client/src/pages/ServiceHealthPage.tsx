@@ -2,7 +2,7 @@ import React, { useState, useMemo } from "react";
 import { Activity, CheckCircle, Clock, Globe, Search, AlertCircle, ShieldCheck } from "lucide-react";
 import { ServiceHealthData } from "../services/types";
 import { fmtDate, relTime } from "../services/utils";
-import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, ExportDropdown } from "../components/SharedComponents";
+import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, ExportDropdown , SeverityFilter} from "../components/SharedComponents";
 import { ServiceHealthGrid, M365_SVCS, matchSvcIssue } from "../components/ServiceHealthGrid";
 
 // Re-exported for existing importers (NetworkPage); the definitions live with the grid.
@@ -65,12 +65,7 @@ export function ServiceHealthPage({ serviceHealth }: { serviceHealth: ServiceHea
                 <input value={svcSearch} onChange={e=>setSvcSearch(e.target.value)}
                   placeholder="Search service, description…" className="search-input"/>
               </label>
-              <select value={sevFilter} onChange={e=>setSevFilter(e.target.value)} className="filter-sel" style={{fontSize:12,padding:"5px 8px"}}>
-                <option value="">All severities</option>
-                <option value="high">High</option>
-                <option value="medium">Medium</option>
-                <option value="low">Low</option>
-              </select>
+              <SeverityFilter value={sevFilter} onChange={setSevFilter}/>
               <ExportDropdown rows={filteredIssues.map(i=>({ Title:i.title, Severity:i.severity, Detected:i.detectedAt, Description:i.description??"" }))} filename="service-health-advisories.csv"/>
               {(svcSearch||sevFilter)&&<button className="btn-apply" style={{padding:"5px 10px",fontSize:12}} onClick={()=>{setSvcSearch("");setSevFilter("");}}>Clear</button>}
             </div>

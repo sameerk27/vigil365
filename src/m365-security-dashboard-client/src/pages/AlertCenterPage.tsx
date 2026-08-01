@@ -4,7 +4,7 @@ import { AlertPolicy, TriggeredAlert, NotificationSettings, NotificationLogEntry
 import { acApi, recApi, wbApi, useAuth, crossNavigate, consumeNavTab } from "../services/api";
 import { showToast } from "../services/toast";
 import { confirmAction } from "../services/confirm";
-import { DetailField, KpiTile, Card, Badge, EmptyState, MiniBarChart, ExportDropdown, ProgressBar, CopyButton, LoadingSkeleton, TriageSection, rowActivation} from "../components/SharedComponents";
+import { DetailField, KpiTile, Card, Badge, EmptyState, MiniBarChart, ExportDropdown, ProgressBar, CopyButton, LoadingSkeleton, TriageSection, rowActivation, SeverityFilter} from "../components/SharedComponents";
 import { CollectionHealthCard } from "../components/CollectionHealthCard";
 import { CollectionStatusBanner } from "../components/CollectionStatusBanner";
 import { CollectionRunHistory } from "../components/CollectionRunHistory";
@@ -678,11 +678,30 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
     try {
       const targets = filteredTA.filter(a => selected.has(a.id) && a.status !== "resolved" && a.status !== "auto_resolved");
       let ok = 0;
+      // Keyed by id, not policyName — several alerts can share a policy name.
+      const failedIds = new Set<string>();
+      const failed: string[] = [];
       for (const a of targets) {
         if (action === "acknowledge" ? await acApi.acknowledge(a.id) : await acApi.resolve(a.id)) ok++;
+        else { failedIds.add(a.id); failed.push(a.policyName); }
       }
-      showToast(`${action === "acknowledge" ? "Acknowledged" : "Resolved"} ${ok} alert${ok !== 1 ? "s" : ""}`);
-      setSelected(new Set());
+
+      // Counting only successes meant "Acknowledged 7 alerts" after 3 silently
+      // failed — the analyst believes the queue is clear when it is not.
+      const verb = action === "acknowledge" ? "Acknowledged" : "Resolved";
+      if (failed.length === 0) {
+        showToast(`${verb} ${ok} alert${ok !== 1 ? "s" : ""}`);
+      } else {
+        const names = failed.slice(0, 3).join(", ");
+        const more = failed.length > 3 ? ` and ${failed.length - 3} more` : "";
+        showToast(
+          `${verb} ${ok} of ${targets.length}. Failed: ${names}${more}. Those alerts are still open.`,
+          "error");
+      }
+
+      // Keep failed alerts selected so the analyst can retry without re-finding
+      // them; clear only what actually succeeded.
+      setSelected(failedIds);
       await onChanged();
     } finally { setBulkBusy(false); }
   };
@@ -1033,10 +1052,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                 <input className="search-input" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search policy…"/>
               </label>
               <input type="date" className="filter-sel" value={dateFilter} onChange={e=>setDateFilter(e.target.value)} title="Filter by date"/>
-              <select className="filter-sel" value={sevFilter} onChange={e=>setSevFilter(e.target.value)}>
-                <option value="">All severities</option>
-                {["critical","high","medium","low"].map(s=><option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>)}
-              </select>
+              <SeverityFilter value={sevFilter} onChange={setSevFilter}/>
               <select className="filter-sel" value={catFilter} onChange={e=>setCatFilter(e.target.value)}>
                 <option value="">All categories</option>
                 {["identity","devices","email","compliance","licenses"].map(c=><option key={c} value={c}>{c.charAt(0).toUpperCase()+c.slice(1)}</option>)}

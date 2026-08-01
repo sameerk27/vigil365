@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { ShieldCheck, Eye, ShieldOff, Shield, Search } from "lucide-react";
 import { ConditionalAccessData, CAPolicy, Tone } from "../services/types";
+import { fmtCaControl } from "../services/utils";
 import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, ExportDropdown, InfoRow, rowActivation} from "../components/SharedComponents";
 import { FilterPresets } from "../components/FilterPresets";
 
@@ -39,7 +40,7 @@ export function ConditionalAccessPage({ data }: { data: ConditionalAccessData|nu
           {selectedPolicy.controls.length > 0 && (
             <>
               <div className="dm-section-hdr">Grant Controls</div>
-              {selectedPolicy.controls.map((c,i)=><DetailField key={i} label={`Control ${i+1}`} value={c}/>)}
+              {selectedPolicy.controls.map((c,i)=><DetailField key={i} label={`Control ${i+1}`} value={fmtCaControl(c)}/>)}
             </>
           )}
         </DetailModal>
@@ -74,7 +75,7 @@ export function ConditionalAccessPage({ data }: { data: ConditionalAccessData|nu
               <option value="enabledForReportingButNotEnforced">Report Only</option>
               <option value="disabled">Disabled</option>
             </select>
-            <ExportDropdown rows={filteredPolicies.map(p=>({ Name:p.name, State:stateLabel(p.state), Scope:p.inclUsers, Apps:p.apps, Controls:p.controls.join("; ") }))} filename="ca-policies.csv"/>
+            <ExportDropdown rows={filteredPolicies.map(p=>({ Name:p.name, State:stateLabel(p.state), Scope:p.inclUsers, Apps:p.apps, Controls:p.controls.map(fmtCaControl).join("; ") }))} filename="ca-policies.csv"/>
             {(policySearch||stateFilter)&&<button className="btn-apply" style={{padding:"5px 10px",fontSize:12}} onClick={()=>{setPolicySearch("");setStateFilter("");}}>Clear</button>}
             <FilterPresets pageKey="ca-policies" filters={{policySearch,stateFilter}}
               onLoad={f=>{setPolicySearch(f.policySearch??"");setStateFilter(f.stateFilter??"");}}/>
@@ -103,7 +104,7 @@ export function ConditionalAccessPage({ data }: { data: ConditionalAccessData|nu
                           </td>
                           <td className="al-desc trunc" style={{maxWidth:120}} title={p.apps}>{p.apps}</td>
                           <td style={{display:"flex",flexWrap:"wrap",gap:4,paddingTop:8}}>
-                            {p.controls.length>0?p.controls.map((c,j)=><Badge key={j} label={c} tone="info"/>):<span className="al-desc">None</span>}
+                            {p.controls.length>0?p.controls.map((c,j)=><Badge key={j} label={fmtCaControl(c)} tone="info"/>):<span className="al-desc">None</span>}
                           </td>
                         </tr>
                       ))}

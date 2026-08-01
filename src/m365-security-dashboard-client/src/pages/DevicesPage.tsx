@@ -3,7 +3,7 @@ import { Monitor, XCircle, Clock, ShieldAlert, Search, Laptop, CheckCircle, Eye,
 import { DevicesData, SecurityAlert, MdeVulnerabilitiesData, MdeAlert } from "../services/types";
 import { pctTone, fmtDate, relTime, fmtFullTime } from "../services/utils";
 import { consumeNavSeed, crossNavigate } from "../services/api";
-import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, MiniBarChart, InfoRow, CircleGauge, ExportDropdown, StatBox, SectHdr, rowActivation} from "../components/SharedComponents";
+import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, MiniBarChart, InfoRow, CircleGauge, ExportDropdown, StatBox, SectHdr, rowActivation, SeverityFilter} from "../components/SharedComponents";
 
 export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick }:
   { devices: DevicesData|null; alerts: SecurityAlert[]; mdeVulnerabilities: MdeVulnerabilitiesData|null; onAlertClick:(a:SecurityAlert)=>void }) {
@@ -144,13 +144,7 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
               <input value={ncSearch} onChange={e=>setNcSearch(e.target.value)}
                 placeholder="Search device or user…" className="search-input"/>
             </label>
-            <select value={ncSev} onChange={e=>setNcSev(e.target.value)} className="filter-sel" style={{fontSize:12,padding:"5px 8px"}}>
-              <option value="">All severities</option>
-              <option value="critical">Critical</option>
-              <option value="high">High</option>
-              <option value="medium">Medium</option>
-              <option value="low">Low</option>
-            </select>
+            <SeverityFilter value={ncSev} onChange={setNcSev}/>
             <ExportDropdown rows={nonCompliant.map(a=>({ Device:a.deviceName??a.title, User:a.userPrincipalName??"", Severity:a.severity, Detected:a.detectedAt }))} filename="non-compliant-devices.csv"/>
             {(ncSearch||ncSev)&&<button className="btn-apply" style={{padding:"5px 10px",fontSize:12}} onClick={()=>{setNcSearch("");setNcSev("");}}>Clear</button>}
           </div>
@@ -230,13 +224,7 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
                 <input value={mdeSearch} onChange={e=>setMdeSearch(e.target.value)}
                   placeholder="Search title, category…" className="search-input"/>
               </label>
-              <select value={mdeSev} onChange={e=>setMdeSev(e.target.value)} className="filter-sel" style={{fontSize:12,padding:"5px 8px"}}>
-                <option value="">All severities</option>
-                <option value="high">High</option>
-                <option value="medium">Medium</option>
-                <option value="low">Low</option>
-                <option value="informational">Informational</option>
-              </select>
+              <SeverityFilter value={mdeSev} onChange={setMdeSev}/>
               <ExportDropdown rows={filteredMde.map(a=>({ Title:a.title??"", Severity:a.severity, Category:a.category??"", Status:a.status, Detected:a.createdDateTime??"" }))} filename="mde-alerts.csv"/>
               {(mdeSearch||mdeSev)&&<button className="btn-apply" style={{padding:"5px 10px",fontSize:12}} onClick={()=>{setMdeSearch("");setMdeSev("");}}>Clear</button>}
             </div>

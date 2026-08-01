@@ -2,7 +2,7 @@ import React, { useState, useMemo } from "react";
 import { Shield, FileText, Star, Search, ShieldAlert, ShieldCheck, Flag, ExternalLink, CheckCircle2, XCircle } from "lucide-react";
 import { SecureScore, Overview, DlpAlertsData, PurviewData, McasAlertsData, InsiderRiskData, AttackSimulationData, DlpAlert, McasAlert, InsiderRiskAlert, AttackSim, Tone, IdentityData, DevicesData, ConditionalAccessData, SecurityIncidentsData, PrivilegedRolesData, EmailProtectionData } from "../services/types";
 import { fmtDate, relTime, pctTone, sevTone } from "../services/utils";
-import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, ProgressBar, ExportDropdown, StatBox, SectHdr, rowActivation} from "../components/SharedComponents";
+import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, ProgressBar, ExportDropdown, StatBox, SectHdr, rowActivation, SeverityFilter} from "../components/SharedComponents";
 import { FilterPresets } from "../components/FilterPresets";
 
 export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcasAlerts, insiderRisk, attackSimulation, identity, devices, ca, securityIncidents, privilegedRoles, emailProtection }: {
@@ -304,13 +304,7 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
           <input value={alertSearch} onChange={e=>setAlertSearch(e.target.value)}
             placeholder="Search DLP, MCAS, IRM alerts…" className="search-input"/>
         </label>
-        <select value={alertSev} onChange={e=>setAlertSev(e.target.value)} className="filter-sel">
-          <option value="">All severities</option>
-          <option value="high">High</option>
-          <option value="medium">Medium</option>
-          <option value="low">Low</option>
-          <option value="informational">Informational</option>
-        </select>
+        <SeverityFilter value={alertSev} onChange={setAlertSev}/>
         <ExportDropdown rows={[
           ...filteredDlp.map(a=>({Source:"DLP",Title:a.title??"",Severity:a.severity,Status:a.status,Detected:a.createdDateTime??""})),
           ...filteredMcas.map(a=>({Source:"MCAS",Title:a.title??"",Severity:a.severity,Status:a.status,Detected:a.createdDateTime??""})),

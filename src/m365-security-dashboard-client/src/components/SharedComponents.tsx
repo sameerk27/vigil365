@@ -315,6 +315,34 @@ export function KpiTile({ icon, label, value, sub, tone="neutral", needsPerm, on
 }
 
 /**
+ * The one severity filter. Every page used to hand-roll this select, and they
+ * drifted into four different vocabularies — Email, Compliance and Service
+ * Health omitted "Critical" entirely, so a critical alert on those pages could
+ * not be filtered for at all. Values stay lowercase because that is what the
+ * existing page filters compare against.
+ */
+export const SEVERITY_OPTIONS = [
+  { value: "critical", label: "Critical" },
+  { value: "high", label: "High" },
+  { value: "medium", label: "Medium" },
+  { value: "low", label: "Low" },
+  { value: "informational", label: "Informational" },
+] as const;
+
+export function SeverityFilter({ value, onChange, ariaLabel = "Filter by severity" }: {
+  value: string; onChange: (v: string) => void; ariaLabel?: string;
+}) {
+  return (
+    <select value={value} onChange={e => onChange(e.target.value)}
+      className="filter-sel" aria-label={ariaLabel}
+      style={{ fontSize: 12, padding: "5px 8px" }}>
+      <option value="">All severities</option>
+      {SEVERITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+  );
+}
+
+/**
  * Makes a non-button element behave like a button for keyboard and screen-reader
  * users. Table rows are the reason this exists: a <tr> cannot legally contain a
  * button wrapping the whole row, so rows that open a detail panel were reachable
