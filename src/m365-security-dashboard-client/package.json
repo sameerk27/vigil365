@@ -19,8 +19,11 @@
     "vite": "^6.0.7"
   },
   "devDependencies": {
+    "@types/jsdom": "^28.0.3",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "axe-core": "^4.12.1",
+    "jsdom": "^29.1.1",
     "vitest": "^4.1.10"
   }
 }
