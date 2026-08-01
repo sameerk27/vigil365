@@ -5,6 +5,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <SpaRoot>..\m365-security-dashboard-client\</SpaRoot>
     <UserSecretsId>m365-security-dashboard-api</UserSecretsId>
+    <!-- Release version. Must match the client's package.json "version" — CI
+         fails the build if they drift (scripts/check-version.ps1). Surfaced by
+         /health and by the sidebar chip, so a support report names a real build. -->
+    <Version>1.0.0</Version>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Azure.Identity" Version="1.17.2" />

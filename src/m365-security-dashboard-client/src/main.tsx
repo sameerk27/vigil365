@@ -50,8 +50,10 @@ import { ReportsPage } from "./pages/ReportsPage";
 import { EntityPage } from "./pages/EntityPage";
 import { ActivityFeedPage } from "./pages/ActivityFeedPage";
 
-// App version — surfaced in the sidebar so the running build is always identifiable.
-export const APP_VERSION = "1.0.0";
+// App version — surfaced in the sidebar so the running build is always
+// identifiable. Injected by Vite from package.json rather than hardcoded, so it
+// cannot drift from the version that was actually built and shipped.
+export const APP_VERSION: string = __APP_VERSION__;
 
 // ─── MSAL instances local to bootstrapping ─────────────────────────────────────
 let _msalInstance: PublicClientApplication | null = null;
