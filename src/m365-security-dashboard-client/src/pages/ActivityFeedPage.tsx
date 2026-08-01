@@ -71,7 +71,7 @@ export function ActivityFeedPage() {
             <ExportDropdown rows={(data?.items ?? []).map(e => ({
               Occurred: e.occurredAt, Activity: e.activity, Category: e.category ?? "",
               Actor: e.actorUpn ?? e.actorApp ?? "", Target: e.targetName ?? "", Result: e.result ?? "",
-            }))} filename="tenant-activity.csv"/>
+            }))} filename="tenant-activity.csv" scopeTotal={data?.total}/>
           </div>
         }>
         <div style={{ fontSize: 12, color: "var(--color-muted)", padding: "0 0 12px", lineHeight: 1.6 }}>

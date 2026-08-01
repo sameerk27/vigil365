@@ -292,6 +292,10 @@ export function IncidentsPage({ alerts, alertsTotal, serviceHealth, defenderAler
               return { Source:"Advisory", Title:i.data.title, Severity:i.data.severity, User:"", Detected:i.data.detectedAt };
             })}
             filename="incidents.csv"
+            // Only the Vigil365-alert portion is server-capped (200); Defender,
+            // incidents and advisories are fully loaded. So the true scope is
+            // what is on screen plus the alerts the cap hid.
+            scopeTotal={truncated ? filtered.length + ((alertsTotal ?? 0) - alerts.length) : undefined}
           />
           {(search||severity||typeFilter!=="all"||dateRange!=="all")&&(
             <button className="btn-apply" onClick={()=>{setSearch("");setSeverity("");setTypeFilter("all");setDateRange("all");}}>Clear</button>

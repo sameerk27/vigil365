@@ -6,7 +6,17 @@ import { showToast } from "../services/toast";
 import { useAuth, acApi, wbApi, openEntity, requestRefresh } from "../services/api";
 
 // ─── Export dropdown ──────────────────────────────────────────────────────────
-export function ExportDropdown({ rows, filename }: { rows: Record<string, unknown>[]; filename: string }) {
+/**
+ * `scopeTotal` is the number of records that exist server-side when that is
+ * larger than what the page has loaded. Several tables are paged or capped
+ * while their badge advertises the full count, so an export silently contained
+ * a subset — a CSV that looks complete and is not is worse than no export.
+ * Supplying it makes the menu and the confirmation toast state the real scope.
+ */
+export function ExportDropdown({ rows, filename, scopeTotal }: {
+  rows: Record<string, unknown>[]; filename: string; scopeTotal?: number;
+}) {
+  const partial = typeof scopeTotal === "number" && scopeTotal > rows.length;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -22,9 +32,17 @@ export function ExportDropdown({ rows, filename }: { rows: Record<string, unknow
       </button>
       {open && (
         <div className="export-dropdown" role="menu">
+          {partial && (
+            <div className="export-scope-note">
+              Exports the {rows.length} rows loaded here, not all {scopeTotal}. Narrow the
+              filters or page through to capture the rest.
+            </div>
+          )}
           <button role="menuitem" onClick={() => {
             downloadCsv(rows, filename);
-            showToast(`Exported ${rows.length} rows to ${filename}`);
+            showToast(partial
+              ? `Exported ${rows.length} of ${scopeTotal} rows to ${filename}`
+              : `Exported ${rows.length} rows to ${filename}`);
             setOpen(false);
           }}><Download size={13}/> Export CSV</button>
           <hr/>

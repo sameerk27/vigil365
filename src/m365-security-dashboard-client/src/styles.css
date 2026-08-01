@@ -528,6 +528,17 @@ select, input { font: inherit; }
 .perm-status.missing { color: var(--status-error-text); }
 .perm-status.unknown { color: var(--color-muted); }
 
+/* Scope warning inside the export menu when the table is paged or capped. */
+.export-scope-note {
+  padding: 8px 10px;
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  color: var(--sev-info-text);
+  background: var(--sev-info-bg);
+  border-bottom: 1px solid var(--color-border-subtle);
+  max-width: 260px;
+}
+
 /* ── Accessibility ────────────────────────────────────────────────────────── */
 /* Off-screen until focused, then pinned top-left — the standard skip-link
    pattern. Hiding it with display:none would remove it from the tab order and

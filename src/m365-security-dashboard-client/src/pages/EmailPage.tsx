@@ -27,11 +27,10 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
     return () => window.removeEventListener("nav-seed-update", listener);
   }, []);
 
-  const q = search.toLowerCase();
   const emailAlerts = useMemo(() => alerts.filter(a => a.service==="ExchangeOnline" || a.alertType==="MalwareDetection" || a.alertType==="QuarantinedMessage" || a.alertType==="MailFlowIssue"), [alerts]);
-  const quarantined = useMemo(() => emailAlerts.filter(a => a.alertType==="QuarantinedMessage" && (!q || (a.title+a.description+(a.userPrincipalName||"")).toLowerCase().includes(q))), [emailAlerts, q]);
-  const mailFlow = useMemo(() => emailAlerts.filter(a => a.alertType==="MailFlowIssue" && (!q || (a.title+a.description).toLowerCase().includes(q))), [emailAlerts, q]);
-  const malware = useMemo(() => emailAlerts.filter(a => a.alertType==="MalwareDetection" && (!q || (a.title+a.description).toLowerCase().includes(q))), [emailAlerts, q]);
+  const quarantined = useMemo(() => emailAlerts.filter(a => a.alertType==="QuarantinedMessage"), [emailAlerts]);
+  const mailFlow = useMemo(() => emailAlerts.filter(a => a.alertType==="MailFlowIssue"), [emailAlerts]);
+  const malware = useMemo(() => emailAlerts.filter(a => a.alertType==="MalwareDetection"), [emailAlerts]);
 
   const mdoCategories = useMemo(()=>
     [...new Set((emailProtection?.alerts??[]).map(a=>a.category).filter((c):c is string=>!!c))].sort(),
@@ -166,7 +165,7 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
             <label className="search-box" style={{minWidth:200}}>
               <Search size={14}/>
               <input value={search} onChange={e=>setSearch(e.target.value)}
-                placeholder="Search alert title, description…" className="search-input"/>
+                placeholder="Search MDO alerts…" className="search-input"/>
             </label>
             <SeverityFilter value={sevFilter} onChange={setSevFilter}/>
             {mdoCategories.length>0&&(
