@@ -63,6 +63,21 @@ export function UserManagementPage() {
 
   const changeRole = async (u: ManagedUser, role: AppRole) => {
     if (role === u.role) return;
+
+    // Demoting yourself takes effect immediately and removes the admin UI you
+    // would need to undo it. The server already blocks removing the LAST admin,
+    // but with other admins present this was a single mis-click on your own row.
+    const demotingSelf = u.email === myEmail && u.role === "Admin" && role !== "Admin";
+    if (demotingSelf) {
+      const ok = await confirmAction({
+        title: "Remove your own Admin access?",
+        message: `You are about to change your own role to ${role}. Admin controls — user management, API tokens, notification settings — will disappear immediately, and you will need another Admin to restore them.`,
+        confirmLabel: `Yes, make me ${role}`,
+        danger: true,
+      });
+      if (!ok) { await load(); return; } // reload to reset the select
+    }
+
     setBusy(u.email);
     try {
       const r = await apiFetch(`${apiBase}/api/admin/users/${encodeURIComponent(u.email)}/role`, {

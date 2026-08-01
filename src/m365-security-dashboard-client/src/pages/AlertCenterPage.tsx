@@ -491,7 +491,7 @@ function CoverageScorecardTab({ onChanged }: { onChanged: () => void | Promise<v
                 <tr key={r.id}>
                   <td><Badge label={r.isActive ? "Monitored" : "Blind spot"} tone={r.isActive ? "good" : "error"}/></td>
                   <td style={{ fontWeight: 600 }}>{r.title}</td>
-                  <td><Badge label={r.ruleType === "Vigil365" ? "In-App DB" : "Native M365"} tone={r.ruleType === "Vigil365" ? "info" : "neutral"}/></td>
+                  <td><Badge label={r.ruleType === "Vigil365" ? "Vigil365 Alerts" : "Native M365"} tone={r.ruleType === "Vigil365" ? "info" : "neutral"}/></td>
                   <td><Badge label={r.severity} tone={sevToneAC(r.severity)}/></td>
                   <td style={{ fontSize: 12.5, color: "var(--color-muted)", maxWidth: 320 }}>{r.description}</td>
                   <td style={{ textAlign: "right" }}>

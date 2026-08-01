@@ -286,7 +286,7 @@ export function IncidentsPage({ alerts, alertsTotal, serviceHealth, defenderAler
           </div>
           <ExportDropdown
             rows={filtered.map(i=>{
-              if (i.kind==="alert") return { Source:"SecurityDB", Title:i.data.title, Severity:i.data.severity, User:i.data.userPrincipalName??"", Detected:i.data.detectedAt };
+              if (i.kind==="alert") return { Source:"Vigil365 Alerts", Title:i.data.title, Severity:i.data.severity, User:i.data.userPrincipalName??"", Detected:i.data.detectedAt };
               if (i.kind==="defender") return { Source:"Defender", Title:i.data.title??"", Severity:i.data.severity, User:"", Detected:i.data.createdDateTime??"" };
               if (i.kind==="incident") return { Source:"Incident", Title:i.data.displayName??"", Severity:i.data.severity, User:"", Detected:i.data.createdDateTime??"" };
               return { Source:"Advisory", Title:i.data.title, Severity:i.data.severity, User:"", Detected:i.data.detectedAt };
