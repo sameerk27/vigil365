@@ -3,6 +3,7 @@ import { TrendingUp, TrendingDown, Minus, Info, Shield, Users, Smartphone, Shiel
 import { Card, LineChart, StateMessage, LoadingSkeleton, InlineError, CircleGauge, Badge } from "../components/SharedComponents";
 import { useAuth, apiFetch, apiBase } from "../services/api";
 import { fmtDate } from "../services/utils";
+import { selectTrendWindow } from "../services/trendWindow";
 
 type TrendSnapshot = {
   id: string;
@@ -50,13 +51,13 @@ export function TrendsPage() {
     return () => { active = false; };
   }, []);
 
-  const filteredSnapshots = useMemo(() => {
-    if (!snapshots.length) return [];
-    const latestDate = new Date(snapshots[snapshots.length - 1].capturedAt).getTime();
-    const cutoff = latestDate - (timeRange * 24 * 60 * 60 * 1000);
-    const filtered = snapshots.filter(s => new Date(s.capturedAt).getTime() >= cutoff);
-    return filtered.length > 1 ? filtered : snapshots.slice(-2);
-  }, [snapshots, timeRange]);
+  // A window holding fewer than two snapshots cannot be plotted. Substituting
+  // the last two silently — which is what this used to do — draws a line
+  // labelled "7 days" out of data captured outside those 7 days. selectTrendWindow
+  // reports when it fell back so every place that states the range can say so.
+  const { items: filteredSnapshots, usingFallback } = useMemo(
+    () => selectTrendWindow(snapshots, timeRange, s => s.capturedAt),
+    [snapshots, timeRange]);
 
   const reversedSnapshots = useMemo(() => [...filteredSnapshots].reverse(), [filteredSnapshots]);
 
@@ -104,11 +105,13 @@ export function TrendsPage() {
     // Critical alerts trend
     if (latest.criticalAlertsCount > 0) result.push({ type: "critical", text: `${latest.criticalAlertsCount} critical alert${latest.criticalAlertsCount > 1 ? "s" : ""} currently active. Immediate investigation recommended.` });
 
-    // Data coverage
-    result.push({ type: "info", text: `Showing ${filteredSnapshots.length} data points over ${timeRange} days. One snapshot is captured per collection cycle (15 minutes by default).` });
+    // Data coverage — state what is actually plotted, not what was requested.
+    result.push(usingFallback
+      ? { type: "warning", text: `Not enough history for the last ${timeRange} days — showing the ${filteredSnapshots.length} most recent snapshots instead, which fall outside that window. Trend figures below cover only that shorter span.` }
+      : { type: "info", text: `Showing ${filteredSnapshots.length} data points over ${timeRange} days. One snapshot is captured per collection cycle (15 minutes by default).` });
 
     return result;
-  }, [filteredSnapshots, latest, oldest, timeRange]);
+  }, [filteredSnapshots, latest, oldest, timeRange, usingFallback]);
 
   // ─── Export CSV ────────────────────────────────────────────────────────────────
   const exportCsv = () => {
@@ -137,7 +140,9 @@ export function TrendsPage() {
     return (
       <div className="page" style={{ padding: "24px" }}>
         <div style={{ marginBottom: 24 }}><LoadingSkeleton type="card" /></div>
-        <div className="kpi-row"><LoadingSkeleton type="kpi" /><LoadingSkeleton type="kpi" /><LoadingSkeleton type="kpi" /><LoadingSkeleton type="kpi" /><LoadingSkeleton type="kpi" /></div>
+        {/* One slot per metric, derived — a hardcoded five made the layout jump
+            when the seven real tiles arrived. */}
+        <div className="kpi-row">{METRICS.map(m => <LoadingSkeleton key={m.key} type="kpi" />)}</div>
         <div style={{ marginTop: 24 }}><LoadingSkeleton type="card" /></div>
         <div className="mid-row" style={{ marginTop: 16 }}><LoadingSkeleton type="card" /><LoadingSkeleton type="card" /><LoadingSkeleton type="card" /></div>
       </div>
@@ -185,7 +190,12 @@ export function TrendsPage() {
           <span style={{ color: dirColor, fontWeight: 600 }}>
             {diff === 0 ? "No change" : `${diff > 0 ? "+" : ""}${metric.isPct ? diff.toFixed(1) : diff}`}
           </span>
-          <span style={{ color: "var(--color-muted)" }}>vs previous</span>
+          {/* Snapshots are one collection cycle apart (~15 min by default), so
+              this is the most recent sample-to-sample move, not a trend. Saying
+              "vs previous" invited reading normal jitter as direction. */}
+          <span style={{ color: "var(--color-muted)" }} title="Change since the previous snapshot — one collection cycle, not a trend">
+            vs last snapshot
+          </span>
         </div>
         <div style={{ marginTop: 4, fontSize: 11, color: "var(--color-muted)" }}>
           <span style={{ color: periodImproving ? "#10b981" : periodDelta.diff === 0 ? "var(--color-muted)" : "#ef4444", fontWeight: 600 }}>
@@ -225,7 +235,7 @@ export function TrendsPage() {
       <div className="trends-report-header print-only" style={{ display: "none" }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Vigil365 — Security Trends & History Report</h1>
         <p style={{ fontSize: 12, color: "#6b7280", margin: "4px 0 0" }}>
-          Generated {new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })} · Period: Last {timeRange} days · {filteredSnapshots.length} data points
+          Generated {new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })} · Period: {usingFallback ? `${filteredSnapshots.length} most recent snapshots (insufficient history for ${timeRange} days)` : `Last ${timeRange} days`} · {filteredSnapshots.length} data points
         </p>
       </div>
 
