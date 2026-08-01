@@ -328,189 +328,19 @@ if (app.Environment.IsDevelopment())
 }
 
 // ── Endpoint modules ────────────────────────────────────────────────────────
-// Registered before the /api catch-all and the SPA fallback below, which must
-// stay last. Each module is a plain extension method, so the global
+// Each module is a plain extension method over WebApplication, so the global
 // deny-by-default FallbackPolicy still applies to everything it registers.
+// These must all come before the /api catch-all and the SPA fallback below.
 app.MapAuthHealthEndpoints();
 app.MapSetupEndpoints();
 app.MapDashboardEndpoints();
-app.MapNotificationsEndpoints();
-
-
-
-
-// ── User management (Admin only) ─────────────────────────────────────────────────
-// Roles are managed entirely in-app — no Entra App Roles, no Graph write permission.
 app.MapAdminEndpoints();
 app.MapAlertsEndpoints();
+app.MapNotificationsEndpoints();
 app.MapReportsEndpoints();
 app.MapIntegrationsEndpoints();
+app.MapPlatformEndpoints();
 
-// Pre-provision (invite) a user by email + role before they ever sign in.
-// LastSeenAt = DateTimeOffset.MinValue marks "invited, not yet signed in".
-
-// (Re)send the access-notification email to a pre-provisioned/existing user.
-
-
-
-// Audit trail of security-relevant actions (Admin only).
-
-// Full audit trail as CSV (Admin only). The export itself is audited.
-
-// Verify the tamper-evident hash chain (Admin only). Recomputes every entry's
-// hash and checks the PrevHash linkage in Id order. Entries written before the
-// hash chain existed (EntryHash NULL) are counted as "legacy" and skipped —
-// verification starts from the first hashed entry.
-
-
-
-
-app.MapGet("/api/collector/runs", async (AppDbContext db, CancellationToken ct) =>
-    await db.CollectionRuns.AsNoTracking().OrderByDescending(r => r.StartedAt).Take(20).ToListAsync(ct));
-
-app.MapPost("/api/collector/run", async (
-    IServiceProvider services,
-    Microsoft.Extensions.Options.IOptions<GraphOptions> options,
-    CancellationToken ct) =>
-{
-    if (!options.Value.IsConfigured())
-        return Results.BadRequest(new { error = "Microsoft Graph is not configured. Complete the setup wizard first." });
-
-    var collector = services.GetRequiredService<GraphCollector>();
-    try
-    {
-        var run = await collector.CollectAsync(ct);
-        return Results.Ok(run);
-    }
-    catch (InvalidOperationException ex) when (ex.Message.Contains("already in progress"))
-    {
-        return Results.Conflict(new { error = "A collection run is already in progress." });
-    }
-}).RequireAuthorization("RequireAnalyst");
-
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Section A: Enterprise Security Recommendations & Alert Coverage Gap Analysis
-// ─────────────────────────────────────────────────────────────────────────────
-
-
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Alert Center — server-side policies, triggered alerts, notifications
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Policies CRUD
-
-
-
-
-// Export the policy set as a portable pack (JSON). Recipients are stripped
-// unless explicitly requested — packs get shared, and NotifyEmail is an
-// internal address.
-
-// Import a policy pack. Matches existing policies by name (ids differ across
-// installs). mode=skip keeps existing policies untouched; mode=update overwrites
-// them in place, preserving their id and trigger history. Every entry is
-// validated first — an invalid policy is reported, never coerced into place.
-
-// Policy dry-run: "if this policy had been enabled, how often would it have
-// fired?" Accepts an unsaved draft so a threshold can be tested before it is
-// committed. Read-only — never writes alerts or touches policy state.
-
-// ── Suppression rules ───────────────────────────────────────────────────────
-// Standing rules that stop known-noisy alerts being raised at all. Mutations are
-// Admin-only and audited: suppressing an alert class is a security decision.
-
-
-
-
-// ── Tenant audit events (activity feed backing activity-based policies) ─────
-app.MapGet("/api/audit-events", async (
-    AppDbContext db, string? search, string? activity, int days = 7,
-    int page = 1, int pageSize = 50, CancellationToken ct = default) =>
-{
-    page = page < 1 ? 1 : page;
-    pageSize = pageSize is < 1 or > 200 ? 50 : pageSize;
-    var since = DateTimeOffset.UtcNow.AddDays(-Math.Clamp(days, 1, 90));
-
-    var q = db.AuditEvents.AsNoTracking().Where(e => e.OccurredAt >= since);
-    if (!string.IsNullOrWhiteSpace(activity))
-        q = q.Where(e => EF.Functions.Like(e.Activity, activity.Replace("*", "%")));
-    if (!string.IsNullOrWhiteSpace(search))
-        q = q.Where(e =>
-            e.Activity.Contains(search) ||
-            (e.ActorUpn != null && e.ActorUpn.Contains(search)) ||
-            (e.TargetName != null && e.TargetName.Contains(search)));
-
-    var total = await q.CountAsync(ct);
-    var items = await q.OrderByDescending(e => e.OccurredAt)
-        .Skip((page - 1) * pageSize).Take(pageSize)
-        .Select(e => new { e.Id, e.Activity, e.Category, e.ActorUpn, e.ActorApp, e.TargetName, e.Result, e.OccurredAt })
-        .ToListAsync(ct);
-    return Results.Ok(new { total, page, pageSize, items });
-});
-
-// Triggered alerts
-
-
-// Alert-ops metrics: MTTA, MTTR, resolution rate, analyst workload over a window.
-// Reads timestamps already captured on the triggered-alert workflow.
-
-
-// Per-alert snooze. Body: { "until": "2026-06-22T18:00:00Z" } or { "durationHours": 4|24|168 }.
-// Until wins if both are supplied; durationHours defaults to 24 if neither is supplied.
-
-// Reopen a triggered alert (undo for acknowledge/resolve). Returns it to "new".
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Alert workbench — local triage state. Never writes to Microsoft 365.
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Assign / set disposition on a collected M365 security alert.
-
-// Assign a triggered policy alert.
-
-// Analyst notes — append-only, on either alert kind.
-
-
-// Manually run an evaluation pass (used by the dashboard "refresh" + on-demand check).
-// Analyst+: evaluation dispatches real notifications, so it must not be open to abuse.
-
-
-// API tokens for SIEM/read-only machine integrations. The raw token is returned
-// once on create; only a SHA-256 hash is stored.
-
-
-
-// SIEM export endpoints use API-token auth, not the browser's Entra delegated token.
-
-
-// ── Entity investigation profile (drill-down) ──────────────────────────────
-// GET /api/entity/{kind}/{id} — kind = user|device. Merges the entity's alerts
-// and tenant audit activity into one reverse-chronological timeline.
-app.MapGet("/api/entity/{kind}/{id}", async (EntityProfileBuilder builder, string kind, string id, CancellationToken ct) =>
-{
-    if (string.IsNullOrWhiteSpace(id)) return Results.BadRequest(new { error = "Entity id is required." });
-    var profile = await builder.BuildAsync(kind, id, maxItems: 300, ct);
-    return Results.Ok(profile);
-}).RequireAuthorization("RequireAnalyst");
-
-// ── Scheduled reports (executive digest) ───────────────────────────────────
-
-
-// Live preview of the digest HTML/CSV without sending anything.
-
-
-
-
-// Send this report immediately, regardless of cadence.
-
-// Unknown /api/* paths must 404 as JSON, not fall through to the SPA. Returning
-// 200 text/html for a mistyped endpoint confuses scanners, breaks integrations
-// and masks broken clients (a failed call looks like a successful page load).
 app.Map("/api/{**rest}", (HttpContext ctx) =>
 {
     ctx.Response.StatusCode = StatusCodes.Status404NotFound;
