@@ -563,7 +563,18 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
   useEffect(() => {
     if (!deepLinkAlertId || triggeredAlerts.length === 0) return;
     const target = triggeredAlerts.find(a => a.id.toLowerCase() === deepLinkAlertId.toLowerCase());
-    if (target) { setTab("alerts"); setSelectedTriggered(target); }
+    if (target) {
+      setTab("alerts");
+      setSelectedTriggered(target);
+    } else {
+      // The link came from a Teams card or email and the alert is not in the
+      // loaded set — usually resolved since, or aged out. Silently swallowing it
+      // left the user staring at the queue wondering if the link was broken.
+      setTab("alerts");
+      showToast(
+        "That alert is no longer in the active queue — it may have been resolved or aged out. Showing all alerts instead.",
+        "info");
+    }
     onDeepLinkConsumed?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deepLinkAlertId, triggeredAlerts]);

@@ -78,7 +78,7 @@ export function SignInLocationsPage({ data }: { data: SignInLocationsData|null }
                       <tbody>
                         {data.byCountry.map((c,i)=>(
                           <tr key={i}>
-                            <td><span className="flag-cell"><span className="flag-emoji">{countryFlag(c.country) || "—"}</span><span className="al-title">{c.country||"Unknown"}</span></span></td>
+                            <td><span className="flag-cell">{countryFlag(c.country) && <span className="flag-emoji">{countryFlag(c.country)}</span>}<span className="al-title">{c.country||"Unknown"}</span></span></td>
                             <td>{c.count}</td>
                             <td style={{color:c.failures>0?"var(--status-error-text)":"var(--status-good-text)",fontWeight:600}}>{c.failures}</td>
                           </tr>
@@ -129,7 +129,7 @@ export function SignInLocationsPage({ data }: { data: SignInLocationsData|null }
                         <div className="al-body">
                           <div className="al-title">{s.upn?.split("@")[0]??"Unknown"}</div>
                           <div className="row-meta">
-                            <span className="row-meta-item"><span className="flag-emoji">{countryFlag(s.country) || "—"}</span> {[s.city,s.country].filter(Boolean).join(", ")||"Unknown"}</span>
+                            <span className="row-meta-item">{countryFlag(s.country) && <span className="flag-emoji">{countryFlag(s.country)}</span>} {[s.city,s.country].filter(Boolean).join(", ")||"Unknown"}</span>
                             {s.app&&<span className="row-meta-item">{s.app}</span>}
                             <Badge label={s.success?"Success":"Failed"} tone={s.success?"good":"error"}/>
                             <span className="row-meta-item" title={fmtDate(s.created)}>{relTime(s.created)}</span>

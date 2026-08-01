@@ -128,20 +128,71 @@ export function fmtCountdown(sec: number): string {
 
 /** 2-letter ISO code for a country name. Flag emoji render as bare letter
  *  pairs on Windows, so the UI shows a neutral code chip instead. */
+/**
+ * Common names and abbreviations Intl does not return, so a sign-in from "USA"
+ * or "UAE" still resolves. Everything else comes from the generated table below.
+ */
+const COUNTRY_ALIASES: Record<string, string> = {
+  "usa": "US", "u.s.": "US", "u.s.a.": "US", "united states of america": "US",
+  // Pinned rather than left to the generated table: Intl resolves both "GB" and
+  // the non-standard "UK" to this name, so the answer must not depend on
+  // iteration order.
+  "united kingdom": "GB",
+  "uk": "GB", "u.k.": "GB", "great britain": "GB", "england": "GB",
+  "scotland": "GB", "wales": "GB", "northern ireland": "GB",
+  "uae": "AE", "russia": "RU", "south korea": "KR", "north korea": "KP",
+  "vietnam": "VN", "laos": "LA", "syria": "SY", "iran": "IR",
+  "tanzania": "TZ", "bolivia": "BO", "venezuela": "VE", "moldova": "MD",
+  "czech republic": "CZ", "czechia": "CZ", "turkey": "TR", "türkiye": "TR",
+  "ivory coast": "CI", "cape verde": "CV", "swaziland": "SZ", "burma": "MM",
+};
+
+/**
+ * Every ISO 3166-1 alpha-2 code keyed by its English name, generated once from
+ * Intl rather than hand-maintained. The previous hardcoded list covered ~25
+ * countries, so a sign-in from anywhere else rendered as "—" — indistinguishable
+ * from missing data when the data was perfectly good.
+ */
+const COUNTRY_CODE_BY_NAME: Record<string, string> = (() => {
+  const out: Record<string, string> = {};
+  try {
+    const names = new Intl.DisplayNames(["en"], { type: "region" });
+    for (let a = 65; a <= 90; a++) {
+      for (let b = 65; b <= 90; b++) {
+        const code = String.fromCharCode(a, b);
+        const name = names.of(code);
+        // Intl echoes the code back for unassigned regions.
+        if (!name || name === code) continue;
+
+        // Skip deprecated aliases. Several historical codes resolve to a current
+        // country's name — DD (East Germany) -> "Germany", UK -> "United
+        // Kingdom", SU -> "Russia" — and picking one by iteration order handed
+        // back codes that are not valid ISO 3166-1. Canonicalising the region
+        // subtag rewrites an alias to its modern code, so a mismatch means the
+        // code is not the canonical one for that country.
+        if (!Intl.getCanonicalLocales(`und-${code}`)[0].endsWith(`-${code}`)) continue;
+
+        out[name.toLowerCase()] = code;
+      }
+    }
+  } catch {
+    /* Intl.DisplayNames unavailable — aliases and the 2-letter passthrough still work. */
+  }
+  return out;
+})();
+
+/**
+ * Country name -> ISO 3166-1 alpha-2 code for the location chip. Returns "" when
+ * the country cannot be resolved; callers render nothing rather than a dash,
+ * because the full country name is already displayed beside the chip.
+ */
 export function countryFlag(country?: string): string {
   if (!country) return "";
-  const map: Record<string, string> = {
-    "united states": "US", "usa": "US",
-    "united kingdom": "GB", "uk": "GB",
-    "india": "IN", "canada": "CA", "australia": "AU", "germany": "DE",
-    "france": "FR", "netherlands": "NL", "ireland": "IE", "china": "CN",
-    "russia": "RU", "brazil": "BR", "japan": "JP", "singapore": "SG",
-    "spain": "ES", "italy": "IT", "nigeria": "NG", "pakistan": "PK",
-    "united arab emirates": "AE", "uae": "AE",
-    "south africa": "ZA", "mexico": "MX", "sweden": "SE", "switzerland": "CH",
-  };
   const key = country.trim().toLowerCase();
-  return map[key] ?? (key.length === 2 ? key.toUpperCase() : "");
+  if (!key) return "";
+  return COUNTRY_ALIASES[key]
+    ?? COUNTRY_CODE_BY_NAME[key]
+    ?? (key.length === 2 ? key.toUpperCase() : "");
 }
 
 export function expiryChip(days: number): { label: string; cls: string } {
