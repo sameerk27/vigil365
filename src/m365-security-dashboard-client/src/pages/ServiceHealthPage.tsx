@@ -41,9 +41,15 @@ export function ServiceHealthPage({ serviceHealth }: { serviceHealth: ServiceHea
       <div className="kpi-row kpi-row-4">
         <KpiTile icon={<Activity size={18}/>} label="ACTIVE ISSUES" value={total}
           sub="Current advisories" tone={total===0?"good":total<=2?"warning":"error"}/>
-        <KpiTile icon={<CheckCircle size={18}/>} label="HEALTHY SERVICES"
+        {/* Per-service status is inferred by keyword-matching advisory titles —
+            Vigil365 stores advisories as generic alerts and does not persist
+            Graph's service field, so an advisory whose title omits the service
+            name leaves that service looking healthy. Say so rather than
+            presenting the inference as fact. */}
+        <KpiTile icon={<CheckCircle size={18}/>} label="SERVICES WITHOUT A MATCHED ADVISORY"
+          help="Inferred by matching advisory titles against service names. An advisory that does not name its service will not be attributed here, so treat this as indicative rather than authoritative — the advisory list below is the source of truth."
           value={(() => { const affected = M365_SVCS.filter(svc => (serviceHealth?.issues ?? []).some(i => matchSvcIssue(svc, i.title))).length; return `${M365_SVCS.length - affected} / ${M365_SVCS.length}`; })()}
-          sub="No open advisories" tone={total===0?"good":"warning"}/>
+          sub="Title-matched, indicative only" tone={total===0?"good":"warning"}/>
         <KpiTile icon={<Clock size={18}/>} label="DATA FRESHNESS" value="Per collection"
           sub="Updates each collection cycle" tone="neutral"/>
         <KpiTile icon={<Globe size={18}/>} label="SOURCE" value="Graph API"

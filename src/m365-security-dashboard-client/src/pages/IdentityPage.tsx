@@ -59,6 +59,14 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
     return items;
   }, [identityAlerts, search, riskLevel, showResolved, q]);
 
+  // KPI tiles summarise tenant state, so they must not move when someone types
+  // in the page search or flips a filter — the headline count appearing to drop
+  // as you type reads as the product miscounting. Unresolved-only, matching how
+  // Overview counts, so the two pages agree.
+  const riskyUsersActive = useMemo(
+    () => identityAlerts.filter(a => a.alertType === "RiskyUser" && !a.isResolved).length,
+    [identityAlerts]);
+
   const filteredPim = useMemo(() => {
     let items = pimData?.activations ?? [];
     if (search) items = items.filter(a =>
@@ -144,8 +152,8 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
         <KpiTile icon={<Key size={18}/>} label="MFA COVERAGE" value={`${mfaPct}%`}
           sub={`${identity?.mfa.registered??0} of ${identity?.mfa.total??0} users`} tone={pctTone(mfaPct,95,80)}
           onClick={() => { setSearch("mfa"); }}/>
-        <KpiTile icon={<UserX size={18}/>} label="RISKY USERS" value={riskyUsers.length}
-          sub="Active risk detections" tone={riskyUsers.length===0?"good":riskyUsers.length<=3?"warning":"error"}
+        <KpiTile icon={<UserX size={18}/>} label="RISKY USERS" value={riskyUsersActive}
+          sub="Active risk detections" tone={riskyUsersActive===0?"good":riskyUsersActive<=3?"warning":"error"}
           active={!showResolved} onClick={() => { setSearch(""); setRiskLevel(""); setShowResolved(false); }}/>
         <KpiTile icon={<Globe size={18}/>} label="FOREIGN SIGN-INS" value={identity?.signIns.foreign??0}
           sub="Last 7 days" tone={(identity?.signIns.foreign??0)===0?"good":"warning"}

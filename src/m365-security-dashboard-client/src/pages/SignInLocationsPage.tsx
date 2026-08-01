@@ -52,14 +52,14 @@ export function SignInLocationsPage({ data }: { data: SignInLocationsData|null }
       )}
       <div className="kpi-row kpi-row-4">
         <KpiTile icon={<MapPin size={18}/>} label="COUNTRIES DETECTED" value={data?.countries??"—"}
-          sub="Distinct sign-in countries" tone={(data?.countries??0)>5?"warning":"good"}/>
+          sub="In the last 100 sign-ins" tone={(data?.countries??0)>5?"warning":"good"}/>
         <KpiTile icon={<LogIn size={18}/>} label="TOTAL SIGN-INS" value={data?.total??"—"}
-          sub="Last 100 events" tone="neutral"/>
+          sub="Most recent 100 events — not a tenant total" tone="neutral"/>
         <KpiTile icon={<XCircle size={18}/>} label="FAILED SIGN-INS" value={data?.failures??"—"}
-          sub="Authentication failures" tone={(data?.failures??0)>5?"error":(data?.failures??0)>0?"warning":"good"}
+          sub="Within the last 100 sign-ins" tone={(data?.failures??0)>5?"error":(data?.failures??0)>0?"warning":"good"}
           active={resultFilter==="failure"} onClick={()=>{setSignInSearch("");setCountryFilter("");setResultFilter(resultFilter==="failure"?"":"failure");}}/>
         <KpiTile icon={<Globe size={18}/>} label="UNIQUE APPS" value={data?([...new Set(data.recent.map(s=>s.app).filter(Boolean))].length):"—"}
-          sub="Apps accessed" tone="info"/>
+          sub="In the last 100 sign-ins" tone="info"/>
       </div>
 
       <div className="two-col">

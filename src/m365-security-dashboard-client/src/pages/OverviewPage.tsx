@@ -41,9 +41,17 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
 
   const devNonCompliant = devices?.nonCompliant??0;
   const devEffectiveTotal = Math.max(devices?.totalDevices??0, devNonCompliant);
-  const devComplPct = devEffectiveTotal > 0
-    ? Math.max(0, Math.round((devEffectiveTotal - devNonCompliant) / devEffectiveTotal * 100))
-    : (devNonCompliant === 0 ? 100 : 0);
+  // Use the API's compliancePct — the same number the Devices page shows. This
+  // used to recompute it locally from nonCompliant/totalDevices, so Overview and
+  // Devices could state different compliance rates for the same tenant. The
+  // local formula survives only as a fallback for a payload without the field.
+  const devComplPct = devices
+    ? (typeof devices.compliancePct === "number"
+        ? Math.round(devices.compliancePct)
+        : devEffectiveTotal > 0
+          ? Math.max(0, Math.round((devEffectiveTotal - devNonCompliant) / devEffectiveTotal * 100))
+          : (devNonCompliant === 0 ? 100 : 0))
+    : 0;
 
   return (
     <div className="page">
