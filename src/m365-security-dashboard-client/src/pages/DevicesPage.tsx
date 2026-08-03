@@ -122,11 +122,11 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
       <Card title="Compliance Overview" badge={<Badge label={`${devComplPct}%`} tone={pctTone(devComplPct)}/>}>
         <div className="compliance-hero">
           <CircleGauge pct={devComplPct} size={100}/>
-          <div style={{flex:1}}>
+          <div data-inline-style="inline-126244f135">
             <MiniBarChart items={complianceData}/>
           </div>
         </div>
-        <div className="info-rows" style={{marginTop:12}}>
+        <div className="info-rows" data-inline-style="inline-f2fecb34dc">
           <InfoRow label="Last Sync Window" value="7 days"/>
           <InfoRow label="Policy Engine" value="Microsoft Intune"/>
           <InfoRow label="Total Managed" value={(devices?.totalDevices??0)>0?devices!.totalDevices:"Unknown"}/>
@@ -138,21 +138,21 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
       <Card title="Non-Compliant Devices"
         badge={<Badge label={`${nonCompliant.length} devices`} tone={nonCompliant.length>0?"error":"good"}/>}
         action={
-          <div style={{display:"flex",alignItems:"center",gap:6}}>
-            <label className="search-box" style={{minWidth:200}}>
+          <div data-inline-style="inline-8da89a75a7">
+            <label className="search-box" data-inline-style="inline-8d14727966">
               <Search size={13}/>
               <input value={ncSearch} onChange={e=>setNcSearch(e.target.value)}
                 placeholder="Search device or user…" className="search-input"/>
             </label>
             <SeverityFilter value={ncSev} onChange={setNcSev}/>
             <ExportDropdown rows={nonCompliant.map(a=>({ Device:a.deviceName??a.title, User:a.userPrincipalName??"", Severity:a.severity, Detected:a.detectedAt }))} filename="non-compliant-devices.csv"/>
-            {(ncSearch||ncSev)&&<button className="btn-apply" style={{padding:"5px 10px",fontSize:12}} onClick={()=>{setNcSearch("");setNcSev("");}}>Clear</button>}
+            {(ncSearch||ncSev)&&<button className="btn-apply" data-inline-style="inline-84a31235d6" onClick={()=>{setNcSearch("");setNcSev("");}}>Clear</button>}
           </div>
         }>
         {deviceAlerts.filter(a=>a.alertType==="NonCompliantDevice").length===0
           ?<EmptyState icon={<ShieldCheck size={28}/>} message="All devices are compliant"/>
           : nonCompliant.length===0
-            ?<div className="td-empty" style={{padding:16}}>No devices match the filter.</div>
+            ?<div className="td-empty" data-inline-style="inline-d8c94c1628">No devices match the filter.</div>
             :(
               <div className="alert-list">
                 {nonCompliant.map((a,i)=>(
@@ -162,7 +162,7 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
                       <div className="al-title">{a.deviceName??a.title}</div>
                       <div className="al-desc">{a.userPrincipalName} · {a.description}</div>
                     </div>
-                    <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
+                    <div data-inline-style="inline-882e0924c7">
                       <Badge label={a.severity} tone={a.severity==="High"||a.severity==="Critical"?"error":"warning"}/>
                       <span className="al-date">{fmtDate(a.detectedAt)}</span>
                     </div>
@@ -178,20 +178,20 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
       <Card title="Devices Not Checked In"
         badge={<Badge label={`${notCheckedIn.length} stale`} tone={notCheckedIn.length>0?"warning":"good"}/>}
         action={
-          <div style={{display:"flex",alignItems:"center",gap:6}}>
-            <label className="search-box" style={{minWidth:200}}>
+          <div data-inline-style="inline-8da89a75a7">
+            <label className="search-box" data-inline-style="inline-8d14727966">
               <Search size={13}/>
               <input value={staleSearch} onChange={e=>setStaleSearch(e.target.value)}
                 placeholder="Search device or user…" className="search-input"/>
             </label>
             <ExportDropdown rows={notCheckedIn.map(a=>({ Device:a.deviceName??a.title, User:a.userPrincipalName??"", LastSeen:a.detectedAt }))} filename="stale-devices.csv"/>
-            {staleSearch&&<button className="btn-apply" style={{padding:"5px 10px",fontSize:12}} onClick={()=>setStaleSearch("")}>Clear</button>}
+            {staleSearch&&<button className="btn-apply" data-inline-style="inline-84a31235d6" onClick={()=>setStaleSearch("")}>Clear</button>}
           </div>
         }>
         {deviceAlerts.filter(a=>a.alertType==="DeviceNotCheckedIn").length===0
           ?<EmptyState icon={<CheckCircle size={28}/>} message="All devices checked in within the sync window"/>
           : notCheckedIn.length===0
-            ?<div className="td-empty" style={{padding:16}}>No devices match the filter.</div>
+            ?<div className="td-empty" data-inline-style="inline-d8c94c1628">No devices match the filter.</div>
             :(
               <div className="tbl-wrap">
                 <table className="data-tbl">
@@ -199,8 +199,8 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
                   <tbody>
                     {notCheckedIn.map((a,i)=>(
                       <tr key={i} className="tbl-row-click" {...rowActivation(()=>onAlertClick(a), `Open alert ${a.title}`)}>
-                        <td><div className="al-title trunc" style={{maxWidth:180}} title={a.deviceName??a.title}>{a.deviceName??a.title}</div></td>
-                        <td><div className="trunc" style={{maxWidth:160}} title={a.userPrincipalName??undefined}>{a.userPrincipalName??"—"}</div></td>
+                        <td><div className="al-title trunc" data-inline-style="inline-7ef9446763" title={a.deviceName??a.title}>{a.deviceName??a.title}</div></td>
+                        <td><div className="trunc" data-inline-style="inline-4aca1e0d5c" title={a.userPrincipalName??undefined}>{a.userPrincipalName??"—"}</div></td>
                         <td className="al-date" title={fmtDate(a.detectedAt)}>{relTime(a.detectedAt)}</td>
                         <td><Badge label="Stale" tone="warning"/></td>
                         <td><Eye size={13} className="tbl-eye"/></td>
@@ -218,15 +218,15 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
         badge={<><Badge label={`${filteredMde.length} / ${mdeVulnerabilities?.total??0} alerts`} tone={(mdeVulnerabilities?.total??0)>0?"error":"good"}/><span className="card-count">{filteredMde.length}</span></>}
         action={
           (mdeVulnerabilities?.configured && !mdeVulnerabilities?.error && (mdeVulnerabilities?.total??0)>0) ? (
-            <div style={{display:"flex",alignItems:"center",gap:6}}>
-              <label className="search-box" style={{minWidth:180}}>
+            <div data-inline-style="inline-8da89a75a7">
+              <label className="search-box" data-inline-style="inline-01a3bb680d">
                 <Search size={13}/>
                 <input value={mdeSearch} onChange={e=>setMdeSearch(e.target.value)}
                   placeholder="Search title, category…" className="search-input"/>
               </label>
               <SeverityFilter value={mdeSev} onChange={setMdeSev}/>
               <ExportDropdown rows={filteredMde.map(a=>({ Title:a.title??"", Severity:a.severity, Category:a.category??"", Status:a.status, Detected:a.createdDateTime??"" }))} filename="mde-alerts.csv"/>
-              {(mdeSearch||mdeSev)&&<button className="btn-apply" style={{padding:"5px 10px",fontSize:12}} onClick={()=>{setMdeSearch("");setMdeSev("");}}>Clear</button>}
+              {(mdeSearch||mdeSev)&&<button className="btn-apply" data-inline-style="inline-84a31235d6" onClick={()=>{setMdeSearch("");setMdeSev("");}}>Clear</button>}
             </div>
           ) : undefined
         }>
@@ -236,7 +236,7 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
             ?<EmptyState icon={<ShieldCheck size={28}/>} message="No Defender for Endpoint alerts"/>
             :(
               <>
-                <div className="stat-row4" style={{marginBottom:14}}>
+                <div className="stat-row4" data-inline-style="inline-8d16d0ba00">
                   <StatBox value={mdeVulnerabilities!.bySeverity?.["high"]??0} label="High" color={(mdeVulnerabilities!.bySeverity?.["high"]??0)>0?"var(--status-error-text)":undefined}/>
                   <StatBox value={mdeVulnerabilities!.bySeverity?.["medium"]??0} label="Medium" color={(mdeVulnerabilities!.bySeverity?.["medium"]??0)>0?"var(--status-warn-text)":undefined}/>
                   <StatBox value={mdeVulnerabilities!.bySeverity?.["low"]??0} label="Low"/>
@@ -244,7 +244,7 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
                 </div>
                 <div className="alert-list">
                   <SectHdr>ENDPOINT ALERTS — {filteredMde.length} shown</SectHdr>
-                  {filteredMde.length===0&&<div className="td-empty" style={{padding:12}}>No alerts match the filter.</div>}
+                  {filteredMde.length===0&&<div className="td-empty" data-inline-style="inline-43eb55eaea">No alerts match the filter.</div>}
                   {filteredMde.slice(0,10).map((a,i)=>(
                     <div key={a.id??i} className="al-item" onClick={()=>setSelectedMde(a)}>
                       <span className={`sev-dot sev-${a.severity.toLowerCase()}`}/>
@@ -256,7 +256,7 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
                           <span className="row-meta-item">{relTime(a.createdDateTime)}</span>
                         </div>
                       </div>
-                      <Eye size={13} style={{flexShrink:0}}/>
+                      <Eye size={13} data-inline-style="inline-69271fc98e"/>
                     </div>
                   ))}
                   {filteredMde.length>10&&<div className="more-link">{filteredMde.length-10} more results — use search to narrow</div>}

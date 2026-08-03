@@ -16,7 +16,9 @@ namespace M365SecurityDashboard.Api.Data.Migrations
                 table: "ReportSchedules",
                 type: "bit",
                 nullable: false,
-                defaultValue: false);
+                // Adding the non-null column backfills existing schedules. Their
+                // email digest should gain the new executive PDF by default.
+                defaultValue: true);
 
             migrationBuilder.AddColumn<string>(
                 name: "WebhookSigningSecret",

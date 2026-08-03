@@ -64,25 +64,25 @@ export function CollectionHealthCard({ refreshKey }: { refreshKey: number }) {
             <StatBox value={`${(durationMs/1000).toFixed(1)}s`} label="Duration"/>
             <StatBox value={last.sourceFailures} label="Source Failures" color={last.sourceFailures>0?"var(--status-error-text)":undefined}/>
           </div>
-          <div className="mini-row" style={{marginTop:10, justifyContent:"space-between"}}>
+          <div className="mini-row" data-inline-style="inline-ec2b8ab1dd">
             <span className="mr-date"><RelativeTime iso={last.completedAt ?? last.startedAt} prefix="Last run "/></span>
             <Badge label={`${finished.length} recent run${finished.length!==1?"s":""}`} tone="neutral"/>
           </div>
           {failures.length > 0 ? (
-            <div className="mini-list" style={{marginTop:8}}>
+            <div className="mini-list" data-inline-style="inline-5313025c2e">
               <SectHdr>FAILING SOURCES</SectHdr>
               {failures.map((f,i)=>(
                 <button key={i} type="button" className="mini-row failing-source-row" title={f.error}
                   onClick={() => crossNavigate({ page: "alertcenter", tab: "runs" })}>
                   <AlertTriangle size={11} color="var(--sev-high-icon)"/>
                   <span className="mr-user">{f.source}</span>
-                  <span className="mr-date trunc" style={{maxWidth:140}}>{f.error}</span>
+                  <span className="mr-date trunc" data-inline-style="inline-08aec67817">{f.error}</span>
                 </button>
               ))}
             </div>
           ) : (
-            <div className="mini-row" style={{marginTop:8, color:"var(--status-good-text)"}}>
-              <span style={{fontSize:12}}>All data sources collected without errors on the last run</span>
+            <div className="mini-row" data-inline-style="inline-dfaa083961">
+              <span data-inline-style="inline-94b6caffd5">All data sources collected without errors on the last run</span>
             </div>
           )}
         </>

@@ -113,7 +113,7 @@ export function PolicyPackControls({ onChanged }: { onChanged: () => void | Prom
         <Upload size={13}/> Import
       </button>
       <input ref={fileRef} type="file" accept="application/json,.json"
-        style={{ display: "none" }} onChange={onFilePicked}/>
+        data-inline-style="inline-6e22c58a7a" onChange={onFilePicked}/>
 
       {result && (
         <div className="pack-result">

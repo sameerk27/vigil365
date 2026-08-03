@@ -31,7 +31,7 @@ export function FilterPresets({ pageKey, filters, onLoad }: {
   };
 
   return (
-    <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+    <div data-inline-style="inline-923b000779">
       {presets.length > 0 && (
         <select className="filter-sel" onChange={e => { const p = presets.find(x => x.name === e.target.value); if (p) { onLoad(p.filters); e.target.value = ""; } }}>
           <option value="">Load preset…</option>
@@ -41,8 +41,8 @@ export function FilterPresets({ pageKey, filters, onLoad }: {
       {saving ? (
         <>
           <input value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === "Enter" && save()}
-            placeholder="Preset name…" className="filter-sel" style={{ minWidth:120 }} autoFocus />
-          <button className="btn-apply" style={{ padding:"7px 14px" }} onClick={save}>Save</button>
+            placeholder="Preset name…" className="filter-sel" data-inline-style="inline-0369655445" autoFocus />
+          <button className="btn-apply" data-inline-style="inline-704cb99853" onClick={save}>Save</button>
           <button className="btn-export" aria-label="Cancel saving preset" onClick={() => setSaving(false)}><X size={13}/></button>
         </>
       ) : (
@@ -52,7 +52,7 @@ export function FilterPresets({ pageKey, filters, onLoad }: {
         <span key={p.name} className="preset-chip">
           {p.name}
           <button onClick={() => remove(p.name)} aria-label={`Remove preset ${p.name}`}
-            style={{ background:"none", border:"none", cursor:"pointer", color:"var(--color-faint)", padding:"0 2px", display:"inline-flex", alignItems:"center" }}><X size={11}/></button>
+            data-inline-style="inline-fe7addf178"><X size={11}/></button>
         </span>
       ))}
     </div>

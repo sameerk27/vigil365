@@ -72,7 +72,7 @@ export function SignInLocationsPage({ data }: { data: SignInLocationsData|null }
                   <MiniBarChart items={data.byCountry.slice(0,8).map(c=>({
                     label:c.country??"Unknown", value:c.count, color:c.failures>2?"#dc2626":"#3b82f6"
                   }))}/>
-                  <div className="tbl-wrap" style={{marginTop:12}}>
+                  <div className="tbl-wrap" data-inline-style="inline-f2fecb34dc">
                     <table className="data-tbl">
                       <thead><tr><th scope="col">Country</th><th scope="col">Sign-ins</th><th scope="col">Failures</th></tr></thead>
                       <tbody>
@@ -93,25 +93,25 @@ export function SignInLocationsPage({ data }: { data: SignInLocationsData|null }
         <Card title="Recent Sign-in Activity"
           badge={<Badge label={`${filteredSignIns.length} shown`} tone="neutral"/>}
           action={(data?.configured && data.recent.length>0) ? (
-            <div style={{display:"flex",alignItems:"center",gap:6}}>
-              <label className="search-box" style={{minWidth:180}}>
+            <div data-inline-style="inline-8da89a75a7">
+              <label className="search-box" data-inline-style="inline-01a3bb680d">
                 <Search size={14}/>
                 <input value={signInSearch} onChange={e=>setSignInSearch(e.target.value)}
                   placeholder="Search user, country, city, app…" className="search-input"/>
               </label>
-              <select value={resultFilter} onChange={e=>setResultFilter(e.target.value as ""|"success"|"failure")} className="filter-sel" style={{fontSize:12,padding:"5px 8px"}}>
+              <select value={resultFilter} onChange={e=>setResultFilter(e.target.value as ""|"success"|"failure")} className="filter-sel" data-inline-style="inline-1c8c76b2ad">
                 <option value="">All results</option>
                 <option value="success">Success</option>
                 <option value="failure">Failure</option>
               </select>
               {allCountries.length>0&&(
-                <select value={countryFilter} onChange={e=>setCountryFilter(e.target.value)} className="filter-sel" style={{fontSize:12,padding:"5px 8px"}}>
+                <select value={countryFilter} onChange={e=>setCountryFilter(e.target.value)} className="filter-sel" data-inline-style="inline-1c8c76b2ad">
                   <option value="">All countries</option>
                   {allCountries.map(c=><option key={c} value={c}>{c}</option>)}
                 </select>
               )}
               <ExportDropdown rows={filteredSignIns.map(s=>({ User:s.upn??"", App:s.app??"", City:s.city??"", Country:s.country??"", Result:s.success?"Success":"Failure", Time:s.created??"" }))} filename="sign-ins.csv"/>
-              {(signInSearch||resultFilter||countryFilter)&&<button className="btn-apply" style={{padding:"5px 10px",fontSize:12}} onClick={()=>{setSignInSearch("");setResultFilter("");setCountryFilter("");}}>Clear</button>}
+              {(signInSearch||resultFilter||countryFilter)&&<button className="btn-apply" data-inline-style="inline-84a31235d6" onClick={()=>{setSignInSearch("");setResultFilter("");setCountryFilter("");}}>Clear</button>}
               <FilterPresets pageKey="signins" filters={{signInSearch,resultFilter,countryFilter}}
                 onLoad={f=>{setSignInSearch(f.signInSearch??"");setResultFilter((f.resultFilter as ""|"success"|"failure"|undefined)??"");setCountryFilter(f.countryFilter??"");}}/>
             </div>
@@ -122,7 +122,7 @@ export function SignInLocationsPage({ data }: { data: SignInLocationsData|null }
               ? <EmptyState icon={<LogIn size={28}/>} message="No recent sign-in data"/>
               : <>
                   <div className="alert-list">
-                    {filteredSignIns.length===0&&<div className="td-empty" style={{padding:12}}>No sign-ins match the filter.</div>}
+                    {filteredSignIns.length===0&&<div className="td-empty" data-inline-style="inline-43eb55eaea">No sign-ins match the filter.</div>}
                     {filteredSignIns.map((s,i)=>(
                       <div key={i} className="al-item" onClick={()=>setSelectedSignIn(s)}>
                         <div style={{width:8,height:8,borderRadius:"50%",background:s.success?"var(--status-good-icon)":"var(--status-error-icon)",flexShrink:0,marginTop:3}}/>

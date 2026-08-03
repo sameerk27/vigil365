@@ -182,22 +182,22 @@ export function UserManagementPage() {
       <Card title={`Users${users ? ` (${users.length})` : ""}`}
         badge={<Badge label="Admin only" tone="info"/>}
         action={<button className="btn-export" onClick={() => setShowAdd(s => !s)}>{showAdd ? "Cancel" : "Add User"}</button>}>
-        <div style={{ fontSize:12, color:"var(--color-muted)", padding:"0 0 12px", lineHeight:1.6 }}>
+        <div data-inline-style="inline-03fbcc5593">
           Assign roles to people who have signed in. Roles are stored in Vigil365 — no Entra ID changes needed.
           <strong> Admin</strong> = full access · <strong>Analyst</strong> = acknowledge/snooze/resolve · <strong>Viewer</strong> = read-only.
         </div>
         {showAdd && (
-          <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap", padding:"0 0 16px" }}>
+          <div data-inline-style="inline-8b64f26f16">
             <input className="form-input" type="email" placeholder="user@domain.com"
-              value={addEmail} onChange={e => setAddEmail(e.target.value)} style={{ minWidth:220 }} />
+              value={addEmail} onChange={e => setAddEmail(e.target.value)} data-inline-style="inline-b33e69fdee" />
             <input className="form-input" type="text" placeholder="Display name (optional)"
-              value={addName} onChange={e => setAddName(e.target.value)} style={{ minWidth:180 }} />
+              value={addName} onChange={e => setAddName(e.target.value)} data-inline-style="inline-01a3bb680d" />
             <select className="filter-sel" value={addRole} onChange={e => setAddRole(e.target.value as AppRole)}>
               <option value="Admin">Admin</option>
               <option value="Analyst">Analyst</option>
               <option value="Viewer">Viewer</option>
             </select>
-            <label style={{ display:"flex", alignItems:"center", gap:5, fontSize:12, color:"var(--color-text)", cursor:"pointer" }} title="Sends a sign-in link via the SMTP server configured in Settings">
+            <label data-inline-style="inline-d413cffa31" title="Sends a sign-in link via the SMTP server configured in Settings">
               <input type="checkbox" checked={addInvite} onChange={e => setAddInvite(e.target.checked)} />
               Send invite email
             </label>
@@ -218,16 +218,16 @@ export function UserManagementPage() {
                 <tbody>
                   {users.map(u => (
                     <tr key={u.email}>
-                      <td style={{ fontWeight:600 }}>
+                      <td data-inline-style="inline-3d9df89ef8">
                         {u.displayName || "—"}
-                        {u.email === myEmail && <span style={{ fontSize:10, color:"var(--color-muted)", marginLeft:6 }}>(you)</span>}
+                        {u.email === myEmail && <span data-inline-style="inline-4ac97f251f">(you)</span>}
                       </td>
                       <td className="al-date">{u.email}</td>
                       <td><Badge label={u.role} tone={roleTone(u.role)}/></td>
                       <td className="al-date" title={new Date(u.lastSeenAt).getFullYear() <= 1 ? "Never signed in" : fmtDate(u.lastSeenAt)}>{new Date(u.lastSeenAt).getFullYear() <= 1 ? "Never" : (relTime(u.lastSeenAt) || fmtDate(u.lastSeenAt))}</td>
-                      <td style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+                      <td data-inline-style="inline-a0c5370730">
                         <select
-                           className="filter-sel" style={{ padding:"3px 6px", fontSize:12 }}
+                           className="filter-sel" data-inline-style="inline-f236f28555"
                           value={u.role} disabled={busy===u.email}
                           onChange={e => changeRole(u, e.target.value as AppRole)}
                         >
@@ -235,13 +235,13 @@ export function UserManagementPage() {
                           <option value="Analyst">Analyst</option>
                           <option value="Viewer">Viewer</option>
                         </select>
-                        <button className="btn-export" style={{ padding:"3px 8px", fontSize:11 }}
+                        <button className="btn-export" data-inline-style="inline-6ba117109b"
                           disabled={busy===u.email} onClick={() => sendInvite(u)}
                           title="Email this user a sign-in link (requires SMTP configured in Settings)">
                           {new Date(u.lastSeenAt).getFullYear() <= 1 ? "Send invite" : "Resend invite"}
                         </button>
                         {u.email !== myEmail && (
-                          <button className="btn-danger" style={{ padding:"3px 8px", fontSize:11 }}
+                          <button className="btn-danger" data-inline-style="inline-6ba117109b"
                             disabled={busy===u.email} onClick={() => removeUser(u)} title="Remove user">Remove</button>
                         )}
                       </td>
@@ -258,8 +258,8 @@ export function UserManagementPage() {
           ? <Badge label={verify.valid ? "Chain verified" : "TAMPERED"} tone={verify.valid ? "good" : "error"}/>
           : <Badge label={audit ? `${audit.length} events` : "—"} tone="neutral"/>}
         action={
-          <div style={{ display:"flex", gap:6 }}>
-            <button className="btn-apply" style={{ padding:"5px 10px", fontSize:12 }}
+          <div data-inline-style="inline-3633e433a1">
+            <button className="btn-apply" data-inline-style="inline-84a31235d6"
               disabled={verifying} onClick={verifyChain}
               title="Recompute the SHA-256 hash chain over every entry to prove the log hasn't been edited or truncated">
               {verifying ? "Verifying…" : "Verify integrity"}
@@ -270,11 +270,11 @@ export function UserManagementPage() {
             </button>
           </div>
         }>
-        <div style={{ fontSize:12, color:"var(--color-muted)", padding:"0 0 12px", lineHeight:1.6 }}>
+        <div data-inline-style="inline-03fbcc5593">
           Append-only audit trail of security-relevant actions (sign-ins, user and role changes, settings).
           Entries are hash-chained — each row's hash covers the previous row's, so any tampering is detectable.
           {verify && !verify.valid && (
-            <span style={{ color:"var(--sev-critical-text)", fontWeight:600 }}>
+            <span data-inline-style="inline-7d860f012f">
               {" "}Integrity check failed at entry #{verify.firstBrokenId}. Investigate immediately.
             </span>
           )}
@@ -299,7 +299,7 @@ export function UserManagementPage() {
                       <td className="al-date">{a.actorEmail}</td>
                       <td><Badge label={a.action} tone="neutral"/></td>
                       <td className="al-date">{a.targetId || a.targetType}</td>
-                      <td style={{ fontSize:12, color:"var(--color-muted)" }}>{a.details}</td>
+                      <td data-inline-style="inline-af7da65b76">{a.details}</td>
                       <td className="al-date" title={a.userAgent || undefined}>{a.ipAddress || "—"}</td>
                     </tr>
                   ))}

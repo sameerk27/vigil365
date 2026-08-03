@@ -581,7 +581,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
                     <div className="user-menu-hdr">
                       <div className="um-name">{account.name}</div>
                       <div className="um-mail">{account.username}</div>
-                      <div style={{ marginTop: 6 }}>
+                      <div className="user-menu-role">
                         <Badge label={auth.role} tone={auth.isAdmin ? "info" : auth.canMutate ? "good" : "neutral"}/>
                       </div>
                     </div>
@@ -744,8 +744,8 @@ function AuthGate() {
 
   if (!authReady) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "var(--color-bg, #0f172a)" }}>
-        <div style={{ color: "#94a3b8", fontSize: 14 }}>Loading…</div>
+      <div className="app-loading-shell">
+        <div className="app-loading-text">Loading…</div>
       </div>
     );
   }
@@ -795,7 +795,7 @@ function AuthGate() {
             {/* An unexplained sign-out reads as a bug. Say which limit was hit. */}
             {signOutReason && (
               <div className="login-note" role="status">
-                <Lock size={13} style={{ flexShrink: 0, marginTop: 2 }}/>
+                <Lock size={13} className="login-note-icon"/>
                 <span>{signOutReason === "idle"
                   ? `You were signed out after ${IDLE_TIMEOUT_MIN} minutes of inactivity.`
                   : "You were signed out because the maximum session length was reached."}</span>
@@ -813,7 +813,7 @@ function AuthGate() {
             </button>
 
             <div className="login-note">
-              <Lock size={13} style={{ flexShrink: 0, marginTop: 2 }}/>
+              <Lock size={13} className="login-note-icon"/>
               <span>Access is restricted to your Microsoft 365 organisation. Only users in your tenant can sign in.</span>
             </div>
           </div>

@@ -123,7 +123,7 @@ export function GlobalSearch({ open, onClose, alerts, pages, onOpenAlert, onNavi
                   className={`gs-item${i === activeIdx ? " active" : ""}`}
                   onMouseEnter={() => setActiveIdx(i)} onClick={() => select(r)}>
                   {r.kind === "alert"
-                    ? <span className={sevClass(r.severity)} style={{ marginTop: 0 }}/>
+                    ? <span className={sevClass(r.severity)} data-inline-style="inline-25a98a3a6a"/>
                     : <span className="gs-icon">{icon(r)}</span>}
                   <span className="gs-label">{r.label}</span>
                   {r.kind === "alert" && <span className="gs-sub">{r.sub}</span>}

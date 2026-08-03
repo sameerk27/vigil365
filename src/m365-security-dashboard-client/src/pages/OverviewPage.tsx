@@ -152,7 +152,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
                 <div>
                   <div className="score-big">{secureScore.percentage}%</div>
                   <div className="score-meta">{Math.round(secureScore.currentScore)} / {Math.round(secureScore.maxScore)} pts</div>
-                  <div className="score-meta" style={{marginTop:4}}>Updated {fmtShort(secureScore.trend.at(-1)?.date)}</div>
+                  <div className="score-meta" data-inline-style="inline-c98a9f1869">Updated {fmtShort(secureScore.trend.at(-1)?.date)}</div>
                 </div>
               </div>
               <LineChart data={trendData}/>
@@ -178,12 +178,12 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
                     color={sev==="critical"?"var(--dot-critical)":sev==="high"?"var(--dot-high)":sev==="medium"?"var(--dot-medium)":"var(--dot-info)"}/>
                 ))}
               </div>
-              <div className="mini-list" style={{marginTop:8}}>
+              <div className="mini-list" data-inline-style="inline-5313025c2e">
                 <SectHdr>RECENT ALERTS</SectHdr>
                 {defenderAlerts.alerts.slice(0,5).map((a,i)=>(
-                  <div key={i} className="mini-row al-clickable" {...rowActivation(onNavigateAlertCenter)} style={{ cursor: "pointer" }}>
+                  <div key={i} className="mini-row al-clickable" {...rowActivation(onNavigateAlertCenter)} data-inline-style="inline-7c0f86ab54">
                     <span className={sevClass(a.severity)}/>
-                    <span className="mr-user" style={{flex:1}}>{a.title??"Unknown"}</span>
+                    <span className="mr-user" data-inline-style="inline-126244f135">{a.title??"Unknown"}</span>
                     <Badge label={fmtDefenderSource(a.serviceSource??a.severity)} tone="neutral"/>
                   </div>
                 ))}
@@ -198,15 +198,15 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
         <Card title="M365 Service Advisories"
           badge={<Badge label={advisories.length > 0 ? `${advisories.length} open` : "All operational"} tone={advisories.length > 0 ? "warning" : "good"}/>}
           action={<button className="btn-export" onClick={() => crossNavigate({ page: "servicehealth" })}>Service Health <ChevronRight size={13}/></button>}>
-          <div style={{ fontSize: 11.5, color: "var(--color-muted)", paddingBottom: 8 }}>
+          <div data-inline-style="inline-a87da3b874">
             Microsoft platform advisories — availability, not security. Kept out of the alert counts.
           </div>
           {advisories.length > 0 ? (
             <div className="mini-list">
               {advisories.slice(0, 5).map((a, i) => (
-                <div key={i} className="mini-row al-clickable" {...rowActivation(() => crossNavigate({ page: "servicehealth" }))} style={{ cursor: "pointer" }} title={fmtFullTime(a.detectedAt)}>
+                <div key={i} className="mini-row al-clickable" {...rowActivation(() => crossNavigate({ page: "servicehealth" }))} data-inline-style="inline-7c0f86ab54" title={fmtFullTime(a.detectedAt)}>
                   <span className={sevClass(a.severity)}/>
-                  <span className="mr-user" style={{ flex: 1 }}>{a.title}</span>
+                  <span className="mr-user" data-inline-style="inline-126244f135">{a.title}</span>
                   <span className="mr-date">{fmtShort(a.detectedAt)}</span>
                 </div>
               ))}
@@ -240,7 +240,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
                   <div className="mini-list">
                     <SectHdr>AT-RISK USERS</SectHdr>
                     {riskyUsers.slice(0,4).map((a,i)=>(
-                      <div key={i} className="mini-row al-clickable" {...rowActivation(()=>onAlertClick(a))} style={{cursor:"pointer"}}>
+                      <div key={i} className="mini-row al-clickable" {...rowActivation(()=>onAlertClick(a))} data-inline-style="inline-7c0f86ab54">
                         <span className={`sev-dot sev-${a.severity.toLowerCase()}`}/>
                         <span className="mr-user">{a.userPrincipalName??a.title}</span>
                         <Badge label={a.severity} tone={a.severity==="High"||a.severity==="Critical"?"error":"warning"}/>
@@ -262,7 +262,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
             <div className="mini-list">
               <SectHdr>BREAKDOWN BY SERVICE</SectHdr>
               {(overview?.byService??[]).map((s,i)=>(
-                <div key={i} className="mini-row al-clickable" {...rowActivation(() => crossNavigate({ page: s.service === "EntraId" ? "identity" : s.service === "DefenderXdr" ? "alertcenter" : s.service === "Intune" ? "devices" : s.service === "ExchangeOnline" ? "email" : "servicehealth" }))} style={{ cursor: "pointer" }}>
+                <div key={i} className="mini-row al-clickable" {...rowActivation(() => crossNavigate({ page: s.service === "EntraId" ? "identity" : s.service === "DefenderXdr" ? "alertcenter" : s.service === "Intune" ? "devices" : s.service === "ExchangeOnline" ? "email" : "servicehealth" }))} data-inline-style="inline-7c0f86ab54">
                   <Database size={11} color="var(--color-muted)"/>
                   <span className="mr-user">{fmtService(s.service)}</span>
                   <Badge label={String(s.count)} tone={s.count>10?"error":s.count>3?"warning":"neutral"}/>
@@ -285,7 +285,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
           {(devices?.nonCompliantDevices.length??0)>0?(
             <div className="mini-list">
               {devices!.nonCompliantDevices.slice(0,3).map((d,i)=>(
-                <div key={i} className="mini-row al-clickable" {...rowActivation(() => crossNavigate({ page: "devices", search: d.deviceName ?? "" }))} style={{ cursor: "pointer" }}>
+                <div key={i} className="mini-row al-clickable" {...rowActivation(() => crossNavigate({ page: "devices", search: d.deviceName ?? "" }))} data-inline-style="inline-7c0f86ab54">
                   <Monitor size={11} color="var(--color-muted)"/>
                   <span className="mr-user">{d.deviceName??"Unknown device"}</span>
                   <span className="mr-date">{d.userPrincipalName?.split("@")[0]}</span>
@@ -330,7 +330,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
             {(overview?.byService??[]).length===0
               ?<EmptyState message="Run a collection to see recommendations"/>
               :overview!.byService.map((s,i)=>(
-                <div key={i} className="impr-row al-clickable" {...rowActivation(() => crossNavigate({ page: s.service === "EntraId" ? "identity" : s.service === "DefenderXdr" ? "alertcenter" : s.service === "Intune" ? "devices" : s.service === "ExchangeOnline" ? "email" : "servicehealth" }))} style={{ cursor: "pointer" }}>
+                <div key={i} className="impr-row al-clickable" {...rowActivation(() => crossNavigate({ page: s.service === "EntraId" ? "identity" : s.service === "DefenderXdr" ? "alertcenter" : s.service === "Intune" ? "devices" : s.service === "ExchangeOnline" ? "email" : "servicehealth" }))} data-inline-style="inline-7c0f86ab54">
                   <div className="impr-icon"><TrendingUp size={12}/></div>
                   <span className="impr-text">Review {fmtService(s.service)} — {s.count} active alert{s.count!==1?"s":""}</span>
                   <Badge label={`${s.count} open`} tone={s.count>10?"error":s.count>3?"warning":"neutral"}/>
@@ -351,12 +351,12 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
                 <StatBox value={todayAlerts} label="Triggered Today" color={todayAlerts>0?"var(--status-error-text)":undefined}/>
               </div>
               {recent3.length > 0 ? (
-                <div className="mini-list" style={{marginTop:8}}>
+                <div className="mini-list" data-inline-style="inline-5313025c2e">
                   <SectHdr>RECENT TRIGGERED</SectHdr>
                   {recent3.map((a,i)=>(
-                    <div key={i} className="mini-row al-clickable" {...rowActivation(onNavigateAlertCenter)} style={{ cursor: "pointer" }}>
+                    <div key={i} className="mini-row al-clickable" {...rowActivation(onNavigateAlertCenter)} data-inline-style="inline-7c0f86ab54">
                       <span className={sevClass(a.severity)}/>
-                      <span className="mr-user" style={{flex:1}}>{a.policyName}</span>
+                      <span className="mr-user" data-inline-style="inline-126244f135">{a.policyName}</span>
                       <span className="mr-date" title={fmtFullTime(a.triggeredAt)}>{relTime(a.triggeredAt)}</span>
                     </div>
                   ))}

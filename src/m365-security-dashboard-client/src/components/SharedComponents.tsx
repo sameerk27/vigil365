@@ -103,7 +103,7 @@ export function CircleGauge({ pct, size = 72, color }: { pct: number; size?: num
   const dash = Math.min(1, pct / 100) * circ;
   const c = color ?? (pct >= 90 ? "var(--status-good-icon)" : pct >= 70 ? "var(--status-warn-icon)" : "var(--status-error-icon)");
   return (
-    <svg width={size} height={size} style={{ flexShrink: 0 }}>
+    <svg width={size} height={size} data-inline-style="inline-69271fc98e">
       <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--color-border)" strokeWidth="6" />
       <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={c} strokeWidth="6"
         strokeDasharray={`${dash} ${circ}`} strokeLinecap="round"
@@ -171,7 +171,7 @@ export function LineChart({ data, color = "#3b82f6", onClick }: { data: { date: 
   };
 
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="line-chart-svg" preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "100%", display: "block" }} onMouseLeave={() => setHoverIdx(null)}
+    <svg viewBox={`0 0 ${w} ${h}`} className="line-chart-svg" preserveAspectRatio="xMidYMid meet" data-inline-style="inline-ca8b563226" onMouseLeave={() => setHoverIdx(null)}
       role="img" aria-label={`Line chart, ${data.length} points, from ${data[0].value} (${data[0].date}) to ${data.at(-1)!.value} (${data.at(-1)!.date}); min ${rawMin}, max ${rawMax}`}>
       <defs>
         <linearGradient id={`grad-${chartId}`} x1="0" y1="0" x2="0" y2="1">
@@ -187,9 +187,9 @@ export function LineChart({ data, color = "#3b82f6", onClick }: { data: { date: 
       {yLabels.map(({ v, y }, i) => <text key={`y-${i}`} x={pad.l - 6} y={y + 4} textAnchor="end" fontSize="10" fill="var(--color-muted, #94a3b8)" fontWeight="500">{v}</text>)}
 
       {/* Area fill and line */}
-      <path d={area} fill={`url(#grad-${chartId})`} style={{ pointerEvents: "none" }} />
-      <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ pointerEvents: "none" }}/>
-      <circle cx={pts.at(-1)!.x} cy={pts.at(-1)!.y} r="4" fill="var(--color-bg, #fff)" stroke={color} strokeWidth="2" style={{ pointerEvents: "none" }} />
+      <path d={area} fill={`url(#grad-${chartId})`} data-inline-style="inline-bbe464ff90" />
+      <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" data-inline-style="inline-bbe464ff90"/>
+      <circle cx={pts.at(-1)!.x} cy={pts.at(-1)!.y} r="4" fill="var(--color-bg, #fff)" stroke={color} strokeWidth="2" data-inline-style="inline-bbe464ff90" />
 
       {/* X-axis labels — short format, well spaced */}
       {data.map((d, i) => {
@@ -220,7 +220,7 @@ export function LineChart({ data, color = "#3b82f6", onClick }: { data: { date: 
           <line x1={pts[hoverIdx].x} y1={pad.t} x2={pts[hoverIdx].x} y2={pad.t + ch} stroke={color} strokeWidth="1" strokeDasharray="3 3" opacity="0.5" />
           <circle cx={pts[hoverIdx].x} cy={pts[hoverIdx].y} r="5" fill="var(--color-bg, #fff)" stroke={color} strokeWidth="2.5" />
           <g transform={`translate(${pts[hoverIdx].x > w * 0.65 ? pts[hoverIdx].x - 90 : pts[hoverIdx].x + 12}, ${Math.max(4, Math.min(pts[hoverIdx].y - 20, h - 48))})`}>
-            <rect x="0" y="0" width="82" height="42" rx="6" fill="var(--color-card, #fff)" stroke="var(--color-border)" strokeWidth="1" style={{ filter: "drop-shadow(0 2px 8px rgba(0,0,0,0.12))" }} />
+            <rect x="0" y="0" width="82" height="42" rx="6" fill="var(--color-card, #fff)" stroke="var(--color-border)" strokeWidth="1" data-inline-style="inline-dd035a612a" />
             <text x="41" y="16" textAnchor="middle" fontSize="9.5" fill="var(--color-muted, #94a3b8)" fontWeight="600">{fmtLabel(pts[hoverIdx].date)}</text>
             <text x="41" y="33" textAnchor="middle" fontSize="15" fill="var(--color-text)" fontWeight="700">{pts[hoverIdx].value}</text>
           </g>
@@ -319,7 +319,7 @@ export function KpiTile({ icon, label, value, sub, tone="neutral", needsPerm, on
         className={`kpi-tile kpi-${tone} kpi-clickable${active ? " kpi-active" : ""}`}
         onClick={onClick}
         title={help ?? `${label} — click to filter`}
-        style={{ textAlign: "left", font: "inherit", cursor: "pointer", width: "100%" }}
+        data-inline-style="inline-5f693fde9b"
       >
         {inner}
       </button>
@@ -353,7 +353,7 @@ export function SeverityFilter({ value, onChange, ariaLabel = "Filter by severit
   return (
     <select value={value} onChange={e => onChange(e.target.value)}
       className="filter-sel" aria-label={ariaLabel}
-      style={{ fontSize: 12, padding: "5px 8px" }}>
+      data-inline-style="inline-1c8c76b2ad">
       <option value="">All severities</option>
       {SEVERITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
@@ -400,26 +400,26 @@ export function StateMessage({ type = "empty", title, message, icon, onAction, a
 }
 
 export function LoadingSkeleton({ type = "card" }: { type?: "card"|"table"|"kpi"|"list" }) {
-  if (type === "kpi") return <div className="skeleton-box" style={{ height: "90px" }}/>;
+  if (type === "kpi") return <div className="skeleton-box" data-inline-style="inline-8360235f55"/>;
   if (type === "table") return (
     <div className="skeleton-container">
-      <div className="skeleton-row"><div className="skeleton-box" style={{ flex: 1, height: "30px" }}/></div>
-      <div className="skeleton-row"><div className="skeleton-box" style={{ flex: 1, height: "40px" }}/></div>
-      <div className="skeleton-row"><div className="skeleton-box" style={{ flex: 1, height: "40px" }}/></div>
+      <div className="skeleton-row"><div className="skeleton-box" data-inline-style="inline-36a9f0928a"/></div>
+      <div className="skeleton-row"><div className="skeleton-box" data-inline-style="inline-44eb0a8f04"/></div>
+      <div className="skeleton-row"><div className="skeleton-box" data-inline-style="inline-44eb0a8f04"/></div>
     </div>
   );
   if (type === "list") return (
     <div className="skeleton-container">
-      <div className="skeleton-row"><div className="skeleton-circle" style={{ width: "24px", height: "24px" }}/><div className="skeleton-box" style={{ flex: 1, height: "20px" }}/></div>
-      <div className="skeleton-row"><div className="skeleton-circle" style={{ width: "24px", height: "24px" }}/><div className="skeleton-box" style={{ flex: 1, height: "20px" }}/></div>
+      <div className="skeleton-row"><div className="skeleton-circle" data-inline-style="inline-05358c2e58"/><div className="skeleton-box" data-inline-style="inline-93be0d9e1e"/></div>
+      <div className="skeleton-row"><div className="skeleton-circle" data-inline-style="inline-05358c2e58"/><div className="skeleton-box" data-inline-style="inline-93be0d9e1e"/></div>
     </div>
   );
-  return <div className="skeleton-box" style={{ height: "200px" }}/>;
+  return <div className="skeleton-box" data-inline-style="inline-7bb3017000"/>;
 }
 
 export function DashboardSkeleton() {
   return (
-    <div className="page" style={{ padding: "24px" }}>
+    <div className="page" data-inline-style="inline-64ede2cab0">
       <div className="kpi-row">
         <LoadingSkeleton type="kpi" />
         <LoadingSkeleton type="kpi" />
@@ -428,7 +428,7 @@ export function DashboardSkeleton() {
         <LoadingSkeleton type="kpi" />
         <LoadingSkeleton type="kpi" />
       </div>
-      <div className="mid-row" style={{ marginTop: "24px" }}>
+      <div className="mid-row" data-inline-style="inline-321d1ea5c6">
         <LoadingSkeleton type="card" />
         <LoadingSkeleton type="card" />
       </div>
@@ -463,11 +463,11 @@ export function DetailField({ label, value, copy, copyValue, title, onNavigate, 
   return (
     <div className="detail-field">
       <span className="detail-label">{label}</span>
-      <span className="detail-value" style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, flexWrap: "wrap" }}>
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis" }} title={title ?? (typeof value === "string" ? value : undefined)}>{value}</span>
+      <span className="detail-value" data-inline-style="inline-1383a55c28">
+        <span data-inline-style="inline-b286af854a" title={title ?? (typeof value === "string" ? value : undefined)}>{value}</span>
         {copy && rawStr && <CopyButton value={copyValue ?? rawStr} label={label}/>}
         {onNavigate && (
-          <button type="button" onClick={onNavigate} style={{ background: "none", border: "1px solid var(--color-border)", borderRadius: 4, padding: "1px 6px", fontSize: 11, cursor: "pointer", color: "var(--color-primary)", marginLeft: 4, display: "inline-flex", alignItems: "center", gap: 3 }}>
+          <button type="button" onClick={onNavigate} data-inline-style="inline-ded2066bec">
             {navLabel ?? "View →"}
           </button>
         )}
@@ -508,7 +508,7 @@ export function DetailModal({ title, subtitle, onClose, portalUrl, portalLabel, 
       <div className="detail-modal" ref={panelRef} onClick={e => e.stopPropagation()}
         role="dialog" aria-modal="true" aria-label={title}>
         <div className="detail-modal-hdr">
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <div data-inline-style="inline-396e68aca8">
             <div className="dm-title">{title}</div>
             {subtitle && <div className="dm-sub">{subtitle}</div>}
           </div>
@@ -613,21 +613,21 @@ export function TriageSection({ kind, targetId, assignedTo, disposition, showDis
 
   return (
     <div className="triage-section">
-      <div className="dm-section-hdr"><UserCheck size={13} style={{ verticalAlign: "-2px", marginRight: 5 }}/>Triage</div>
+      <div className="dm-section-hdr"><UserCheck size={13} data-inline-style="inline-8c3ae5ba57"/>Triage</div>
       <div className="triage-row">
         <span className="triage-label">Assigned to</span>
         <span className="triage-value">{curAssignee ?? "Unassigned"}</span>
         {canMutate && (
           <span className="triage-actions">
             {curAssignee !== myEmail && (
-              <button className="btn-export" style={{ padding: "3px 9px", fontSize: 11 }} disabled={busy}
+              <button className="btn-export" data-inline-style="inline-aabab229b1" disabled={busy}
                 onClick={() => doAssign(myEmail)}>Assign to me</button>
             )}
             {curAssignee && (
-              <button className="btn-export" style={{ padding: "3px 9px", fontSize: 11 }} disabled={busy}
+              <button className="btn-export" data-inline-style="inline-aabab229b1" disabled={busy}
                 onClick={() => doAssign("")}>Unassign</button>
             )}
-            <input className="form-input" style={{ padding: "3px 8px", fontSize: 11, width: 170 }}
+            <input className="form-input" data-inline-style="inline-68fa3635ad"
               placeholder="assign by email…" value={assignInput}
               onChange={e => setAssignInput(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter" && assignInput.includes("@")) doAssign(assignInput.trim().toLowerCase()); }}/>
@@ -638,7 +638,7 @@ export function TriageSection({ kind, targetId, assignedTo, disposition, showDis
         <div className="triage-row">
           <span className="triage-label">Disposition</span>
           {canMutate ? (
-            <select className="filter-sel" style={{ padding: "3px 8px", fontSize: 12 }} disabled={busy}
+            <select className="filter-sel" data-inline-style="inline-29f4818e18" disabled={busy}
               value={curDisposition ?? ""} onChange={e => doDisposition(e.target.value)}>
               <option value="">Untriaged</option>
               <option value="reviewed">Reviewed</option>
@@ -654,11 +654,11 @@ export function TriageSection({ kind, targetId, assignedTo, disposition, showDis
       {/* Notes list — hidden when a parent (e.g. the evidence timeline) already
           renders the notes. The add-note input below stays available either way. */}
       {showNotes && <>
-      <div className="dm-section-hdr" style={{ marginTop: 12 }}><MessageSquare size={13} style={{ verticalAlign: "-2px", marginRight: 5 }}/>Notes {notes ? `(${notes.length})` : ""}</div>
+      <div className="dm-section-hdr" data-inline-style="inline-f2fecb34dc"><MessageSquare size={13} data-inline-style="inline-8c3ae5ba57"/>Notes {notes ? `(${notes.length})` : ""}</div>
       {notes === null ? (
-        <div style={{ fontSize: 12, color: "var(--color-muted)", padding: "4px 0" }}>Loading notes…</div>
+        <div data-inline-style="inline-508bfb429b">Loading notes…</div>
       ) : notes.length === 0 ? (
-        <div style={{ fontSize: 12, color: "var(--color-muted)", padding: "4px 0" }}>No notes yet.</div>
+        <div data-inline-style="inline-508bfb429b">No notes yet.</div>
       ) : (
         <div className="triage-notes">
           {notes.map(n => (
@@ -675,11 +675,11 @@ export function TriageSection({ kind, targetId, assignedTo, disposition, showDis
       </>}
       {canMutate && (
         <div style={{ display: "flex", gap: 6, marginTop: showNotes ? 8 : 12 }}>
-          <input className="form-input" style={{ flex: 1, fontSize: 12 }} placeholder="Add a note — what did you find?"
+          <input className="form-input" style={{ flex: 1, fontSize: 12 }} placeholder="Add a note â€” what did you find?"
             value={noteText} maxLength={2000}
             onChange={e => setNoteText(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter") addNote(); }}/>
-          <button className="btn-apply" style={{ padding: "6px 14px", fontSize: 12 }} disabled={busy || !noteText.trim()} onClick={addNote}>Add</button>
+          <button className="btn-apply" data-inline-style="inline-b58cc65177" disabled={busy || !noteText.trim()} onClick={addNote}>Add</button>
         </div>
       )}
     </div>
@@ -752,7 +752,7 @@ export function AlertDetailModal({ alert, allAlerts, onSelectAlert, onClose }: {
           <div className="dm-desc-block">{alert.description}</div>
         </>
       )}
-      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:4}}>
+      <div data-inline-style="inline-18a105c94e">
         <Badge label={alert.severity} tone={sevTone}/>
         <Badge label={fmtService(alert.service)} tone="neutral"/>
         <Badge label={alert.isResolved ? "Resolved" : "Active"} tone={alert.isResolved ? "good" : "error"}/>
@@ -763,7 +763,7 @@ export function AlertDetailModal({ alert, allAlerts, onSelectAlert, onClose }: {
         <>
           <div className="dm-section-hdr">Related open alerts for {alert.userPrincipalName ? "this user" : "this device"}</div>
           {related.length === 0 ? (
-            <div style={{ fontSize: 12, color: "var(--color-muted)", padding: "4px 0" }}>
+            <div data-inline-style="inline-508bfb429b">
               No other open alerts involve {entity}.
             </div>
           ) : (
@@ -774,7 +774,7 @@ export function AlertDetailModal({ alert, allAlerts, onSelectAlert, onClose }: {
                   role={onSelectAlert ? "button" : undefined} tabIndex={onSelectAlert ? 0 : undefined}
                   onKeyDown={e => { if (onSelectAlert && e.key === "Enter") onSelectAlert(r); }}>
                   <span className={`sev-dot sev-${r.severity.toLowerCase()}`}/>
-                  <span className="mr-user" style={{ flex: 1 }}>{r.title}</span>
+                  <span className="mr-user" data-inline-style="inline-126244f135">{r.title}</span>
                   <Badge label={fmtService(r.service)} tone="neutral"/>
                 </div>
               ))}

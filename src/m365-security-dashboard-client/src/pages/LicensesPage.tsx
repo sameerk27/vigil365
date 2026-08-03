@@ -48,14 +48,14 @@ export function LicensesPage({ licenses, inactive, passwords }: {
         <Card title="License Usage by SKU"
           badge={<Badge label={`${filteredSkus.length} / ${licenses?.skus.length??0} SKUs`} tone="neutral"/>}
           action={(licenses?.configured && (licenses?.skus.length??0)>0) ? (
-            <div style={{display:"flex",alignItems:"center",gap:6}}>
-              <label className="search-box" style={{minWidth:160}}>
+            <div data-inline-style="inline-8da89a75a7">
+              <label className="search-box" data-inline-style="inline-1fc8e3ac15">
                 <Search size={14}/>
                 <input value={skuSearch} onChange={e=>setSkuSearch(e.target.value)}
                   placeholder="Search SKU name…" className="search-input"/>
               </label>
               <ExportDropdown rows={filteredSkus.map(s=>({ SKU:s.name, Purchased:s.purchased, Consumed:s.consumed, Available:s.available }))} filename="licenses.csv"/>
-              {skuSearch&&<button className="btn-apply" style={{padding:"5px 10px",fontSize:12}} onClick={()=>setSkuSearch("")}>Clear</button>}
+              {skuSearch&&<button className="btn-apply" data-inline-style="inline-84a31235d6" onClick={()=>setSkuSearch("")}>Clear</button>}
             </div>
           ) : undefined}>
           {(!licenses?.configured || !licenses.skus.length)
@@ -68,7 +68,7 @@ export function LicensesPage({ licenses, inactive, passwords }: {
                   <div className="ub-pct">{utilPct}%</div>
                 </div>
                 <MiniBarChart items={filteredSkus.slice(0,8).map(s=>({ label:s.name.replace(/_/g," ").slice(0,22), value:s.consumed, color:s.available<=5?"#dc2626":"#3b82f6" }))}/>
-                <div className="tbl-wrap" style={{marginTop:12}}>
+                <div className="tbl-wrap" data-inline-style="inline-f2fecb34dc">
                   <table className="data-tbl">
                     <thead><tr><th scope="col">SKU</th><th scope="col">Purchased</th><th scope="col">Consumed</th><th scope="col">Available</th></tr></thead>
                     <tbody>
@@ -91,13 +91,13 @@ export function LicensesPage({ licenses, inactive, passwords }: {
         <Card title="Inactive Users — 90+ Days"
           badge={<Badge label={`${filteredInactive.length} / ${inactive?.inactive90Count??0} users`} tone={(inactive?.inactive90Count??0)>0?"warning":"good"}/>}
           action={(inactive?.configured && (inactive?.inactive90Count??0)>0) ? (
-            <div style={{display:"flex",alignItems:"center",gap:6}}>
-              <label className="search-box" style={{minWidth:160}}>
+            <div data-inline-style="inline-8da89a75a7">
+              <label className="search-box" data-inline-style="inline-1fc8e3ac15">
                 <Search size={14}/>
                 <input value={userSearch} onChange={e=>setUserSearch(e.target.value)}
                   placeholder="Search UPN or name…" className="search-input"/>
               </label>
-              <select value={inactiveSort} onChange={e=>setInactiveSort(e.target.value as "days"|"alpha")} className="filter-sel" style={{fontSize:12,padding:"5px 8px"}}>
+              <select value={inactiveSort} onChange={e=>setInactiveSort(e.target.value as "days"|"alpha")} className="filter-sel" data-inline-style="inline-1c8c76b2ad">
                 <option value="days">Sort: Most inactive</option>
                 <option value="alpha">Sort: A–Z</option>
               </select>
@@ -106,7 +106,7 @@ export function LicensesPage({ licenses, inactive, passwords }: {
                 Licensed only
               </label>
               <ExportDropdown rows={filteredInactive.map(u=>({ UPN:u.upn, Name:u.name??"", LastSignIn:u.lastSignIn??"Never", DaysSince:u.daysSince, HasLicense:u.hasLicense }))} filename="inactive-users.csv"/>
-              {(userSearch||showLicensedOnly)&&<button className="btn-apply" style={{padding:"5px 10px",fontSize:12}} onClick={()=>{setUserSearch("");setShowLicensedOnly(false);}}>Clear</button>}
+              {(userSearch||showLicensedOnly)&&<button className="btn-apply" data-inline-style="inline-84a31235d6" onClick={()=>{setUserSearch("");setShowLicensedOnly(false);}}>Clear</button>}
             </div>
           ) : undefined}>
           {!inactive?.configured
@@ -116,7 +116,7 @@ export function LicensesPage({ licenses, inactive, passwords }: {
               : <>
 
                   <div className="alert-list">
-                    {filteredInactive.length===0&&<div className="td-empty" style={{padding:12}}>No users match the filter.</div>}
+                    {filteredInactive.length===0&&<div className="td-empty" data-inline-style="inline-43eb55eaea">No users match the filter.</div>}
                     {filteredInactive.slice(0,15).map((u,i)=>(
                       <div key={i} className="al-item al-item-noclick">
                         <UserX size={14} color="var(--status-warn-icon)"/>
@@ -124,7 +124,7 @@ export function LicensesPage({ licenses, inactive, passwords }: {
                           <div className="al-title">{u.upn}</div>
                           <div className="al-desc">{u.lastSignIn?`Last seen ${fmtDate(u.lastSignIn)}`:"Never signed in"}</div>
                         </div>
-                        <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
+                        <div data-inline-style="inline-882e0924c7">
                           {u.hasLicense&&<Badge label="Licensed" tone="warning"/>}
                           <span className={`al-date days-chip ${u.daysSince>90?"over90":""}`}>{u.daysSince>=0?`${u.daysSince}d ago`:"Never"}</span>
                         </div>
@@ -181,7 +181,7 @@ export function LicensesPage({ licenses, inactive, passwords }: {
                   )}
                 </tbody>
               </table>
-              <div className="info-rows" style={{marginTop:12}}>
+              <div className="info-rows" data-inline-style="inline-f2fecb34dc">
                 <InfoRow label="Never-expire accounts" value={passwords.neverExpiresCount} tone={passwords.neverExpiresCount>10?"warning":"neutral"}/>
                 <InfoRow label="Total users checked" value={passwords.totalUsers}/>
               </div>

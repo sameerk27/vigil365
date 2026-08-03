@@ -101,6 +101,17 @@ describe("accessibility of core markup patterns", () => {
     expect(describeViolations(await violationsIn(html))).toBe("");
   });
 
+  it("sort changes have a polite, atomic status announcement", async () => {
+    const html = `
+      <table>
+        <caption>Active alerts. Select a column heading to change the sort order.</caption>
+        <thead><tr><th scope="col" aria-sort="descending"><button type="button">Triggered</button></th></tr></thead>
+        <tbody><tr><td>Today</td></tr></tbody>
+      </table>
+      <div role="status" aria-live="polite" aria-atomic="true">Active alerts sorted by triggered time, descending</div>`;
+    expect(describeViolations(await violationsIn(html))).toBe("");
+  });
+
   it("icon-only controls carry an accessible name", async () => {
     const html = `
       <button type="button" aria-label="Refresh data"><svg aria-hidden="true"><path d="M0 0"/></svg></button>

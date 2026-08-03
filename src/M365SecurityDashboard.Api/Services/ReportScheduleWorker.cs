@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 namespace M365SecurityDashboard.Api.Services;
 
 /// <summary>
-/// Ticks hourly and dispatches any enabled <see cref="ReportSchedule"/> whose next
+/// Checks every 15 minutes and dispatches any enabled <see cref="ReportSchedule"/> whose next
 /// run is due. Delivery reuses the SMTP configuration in NotificationSettings.
 /// </summary>
 public sealed class ReportScheduleWorker(
@@ -13,7 +13,9 @@ public sealed class ReportScheduleWorker(
     ILogger<ReportScheduleWorker> logger) : BackgroundService
 {
     private static readonly TimeSpan StartupDelay = TimeSpan.FromMinutes(3);
-    private static readonly TimeSpan Interval = TimeSpan.FromHours(1);
+    // A scheduled 07:00 UTC executive digest should not arrive close to 08:00.
+    // This remains inexpensive because only due schedules build a digest.
+    private static readonly TimeSpan Interval = TimeSpan.FromMinutes(15);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {

@@ -79,7 +79,7 @@ export function ReportsPage() {
 
   return (
     <div className="page">
-      <p className="page-intro"><FileText size={15} style={{ verticalAlign: "-2px", marginRight: 6 }}/>
+      <p className="page-intro"><FileText size={15} className="report-inline-icon"/>
         <b>What this page does:</b> it emails a weekly/daily/monthly executive summary of your security posture
         (the preview below is exactly what recipients get). Create a schedule, add recipients, and Vigil365
         sends it automatically — using the SMTP settings under <b>Alerts → Rules &amp; Notifications</b>.
@@ -87,13 +87,13 @@ export function ReportsPage() {
 
       {/* ── Live preview of the executive digest ─────────────────────────────── */}
       <Card title="Executive digest — preview" id="digest-preview" action={
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <label style={{ fontSize: 12, color: "var(--color-muted)" }}>Window
-            <select value={windowDays} onChange={e => setWindowDays(Number(e.target.value))} style={{ marginLeft: 6 }}>
+        <div className="digest-preview-actions">
+          <label className="digest-window-label">Window
+            <select value={windowDays} onChange={e => setWindowDays(Number(e.target.value))} className="digest-window-select">
               <option value={1}>1 day</option><option value={7}>7 days</option><option value={30}>30 days</option>
             </select>
           </label>
-          {preview?.csv && <button className="btn-secondary" style={{ fontSize: 12 }} onClick={downloadCsv}><Download size={13} style={{ verticalAlign: "-2px", marginRight: 4 }}/>CSV</button>}
+          {preview?.csv && <button className="btn-secondary digest-download" onClick={downloadCsv}><Download size={13} className="report-inline-icon"/>CSV</button>}
         </div>
       }>
         {preview === null ? <LoadingSkeleton /> : !preview.hasData ? (
@@ -103,7 +103,7 @@ export function ReportsPage() {
             <div>
               <div className="dm-section-hdr">Posture</div>
               {preview.metrics.length === 0 ? (
-                <p style={{ fontSize: 13, color: "var(--color-muted)" }}>No posture snapshot captured yet.</p>
+                <p className="digest-empty-muted">No posture snapshot captured yet.</p>
               ) : (
                 <table className="digest-metric-table">
                   <tbody>
@@ -114,7 +114,7 @@ export function ReportsPage() {
                         <tr key={m.label}>
                           <td>{m.label}</td>
                           <td><b>{m.value}</b></td>
-                          <td style={{ color: worse ? "var(--sev-high-text)" : better ? "var(--status-good-text)" : "var(--color-muted)" }}>
+                          <td className={`digest-delta ${worse ? "is-worse" : better ? "is-better" : "is-neutral"}`}>
                             {m.delta == null || Math.abs(m.delta) < 0.05 ? "—" : `${m.delta > 0 ? "▲" : "▼"} ${Math.abs(m.delta).toFixed(1)}${m.deltaLabel ? " " + m.deltaLabel : ""}`}
                           </td>
                         </tr>
@@ -127,7 +127,7 @@ export function ReportsPage() {
             <div>
               <div className="dm-section-hdr">Top open alerts</div>
               {preview.topAlerts.length === 0 ? (
-                <p style={{ fontSize: 13, color: "var(--status-good-text)" }}>No open alerts.</p>
+                <p className="digest-empty-good">No open alerts.</p>
               ) : (
                 <ul className="digest-alert-list">
                   {preview.topAlerts.map((a, i) => (
@@ -146,7 +146,7 @@ export function ReportsPage() {
 
       {/* ── Schedules ────────────────────────────────────────────────────────── */}
       <Card title="Delivery schedules" id="report-schedules" action={
-        canMutate && !editing && <button className="btn-apply" style={{ fontSize: 12 }} onClick={() => setEditing(blankSchedule())}><Plus size={13} style={{ verticalAlign: "-2px", marginRight: 4 }}/>New schedule</button>
+        canMutate && !editing && <button className="btn-apply report-new-schedule" onClick={() => setEditing(blankSchedule())}><Plus size={13} className="report-inline-icon"/>New schedule</button>
       }>
         {editing && (
           <div className="report-editor">
@@ -191,13 +191,13 @@ export function ReportsPage() {
             <thead><tr><th scope="col">Report</th><th scope="col">Cadence</th><th scope="col">Recipients</th><th scope="col">Attachments</th><th scope="col">Last run</th><th scope="col"></th></tr></thead>
             <tbody>
               {schedules?.map(s => (
-                <tr key={s.id} style={{ opacity: s.enabled ? 1 : 0.55 }}>
-                  <td><b>{s.name}</b>{!s.enabled && <span style={{ fontSize: 11, color: "var(--color-muted)", marginLeft: 6 }}>(disabled)</span>}</td>
-                  <td style={{ whiteSpace: "nowrap" }}><Clock size={12} style={{ verticalAlign: "-2px", marginRight: 4, color: "var(--color-muted)" }}/>{cadenceLabel(s)}</td>
-                  <td style={{ fontSize: 12, color: "var(--color-muted)" }}><Mail size={12} style={{ verticalAlign: "-2px", marginRight: 4 }}/>{s.recipients || "—"}</td>
+                <tr key={s.id} className={s.enabled ? "report-row" : "report-row is-disabled"}>
+                  <td><b>{s.name}</b>{!s.enabled && <span className="report-disabled-label">(disabled)</span>}</td>
+                  <td className="report-nowrap"><Clock size={12} className="report-inline-icon report-muted-icon"/>{cadenceLabel(s)}</td>
+                  <td className="report-muted-cell"><Mail size={12} className="report-inline-icon"/>{s.recipients || "—"}</td>
                   <td><Badge label={[s.includePdf ? "PDF" : null, s.includeCsv ? "CSV" : null].filter(Boolean).join(" + ") || "HTML"} tone="neutral"/></td>
-                  <td style={{ fontSize: 12, color: "var(--color-muted)" }}>{s.lastRunAt ? `${fmtShort(s.lastRunAt)} · ${s.lastRunStatus ?? ""}` : "never"}</td>
-                  <td style={{ whiteSpace: "nowrap", textAlign: "right" }}>
+                  <td className="report-muted-cell">{s.lastRunAt ? `${fmtShort(s.lastRunAt)} · ${s.lastRunStatus ?? ""}` : "never"}</td>
+                  <td className="report-actions-cell">
                     {canMutate && <>
                       <button className="icon-btn" title="Send now" disabled={busy} onClick={() => runNow(s)}><Play size={14}/></button>
                       <button className="icon-btn" title={s.enabled ? "Disable" : "Enable"} onClick={() => toggleEnabled(s)}><Clock size={14}/></button>

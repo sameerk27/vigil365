@@ -55,8 +55,8 @@ export function ActivityFeedPage() {
       <Card title="Tenant Activity"
         badge={<Badge label={data ? `${data.total} events · last ${days}d` : "—"} tone="neutral"/>}
         action={
-          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-            <label className="search-box" style={{ minWidth: 220 }}>
+          <div data-inline-style="inline-a0c5370730">
+            <label className="search-box" data-inline-style="inline-b33e69fdee">
               <Search size={14}/>
               <input className="search-input" value={search}
                 onChange={e => { setPage(1); setSearch(e.target.value); }}
@@ -74,7 +74,7 @@ export function ActivityFeedPage() {
             }))} filename="tenant-activity.csv" scopeTotal={data?.total}/>
           </div>
         }>
-        <div style={{ fontSize: 12, color: "var(--color-muted)", padding: "0 0 12px", lineHeight: 1.6 }}>
+        <div data-inline-style="inline-03fbcc5593">
           Entra directory-audit events collected each cycle — the stream that activity-based
           alert policies match against. Create a policy from any recurring activity in
           Alert Center → Policies (type: Tenant activity).
@@ -100,10 +100,10 @@ export function ActivityFeedPage() {
                   {data.items.map(e => (
                     <tr key={e.id}>
                       <td className="al-date" title={fmtDate(e.occurredAt)}>{relTime(e.occurredAt) || fmtDate(e.occurredAt)}</td>
-                      <td style={{ fontWeight: 600 }}>{e.activity}</td>
+                      <td data-inline-style="inline-3d9df89ef8">{e.activity}</td>
                       <td className="al-date">{e.category ?? "—"}</td>
                       <td className="al-date">
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                        <span data-inline-style="inline-8657467ca0">
                           {e.actorUpn ? <User size={11}/> : e.actorApp ? <AppWindow size={11}/> : null}
                           {e.actorUpn ?? e.actorApp ?? "—"}
                         </span>
@@ -115,11 +115,11 @@ export function ActivityFeedPage() {
                 </tbody>
               </table>
             </div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 10 }}>
-              <span style={{ fontSize: 12, color: "var(--color-muted)" }}>
+            <div data-inline-style="inline-e169eaa636">
+              <span data-inline-style="inline-af7da65b76">
                 {(data.page - 1) * data.pageSize + 1}–{Math.min(data.page * data.pageSize, data.total)} of {data.total}
               </span>
-              <div style={{ display: "flex", gap: 6 }}>
+              <div data-inline-style="inline-3633e433a1">
                 <button className="btn-export" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Previous</button>
                 <button className="btn-export" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</button>
               </div>

@@ -1,5 +1,11 @@
 # Vigil365 Roadmap — From Single-User Tool to Org-Ready Product
 
+> Status note (August 2026): this document is the original delivery sequence.
+> Authentication/RBAC, audit identity, certificate auth, migrations, CI, health,
+> retention, and structured logging are now implemented. Current work tracking is
+> maintained in `docs/MATURITY_PLAN.md`; remaining M4 work is removal of inline
+> frontend styles before the CSP can drop `style-src 'unsafe-inline'`.
+
 Vigil365 is moving from a single-engineer, localhost tool to a product an
 organization can install on a server, where engineers sign in with their
 Entra ID accounts and get role-based access.

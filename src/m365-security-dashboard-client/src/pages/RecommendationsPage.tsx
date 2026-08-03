@@ -119,19 +119,19 @@ export function RecommendationsPage() {
             <RefreshCw size={13} className={loading ? "spin" : undefined} /> Refresh
           </button>
         }>
-        <div style={{ fontSize: 12, color: "var(--color-muted)", padding: "0 0 12px", lineHeight: 1.6 }}>
+        <div data-inline-style="inline-03fbcc5593">
           Prioritized posture improvements paired with why-it-matters context, step-by-step remediation,
           and a deep link to the right Microsoft 365 portal blade. Vigil365 never changes your tenant —
           all fixes are applied by you, in Microsoft's own portals.
         </div>
 
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, paddingBottom: 14 }}>
+        <div data-inline-style="inline-5e49daee63">
           {categories.map(cat => {
             const count = cat === "All" ? recommendations.length : recommendations.filter(r => r.category === cat).length;
             return (
               <button key={cat} onClick={() => setSelectedCategory(cat)}
                 className={selectedCategory === cat ? "btn-apply" : "btn-export"}
-                style={{ padding: "5px 12px", fontSize: 12 }}>
+                data-inline-style="inline-02dfbae3d8">
                 {cat} ({count})
               </button>
             );
@@ -145,7 +145,7 @@ export function RecommendationsPage() {
         ) : filtered.length === 0 ? (
           <EmptyState icon={<CheckCircle2 size={28} />} message="No recommendations in this category — your tenant matches the baseline criteria." />
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div data-inline-style="inline-379fabac31">
             {filtered.map(item => {
               const isExpanded = expandedId === item.id;
               return (
@@ -158,22 +158,22 @@ export function RecommendationsPage() {
                   <div role="button" tabIndex={0} aria-expanded={isExpanded}
                     onClick={() => setExpandedId(isExpanded ? null : item.id)}
                     onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setExpandedId(isExpanded ? null : item.id); } }}
-                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 16px", cursor: "pointer" }}>
-                    <div style={{ display: "flex", alignItems: "flex-start", gap: 12, minWidth: 0 }}>
-                      <Lightbulb size={18} style={{ flexShrink: 0, marginTop: 2, color: "var(--color-primary)" }} />
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                    data-inline-style="inline-e234c9eaae">
+                    <div data-inline-style="inline-62a74bbb19">
+                      <Lightbulb size={18} data-inline-style="inline-856d8b4afe" />
+                      <div data-inline-style="inline-d529e1f5d1">
+                        <div data-inline-style="inline-3002b9c150">
                           <Badge label={item.severity.toUpperCase()} tone={sevTone(item.severity)} />
                           <Badge label={item.category} tone="neutral" />
                           {item.affectedCount > 0
                             ? <Badge label={`${item.affectedCount} affected`} tone="warning" />
                             : <Badge label="Proactive" tone="good" />}
                         </div>
-                        <div style={{ fontWeight: 600, fontSize: 14, color: "var(--color-text)" }}>{item.title}</div>
+                        <div data-inline-style="inline-d83d37bfd1">{item.title}</div>
                       </div>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                      <a className="btn-export" style={{ display: "inline-flex", textDecoration: "none" }}
+                    <div data-inline-style="inline-a36f4e065e">
+                      <a className="btn-export" data-inline-style="inline-0ab1bd7012"
                         href={item.portalDeepLink} target="_blank" rel="noopener noreferrer"
                         onClick={e => e.stopPropagation()}>
                         Fix in Microsoft portal <ExternalLink size={12} />
@@ -184,25 +184,25 @@ export function RecommendationsPage() {
                   </div>
 
                   {isExpanded && (
-                    <div style={{ borderTop: "1px solid var(--color-border)", padding: "14px 16px", display: "grid", gridTemplateColumns: "minmax(220px, 5fr) minmax(280px, 7fr)", gap: 16 }}>
+                    <div data-inline-style="inline-ae172c2dc3">
                       <div>
                         <div className="dm-section-hdr">Why this matters</div>
-                        <div style={{ fontSize: 12.5, color: "var(--color-text-secondary)", lineHeight: 1.6, marginTop: 6 }}>
+                        <div data-inline-style="inline-92dd221104">
                           {item.whyItMatters}
                         </div>
-                        <div style={{ marginTop: 10, fontSize: 12, color: "var(--color-muted)" }}>
-                          Portal blade: <span style={{ fontFamily: "monospace", background: "var(--color-raised)", border: "1px solid var(--color-border)", borderRadius: 4, padding: "1px 6px", color: "var(--color-text)" }}>{item.portalBladeName}</span>
+                        <div data-inline-style="inline-938ecffc1d">
+                          Portal blade: <span data-inline-style="inline-09fb91c11d">{item.portalBladeName}</span>
                         </div>
                       </div>
                       <div>
                         <div className="dm-section-hdr">Remediation steps</div>
-                        <ol style={{ margin: "6px 0 0", paddingLeft: 20, display: "flex", flexDirection: "column", gap: 6 }}>
+                        <ol data-inline-style="inline-24dee6c9a9">
                           {item.remediationSteps.map((step, idx) => (
-                            <li key={idx} style={{ fontSize: 12.5, color: "var(--color-text-secondary)", lineHeight: 1.55 }}>{step}</li>
+                            <li key={idx} data-inline-style="inline-f1307a247f">{step}</li>
                           ))}
                         </ol>
-                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
-                          <a className="btn-apply" style={{ display: "inline-flex", alignItems: "center", gap: 5, textDecoration: "none", padding: "6px 14px", fontSize: 12 }}
+                        <div data-inline-style="inline-21ba8aff3c">
+                          <a className="btn-apply" data-inline-style="inline-64952b8dd3"
                             href={item.portalDeepLink} target="_blank" rel="noopener noreferrer">
                             Open {item.portalBladeName} <ExternalLink size={12} />
                           </a>

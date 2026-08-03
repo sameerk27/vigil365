@@ -138,13 +138,13 @@ export function TrendsPage() {
   // ─── Loading state ────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="page" style={{ padding: "24px" }}>
-        <div style={{ marginBottom: 24 }}><LoadingSkeleton type="card" /></div>
+      <div className="page" data-inline-style="inline-64ede2cab0">
+        <div data-inline-style="inline-fec3619ed0"><LoadingSkeleton type="card" /></div>
         {/* One slot per metric, derived — a hardcoded five made the layout jump
             when the seven real tiles arrived. */}
         <div className="kpi-row">{METRICS.map(m => <LoadingSkeleton key={m.key} type="kpi" />)}</div>
-        <div style={{ marginTop: 24 }}><LoadingSkeleton type="card" /></div>
-        <div className="mid-row" style={{ marginTop: 16 }}><LoadingSkeleton type="card" /><LoadingSkeleton type="card" /><LoadingSkeleton type="card" /></div>
+        <div data-inline-style="inline-321d1ea5c6"><LoadingSkeleton type="card" /></div>
+        <div className="mid-row" data-inline-style="inline-b034d55537"><LoadingSkeleton type="card" /><LoadingSkeleton type="card" /><LoadingSkeleton type="card" /></div>
       </div>
     );
   }
@@ -153,7 +153,7 @@ export function TrendsPage() {
 
   if (snapshots.length === 0) {
     return (
-      <div className="page" style={{ padding: "24px" }}>
+      <div className="page" data-inline-style="inline-64ede2cab0">
         <Card title="Trends & History">
           <StateMessage type="empty" title="No history yet" message="Run a collection cycle to capture the first trend snapshot. Historical data is captured automatically on each cycle." icon={<TrendingUp size={32} color="var(--color-muted)"/>} />
         </Card>
@@ -180,12 +180,12 @@ export function TrendsPage() {
           <div style={{ width: 32, height: 32, borderRadius: 8, background: `${metric.color}18`, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <Icon size={16} color={metric.color} />
           </div>
-          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--color-muted)", letterSpacing: "0.02em", textTransform: "uppercase" }}>{metric.label}</span>
+          <span data-inline-style="inline-7b438bee7b">{metric.label}</span>
         </div>
-        <div style={{ fontSize: 28, fontWeight: 700, color: "var(--color-text)", lineHeight: 1, marginBottom: 6 }}>
-          {metric.isPct ? cur.toFixed(1) : cur}{metric.unit && <span style={{ fontSize: 16, fontWeight: 500, color: "var(--color-muted)" }}>{metric.unit}</span>}
+        <div data-inline-style="inline-228481f666">
+          {metric.isPct ? cur.toFixed(1) : cur}{metric.unit && <span data-inline-style="inline-a02a17fba3">{metric.unit}</span>}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+        <div data-inline-style="inline-a93a24d0aa">
           <ArrowIcon size={14} color={dirColor} />
           <span style={{ color: dirColor, fontWeight: 600 }}>
             {diff === 0 ? "No change" : `${diff > 0 ? "+" : ""}${metric.isPct ? diff.toFixed(1) : diff}`}
@@ -193,7 +193,7 @@ export function TrendsPage() {
           {/* Snapshots are one collection cycle apart (~15 min by default), so
               this is the most recent sample-to-sample move, not a trend. Saying
               "vs previous" invited reading normal jitter as direction. */}
-          <span style={{ color: "var(--color-muted)" }} title="Change since the previous snapshot — one collection cycle, not a trend">
+          <span data-inline-style="inline-26de0ebb15" title="Change since the previous snapshot — one collection cycle, not a trend">
             vs last snapshot
           </span>
         </div>
@@ -229,28 +229,28 @@ export function TrendsPage() {
   };
 
   return (
-    <div className="page trends-page" style={{ padding: "24px" }}>
+    <div className="page trends-page" data-inline-style="inline-64ede2cab0">
 
       {/* ─── Report Header (visible always, styled for print) ─── */}
-      <div className="trends-report-header print-only" style={{ display: "none" }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Vigil365 — Security Trends & History Report</h1>
-        <p style={{ fontSize: 12, color: "#6b7280", margin: "4px 0 0" }}>
+      <div className="trends-report-header print-only" data-inline-style="inline-6e22c58a7a">
+        <h1 data-inline-style="inline-4ab7779bc6">Vigil365 — Security Trends & History Report</h1>
+        <p data-inline-style="inline-f0d87d4de4">
           Generated {new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })} · Period: {usingFallback ? `${filteredSnapshots.length} most recent snapshots (insufficient history for ${timeRange} days)` : `Last ${timeRange} days`} · {filteredSnapshots.length} data points
         </p>
       </div>
 
       {/* ─── Page Header ─── */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+      <div data-inline-style="inline-44c27107bd">
         <div>
-          <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--color-text)", margin: 0, display: "flex", alignItems: "center", gap: 10 }}>
+          <h2 data-inline-style="inline-97c01e73be">
             <BarChart3 size={22} color="var(--color-primary)" /> Trends & History
           </h2>
-          <p style={{ fontSize: 13, color: "var(--color-muted)", margin: "4px 0 0" }}>
+          <p data-inline-style="inline-fcb52039cc">
             Security posture tracking across {filteredSnapshots.length} snapshots · Last capture: {latest?.capturedAt ? fmtDate(latest.capturedAt) : "—"}
           </p>
         </div>
-        <div className="trends-controls no-print" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <div style={{ display: "flex", gap: 3, background: "var(--color-raised)", padding: 3, borderRadius: 8, border: "1px solid var(--color-border)" }}>
+        <div className="trends-controls no-print" data-inline-style="inline-553d16a161">
+          <div data-inline-style="inline-b085e04e16">
             {[7, 30, 90].map(days => (
               <button key={days} onClick={() => setTimeRange(days)}
                 style={{
@@ -263,7 +263,7 @@ export function TrendsPage() {
               </button>
             ))}
           </div>
-          <div style={{ width: 1, height: 24, background: "var(--color-border)" }} />
+          <div data-inline-style="inline-d240bddbe0" />
           <button onClick={exportCsv} className="trends-action-btn" title="Export all trend data as CSV">
             <Download size={14} /> CSV
           </button>
@@ -280,25 +280,25 @@ export function TrendsPage() {
 
       {/* ─── Hero Chart: Secure Score ─── */}
       <Card title="Secure Score Trend" className="trends-hero-chart">
-        <div style={{ padding: "8px 16px 0" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 8, flexWrap: "wrap" }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-              <span style={{ fontSize: 32, fontWeight: 700, color: "var(--color-text)" }}>{latest?.secureScorePct.toFixed(1)}</span>
-              <span style={{ fontSize: 16, color: "var(--color-muted)", fontWeight: 500 }}>%</span>
+        <div data-inline-style="inline-6f5dc4ccd9">
+          <div data-inline-style="inline-b27220fc04">
+            <div data-inline-style="inline-0a5009a32d">
+              <span data-inline-style="inline-485ddc26bf">{latest?.secureScorePct.toFixed(1)}</span>
+              <span data-inline-style="inline-cb698dfdf8">%</span>
             </div>
             <CircleGauge pct={latest?.secureScorePct ?? 0} size={52} />
-            <div style={{ fontSize: 12, color: "var(--color-muted)", maxWidth: 400 }}>
+            <div data-inline-style="inline-13d9343556">
               {METRICS[0].description}
             </div>
           </div>
         </div>
-        <div style={{ height: 220, padding: "0 16px 16px" }}>
+        <div data-inline-style="inline-b6edae67dd">
           <LineChart data={toChartData("secureScorePct")} color="#3b82f6" />
         </div>
       </Card>
 
       {/* ─── Risk Metrics Grid ─── */}
-      <h3 style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text)", margin: "24px 0 12px", display: "flex", alignItems: "center", gap: 8 }}>
+      <h3 data-inline-style="inline-004b7689b0">
         <Activity size={16} color="var(--color-primary)" /> Risk & Compliance Metrics
       </h3>
       <div className="trends-chart-grid">
@@ -309,15 +309,15 @@ export function TrendsPage() {
                 <div style={{ width: 8, height: 8, borderRadius: "50%", background: m.color }} />
                 <span style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text)" }}>{m.label}</span>
               </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                <span style={{ fontSize: 22, fontWeight: 700, color: "var(--color-text)" }}>
+              <div data-inline-style="inline-360f4d7d08">
+                <span data-inline-style="inline-3c624a053a">
                   {m.isPct ? (latest?.[m.key] as number).toFixed(1) : latest?.[m.key]}
                 </span>
-                {m.unit && <span style={{ fontSize: 12, color: "var(--color-muted)" }}>{m.unit}</span>}
+                {m.unit && <span data-inline-style="inline-af7da65b76">{m.unit}</span>}
               </div>
             </div>
-            <p style={{ margin: "4px 16px 0", fontSize: 11, color: "var(--color-muted)", lineHeight: 1.4 }}>{m.description}</p>
-            <div style={{ height: 160, padding: "4px 12px 12px" }}>
+            <p data-inline-style="inline-63b7e5b6b6">{m.description}</p>
+            <div data-inline-style="inline-367739a4c5">
               <LineChart data={toChartData(m.key)} color={m.color} />
             </div>
           </div>
@@ -325,10 +325,10 @@ export function TrendsPage() {
       </div>
 
       {/* ─── Automated Insights ─── */}
-      <h3 style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text)", margin: "24px 0 12px", display: "flex", alignItems: "center", gap: 8 }}>
+      <h3 data-inline-style="inline-004b7689b0">
         <Info size={16} color="var(--color-primary)" /> Automated Insights
       </h3>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 24 }}>
+      <div data-inline-style="inline-f754d9eb46">
         {insights.map((insight, i) => <InsightRow key={i} insight={insight} />)}
       </div>
 
@@ -341,8 +341,8 @@ export function TrendsPage() {
         </button>
       </div>
       {showTable && (
-        <div style={{ overflowX: "auto", marginBottom: 24, border: "1px solid var(--color-border)", borderTop: "none", borderRadius: "0 0 8px 8px" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+        <div data-inline-style="inline-94a4ef55d7">
+          <table data-inline-style="inline-f767132568">
             <thead>
               <tr style={{ background: "var(--color-raised)" }}>
                 <th scope="col" style={thStyle}>Date</th>
@@ -378,9 +378,9 @@ export function TrendsPage() {
       )}
 
       {/* ─── Print-only data table (always included in PDF) ─── */}
-      <div className="print-only" style={{ display: "none" }}>
-        <h3 style={{ fontSize: 14, fontWeight: 600, marginTop: 24 }}>Historical Data</h3>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10 }}>
+      <div className="print-only" data-inline-style="inline-6e22c58a7a">
+        <h3 data-inline-style="inline-cb5894d92d">Historical Data</h3>
+        <table data-inline-style="inline-5f1b134668">
           <thead>
             <tr>
               <th scope="col" style={{ ...thStyle, fontSize: 10, padding: "4px 6px" }}>Date</th>

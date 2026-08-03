@@ -75,16 +75,16 @@ export function NetworkPage({ serviceHealth, signInLocations }: { serviceHealth:
             ))}
           </div>
           {svcIssues>0&&(
-            <div style={{marginTop:12}}>
+            <div data-inline-style="inline-f2fecb34dc">
               <SectHdr>ACTIVE ADVISORIES</SectHdr>
               {serviceHealth!.issues.map((iss,i)=>(
-                <div key={i} className="al-item al-item-noclick" style={{marginTop:4}}>
+                <div key={i} className="al-item al-item-noclick" data-inline-style="inline-c98a9f1869">
                   <AlertCircle size={13} color="var(--status-warn-icon)"/>
                   <div className="al-body">
                     <div className="al-title">{iss.title}</div>
                     {iss.description&&<div className="al-desc">{iss.description}</div>}
                   </div>
-                  <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4,minWidth:80}}>
+                  <div data-inline-style="inline-658148c038">
                     <Badge label={iss.severity} tone={iss.severity==="High"||iss.severity==="Critical"?"error":"warning"}/>
                     <span className="al-date">{fmtShort(iss.detectedAt)}</span>
                     {iss.portalUrl&&<a href={iss.portalUrl} target="_blank" rel="noopener noreferrer" className="portal-link" onClick={e=>e.stopPropagation()}><ExternalLink size={11}/> Portal</a>}
@@ -100,14 +100,14 @@ export function NetworkPage({ serviceHealth, signInLocations }: { serviceHealth:
             ? <EmptyState icon={<BarChart2 size={28}/>} message="No sign-in data available"/>
             : <>
                 <MiniBarChart items={topApps}/>
-                <div className="tbl-wrap" style={{marginTop:12}}>
+                <div className="tbl-wrap" data-inline-style="inline-f2fecb34dc">
                   <table className="data-tbl">
                     <thead><tr><th scope="col">Application</th><th scope="col">Sign-in Events</th><th scope="col">Status</th></tr></thead>
                     <tbody>
                       {topApps.map((a,i)=>(
                         <tr key={i}>
                           <td><div className="al-title" title={(a as any).fullApp}>{a.label}</div></td>
-                          <td style={{fontWeight:600}}>{a.value}</td>
+                          <td data-inline-style="inline-3d9df89ef8">{a.value}</td>
                           <td><Badge label={(a as any).failures > 0 ? `${(a as any).failures} errors` : "Reachable"} tone={(a as any).failures > 0 ? "warning" : "good"}/></td>
                         </tr>
                       ))}

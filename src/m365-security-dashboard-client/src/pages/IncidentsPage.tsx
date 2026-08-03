@@ -189,7 +189,7 @@ export function IncidentsPage({ alerts, alertsTotal, serviceHealth, defenderAler
           {(selectedIncident.customTags?.length ?? 0) > 0 && <DetailField label="Tags" value={selectedIncident.customTags.join(", ")}/>}
           <div className="dm-section-hdr">Member alerts {memberAlerts.length ? `(${memberAlerts.length})` : ""}</div>
           {memberAlerts.length === 0 ? (
-            <div style={{ fontSize: 12, color: "var(--color-muted)", padding: "2px 0 4px" }}>
+            <div data-inline-style="inline-1ce392ca18">
               {defenderAlerts?.error ? "Defender alerts unavailable." : "No correlated Defender alerts loaded for this incident."}
             </div>
           ) : (
@@ -240,7 +240,7 @@ export function IncidentsPage({ alerts, alertsTotal, serviceHealth, defenderAler
       )}
       {(defenderAlerts?.error || securityIncidents?.error) && (
         <Card title="Missing Permissions" badge={<Badge label="Action Required" tone="error"/>}>
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <div data-inline-style="inline-379fabac31">
             {defenderAlerts?.error && (
               <InlineError title="Defender alerts unavailable" perm="SecurityAlert.Read.All"
                 message={`Could not load Microsoft Defender alerts (${defenderAlerts.error}).`}/>
@@ -373,7 +373,7 @@ export function IncidentsPage({ alerts, alertsTotal, serviceHealth, defenderAler
                       <div className="al-title trunc" title={a.title}>{a.title}</div>
                       {a.description&&<div className="al-desc">{a.description}</div>}
                     </td>
-                    <td className="trunc" style={{maxWidth:140}} title={a.userPrincipalName||a.deviceName||undefined}>{a.userPrincipalName||a.deviceName||"—"}</td>
+                    <td className="trunc" data-inline-style="inline-08aec67817" title={a.userPrincipalName||a.deviceName||undefined}>{a.userPrincipalName||a.deviceName||"—"}</td>
                     <td className="al-date" title={fmtDate(a.detectedAt)}>{relTime(a.detectedAt) || fmtDate(a.detectedAt)}</td>
                     <td><Eye size={13} className="tbl-eye"/></td>
                   </tr>

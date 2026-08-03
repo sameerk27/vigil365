@@ -63,20 +63,20 @@ export function ConditionalAccessPage({ data }: { data: ConditionalAccessData|nu
       <Card title="Conditional Access Policies"
         badge={<Badge label={`${filteredPolicies.length} / ${data?.policies.length??0} policies`} tone="neutral"/>}
         action={(data?.configured && data.policies.length>0) ? (
-          <div style={{display:"flex",alignItems:"center",gap:6}}>
-            <label className="search-box" style={{minWidth:200}}>
+          <div data-inline-style="inline-8da89a75a7">
+            <label className="search-box" data-inline-style="inline-8d14727966">
               <Search size={14}/>
               <input value={policySearch} onChange={e=>setPolicySearch(e.target.value)}
                 placeholder="Search policy name, scope, apps…" className="search-input"/>
             </label>
-            <select value={stateFilter} onChange={e=>setStateFilter(e.target.value)} className="filter-sel" style={{fontSize:12,padding:"5px 8px"}}>
+            <select value={stateFilter} onChange={e=>setStateFilter(e.target.value)} className="filter-sel" data-inline-style="inline-1c8c76b2ad">
               <option value="">All states</option>
               <option value="enabled">Enabled</option>
               <option value="enabledForReportingButNotEnforced">Report Only</option>
               <option value="disabled">Disabled</option>
             </select>
             <ExportDropdown rows={filteredPolicies.map(p=>({ Name:p.name, State:stateLabel(p.state), Scope:p.inclUsers, Apps:p.apps, Controls:p.controls.map(fmtCaControl).join("; ") }))} filename="ca-policies.csv"/>
-            {(policySearch||stateFilter)&&<button className="btn-apply" style={{padding:"5px 10px",fontSize:12}} onClick={()=>{setPolicySearch("");setStateFilter("");}}>Clear</button>}
+            {(policySearch||stateFilter)&&<button className="btn-apply" data-inline-style="inline-84a31235d6" onClick={()=>{setPolicySearch("");setStateFilter("");}}>Clear</button>}
             <FilterPresets pageKey="ca-policies" filters={{policySearch,stateFilter}}
               onLoad={f=>{setPolicySearch(f.policySearch??"");setStateFilter(f.stateFilter??"");}}/>
           </div>
@@ -94,16 +94,16 @@ export function ConditionalAccessPage({ data }: { data: ConditionalAccessData|nu
                       {filteredPolicies.map((p,i)=>(
                         <tr key={i} className="tbl-row-click" {...rowActivation(()=>setSelectedPolicy(p), `Open policy ${p.name}`)}>
                           <td>
-                            <div className="al-title trunc" style={{maxWidth:200}} title={p.name}>{p.name}</div>
+                            <div className="al-title trunc" data-inline-style="inline-147af99167" title={p.name}>{p.name}</div>
                             <div className="al-desc">{p.inclUsers} → {p.apps}</div>
                           </td>
                           <td><Badge label={stateLabel(p.state)} tone={stateTone(p.state)}/></td>
                           <td>
-                            <div className="al-desc trunc" style={{maxWidth:120}} title={p.inclUsers}>{p.inclUsers}</div>
+                            <div className="al-desc trunc" data-inline-style="inline-ea49b25a47" title={p.inclUsers}>{p.inclUsers}</div>
                             {p.exclUsers!=="None"&&<div className="al-desc tone-warning">{p.exclUsers}</div>}
                           </td>
-                          <td className="al-desc trunc" style={{maxWidth:120}} title={p.apps}>{p.apps}</td>
-                          <td style={{display:"flex",flexWrap:"wrap",gap:4,paddingTop:8}}>
+                          <td className="al-desc trunc" data-inline-style="inline-ea49b25a47" title={p.apps}>{p.apps}</td>
+                          <td data-inline-style="inline-f560ba851a">
                             {p.controls.length>0?p.controls.map((c,j)=><Badge key={j} label={fmtCaControl(c)} tone="info"/>):<span className="al-desc">None</span>}
                           </td>
                         </tr>

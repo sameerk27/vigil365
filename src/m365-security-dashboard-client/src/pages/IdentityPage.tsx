@@ -216,7 +216,7 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
           </div>
           <ProgressBar pct={mfaPct}/>
           {mfaMissing.length>0?(
-            <div className="mini-list" style={{marginTop:14}}>
+            <div className="mini-list" data-inline-style="inline-ff270db33d">
               <SectHdr>USERS WITHOUT MFA ({mfaMissing.length})</SectHdr>
               {mfaMissing.slice(0,8).map((a,i)=>(
                 <div key={i} className="mini-row al-clickable" {...rowActivation(()=>onAlertClick(a))}>
@@ -260,7 +260,7 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
       {/* Row 2: Risky Sign-ins + Risk Detections */}
       <div className="two-col">
         <Card title="Risky Sign-ins" badge={<><Badge label={`${riskySignIns.length} risky`} tone={riskySignIns.length>0?"warning":"good"}/><span className="card-count">{riskySignIns.length}</span></>}>
-          <div className="stat-row3" style={{marginBottom:14}}>
+          <div className="stat-row3" data-inline-style="inline-8d16d0ba00">
             <StatBox value={identity?.signIns.total??0} label="Total (24h)"/>
             <StatBox value={riskySignIns.length} label="Risky" color={riskySignIns.length>0?"var(--status-warn-text)":undefined}/>
             <StatBox value={identity?.signIns.foreign??0} label="Foreign" color={(identity?.signIns.foreign??0)>0?"var(--status-error-text)":undefined}/>
@@ -282,11 +282,11 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
             </div>
           ):<EmptyState icon={<ShieldCheck size={28}/>} message="No risky sign-ins detected"/>}
           {filteredForeignSignIns.length > 0 && (
-            <div id="foreign-signins-section" className="alert-list" style={{ marginTop: 18, borderTop: "1px solid var(--color-border)", paddingTop: 12 }}>
+            <div id="foreign-signins-section" className="alert-list" data-inline-style="inline-39c4b61782">
               <SectHdr>FOREIGN SIGN-INS ({filteredForeignSignIns.length})</SectHdr>
               {filteredForeignSignIns.slice(0, 5).map((s, i) => (
-                <div key={i} className="al-item al-item-noclick" style={{ cursor: "default" }}>
-                  <Globe size={14} style={{ color: "var(--status-warn-text)", flexShrink: 0, marginTop: 2 }} />
+                <div key={i} className="al-item al-item-noclick" data-inline-style="inline-8de77ed0af">
+                  <Globe size={14} data-inline-style="inline-1a7d3c199c" />
                   <div className="al-body">
                     <div className="al-title">{s.userPrincipalName ?? s.title}</div>
                     <div className="al-desc">{s.title !== s.userPrincipalName ? s.title : "Foreign sign-in detected"}</div>
@@ -305,7 +305,7 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
               ?<EmptyState icon={<ShieldCheck size={28}/>} message="No risk detections — no leaked credentials, password spray, or MITM attacks found"/>
               :(
                 <>
-                  <div className="stat-row3" style={{marginBottom:14}}>
+                  <div className="stat-row3" data-inline-style="inline-8d16d0ba00">
                     <StatBox value={riskDetections!.byLevel?.["high"]??0} label="High" color={(riskDetections!.byLevel?.["high"]??0)>0?"var(--status-error-text)":undefined}/>
                     <StatBox value={riskDetections!.byLevel?.["medium"]??0} label="Medium" color={(riskDetections!.byLevel?.["medium"]??0)>0?"var(--status-warn-text)":undefined}/>
                     <StatBox value={riskDetections!.byLevel?.["low"]??0} label="Low"/>
@@ -315,15 +315,15 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
                     {Object.entries(riskDetections!.byType).slice(0,7).map(([type,count])=>(
                       <div key={type} className="mini-row">
                         <AlertCircle size={11} color="var(--status-warn-icon)"/>
-                        <span className="mr-user" style={{flex:1}}>{type.replace(/([A-Z])/g," $1").replace(/^./,c=>c.toUpperCase()).trim()}</span>
+                        <span className="mr-user" data-inline-style="inline-126244f135">{type.replace(/([A-Z])/g," $1").replace(/^./,c=>c.toUpperCase()).trim()}</span>
                         <Badge label={String(count)} tone={count>0?"warning":"neutral"}/>
                       </div>
                     ))}
                   </div>
-                  <div className="mini-list" style={{marginTop:10}}>
+                  <div className="mini-list" data-inline-style="inline-3b6fad0b29">
                     <div className="list-count">{filteredDetections.length} of {riskDetections?.total??0} detection{(riskDetections?.total??0)!==1?"s":""}</div>
                     <SectHdr>DETECTIONS — {filteredDetections.length} shown</SectHdr>
-                    {filteredDetections.length===0&&<div className="td-empty" style={{padding:8}}>No detections match the filter.</div>}
+                    {filteredDetections.length===0&&<div className="td-empty" data-inline-style="inline-a905015236">No detections match the filter.</div>}
                     {filteredDetections.slice(0,6).map((d,i)=>(
                       <div key={d.id??i} className="al-item" onClick={()=>setSelectedDetection(d)}>
                         <span className={`sev-dot sev-${d.riskLevel.toLowerCase()}`}/>
@@ -354,7 +354,7 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
               ?<EmptyState icon={<ShieldCheck size={28}/>} message="No Defender for Identity alerts — no on-prem AD threats detected"/>
               :(
                 <>
-                  <div className="stat-row4" style={{marginBottom:14}}>
+                  <div className="stat-row4" data-inline-style="inline-8d16d0ba00">
                     <StatBox value={mdiAlerts!.bySeverity?.["high"]??0} label="High" color={(mdiAlerts!.bySeverity?.["high"]??0)>0?"var(--status-error-text)":undefined}/>
                     <StatBox value={mdiAlerts!.bySeverity?.["medium"]??0} label="Medium" color={(mdiAlerts!.bySeverity?.["medium"]??0)>0?"var(--status-warn-text)":undefined}/>
                     <StatBox value={mdiAlerts!.bySeverity?.["low"]??0} label="Low"/>
@@ -363,7 +363,7 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
                   <div className="alert-list">
                     <div className="list-count">{filteredMdiAlerts.length} of {mdiAlerts?.total??0} MDI alert{(mdiAlerts?.total??0)!==1?"s":""}</div>
                     <SectHdr>MDI ALERTS — {filteredMdiAlerts.length} shown</SectHdr>
-                    {filteredMdiAlerts.length===0&&<div className="td-empty" style={{padding:12}}>No alerts match the filter.</div>}
+                    {filteredMdiAlerts.length===0&&<div className="td-empty" data-inline-style="inline-43eb55eaea">No alerts match the filter.</div>}
                     {filteredMdiAlerts.slice(0,8).map((a,i)=>(
                       <div key={a.id??i} className="al-item" onClick={()=>setSelectedMdi(a)}>
                         <span className={`sev-dot sev-${a.severity.toLowerCase()}`}/>
@@ -391,7 +391,7 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
               ?<EmptyState icon={<Clock size={28}/>} message="No recent role activations"/>
               :(
                 <div className="act-list">
-                  {filteredPim.length===0&&<div className="td-empty" style={{padding:12}}>No activations match the filter.</div>}
+                  {filteredPim.length===0&&<div className="td-empty" data-inline-style="inline-43eb55eaea">No activations match the filter.</div>}
                   {filteredPim.map((a,i)=>(
                     <div key={a.id??i} className="act-row">
                       <div className={`act-badge act-${a.status==="Provisioned"||a.status==="Completed"?"good":"neutral"}`}>
@@ -422,14 +422,14 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
                   {privilegedRoles!.roles.map((r,i)=>{
                     const isGA = r.roleName==="Global Administrator";
                     return (
-                      <div key={r.roleId??i} style={{marginBottom:12}}>
+                      <div key={r.roleId??i} data-inline-style="inline-c804002a41">
                         <div className="mini-row">
                           <Lock size={12} color={isGA?"var(--status-error-icon)":"var(--color-faint)"}/>
                           <span className="mr-user">{r.roleName}</span>
                           <Badge label={`${r.memberCount} member${r.memberCount===1?"":"s"}`} tone={isGA&&r.memberCount>0?"error":r.memberCount>0?"warning":"neutral"}/>
                         </div>
                         {r.members.slice(0,5).map((m,j)=>(
-                          <div key={j} className="mini-row" style={{paddingLeft:22}}>
+                          <div key={j} className="mini-row" data-inline-style="inline-d3b4d121d3">
                             <User size={11}/>
                             <span className="mr-user">{m.userPrincipalName??m.displayName??"Unknown"}</span>
                           </div>
@@ -482,7 +482,7 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
                       {iss.sensorDNSNames.length>0&&<div className="al-desc">Sensor: {iss.sensorDNSNames.join(", ")}</div>}
                       {iss.recommendations&&<div className="al-desc tone-info">Fix: {iss.recommendations}</div>}
                     </div>
-                    <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
+                    <div data-inline-style="inline-882e0924c7">
                       <Badge label={iss.severity} tone={iss.severity==="high"||iss.severity==="critical"?"error":"warning"}/>
                       <span className="al-date">{fmtDate(iss.createdDateTime)}</span>
                     </div>

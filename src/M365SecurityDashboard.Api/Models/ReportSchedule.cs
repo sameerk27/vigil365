@@ -6,7 +6,7 @@ namespace M365SecurityDashboard.Api.Models;
 /// A recurring scheduled report. Today the only report type is the weekly
 /// executive digest (posture + trends + top alerts), delivered by email over
 /// the existing SMTP configuration. The <see cref="Services.ReportScheduleWorker"/>
-/// ticks hourly and dispatches any schedule whose next run is due.
+/// checks every 15 minutes and dispatches any schedule whose next run is due.
 /// </summary>
 public sealed class ReportSchedule
 {

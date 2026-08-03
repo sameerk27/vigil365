@@ -96,7 +96,7 @@ function SortTh<T extends string>({ label, col, sortBy, sortDir, onSort }: {
         {label}
         {active
           ? (sortDir === "asc" ? <ChevronUp size={12}/> : <ChevronDown size={12}/>)
-          : <ChevronsUpDown size={12} style={{ opacity: .35 }}/>}
+          : <ChevronsUpDown size={12} className="sort-icon-muted"/>}
       </button>
     </th>
   );
@@ -267,7 +267,7 @@ function PolicyModal({ policy, onSave, onClose }: {
         <PolicyDryRun buildDraft={buildDraft}/>
         <div className="detail-modal-footer">
           <button className="dm-close-btn" onClick={onClose}>Cancel</button>
-          <button className="btn-run" style={{ padding:"7px 18px", fontSize:13 }} onClick={handleSave}>Save Policy</button>
+          <button className="btn-run" data-inline-style="inline-0e2d4430ae" onClick={handleSave}>Save Policy</button>
         </div>
       </div>
     </div>
@@ -315,7 +315,7 @@ function NotificationSettingsTab() {
   };
 
   const digestChip = (key: "teamsDigest"|"emailDigest"|"webhookDigest") => (
-    <label className="toggle-label" style={{fontSize:12}} title="Batch this channel's alerts into a single daily rollup instead of sending each one instantly.">
+    <label className="toggle-label" data-inline-style="inline-94b6caffd5" title="Batch this channel's alerts into a single daily rollup instead of sending each one instantly.">
       <input type="checkbox" checked={!!cfg[key]} onChange={e=>set(key, e.target.checked)}/> Daily digest
     </label>
   );
@@ -323,8 +323,8 @@ function NotificationSettingsTab() {
   return (
     <>
       {health?.anyFailing && (
-        <div className="err-banner" role="alert" style={{marginBottom:12}}>
-          <AlertTriangle size={15} style={{verticalAlign:"-2px",marginRight:6}}/>
+        <div className="err-banner" role="alert" data-inline-style="inline-c804002a41">
+          <AlertTriangle size={15} data-inline-style="inline-d0bf3b1007"/>
           Notification delivery is failing on: {health.channels.filter(c=>c.consecutiveFailures>=health.threshold).map(c=>`${c.channel} (${c.consecutiveFailures}×)`).join(", ")}. Check the endpoint URL/credentials below.
         </div>
       )}
@@ -334,7 +334,7 @@ function NotificationSettingsTab() {
             <span className="policy-label">Incoming Webhook URL</span>
             <input className="policy-input" placeholder="https://outlook.office.com/webhook/…" value={cfg.teamsWebhookUrl ?? ""} onChange={e=>set("teamsWebhookUrl", e.target.value)}/>
           </div>
-          <div style={{marginTop:8}}>{digestChip("teamsDigest")}</div>
+          <div data-inline-style="inline-5313025c2e">{digestChip("teamsDigest")}</div>
           <p className="hdr-sub">Paste a Teams channel "Incoming Webhook" connector URL (or a Slack incoming webhook). A formatted alert card is posted on each trigger.</p>
         </Card>
 
@@ -343,16 +343,16 @@ function NotificationSettingsTab() {
             <span className="policy-label">Endpoint URL</span>
             <input className="policy-input" placeholder="https://…  (Sentinel, Splunk HEC, Power Automate)" value={cfg.webhookUrl ?? ""} onChange={e=>set("webhookUrl", e.target.value)}/>
           </div>
-          <div style={{marginTop:8}}>{digestChip("webhookDigest")}</div>
+          <div data-inline-style="inline-5313025c2e">{digestChip("webhookDigest")}</div>
           <p className="hdr-sub">Each alert is POSTed as JSON. Use for SIEM ingestion or custom automation.</p>
         </Card>
       </div>
 
-      <Card title="Email (SMTP)" badge={<div style={{display:"flex",gap:14,alignItems:"center"}}>{digestChip("emailDigest")}<label className="toggle-label"><input type="checkbox" checked={cfg.emailEnabled} onChange={e=>set("emailEnabled", e.target.checked)}/> Enabled</label></div>}>
+      <Card title="Email (SMTP)" badge={<div data-inline-style="inline-2b63254f19">{digestChip("emailDigest")}<label className="toggle-label"><input type="checkbox" checked={cfg.emailEnabled} onChange={e=>set("emailEnabled", e.target.checked)}/> Enabled</label></div>}>
         <div className="settings-grid">
           <div className="policy-field"><span className="policy-label">SMTP Host</span><input className="policy-input" placeholder="smtp.office365.com" value={cfg.smtpHost ?? ""} onChange={e=>set("smtpHost", e.target.value)}/></div>
           <div className="policy-field"><span className="policy-label">Port</span><input className="policy-input" type="number" value={cfg.smtpPort} onChange={e=>set("smtpPort", Number(e.target.value))}/></div>
-          <div className="policy-field"><span className="policy-label">Use SSL/TLS</span><label className="toggle-label" style={{marginTop:8}}><input type="checkbox" checked={cfg.smtpUseSsl} onChange={e=>set("smtpUseSsl", e.target.checked)}/> Enabled</label></div>
+          <div className="policy-field"><span className="policy-label">Use SSL/TLS</span><label className="toggle-label" data-inline-style="inline-5313025c2e"><input type="checkbox" checked={cfg.smtpUseSsl} onChange={e=>set("smtpUseSsl", e.target.checked)}/> Enabled</label></div>
           <div className="policy-field"><span className="policy-label">Username</span><input className="policy-input" value={cfg.smtpUsername ?? ""} onChange={e=>set("smtpUsername", e.target.value)}/></div>
           <div className="policy-field"><span className="policy-label">Password</span><input className="policy-input" type="password" placeholder={cfg.hasSmtpPassword ? "•••••• (unchanged)" : ""} value={cfg.smtpPassword ?? ""} onChange={e=>set("smtpPassword", e.target.value)}/></div>
           <div className="policy-field"><span className="policy-label">From Address</span><input className="policy-input" placeholder="vigil365@yourdomain.com" value={cfg.fromAddress ?? ""} onChange={e=>set("fromAddress", e.target.value)}/></div>
@@ -360,9 +360,9 @@ function NotificationSettingsTab() {
         </div>
       </Card>
 
-      <Card title="Delivery Rules" action={<div style={{display:"flex",gap:8}}>
+      <Card title="Delivery Rules" action={<div data-inline-style="inline-a9c77021d6">
         <button className="btn-export" onClick={test} disabled={testing}>{testing ? "Testing…" : "Send test"}</button>
-        <button className="btn-run" style={{padding:"7px 18px",fontSize:13}} onClick={save} disabled={saving}>{saving ? "Saving…" : "Save settings"}</button>
+        <button className="btn-run" data-inline-style="inline-0e2d4430ae" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save settings"}</button>
       </div>}>
         <div className="settings-grid">
           <div className="policy-field">
@@ -397,7 +397,7 @@ function NotificationSettingsTab() {
                 {log.map(l => (
                   <tr key={l.id}>
                     <td><Badge label={l.success ? "Sent" : "Failed"} tone={l.success ? "good" : "error"}/></td>
-                    <td style={{textTransform:"capitalize"}}>{l.channel}</td>
+                    <td data-inline-style="inline-b7b96646ae">{l.channel}</td>
                     <td className="trunc" title={l.policyName}>{l.policyName}</td>
                     <td className="trunc" title={l.target}>{l.target}</td>
                     <td>{relTime(l.sentAt)}</td>
@@ -454,25 +454,25 @@ function CoverageScorecardTab({ onChanged }: { onChanged: () => void | Promise<v
   const missingCount = data.totalRules - data.activeRules;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div data-inline-style="inline-31cc15eda3">
       <Card title="Alerting Baseline Scorecard"
         badge={<Badge label={missingCount > 0 ? `${missingCount} blind spot${missingCount > 1 ? "s" : ""}` : "Full coverage"} tone={missingCount > 0 ? "warning" : "good"}/>}
         action={
-          <div style={{ display: "flex", gap: 6 }}>
+          <div data-inline-style="inline-3633e433a1">
             {(["all", "missing", "active"] as const).map(f => (
               <button key={f} onClick={() => setFilter(f)}
                 className={filter === f ? "btn-apply" : "btn-export"}
-                style={{ padding: "5px 12px", fontSize: 12 }}>
+                data-inline-style="inline-02dfbae3d8">
                 {f === "all" ? `All (${data.totalRules})` : f === "missing" ? `Missing (${missingCount})` : `Active (${data.activeRules})`}
               </button>
             ))}
           </div>
         }>
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <div style={{ fontSize: 32, fontWeight: 800, color: "var(--color-text)", lineHeight: 1 }}>{data.coveragePercentage}%</div>
-          <div style={{ flex: 1 }}>
+        <div data-inline-style="inline-c44bd08c16">
+          <div data-inline-style="inline-1940209700">{data.coveragePercentage}%</div>
+          <div data-inline-style="inline-126244f135">
             <ProgressBar pct={data.coveragePercentage}/>
-            <div style={{ fontSize: 12, color: "var(--color-muted)", marginTop: 6 }}>
+            <div data-inline-style="inline-cc755f9542">
               <strong>{data.activeRules} of {data.totalRules}</strong> Microsoft best-practice alerting rules are actively monitored.
               {missingCount > 0 ? ` The ${missingCount} unmonitored rule${missingCount > 1 ? "s are" : " is"} listed below.` : " Full baseline coverage achieved."}
             </div>
@@ -484,26 +484,26 @@ function CoverageScorecardTab({ onChanged }: { onChanged: () => void | Promise<v
         <div className="tbl-wrap">
           <table className="data-tbl">
             <thead>
-              <tr><th scope="col">Status</th><th scope="col">Rule name</th><th scope="col">Engine</th><th scope="col">Severity</th><th scope="col">Description</th><th scope="col" style={{ textAlign: "right" }}>Action</th></tr>
+              <tr><th scope="col">Status</th><th scope="col">Rule name</th><th scope="col">Engine</th><th scope="col">Severity</th><th scope="col">Description</th><th scope="col" data-inline-style="inline-37dd0c2a64">Action</th></tr>
             </thead>
             <tbody>
               {rules.map(r => (
                 <tr key={r.id}>
                   <td><Badge label={r.isActive ? "Monitored" : "Blind spot"} tone={r.isActive ? "good" : "error"}/></td>
-                  <td style={{ fontWeight: 600 }}>{r.title}</td>
+                  <td data-inline-style="inline-3d9df89ef8">{r.title}</td>
                   <td><Badge label={r.ruleType === "Vigil365" ? "Vigil365 Alerts" : "Native M365"} tone={r.ruleType === "Vigil365" ? "info" : "neutral"}/></td>
                   <td><Badge label={r.severity} tone={sevToneAC(r.severity)}/></td>
-                  <td style={{ fontSize: 12.5, color: "var(--color-muted)", maxWidth: 320 }}>{r.description}</td>
-                  <td style={{ textAlign: "right" }}>
+                  <td data-inline-style="inline-4656125047">{r.description}</td>
+                  <td data-inline-style="inline-37dd0c2a64">
                     {r.isActive ? (
-                      <span style={{ fontSize: 12, color: "var(--color-muted)" }}>Active monitoring</span>
+                      <span data-inline-style="inline-af7da65b76">Active monitoring</span>
                     ) : r.ruleType === "Vigil365" ? (
-                      <button className="btn-apply" style={{ padding: "5px 12px", fontSize: 12 }}
+                      <button className="btn-apply" data-inline-style="inline-02dfbae3d8"
                         onClick={() => handleEnable(r)} disabled={enablingId === r.id}>
                         {enablingId === r.id ? "Enabling…" : "Enable in Vigil365"}
                       </button>
                     ) : (
-                      <a className="btn-export" style={{ display: "inline-flex", textDecoration: "none" }}
+                      <a className="btn-export" data-inline-style="inline-0ab1bd7012"
                         href={r.nativePortalDeepLink} target="_blank" rel="noopener noreferrer">
                         Configure in Defender <ExternalLink size={13}/>
                       </a>
@@ -624,6 +624,15 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
     else { setSortBy(col); setSortDir(col === "triggeredAt" ? "desc" : "asc"); }
     setPageNum(1);
   };
+
+  const sortLabel: Record<typeof sortBy, string> = {
+    severity: "severity",
+    policyName: "policy name",
+    triggeredAt: "triggered time",
+    status: "status",
+    assignedTo: "assignee",
+  };
+  const sortAnnouncement = `Active alerts sorted by ${sortLabel[sortBy]}, ${sortDir === "asc" ? "ascending" : "descending"}`;
 
   const filteredTA = useMemo(() => {
     let items = triggeredAlerts;
@@ -838,23 +847,23 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                   const entities = meaningful.slice(0, MAX_SHOWN);
                   if ((parsed?.length ?? 0) > 0 && meaningful.length === 0) {
                     return (
-                      <div style={{ marginTop: 14, fontSize: 12, color: "var(--color-muted)" }}>
+                      <div data-inline-style="inline-d04f4ababb">
                         {parsed.length} matching record{parsed.length !== 1 ? "s" : ""} — no entity-level detail is available for this metric.
                       </div>
                     );
                   }
                   if (entities.length > 0) {
                     return (
-                      <div style={{ marginTop: 14 }}>
-                        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, color: "var(--color-text)" }}>Affected Entities ({meaningful.length})</div>
-                        <div style={{ border: "1px solid var(--color-border)", borderRadius: 6, overflow: "hidden" }}>
-                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                      <div data-inline-style="inline-ff270db33d">
+                        <div data-inline-style="inline-0395267c0d">Affected Entities ({meaningful.length})</div>
+                        <div data-inline-style="inline-bd2dc3a1da">
+                          <table data-inline-style="inline-f767132568">
                             <thead>
-                              <tr style={{ background: "var(--color-raised)", borderBottom: "1px solid var(--color-border)", color: "var(--color-muted)", textAlign: "left" }}>
-                                <th scope="col" style={{ padding: "8px 12px" }}>Entity</th>
-                                <th scope="col" style={{ padding: "8px 12px" }}>Details</th>
-                                <th scope="col" style={{ padding: "8px 12px" }}>Detected At</th>
-                                <th scope="col" style={{ padding: "8px 12px", textAlign: "right" }}>Actions</th>
+                              <tr data-inline-style="inline-564a3c3e76">
+                                <th scope="col" data-inline-style="inline-3f4b724c43">Entity</th>
+                                <th scope="col" data-inline-style="inline-3f4b724c43">Details</th>
+                                <th scope="col" data-inline-style="inline-3f4b724c43">Detected At</th>
+                                <th scope="col" data-inline-style="inline-3184f97af8">Actions</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -869,19 +878,19 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                                         <span title={name} style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
                                         {isCopyable && <CopyButton value={name} label={typeLabel} size={11}/>}
                                       </div>
-                                      <div style={{ fontSize: 10, color: "var(--color-muted)" }}>
+                                      <div data-inline-style="inline-405b98fd97">
                                         {typeLabel}
                                         {e.externalId && <> · <span title={e.externalId}>{e.externalId.length > 16 ? e.externalId.slice(0, 16) + "…" : e.externalId}</span></>}
                                       </div>
                                     </td>
-                                    <td style={{ padding: "8px 12px", color: "var(--color-text)" }} title={e.title}>{e.title}</td>
-                                    <td style={{ padding: "8px 12px", color: "var(--color-muted)" }} title={e.detectedAt ? fmtDate(e.detectedAt) : undefined}>{e.detectedAt ? `${relTime(e.detectedAt)} (${fmtDate(e.detectedAt)})` : "N/A"}</td>
-                                    <td style={{ padding: "8px 12px", textAlign: "right", whiteSpace: "nowrap" }}>
+                                    <td data-inline-style="inline-aee7a84582" title={e.title}>{e.title}</td>
+                                    <td data-inline-style="inline-3f9e637a11" title={e.detectedAt ? fmtDate(e.detectedAt) : undefined}>{e.detectedAt ? `${relTime(e.detectedAt)} (${fmtDate(e.detectedAt)})` : "N/A"}</td>
+                                    <td data-inline-style="inline-6457a71ac2">
                                       {e.userPrincipalName && (
                                         <button
                                           onClick={() => { setSelectedTriggered(null); crossNavigate({ page: "identity", search: e.userPrincipalName! }); }}
                                           title={`View ${e.userPrincipalName} in Identity`}
-                                          style={{ background: "none", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, color: "var(--color-primary)", fontSize: 11, fontWeight: 500, marginRight: 8 }}>
+                                          data-inline-style="inline-3e8fdbf290">
                                           Identity <ArrowRight size={10}/>
                                         </button>
                                       )}
@@ -889,12 +898,12 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                                         <button
                                           onClick={() => { setSelectedTriggered(null); crossNavigate({ page: "devices", search: e.deviceName! }); }}
                                           title={`View ${e.deviceName} in Devices`}
-                                          style={{ background: "none", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, color: "var(--color-primary)", fontSize: 11, fontWeight: 500, marginRight: 8 }}>
+                                          data-inline-style="inline-3e8fdbf290">
                                           Devices <ArrowRight size={10}/>
                                         </button>
                                       )}
                                       {e.portalUrl && (
-                                        <a href={e.portalUrl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "var(--color-primary)", textDecoration: "none", fontSize: 11, fontWeight: 500 }}>
+                                        <a href={e.portalUrl} target="_blank" rel="noopener noreferrer" data-inline-style="inline-77bb2699b3">
                                           Portal <ExternalLink size={10}/>
                                         </a>
                                       )}
@@ -906,7 +915,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                           </table>
                         </div>
                         {meaningful.length > MAX_SHOWN && (
-                          <div style={{ fontSize: 11.5, color: "var(--color-muted)", marginTop: 6 }}>
+                          <div data-inline-style="inline-5eaedbb850">
                             +{meaningful.length - MAX_SHOWN} more matching entit{meaningful.length - MAX_SHOWN === 1 ? "y" : "ies"} — export or open the source page for the full list.
                           </div>
                         )}
@@ -969,7 +978,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
               {triggeredAlerts.length === 0 ? (
                 <EmptyState icon={<Bell size={28}/>} message="No alerts triggered yet. Policies are monitoring the environment."/>
               ) : (
-                <svg viewBox={`0 0 420 110`} style={{ width:"100%", height:110 }}>
+                <svg viewBox={`0 0 420 110`} data-inline-style="inline-10f1c87ffb">
                   {last7.map((d, i) => {
                     const barH = barMax > 0 ? Math.max(4, (d.count / barMax) * 80) : 4;
                     const x = 10 + i * 58;
@@ -989,8 +998,8 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
               {catCounts.length === 0 ? (
                 <EmptyState icon={<Activity size={28}/>} message="No triggered alerts yet"/>
               ) : (
-                <div style={{ display:"flex", alignItems:"center", gap:16 }}>
-                  <svg viewBox="0 0 100 100" width={100} height={100} style={{ flexShrink:0 }}>
+                <div data-inline-style="inline-c44bd08c16">
+                  <svg viewBox="0 0 100 100" width={100} height={100} data-inline-style="inline-69271fc98e">
                     {(() => {
                       const total = catCounts.reduce((s,[,v]) => s+v, 0);
                       let offset = 0;
@@ -1009,10 +1018,10 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                         return el;
                       });
                     })()}
-                    <circle cx="50" cy="50" r="29" style={{ fill: "var(--color-card)" }}/>
-                    <text x="50" y="54" textAnchor="middle" fontSize="12" fontWeight="700" style={{ fill: "var(--color-text)" }}>{catCounts.reduce((s,[,v])=>s+v,0)}</text>
+                    <circle cx="50" cy="50" r="29" data-inline-style="inline-5c9713dbd5"/>
+                    <text x="50" y="54" textAnchor="middle" fontSize="12" fontWeight="700" data-inline-style="inline-15ed414312">{catCounts.reduce((s,[,v])=>s+v,0)}</text>
                   </svg>
-                  <div style={{ flex:1 }}>
+                  <div data-inline-style="inline-126244f135">
                     {catCounts.map(([cat, count]) => (
                       <div key={cat} style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
                         <span style={{ width:10, height:10, borderRadius:"50%", background: catColors[cat]??"#94a3b8", flexShrink:0 }}/>
@@ -1031,12 +1040,12 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
               ) : (
                 <div className="mini-list">
                   {[...triggeredAlerts].sort((a,b) => new Date(b.triggeredAt).getTime()-new Date(a.triggeredAt).getTime()).slice(0,10).map((a,i) => (
-                    <div key={i} className="mini-row" style={{ cursor:"pointer" }} onClick={() => setSelectedTriggered(a)}>
+                    <div key={i} className="mini-row" data-inline-style="inline-7c0f86ab54" onClick={() => setSelectedTriggered(a)}>
                       <span className={`sev-dot sev-${a.severity}`}/>
-                      <span className="mr-user" style={{ flex:1 }}>{a.policyName}</span>
+                      <span className="mr-user" data-inline-style="inline-126244f135">{a.policyName}</span>
                       <Badge label={fmtStatus(a.status)} tone={statusTone(a.status)}/>
                       {a.snoozedUntil && new Date(a.snoozedUntil) > new Date() && (
-                        <span style={{ fontSize:10, color:"var(--color-muted)" }}>snoozed until {relTime(a.snoozedUntil)}</span>
+                        <span data-inline-style="inline-405b98fd97">snoozed until {relTime(a.snoozedUntil)}</span>
                       )}
                       <span className="mr-date">{relTime(a.triggeredAt)}</span>
                       {canMutate && a.status === "new" && (
@@ -1057,7 +1066,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
           <CollectionStatusBanner refreshKey={triggeredAlerts.length}/>
           <Card title="Active Alerts" badge={<Badge label={`${filteredTA.length} shown`} tone="neutral"/>}
             action={
-            <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+            <div data-inline-style="inline-a0c5370730">
               <label className="search-box">
                 <Search size={14}/>
                 <input className="search-input" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search policy…"/>
@@ -1092,7 +1101,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                 setStatusFilter(f.statusFilter ?? ""); setDateFilter(f.dateFilter ?? ""); setAssignedFilter(f.assignedFilter ?? ""); setAgeFilter(f.ageFilter ?? ""); setPageNum(1);
               }}/>
               <ExportDropdown rows={filteredTA.map(a=>({ Policy:a.policyName, Severity:a.severity, Category:a.category, Condition:a.condition, MetricValue:a.metricValue, Threshold:a.threshold, Triggered:a.triggeredAt, Status:a.status }))} filename="triggered-alerts.csv"/>
-              {(search||sevFilter||catFilter||statusFilter||dateFilter||assignedFilter||ageFilter)&&<button className="btn-apply" style={{padding:"5px 10px",fontSize:12}} onClick={()=>{setSearch("");setSevFilter("");setCatFilter("");setStatusFilter("");setDateFilter("");setAssignedFilter("");setAgeFilter("");setPageNum(1);}}>Clear</button>}
+              {(search||sevFilter||catFilter||statusFilter||dateFilter||assignedFilter||ageFilter)&&<button className="btn-apply" data-inline-style="inline-84a31235d6" onClick={()=>{setSearch("");setSevFilter("");setCatFilter("");setStatusFilter("");setDateFilter("");setAssignedFilter("");setAgeFilter("");setPageNum(1);}}>Clear</button>}
             </div>
             }>
           {canMutate && selected.size > 0 && (
@@ -1100,7 +1109,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
               <span className="bulk-count">{selected.size} selected</span>
               <button className="btn-ack" disabled={bulkBusy} onClick={() => bulkAction("acknowledge")}>Acknowledge</button>
               <button className="btn-resolve" disabled={bulkBusy} onClick={() => bulkAction("resolve")}>Resolve</button>
-              <button className="btn-export" style={{ padding:"4px 10px", fontSize:12 }} onClick={() => setSelected(new Set())}>Clear selection</button>
+              <button className="btn-export" data-inline-style="inline-8d467d8c7d" onClick={() => setSelected(new Set())}>Clear selection</button>
             </div>
           )}
           {filteredTA.length === 0 ? (
@@ -1109,9 +1118,10 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
             <>
             <div className="tbl-wrap">
               <table className="data-tbl">
+                <caption className="sr-only">Active alerts. Select a column heading to change the sort order.</caption>
                 <thead>
                   <tr>
-                    {canMutate && <th scope="col" style={{ width:28 }}>
+                    {canMutate && <th scope="col" data-inline-style="inline-5c2c2a81c2">
                       <input type="checkbox" checked={pageAllSelected} onChange={togglePageAll} aria-label="Select all alerts on this page"/>
                     </th>}
                     <SortTh label="Severity"  col="severity"   sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}/>
@@ -1134,23 +1144,23 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                         <input type="checkbox" checked={selected.has(a.id)} onChange={() => toggleSelect(a.id)} aria-label={`Select ${a.policyName}`}/>
                       </td>}
                       <td><Badge label={a.severity} tone={sevToneAC(a.severity)}/></td>
-                      <td style={{ fontWeight:500 }}>{a.policyName}</td>
-                      <td style={{ fontSize:12, color:"var(--color-muted)" }}>{a.condition}</td>
-                      <td style={{ fontWeight:600 }}>{a.metricValue} <span style={{ color:"var(--color-faint)", fontWeight:400 }}>/ {a.threshold}</span></td>
+                      <td data-inline-style="inline-7ba9bad628">{a.policyName}</td>
+                      <td data-inline-style="inline-af7da65b76">{a.condition}</td>
+                      <td data-inline-style="inline-3d9df89ef8">{a.metricValue} <span data-inline-style="inline-3984b68182">/ {a.threshold}</span></td>
                       <td className="al-date">{relTime(a.triggeredAt)}</td>
                       <td className="al-date" style={sla.overdue ? { color:"var(--status-error-text)", fontWeight:700 } : undefined}
                         title={sla.overdue ? "Unacknowledged for over 24 hours" : undefined}>{sla.label}</td>
                       <td><Badge label={fmtStatus(a.status)} tone={statusTone(a.status)}/>
                         {a.snoozedUntil && new Date(a.snoozedUntil) > new Date() && (
-                          <div style={{ fontSize:10, color:"var(--color-muted)", marginTop:2 }}>snoozed until {relTime(a.snoozedUntil)}</div>
+                          <div data-inline-style="inline-a1430751ce">snoozed until {relTime(a.snoozedUntil)}</div>
                         )}
                       </td>
                       <td className="al-date">{a.assignedTo ? a.assignedTo.split("@")[0] : "—"}</td>
-                      <td onClick={e=>e.stopPropagation()} style={{ display:"flex", gap:4, alignItems:"center", flexWrap:"wrap" }}>
-                        {!canMutate && <span style={{ fontSize:11, color:"var(--color-muted)" }}>—</span>}
+                      <td onClick={e=>e.stopPropagation()} data-inline-style="inline-4f34ecc34f">
+                        {!canMutate && <span data-inline-style="inline-b53327a69e">—</span>}
                         {canMutate && a.status === "new" && <button className="btn-ack" onClick={()=>acknowledge(a.id)}>Acknowledge</button>}
                         {canMutate && a.status !== "resolved" && a.status !== "auto_resolved" && (
-                          <select className="filter-sel" style={{ padding:"3px 6px", fontSize:11 }} defaultValue=""
+                          <select className="filter-sel" data-inline-style="inline-ceabc00151" defaultValue=""
                             onChange={e => { const h = Number(e.target.value); if (h) snooze(a.id, h as 4|24|168); e.currentTarget.value = ""; }}
                             title="Snooze for…">
                             <option value="" disabled>Snooze…</option>
@@ -1160,7 +1170,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                           </select>
                         )}
                         {canMutate && a.snoozedUntil && new Date(a.snoozedUntil) > new Date() && (
-                          <button className="btn-apply" style={{ padding:"3px 8px", fontSize:11 }}
+                          <button className="btn-apply" data-inline-style="inline-6ba117109b"
                             onClick={() => unsnooze(a.id)}
                             title={`Snoozed until ${a.snoozedUntil}`}>Unsnooze</button>
                         )}
@@ -1171,12 +1181,13 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                 </tbody>
               </table>
             </div>
+            <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{sortAnnouncement}</div>
             <div className="tbl-footer">
               <span>Showing {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filteredTA.length)} of {filteredTA.length}</span>
-              <div style={{ display:"flex", gap:6 }}>
-                <button className="btn-export" style={{ padding:"3px 10px", fontSize:12 }} disabled={safePage <= 1} onClick={() => setPageNum(p => p - 1)}>‹ Prev</button>
-                <span style={{ alignSelf:"center", fontSize:12, color:"var(--color-muted)" }}>Page {safePage} of {pageCount}</span>
-                <button className="btn-export" style={{ padding:"3px 10px", fontSize:12 }} disabled={safePage >= pageCount} onClick={() => setPageNum(p => p + 1)}>Next ›</button>
+              <div data-inline-style="inline-3633e433a1">
+                <button className="btn-export" data-inline-style="inline-3e2b0a153b" disabled={safePage <= 1} onClick={() => setPageNum(p => p - 1)}>‹ Prev</button>
+                <span data-inline-style="inline-7271ab91ae">Page {safePage} of {pageCount}</span>
+                <button className="btn-export" data-inline-style="inline-3e2b0a153b" disabled={safePage >= pageCount} onClick={() => setPageNum(p => p + 1)}>Next ›</button>
               </div>
             </div>
             </>
@@ -1189,9 +1200,9 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
       {tab === "policies" && (
         <Card title="Alert Policies" badge={<Badge label={`${policies.length} policies`} tone="neutral"/>}
           action={
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <div data-inline-style="inline-f8df590e45">
               <PolicyPackControls onChanged={onChanged}/>
-              <button className="btn-run" style={{ padding:"7px 14px", fontSize:13 }} onClick={() => { setEditPolicy(null); setShowModal(true); }}><Bell size={13}/> New Policy</button>
+              <button className="btn-run" data-inline-style="inline-6d8e211e39" onClick={() => { setEditPolicy(null); setShowModal(true); }}><Bell size={13}/> New Policy</button>
             </div>
           }>
           {policies.length === 0 ? (
@@ -1205,9 +1216,9 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                 <tbody>
                   {policies.map(p => (
                     <tr key={p.id}>
-                      <td style={{ fontWeight:500 }}>{p.name}</td>
-                      <td style={{ textTransform:"capitalize" }}>{p.category}</td>
-                      <td style={{ fontSize:12, color:"#64748b" }}>{p.condition}</td>
+                      <td data-inline-style="inline-7ba9bad628">{p.name}</td>
+                      <td data-inline-style="inline-b7b96646ae">{p.category}</td>
+                      <td data-inline-style="inline-e1acedac9b">{p.condition}</td>
                       <td><Badge label={p.severity} tone={sevToneAC(p.severity)}/></td>
                       <td>
                         <button
@@ -1218,9 +1229,9 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                         </button>
                       </td>
                       <td className="al-date">{p.lastTriggered ? relTime(p.lastTriggered) : "Never"}</td>
-                      <td style={{ fontWeight:600 }}>{p.triggerCount}</td>
-                      <td style={{ display:"flex", gap:4 }}>
-                        <button className="btn-export" style={{ padding:"3px 8px" }} onClick={() => { setEditPolicy(p); setShowModal(true); }}>Edit</button>
+                      <td data-inline-style="inline-3d9df89ef8">{p.triggerCount}</td>
+                      <td data-inline-style="inline-95e7b1fc4c">
+                        <button className="btn-export" data-inline-style="inline-fcd3bb7174" onClick={() => { setEditPolicy(p); setShowModal(true); }}>Edit</button>
                         <button className="btn-ack" onClick={() => handleDeletePolicy(p.id)}>Delete</button>
                       </td>
                     </tr>
@@ -1241,11 +1252,11 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                 <div className="template-card-title">{t.name}</div>
                 <div className="template-card-desc">{t.desc}</div>
                 <div className="template-card-footer">
-                  <div style={{ display:"flex", gap:4 }}>
+                  <div data-inline-style="inline-95e7b1fc4c">
                     <Badge label={t.severity} tone={sevToneAC(t.severity)}/>
                     <Badge label={t.category} tone="neutral"/>
                   </div>
-                  <button className="btn-run" style={{ padding:"4px 12px", fontSize:12 }} onClick={() => useTemplate(t)}>Use Template</button>
+                  <button className="btn-run" data-inline-style="inline-ead46142c8" onClick={() => useTemplate(t)}>Use Template</button>
                 </div>
               </div>
             ))}

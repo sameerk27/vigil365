@@ -179,34 +179,34 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
           onClose={()=>setSelectedFw(null)}
           portalUrl="https://compliance.microsoft.com/compliance-manager"
           portalLabel="Open Compliance Manager">
-          <div style={{ display: "flex", gap: 16, marginBottom: 16, background: "var(--color-raised)", padding: 16, borderRadius: 8 }}>
+          <div data-inline-style="inline-02195a0d07">
             <div>
               <div style={{ fontSize: 11, color: "var(--color-muted)", textTransform: "uppercase" }}>Overall Posture</div>
               <div style={{ fontSize: 28, fontWeight: 700, color: selectedFw.score >= 80 ? "var(--status-good-text)" : selectedFw.score >= 50 ? "var(--status-warn-text)" : "var(--status-error-text)" }}>{selectedFw.score}%</div>
             </div>
-            <div style={{ marginLeft: 24 }}>
-              <div style={{ fontSize: 11, color: "var(--color-muted)", textTransform: "uppercase" }}>Controls Passed</div>
-              <div style={{ fontSize: 28, fontWeight: 700, color: "var(--color-text)" }}>{selectedFw.passed} <span style={{ fontSize: 16, fontWeight: 400, color: "var(--color-muted)" }}>/ {selectedFw.total}</span></div>
+            <div data-inline-style="inline-df6515b100">
+              <div data-inline-style="inline-2b0558b1fb">Controls Passed</div>
+              <div data-inline-style="inline-5ca079f8f6">{selectedFw.passed} <span data-inline-style="inline-291b5da193">/ {selectedFw.total}</span></div>
             </div>
           </div>
 
           <div className="dm-section-hdr">Control Requirement Assessment</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 8 }}>
+          <div data-inline-style="inline-d66e51949a">
             {selectedFw.controls.map((ctrl: any) => (
-              <div key={ctrl.id} style={{ border: "1px solid var(--color-border)", borderRadius: 8, padding: 12, background: "var(--color-card)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+              <div key={ctrl.id} data-inline-style="inline-112f786dfe">
+                <div data-inline-style="inline-d479f924fb">
                   <div>
-                    <span style={{ fontFamily: "monospace", fontSize: 11, background: "var(--color-raised)", padding: "2px 6px", borderRadius: 4, marginRight: 6, color: "var(--color-muted)" }}>{ctrl.id}</span>
-                    {(ctrl.cis||ctrl.iso||ctrl.gdpr)&&<span style={{ fontFamily: "monospace", fontSize: 11, background: "rgba(59,130,246,0.1)", border:"1px solid rgba(59,130,246,0.2)", padding: "1px 5px", borderRadius: 4, marginRight: 8, color: "#3b82f6" }}>{ctrl.cis||ctrl.iso||ctrl.gdpr}</span>}
-                    <span style={{ fontWeight: 600, fontSize: 13, color: "var(--color-text)" }}>{ctrl.name}</span>
+                    <span data-inline-style="inline-c625946bec">{ctrl.id}</span>
+                    {(ctrl.cis||ctrl.iso||ctrl.gdpr)&&<span data-inline-style="inline-75277dcb6e">{ctrl.cis||ctrl.iso||ctrl.gdpr}</span>}
+                    <span data-inline-style="inline-a9dd0db668">{ctrl.name}</span>
                   </div>
                   <Badge label={!ctrl.hasData ? "NOT ASSESSED" : ctrl.passed ? "PASS" : "ACTION REQUIRED"} tone={!ctrl.hasData ? "neutral" : ctrl.passed ? "good" : "error"}/>
                 </div>
-                <div style={{ fontSize: 12, color: "var(--color-muted)", marginBottom: 8 }}>Signal: <strong style={{ color: "var(--color-text)" }}>{ctrl.signal}</strong></div>
+                <div data-inline-style="inline-7781c1522f">Signal: <strong data-inline-style="inline-569b94b779">{ctrl.signal}</strong></div>
                 {ctrl.hasData && !ctrl.passed && (
-                  <div style={{ background: "var(--status-error-bg)", border: "1px solid var(--status-error-border)", borderRadius: 6, padding: "8px 10px", fontSize: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ color: "var(--status-error-text)" }}>{ctrl.fix}</span>
-                    <a href={ctrl.link} target="_blank" rel="noreferrer" style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, color: "#3b82f6", textDecoration: "none", background: "var(--color-card)", padding: "4px 8px", borderRadius: 4, border: "1px solid var(--color-border)" }}>
+                  <div data-inline-style="inline-cfdf261779">
+                    <span data-inline-style="inline-6b808a7770">{ctrl.fix}</span>
+                    <a href={ctrl.link} target="_blank" rel="noreferrer" data-inline-style="inline-a93cdb2f81">
                       Fix in M365 <ExternalLink size={12}/>
                     </a>
                   </div>
@@ -219,44 +219,44 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
 
       {showThresholdModal && (
         <DetailModal title="Configure Compliance Thresholds" subtitle="Tune control evaluation criteria for your tenant" onClose={() => setShowThresholdModal(false)}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div data-inline-style="inline-18809276c4">
             <div>
-              <label style={{ fontSize: 12, fontWeight: 600 }}>Target MFA Registration (%)</label>
-              <input type="number" className="form-input" style={{ width: "100%", marginTop: 4 }} value={thresholds.mfaTarget} onChange={e => setThresholds({ ...thresholds, mfaTarget: Number(e.target.value) })} />
+              <label data-inline-style="inline-9f73831b8a">Target MFA Registration (%)</label>
+              <input type="number" className="form-input" data-inline-style="inline-df4ffff10a" value={thresholds.mfaTarget} onChange={e => setThresholds({ ...thresholds, mfaTarget: Number(e.target.value) })} />
             </div>
             <div>
-              <label style={{ fontSize: 12, fontWeight: 600 }}>Max Privileged Users (Admins)</label>
-              <input type="number" className="form-input" style={{ width: "100%", marginTop: 4 }} value={thresholds.maxAdmins} onChange={e => setThresholds({ ...thresholds, maxAdmins: Number(e.target.value) })} />
+              <label data-inline-style="inline-9f73831b8a">Max Privileged Users (Admins)</label>
+              <input type="number" className="form-input" data-inline-style="inline-df4ffff10a" value={thresholds.maxAdmins} onChange={e => setThresholds({ ...thresholds, maxAdmins: Number(e.target.value) })} />
             </div>
             <div>
-              <label style={{ fontSize: 12, fontWeight: 600 }}>Min Conditional Access Policies</label>
-              <input type="number" className="form-input" style={{ width: "100%", marginTop: 4 }} value={thresholds.minCaPolicies} onChange={e => setThresholds({ ...thresholds, minCaPolicies: Number(e.target.value) })} />
+              <label data-inline-style="inline-9f73831b8a">Min Conditional Access Policies</label>
+              <input type="number" className="form-input" data-inline-style="inline-df4ffff10a" value={thresholds.minCaPolicies} onChange={e => setThresholds({ ...thresholds, minCaPolicies: Number(e.target.value) })} />
             </div>
             <div>
-              <label style={{ fontSize: 12, fontWeight: 600 }}>Max Failed Sign-ins (24h)</label>
-              <input type="number" className="form-input" style={{ width: "100%", marginTop: 4 }} value={thresholds.maxFailedSignIns} onChange={e => setThresholds({ ...thresholds, maxFailedSignIns: Number(e.target.value) })} />
+              <label data-inline-style="inline-9f73831b8a">Max Failed Sign-ins (24h)</label>
+              <input type="number" className="form-input" data-inline-style="inline-df4ffff10a" value={thresholds.maxFailedSignIns} onChange={e => setThresholds({ ...thresholds, maxFailedSignIns: Number(e.target.value) })} />
             </div>
             <div>
-              <label style={{ fontSize: 12, fontWeight: 600 }}>Max Phishing Compromise Rate (%)</label>
-              <input type="number" className="form-input" style={{ width: "100%", marginTop: 4 }} value={thresholds.maxPhishRate} onChange={e => setThresholds({ ...thresholds, maxPhishRate: Number(e.target.value) })} />
+              <label data-inline-style="inline-9f73831b8a">Max Phishing Compromise Rate (%)</label>
+              <input type="number" className="form-input" data-inline-style="inline-df4ffff10a" value={thresholds.maxPhishRate} onChange={e => setThresholds({ ...thresholds, maxPhishRate: Number(e.target.value) })} />
             </div>
             <div>
-              <label style={{ fontSize: 12, fontWeight: 600 }}>Target Secure Score (%)</label>
-              <input type="number" className="form-input" style={{ width: "100%", marginTop: 4 }} value={thresholds.minSecureScore} onChange={e => setThresholds({ ...thresholds, minSecureScore: Number(e.target.value) })} />
+              <label data-inline-style="inline-9f73831b8a">Target Secure Score (%)</label>
+              <input type="number" className="form-input" data-inline-style="inline-df4ffff10a" value={thresholds.minSecureScore} onChange={e => setThresholds({ ...thresholds, minSecureScore: Number(e.target.value) })} />
             </div>
-            <button className="btn-apply" style={{ marginTop: 8 }} onClick={() => { localStorage.setItem("vigil365_compliance_thresholds", JSON.stringify(thresholds)); setShowThresholdModal(false); }}>
+            <button className="btn-apply" data-inline-style="inline-5313025c2e" onClick={() => { localStorage.setItem("vigil365_compliance_thresholds", JSON.stringify(thresholds)); setShowThresholdModal(false); }}>
               Save Thresholds
             </button>
           </div>
         </DetailModal>
       )}
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+      <div data-inline-style="inline-0a303a640d">
         <div>
-          <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: "var(--color-text)" }}>Security Posture Baseline</h2>
-          <div style={{ fontSize: 12, color: "var(--color-muted)" }}>Microsoft Secure Score plus 16 measurable controls evaluated against collected telemetry (NIST/CIS/ISO/GDPR references shown per control)</div>
+          <h2 data-inline-style="inline-0d00c32212">Security Posture Baseline</h2>
+          <div data-inline-style="inline-af7da65b76">Microsoft Secure Score plus 16 measurable controls evaluated against collected telemetry (NIST/CIS/ISO/GDPR references shown per control)</div>
         </div>
-        <button className="btn-export" onClick={() => setShowThresholdModal(true)} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <button className="btn-export" onClick={() => setShowThresholdModal(true)} data-inline-style="inline-8da89a75a7">
           Configure Thresholds
         </button>
       </div>
@@ -323,7 +323,7 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
               ?<EmptyState icon={<ShieldCheck size={28}/>} message="No DLP violations detected"/>
               :(
                 <div className="alert-list">
-                  {filteredDlp.length===0&&<div className="td-empty" style={{padding:12}}>No violations match the filter.</div>}
+                  {filteredDlp.length===0&&<div className="td-empty" data-inline-style="inline-43eb55eaea">No violations match the filter.</div>}
                   {filteredDlp.slice(0,8).map((a,i)=>(
                     <div key={a.id??i} className="al-item" onClick={()=>setSelectedDlp(a)}>
                       <span className={`sev-dot sev-${a.severity.toLowerCase()}`}/>
@@ -354,7 +354,7 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
                     <div key={l.id??i} className="mini-row">
                       <span className="status-dot" style={{background:l.color||"#94a3b8"}}/>
                       <span className="mr-user">{l.name}</span>
-                      {l.description&&<span className="al-desc" style={{flex:1}}>{l.description}</span>}
+                      {l.description&&<span className="al-desc" data-inline-style="inline-126244f135">{l.description}</span>}
                       {l.isActive&&<Badge label="Active" tone="good"/>}
                     </div>
                   ))}
@@ -372,7 +372,7 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
               ?<EmptyState icon={<ShieldCheck size={28}/>} message="No Cloud App anomalies — no impossible travel, mass downloads, or suspicious OAuth detected"/>
               :(
                 <>
-                  <div className="stat-row4" style={{marginBottom:14}}>
+                  <div className="stat-row4" data-inline-style="inline-8d16d0ba00">
                     <StatBox value={mcasAlerts!.bySeverity?.["high"]??0} label="High" color={(mcasAlerts!.bySeverity?.["high"]??0)>0?"var(--status-error-text)":undefined}/>
                     <StatBox value={mcasAlerts!.bySeverity?.["medium"]??0} label="Medium" color={(mcasAlerts!.bySeverity?.["medium"]??0)>0?"var(--status-warn-text)":undefined}/>
                     <StatBox value={mcasAlerts!.bySeverity?.["low"]??0} label="Low"/>
@@ -380,7 +380,7 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
                   </div>
                   <div className="alert-list">
                     <SectHdr>CLOUD APP ALERTS — {filteredMcas.length} shown</SectHdr>
-                    {filteredMcas.length===0&&<div className="td-empty" style={{padding:12}}>No alerts match the filter.</div>}
+                    {filteredMcas.length===0&&<div className="td-empty" data-inline-style="inline-43eb55eaea">No alerts match the filter.</div>}
                     {filteredMcas.slice(0,8).map((a,i)=>(
                       <div key={a.id??i} className="al-item" onClick={()=>setSelectedMcas(a)}>
                         <span className={`sev-dot sev-${a.severity.toLowerCase()}`}/>
@@ -408,14 +408,14 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
               ?<EmptyState icon={<ShieldCheck size={28}/>} message="No Insider Risk alerts — no data exfiltration or policy violations detected"/>
               :(
                 <>
-                  <div className="stat-row3" style={{marginBottom:14}}>
+                  <div className="stat-row3" data-inline-style="inline-8d16d0ba00">
                     <StatBox value={insiderRisk!.bySeverity?.["high"]??0} label="High" color={(insiderRisk!.bySeverity?.["high"]??0)>0?"var(--status-error-text)":undefined}/>
                     <StatBox value={insiderRisk!.bySeverity?.["medium"]??0} label="Medium" color={(insiderRisk!.bySeverity?.["medium"]??0)>0?"var(--status-warn-text)":undefined}/>
                     <StatBox value={insiderRisk!.bySeverity?.["low"]??0} label="Low"/>
                   </div>
                   <div className="alert-list">
                     <SectHdr>IRM ALERTS — {filteredIrm.length} shown</SectHdr>
-                    {filteredIrm.length===0&&<div className="td-empty" style={{padding:12}}>No alerts match the filter.</div>}
+                    {filteredIrm.length===0&&<div className="td-empty" data-inline-style="inline-43eb55eaea">No alerts match the filter.</div>}
                     {filteredIrm.slice(0,8).map((a,i)=>(
                       <div key={a.id??i} className="al-item" onClick={()=>setSelectedIrm(a)}>
                         <span className={`sev-dot sev-${a.severity.toLowerCase()}`}/>
@@ -444,7 +444,7 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
             ?<EmptyState icon={<ShieldCheck size={28}/>} message="No attack simulations configured — consider running phishing tests to measure user resilience"/>
             :(
               <>
-                <div className="stat-row3" style={{marginBottom:14}}>
+                <div className="stat-row3" data-inline-style="inline-8d16d0ba00">
                   <StatBox value={attackSimulation!.total} label="Simulations Run"/>
                   <StatBox value={attackSimulation!.totalTargeted} label="Users Targeted"/>
                   <StatBox value={`${attackSimulation!.avgCompromiseRate}%`} label="Avg Compromise Rate"

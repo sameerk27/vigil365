@@ -76,14 +76,14 @@ export function AlertMetricsTab() {
             </div>
           </div>
 
-          <div className="stat-row4" style={{ marginTop: 12 }}>
+          <div className="stat-row4" data-inline-style="inline-f2fecb34dc">
             <StatBox value={m.open} label="Open" color={m.open > 0 ? "var(--status-warn-text)" : undefined}/>
             <StatBox value={m.acknowledged} label="Acknowledged"/>
             <StatBox value={m.resolved} label="Resolved (manual)"/>
             <StatBox value={m.autoResolved} label="Auto-resolved"/>
           </div>
 
-          <div style={{ marginTop: 16 }}>
+          <div data-inline-style="inline-b034d55537">
             <SectHdr>ANALYST WORKLOAD</SectHdr>
             {m.byAssignee.length === 0 ? (
               <div className="metrics-empty-assignee">

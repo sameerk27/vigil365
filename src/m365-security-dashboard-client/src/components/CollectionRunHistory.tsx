@@ -50,7 +50,7 @@ export function CollectionRunHistory() {
   return (
     <>
     <Card title="Collection Runs" badge={<Badge label={`${filtered.length} shown`} tone="neutral"/>}
-      action={<div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+      action={<div data-inline-style="inline-f8df590e45">
         <select className="filter-sel" value={status} onChange={e => setStatus(e.target.value as typeof status)} aria-label="Filter collection runs by status">
           <option value="all">All statuses</option>
           <option value="Completed">Completed</option>

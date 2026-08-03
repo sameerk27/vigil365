@@ -60,11 +60,11 @@ is shippable. Security Phase A items are interleaved where they belong.
 20. Server-side-only policy evaluation; remove client trigger. *(security B6)*
 
 ## Phase M4 — Enterprise fit (1–2 weeks)
-21. PDF export for exec digest; multi-recipient schedules.
-22. Outbound API tokens + signed generic webhook-out (SIEM path).
-23. Keyboard/a11y pass: table nav, sort announcements, skip-link, axe in CI.
-24. Density toggle (compact/comfortable) + formalized typography scale. *(UX)*
-25. Remove remaining inline styles → drop `style-src 'unsafe-inline'` from CSP.
+21. ✅ PDF export for exec digest; multi-recipient schedules.
+22. ✅ Outbound API tokens + signed generic webhook-out (SIEM path).
+23. ✅ Keyboard/a11y pass: table navigation, sortable-column announcements, skip-link, axe checks in CI.
+24. ✅ Density toggle (compact/comfortable) + formalized typography scale. *(UX)*
+25. 🟡 Remove remaining inline styles → drop `style-src 'unsafe-inline'` from CSP. In progress: the Reports page and shared shell are converted; 407 inline-style props remain across the frontend.
 
 ## Phase M5 — Product machinery (ongoing; gates "1.0")
 26. Tagged releases + changelog + upgrade-from-N−1 test; version chip from build metadata.

@@ -51,7 +51,7 @@ export function SetupPage() {
 
   const field = (label: string, value: string, set: (v: string) => void, placeholder: string, type = "text", copyable = false) => (
     <div className="policy-field">
-      <span className="policy-label" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+      <span className="policy-label" data-inline-style="inline-c82cd24e1a">
         {label}
         {copyable && value.trim() && <CopyButton value={value.trim()} label={label} size={12}/>}
       </span>
@@ -63,12 +63,12 @@ export function SetupPage() {
     <div className="page">
       <Card title="Microsoft Graph Setup"
         badge={<Badge label={status?.configured ? "Configured" : "Not configured"} tone={status?.configured ? "good" : "warning"}/>}>
-        <div style={{ fontSize:12, color:"var(--color-muted)", padding:"0 0 16px", lineHeight:1.6 }}>
+        <div data-inline-style="inline-ddbe82fa76">
           Enter the credentials from your Entra app registration. Vigil365 uses these to read your
           tenant's security data via Microsoft Graph (app-only, read-only). The client secret is stored
           encrypted at rest and is never shown again after saving.
         </div>
-        <div style={{ maxWidth:520, display:"flex", flexDirection:"column", gap:12 }}>
+        <div data-inline-style="inline-33a4af2463">
           {field("Directory (tenant) ID", tenantId, setTenantId, "00000000-0000-0000-0000-000000000000", "text", true)}
           {field("Application (client) ID", clientId, setClientId, "00000000-0000-0000-0000-000000000000", "text", true)}
           {field(status?.hasSecret ? "Client secret (leave blank to keep current)" : "Client secret", clientSecret, setClientSecret, status?.hasSecret ? "••••••••" : "Paste secret value", "password")}

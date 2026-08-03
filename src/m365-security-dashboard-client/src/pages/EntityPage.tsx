@@ -24,7 +24,7 @@ export function EntityPage({ kind, id, onBack }: { kind: "user" | "device"; id: 
 
       <div className="entity-header">
         <div className="entity-avatar">{kind === "user" ? <User size={22}/> : <Monitor size={22}/>}</div>
-        <div style={{ minWidth: 0 }}>
+        <div data-inline-style="inline-d529e1f5d1">
           <h1 className="entity-name" title={id}>{id}</h1>
           <div className="entity-kind">{kind === "user" ? "User" : "Device"} investigation profile</div>
         </div>

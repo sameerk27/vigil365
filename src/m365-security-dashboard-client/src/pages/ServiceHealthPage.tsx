@@ -65,19 +65,19 @@ export function ServiceHealthPage({ serviceHealth }: { serviceHealth: ServiceHea
         <Card title="Active Advisories & Incidents"
           badge={<Badge label={`${filteredIssues.length} shown`} tone="neutral"/>}
           action={
-            <div style={{display:"flex",alignItems:"center",gap:6}}>
-              <label className="search-box" style={{minWidth:180}}>
+            <div data-inline-style="inline-8da89a75a7">
+              <label className="search-box" data-inline-style="inline-01a3bb680d">
                 <Search size={14}/>
                 <input value={svcSearch} onChange={e=>setSvcSearch(e.target.value)}
                   placeholder="Search service, description…" className="search-input"/>
               </label>
               <SeverityFilter value={sevFilter} onChange={setSevFilter}/>
               <ExportDropdown rows={filteredIssues.map(i=>({ Title:i.title, Severity:i.severity, Detected:i.detectedAt, Description:i.description??"" }))} filename="service-health-advisories.csv"/>
-              {(svcSearch||sevFilter)&&<button className="btn-apply" style={{padding:"5px 10px",fontSize:12}} onClick={()=>{setSvcSearch("");setSevFilter("");}}>Clear</button>}
+              {(svcSearch||sevFilter)&&<button className="btn-apply" data-inline-style="inline-84a31235d6" onClick={()=>{setSvcSearch("");setSevFilter("");}}>Clear</button>}
             </div>
           }>
           <div className="alert-list">
-            {filteredIssues.length===0&&<div className="td-empty" style={{padding:12}}>No advisories match the filter.</div>}
+            {filteredIssues.length===0&&<div className="td-empty" data-inline-style="inline-43eb55eaea">No advisories match the filter.</div>}
             {filteredIssues.map((iss,i)=>(
               <div key={i} className="al-item" onClick={()=>setSelectedIssue(iss)}>
                 <AlertCircle size={14} color="var(--status-warn-icon)"/>

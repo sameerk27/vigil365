@@ -161,21 +161,21 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
       <Card title="MDO Protection Alerts"
         badge={<Badge label={`${filteredMdo.length} / ${emailProtection?.total??0} alerts`} tone={(emailProtection?.total??0)>0?"warning":"good"}/>}
         action={(emailProtection?.configured && !emailProtection?.error && (emailProtection?.total??0)>0) ? (
-          <div style={{display:"flex",alignItems:"center",gap:6}}>
-            <label className="search-box" style={{minWidth:200}}>
+          <div data-inline-style="inline-8da89a75a7">
+            <label className="search-box" data-inline-style="inline-8d14727966">
               <Search size={14}/>
               <input value={search} onChange={e=>setSearch(e.target.value)}
                 placeholder="Search MDO alerts…" className="search-input"/>
             </label>
             <SeverityFilter value={sevFilter} onChange={setSevFilter}/>
             {mdoCategories.length>0&&(
-              <select value={catFilter} onChange={e=>setCatFilter(e.target.value)} className="filter-sel" style={{fontSize:12,padding:"5px 8px"}}>
+              <select value={catFilter} onChange={e=>setCatFilter(e.target.value)} className="filter-sel" data-inline-style="inline-1c8c76b2ad">
                 <option value="">All categories</option>
                 {mdoCategories.map(c=><option key={c} value={c}>{c}</option>)}
               </select>
             )}
             <ExportDropdown rows={filteredMdo.map(a=>({ Title:a.title??"", Severity:a.severity, Category:a.category??"", Status:a.status, Detected:a.createdDateTime??"" }))} filename="mdo-alerts.csv"/>
-            {(search||sevFilter||catFilter)&&<button className="btn-apply" style={{padding:"5px 10px",fontSize:12}} onClick={()=>{setSearch("");setSevFilter("");setCatFilter("");}}>Clear</button>}
+            {(search||sevFilter||catFilter)&&<button className="btn-apply" data-inline-style="inline-84a31235d6" onClick={()=>{setSearch("");setSevFilter("");setCatFilter("");}}>Clear</button>}
           </div>
         ) : undefined}>
         {emailProtection?.error
@@ -184,9 +184,9 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
             ?<EmptyState icon={<ShieldCheck size={28}/>} message="No Defender for Office 365 alerts"/>
             :(
               <>
-                <div className="threat-grid" style={{marginBottom:14}}>
+                <div className="threat-grid" data-inline-style="inline-8d16d0ba00">
                   {Object.entries(emailProtection!.byCategory??{}).slice(0,4).map(([cat,count])=>(
-                    <div key={cat} className="threat-card" style={{cursor:"pointer"}} onClick={()=>setCatFilter(catFilter===cat?"":cat)}>
+                    <div key={cat} className="threat-card" data-inline-style="inline-7c0f86ab54" onClick={()=>setCatFilter(catFilter===cat?"":cat)}>
                       <div className={`threat-icon ${catFilter===cat?"tone-bg-error":"tone-bg-warning"}`}><Flag size={18}/></div>
                       <div className="threat-body">
                         <div className="threat-label">{cat}</div>
@@ -197,7 +197,7 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
                 </div>
                 <div className="alert-list">
                   <SectHdr>MDO ALERTS — {filteredMdo.length} shown</SectHdr>
-                  {filteredMdo.length===0&&<div className="td-empty" style={{padding:12}}>No alerts match the filter.</div>}
+                  {filteredMdo.length===0&&<div className="td-empty" data-inline-style="inline-43eb55eaea">No alerts match the filter.</div>}
                   {filteredMdo.slice(0,10).map((a,i)=>(
                     <div key={a.id??i} className="al-item" onClick={()=>setSelectedMdo(a)}>
                       <span className={`sev-dot sev-${a.severity.toLowerCase()}`}/>

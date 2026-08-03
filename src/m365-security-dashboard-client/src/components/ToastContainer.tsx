@@ -26,7 +26,7 @@ export function ToastContainer() {
             : t.type === "info"
               ? <Info size={15} color="var(--sev-info-icon)" />
               : <CheckCircle size={15} color="var(--status-good-icon)" />}
-          <span style={{ flex: 1 }}>{t.message}</span>
+          <span className="toast-message">{t.message}</span>
           {t.action && (
             <button className="toast-action"
               onClick={() => { t.action!.onAction(); setToasts(prev => prev.filter(x => x.id !== t.id)); }}>
