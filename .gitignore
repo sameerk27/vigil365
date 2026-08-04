@@ -58,3 +58,6 @@ backups/
 
 # Installer payload — 50MB build artifact produced by scripts/build-installer.ps1
 src/M365SecurityDashboard.GuiInstaller/payload.zip
+
+# ACME account keys and issued certificates — private key material
+certs/
