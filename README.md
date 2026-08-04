@@ -130,7 +130,8 @@ We provide a robust native C# Interactive Windows GUI Installer that will:
 1. Verify and automatically download prerequisites (.NET 8, Node.js, Azure CLI, SQL Server Express).
 2. Authenticate with Azure to create the App Registration.
 3. Build the frontend and publish the backend.
-4. Deploy the application as an auto-starting Windows Service.
+4. Set up HTTPS, including the certificate.
+5. Deploy the application as an auto-starting Windows Service, and open the firewall.
 
 To launch the native Windows setup wizard, simply run this command from the project root:
 
@@ -138,9 +139,37 @@ To launch the native Windows setup wizard, simply run this command from the proj
 dotnet run --project src/M365SecurityDashboard.GuiInstaller
 ```
 
-After the wizard finishes: point your HTTPS proxy to `http://127.0.0.1:8080`, add the
-same public URL to Entra as a SPA redirect URI, then open the app and finish
-**Setup** in the browser.
+Run it **as Administrator** — it registers a Windows service, writes a firewall
+rule, and installs a certificate.
+
+#### The certificate step
+
+Sign-in goes through Microsoft Entra, and Entra refuses plain `http://` redirect
+URIs for anything but localhost. Vigil365 therefore has to be served over HTTPS,
+so the wizard asks where its certificate comes from:
+
+| Option | Use when |
+| --- | --- |
+| **A certificate already on this server** | Your organisation issues certificates from an internal CA (most common). The wizard lists what is in `LocalMachine\My` and marks the ones matching your hostname with a ✓. |
+| **A `.pfx` file** | You hold a wildcard or externally-issued certificate as a file. |
+| **Create one for me** (default) | You have neither and want to get running now. |
+
+The default generates a certificate and trusts it **on that server only** — the
+machine itself stops warning, but every other browser still shows a security
+warning. That is fine for evaluating Vigil365 and not fine to leave in place: on
+a security product, a warning you tell people to click through is training them
+to ignore the one that matters. Replace it by re-running the wizard and choosing
+one of the first two options.
+
+If the server is reachable from the internet, `scripts/request-cert.ps1` gets a
+free, publicly-trusted certificate from Let's Encrypt instead:
+
+```bash
+pwsh -File scripts/request-cert.ps1 -Hostname vigil365.yourcompany.com -Email you@yourcompany.com
+```
+
+After the wizard finishes, add the same URL to Entra as a **Single-page
+application** redirect URI, then open the app and finish **Setup** in the browser.
 
 
 
