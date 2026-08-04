@@ -2,7 +2,7 @@ import React, { useState, useMemo } from "react";
 import { ShieldAlert, AlertCircle, AlertTriangle, Bell, Search, Eye, ExternalLink, Database } from "lucide-react";
 import { SecurityAlert, ServiceHealthData, DefenderAlertsData, SecurityIncidentsData, DefenderAlert, SecurityIncident } from "../services/types";
 import { fmtDate, relTime, fmtDefenderSource, fmtService, sevColor } from "../services/utils";
-import { DetailModal, DetailField, KpiTile, Card, Badge, MiniBarChart, InlineError, ExportDropdown, rowActivation, LineChart } from "../components/SharedComponents";
+import { DetailModal, DetailField, KpiTile, Card, Badge, MiniBarChart, InlineError, ExportDropdown, rowActivation, LineChart, EmptyState } from "../components/SharedComponents";
 import { FilterPresets } from "../components/FilterPresets";
 
 export type UnifiedItem =

@@ -248,8 +248,13 @@ export function MiniBarChart({ items }: { items: { label: string; value: number;
 }
 
 // ─── Primitives ───────────────────────────────────────────────────────────────
-export function Badge({ label, tone }: { label: string; tone: Tone }) {
-  return <span className={`badge badge-${tone}`}>{label}</span>;
+export function Badge({ label, tone, icon }: { label: string; tone: Tone; icon?: React.ReactNode }) {
+  return (
+    <span className={`badge badge-${tone}`}>
+      {icon && <span className="badge-icon" aria-hidden="true">{icon}</span>}
+      {label}
+    </span>
+  );
 }
 
 export function StatusDot({ status }: { status: Tone }) {

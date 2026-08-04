@@ -111,10 +111,13 @@ export type PurviewLabel = { id?: string; name?: string; description?: string; c
 export type PurviewData = { configured: boolean; error?: string; labelCount: number; labels: PurviewLabel[] };
 
 export type MdiAlert = { id?: string; title?: string; severity: string; status: string; category?: string; createdDateTime?: string; description?: string; alertWebUrl?: string; mitreTechniques: string[] };
-export type MdoAlertsData = {
+// Defender for IDENTITY (MDI) — distinct from Defender for Office 365 (MDO).
+// A partial rename to "Mdo*" left this referencing a type that never existed
+// and orphaned from every consumer; main.tsx and IdentityPage both want MDI.
+export type MdiAlertsData = {
   configured: boolean; total: number;
   byCategory: Record<string, number>; bySeverity: Record<string, number>;
-  alerts: MdoAlert[]; error?: string;
+  alerts: MdiAlert[]; error?: string;
   topTargetedUsers?: { user: string; count: number }[];
   trend?: { date: string; value: number }[];
 };

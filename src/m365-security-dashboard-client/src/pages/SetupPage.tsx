@@ -5,11 +5,14 @@ import { showToast } from "../services/toast";
 import { Card, Badge, CopyButton } from "../components/SharedComponents";
 
 export function SetupPage() {
-  const [status, setStatus] = useState<{ configured: boolean; tenantId: string; clientId: string; hasSecret: boolean } | null>(null);
+  const [status, setStatus] = useState<{ configured: boolean; tenantId: string; clientId: string; hasSecret: boolean; loginInstance?: string; baseUrl?: string } | null>(null);
   const [permissions, setPermissions] = useState<{ permission: string; features: string[]; status: "missing" | "granted" | "unknown" }[] | null>(null);
   const [tenantId, setTenantId] = useState("");
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
+  const [loginInstance, setLoginInstance] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
@@ -21,6 +24,9 @@ export function SetupPage() {
         setStatus(s);
         setTenantId(s.tenantId || "");
         setClientId(s.clientId || "");
+        setLoginInstance(s.loginInstance || "");
+        setBaseUrl(s.baseUrl || "");
+        if (s.loginInstance || s.baseUrl) setShowAdvanced(true);
       }
       const p = await apiFetch(`${apiBase}/api/setup/permissions`);
       if (p.ok) {
@@ -38,7 +44,13 @@ export function SetupPage() {
     try {
       const r = await apiFetch(`${apiBase}/api/setup/graph`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenantId: tenantId.trim(), clientId: clientId.trim(), clientSecret: clientSecret.trim() }),
+        body: JSON.stringify({ 
+          tenantId: tenantId.trim(), 
+          clientId: clientId.trim(), 
+          clientSecret: clientSecret.trim(),
+          loginInstance: loginInstance.trim(),
+          baseUrl: baseUrl.trim()
+        }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { setResult({ ok: false, msg: d.error ?? "Could not save credentials" }); }
@@ -78,7 +90,21 @@ export function SetupPage() {
           {field("Directory (tenant) ID", tenantId, setTenantId, "00000000-0000-0000-0000-000000000000", "text", true)}
           {field("Application (client) ID", clientId, setClientId, "00000000-0000-0000-0000-000000000000", "text", true)}
           {field(status?.hasSecret ? "Client secret (leave blank to keep current)" : "Client secret", clientSecret, setClientSecret, status?.hasSecret ? "••••••••" : "Paste secret value", "password")}
-          <div>
+          
+          <div style={{ marginTop: 16 }}>
+            <button type="button" onClick={() => setShowAdvanced(a => !a)} style={{ background: "none", border: "none", color: "var(--color-primary)", cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", gap: 4 }}>
+              {showAdvanced ? <ChevronRight size={14} style={{ transform: "rotate(90deg)" }}/> : <ChevronRight size={14}/>}
+              Sovereign Cloud & Advanced Settings
+            </button>
+            {showAdvanced && (
+              <div style={{ marginTop: 12, paddingLeft: 12, borderLeft: "2px solid var(--border-color)", display: "flex", flexDirection: "column", gap: 12 }}>
+                {field("Login Instance (Authority)", loginInstance, setLoginInstance, "https://login.microsoftonline.com/", "text")}
+                {field("Graph Base URL", baseUrl, setBaseUrl, "https://graph.microsoft.com/", "text")}
+              </div>
+            )}
+          </div>
+
+          <div style={{ marginTop: 24 }}>
             <button className="btn-apply" disabled={saving} onClick={save}>{saving ? "Saving & testing…" : "Save & Test Connection"}</button>
           </div>
           {result && (

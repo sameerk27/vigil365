@@ -64,7 +64,7 @@ public sealed class ReportSchedule
         var hour = Math.Clamp(HourUtc, 0, 23);
         // Start from the candidate day at the target hour, then walk forward until
         // it both matches the cadence's day constraint and is strictly after `after`.
-        var candidate = new DateTimeOffset(after.Year, after.Month, after.Day, hour, 0, 0, TimeSpan.Zero);
+        var candidate = new DateTimeOffset(after.UtcDateTime.Year, after.UtcDateTime.Month, after.UtcDateTime.Day, hour, 0, 0, TimeSpan.Zero);
 
         for (var i = 0; i < 400; i++)
         {

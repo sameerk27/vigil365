@@ -113,6 +113,8 @@ public static class SetupEndpoints
                 clientId = o.IsConfigured() ? o.ClientId : "",
                 hasSecret = o.HasSecret(),
                 hasCertificate = o.HasCertificate(),
+                loginInstance = o.LoginInstance,
+                baseUrl = o.BaseUrl,
                 // Certificate wins when both are present — mirrors GraphApiClient.BuildCredential.
                 authMode = o.HasCertificate() ? "certificate" : o.HasSecret() ? "secret" : "none",
             });
@@ -127,6 +129,8 @@ public static class SetupEndpoints
             var tenantId = (input.TenantId ?? "").Trim();
             var clientId = (input.ClientId ?? "").Trim();
             var clientSecret = (input.ClientSecret ?? "").Trim();
+            var loginInstance = (input.LoginInstance ?? "").Trim();
+            var baseUrl = (input.BaseUrl ?? "").Trim();
             if (tenantId == "" || clientId == "")
                 return Results.BadRequest(new { error = "Tenant ID and Client ID are required." });
 
@@ -136,6 +140,8 @@ public static class SetupEndpoints
             row.ClientId = clientId;
             // Keep the existing secret if the field was left blank (e.g. editing tenant only).
             if (clientSecret != "") row.ClientSecret = protector.Protect(clientSecret);
+            if (loginInstance != "") row.LoginInstance = loginInstance;
+            if (baseUrl != "") row.BaseUrl = baseUrl;
             row.UpdatedAt = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync(ct);
 
@@ -144,6 +150,8 @@ public static class SetupEndpoints
             o.TenantId = tenantId;
             o.ClientId = clientId;
             if (clientSecret != "") o.ClientSecret = clientSecret;
+            if (loginInstance != "") o.LoginInstance = loginInstance;
+            if (baseUrl != "") o.BaseUrl = baseUrl;
 
             await audit.WriteAsync("setup.graph", "settings", "graph", "Graph credentials updated", ct);
 

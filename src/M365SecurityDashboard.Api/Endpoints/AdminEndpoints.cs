@@ -23,7 +23,7 @@ public static class AdminEndpoints
             AddUserRequest input, AppDbContext db, NotificationSender sender, AuditLogger audit, IConfiguration config, CancellationToken ct) =>
         {
             var email = (input.Email ?? "").Trim().ToLowerInvariant();
-            if (string.IsNullOrEmpty(email) || !email.Contains('@'))
+            if (string.IsNullOrEmpty(email) || !new System.ComponentModel.DataAnnotations.EmailAddressAttribute().IsValid(email))
                 return Results.BadRequest(new { error = "A valid email address is required." });
 
             if (!AppRoles.IsValid(input.Role))

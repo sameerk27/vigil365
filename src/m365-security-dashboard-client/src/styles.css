@@ -539,6 +539,10 @@ select, input { font: inherit; }
   max-width: 260px;
 }
 
+/* Optional glyph inside a badge (e.g. granted/missing on the permissions table).
+   Decorative — the label carries the meaning, so it is aria-hidden. */
+.badge-icon { display: inline-flex; align-items: center; margin-right: 4px; vertical-align: -1px; }
+
 /* ── Accessibility ────────────────────────────────────────────────────────── */
 /* Off-screen until focused, then pinned top-left — the standard skip-link
    pattern. Hiding it with display:none would remove it from the tab order and

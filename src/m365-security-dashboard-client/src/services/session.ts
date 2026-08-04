@@ -57,12 +57,13 @@ export function evaluateSession(
   return { expired: null, secondsUntilIdleExpiry: Math.ceil((idleMs - (now - lastActivity)) / 1000) };
 }
 
+const LAST_ACTIVITY_KEY = "vigil365-last-activity";
+
 /**
- * Signs the user out after inactivity or once the absolute cap is reached.
+ * Custom hook to monitor idle time and warn/logout.
  * Warns once shortly before the idle cut-off; any input cancels the warning.
  */
 export function useSessionTimeout(onExpire: (reason: ExpiryReason) => void, enabled = true): void {
-  const lastActivity = useRef(Date.now());
   const warned = useRef(false);
   const firedRef = useRef(false);
   const onExpireRef = useRef(onExpire);
@@ -74,15 +75,17 @@ export function useSessionTimeout(onExpire: (reason: ExpiryReason) => void, enab
     const startedAt = sessionStartedAt();
 
     const markActive = () => {
-      lastActivity.current = Date.now();
+      localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
       warned.current = false;
     };
     ACTIVITY_EVENTS.forEach(e => window.addEventListener(e, markActive, { passive: true }));
 
     const timer = window.setInterval(() => {
       if (firedRef.current) return;
+      
+      const lastActivity = Number(localStorage.getItem(LAST_ACTIVITY_KEY) ?? Date.now());
       const { expired, secondsUntilIdleExpiry } =
-        evaluateSession(Date.now(), lastActivity.current, startedAt);
+        evaluateSession(Date.now(), lastActivity, startedAt);
 
       if (expired) {
         firedRef.current = true;

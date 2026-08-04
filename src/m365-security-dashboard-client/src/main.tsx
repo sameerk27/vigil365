@@ -365,7 +365,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
         fetchOne(`${apiBase}/api/dashboard/identity`, setIdentity),
         fetchOne(`${apiBase}/api/dashboard/devices`, setDevices),
         fetchOne(`${apiBase}/api/dashboard/servicehealth`, setServiceHealth),
-        fetchOne<{items: SecurityAlert[]; total: number}>(`${apiBase}/api/alerts?page=1&pageSize=200&resolved=false`,
+        fetchOne<{items: SecurityAlert[]; total: number}>(`${apiBase}/api/alerts?page=1&pageSize=200`,
           v => { setAllAlerts(v.items ?? []); setAlertsTotal(v.total ?? (v.items?.length ?? 0)); }),
         fetchOne(`${apiBase}/api/dashboard/licenses`, setLicenses),
         fetchOne(`${apiBase}/api/dashboard/inactive-users`, setInactiveUsers),
@@ -775,11 +775,11 @@ function AuthGate() {
           <div>
             <div className="login-live">
               <span className="login-live-dot" />
-              <span className="login-live-label">Live Security Monitoring</span>
+              <span className="login-live-label">Scheduled Security Monitoring</span>
             </div>
             <h1 className="login-title">Microsoft 365<br />Security Operations</h1>
             <p className="login-desc">
-              Real-time visibility across identity, devices, email, and compliance — all in one self-hosted dashboard.
+              Continuous visibility across identity, devices, email, and compliance — collected on a schedule, all in one self-hosted dashboard.
             </p>
             <div className="login-features">
               {[

@@ -8,6 +8,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{8CEF94CD-3FD
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "M365SecurityDashboard.Api.Tests", "src\M365SecurityDashboard.Api.Tests\M365SecurityDashboard.Api.Tests.csproj", "{B8504228-F65D-4D8B-B972-B6471E615FB9}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "M365SecurityDashboard.GuiInstaller", "src\M365SecurityDashboard.GuiInstaller\M365SecurityDashboard.GuiInstaller.csproj", "{E8FA5A64-07B4-4312-A4DB-8427BC184F2E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -22,8 +24,13 @@ Global
 		{B8504228-F65D-4D8B-B972-B6471E615FB9}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B8504228-F65D-4D8B-B972-B6471E615FB9}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B8504228-F65D-4D8B-B972-B6471E615FB9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E8FA5A64-07B4-4312-A4DB-8427BC184F2E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E8FA5A64-07B4-4312-A4DB-8427BC184F2E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E8FA5A64-07B4-4312-A4DB-8427BC184F2E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E8FA5A64-07B4-4312-A4DB-8427BC184F2E}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{B8504228-F65D-4D8B-B972-B6471E615FB9} = {8CEF94CD-3FDE-42A2-B93C-4D9552702532}
+		{E8FA5A64-07B4-4312-A4DB-8427BC184F2E} = {8CEF94CD-3FDE-42A2-B93C-4D9552702532}
 	EndGlobalSection
 EndGlobal

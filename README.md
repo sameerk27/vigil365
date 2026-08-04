@@ -121,36 +121,28 @@ these with a live granted/missing status inferred from the last collection run.
 ## Install
 
 You need **one** thing first: an **Entra app registration** (so Vigil365 can read
-your tenant via Graph). Script it with `register-app.ps1`, or create it manually
+your tenant via Graph). You can let the new **Interactive Setup Wizard** create this automatically, or create it manually
 (see [Microsoft Entra App Registration](#microsoft-entra-app-registration)).
 
-```powershell
-az login
-.\register-app.ps1 -RedirectUri http://localhost:8080
-```
-This prints your **Tenant ID**, **Client ID**, and **Client Secret** — keep them for the steps below.
+### Install (Interactive Setup Wizard)
 
-Then pick the install that fits you. **You never edit a config file for Graph
-credentials** — you enter them in the in-app Setup wizard after first sign-in.
+We provide a robust native C# Interactive Windows GUI Installer that will:
+1. Verify and automatically download prerequisites (.NET 8, Node.js, Azure CLI, SQL Server Express).
+2. Authenticate with Azure to create the App Registration.
+3. Build the frontend and publish the backend.
+4. Deploy the application as an auto-starting Windows Service.
 
-### Install (enterprise)
-
-Before installing, have a SQL Server database, a public HTTPS URL, and an Entra
-app registration ready. Then run one command. The installer asks for the rest.
-
-```powershell
-# Windows — run PowerShell as Administrator
-.\enterprise-install.ps1
-```
+To launch the native Windows setup wizard, simply run this command from the project root:
 
 ```bash
-# Linux
-sudo ./enterprise-install.sh
+dotnet run --project src/M365SecurityDashboard.GuiInstaller
 ```
 
-After it finishes: point your HTTPS proxy to `http://127.0.0.1:8080`, add the
+After the wizard finishes: point your HTTPS proxy to `http://127.0.0.1:8080`, add the
 same public URL to Entra as a SPA redirect URI, then open the app and finish
-**Setup**.
+**Setup** in the browser.
+
+
 
 ## HTTPS / TLS (required for production)
 

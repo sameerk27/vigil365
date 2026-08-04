@@ -19,12 +19,29 @@ export function fmtDefenderSource(s: string): string {
   return map[s] ?? s.replace(/([A-Z])/g, " $1").replace(/^./, c => c.toUpperCase()).trim();
 }
 
-let _utcMode = localStorage.getItem("vigil365-tz-pref") === "utc";
+// Timezone preference. Storage access is guarded because this runs at MODULE
+// LOAD: an unguarded localStorage read threw in any environment without it and
+// took the whole module down — utils is imported almost everywhere, so that is
+// a blank app, not a missing preference. (It already did exactly that to three
+// test files.) Same defensive shape as public/display-prefs.js.
+function readStoredUtcMode(): boolean {
+  try {
+    return typeof localStorage !== "undefined" && localStorage.getItem("vigil365-tz-pref") === "utc";
+  } catch {
+    return false; // storage blocked (private mode, sandboxed iframe)
+  }
+}
+
+let _utcMode = readStoredUtcMode();
 export function isUtcMode() { return _utcMode; }
 export function setUtcMode(utc: boolean) {
   _utcMode = utc;
-  localStorage.setItem("vigil365-tz-pref", utc ? "utc" : "local");
-  window.dispatchEvent(new Event("timezone-changed"));
+  try {
+    localStorage.setItem("vigil365-tz-pref", utc ? "utc" : "local");
+  } catch {
+    /* preference won't persist, but the toggle must still work this session */
+  }
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("timezone-changed"));
 }
 
 // Date formatting: exactly two formats app-wide — fmtDate (date + time) and
@@ -33,7 +50,9 @@ export function setUtcMode(utc: boolean) {
 export function fmtDate(iso?: string): string {
   if (!iso) return "–";
   const d = new Date(iso);
-  const sameYear = d.getFullYear() === new Date().getFullYear();
+  const sameYear = _utcMode 
+    ? d.getUTCFullYear() === new Date().getUTCFullYear() 
+    : d.getFullYear() === new Date().getFullYear();
   if (_utcMode) {
     return d.toLocaleString("en-US", { timeZone: "UTC", month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }), hour: "2-digit", minute: "2-digit" });
   }
@@ -43,7 +62,9 @@ export function fmtDate(iso?: string): string {
 export function fmtShort(iso?: string): string {
   if (!iso) return "–";
   const d = new Date(iso);
-  const sameYear = d.getFullYear() === new Date().getFullYear();
+  const sameYear = _utcMode 
+    ? d.getUTCFullYear() === new Date().getUTCFullYear() 
+    : d.getFullYear() === new Date().getFullYear();
   if (_utcMode) {
     return d.toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }) });
   }

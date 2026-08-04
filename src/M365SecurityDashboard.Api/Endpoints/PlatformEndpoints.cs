@@ -50,7 +50,14 @@ public static class PlatformEndpoints
 
             var q = db.AuditEvents.AsNoTracking().Where(e => e.OccurredAt >= since);
             if (!string.IsNullOrWhiteSpace(activity))
-                q = q.Where(e => EF.Functions.Like(e.Activity, activity.Replace("*", "%")));
+            {
+                var safePattern = activity
+                    .Replace("[", "[[]")
+                    .Replace("%", "[%]")
+                    .Replace("_", "[_]")
+                    .Replace("*", "%");
+                q = q.Where(e => EF.Functions.Like(e.Activity, safePattern));
+            }
             if (!string.IsNullOrWhiteSpace(search))
                 q = q.Where(e =>
                     e.Activity.Contains(search) ||

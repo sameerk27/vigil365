@@ -28,9 +28,23 @@ public sealed class GraphApiClient
     /// </summary>
     public static TokenCredential BuildCredential(GraphOptions o)
     {
+        var authOptions = new ClientSecretCredentialOptions();
+        var certOptions = new ClientCertificateCredentialOptions();
+
+        if (!string.IsNullOrWhiteSpace(o.LoginInstance))
+        {
+            try 
+            {
+                var uri = new Uri(o.LoginInstance);
+                authOptions.AuthorityHost = uri;
+                certOptions.AuthorityHost = uri;
+            }
+            catch { /* fallback to default if malformed */ }
+        }
+
         if (o.HasCertificate())
-            return new ClientCertificateCredential(o.TenantId, o.ClientId, LoadCertificate(o));
-        return new ClientSecretCredential(o.TenantId, o.ClientId, o.ClientSecret);
+            return new ClientCertificateCredential(o.TenantId, o.ClientId, LoadCertificate(o), certOptions);
+        return new ClientSecretCredential(o.TenantId, o.ClientId, o.ClientSecret, authOptions);
     }
 
     public static X509Certificate2 LoadCertificate(GraphOptions o)

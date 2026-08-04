@@ -13,5 +13,7 @@ public sealed class GraphConfig
     public string ClientId { get; set; } = "";
     /// <summary>DPAPI-encrypted client secret. Never returned by the API.</summary>
     public string? ClientSecret { get; set; }
+    public string? LoginInstance { get; set; }
+    public string? BaseUrl { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }
