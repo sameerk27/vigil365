@@ -22,9 +22,15 @@
   a self-signed certificate so you can verify the plumbing, but every visitor
   will see a browser warning — do not leave that in place.
 
-  To get a real certificate, either:
-    win-acme   https://www.win-acme.com   (interactive, HTTP-01, needs port 80 in)
-    certbot    https://certbot.eff.org    (DNS-01 works behind a closed port 80)
+  To get a real certificate, run scripts/request-cert.ps1 first — it drives lego
+  against Let's Encrypt and prints the exact -PfxPath / -PfxPassword to pass here:
+
+      winget install GoACME.lego        # then open a NEW terminal for PATH
+      pwsh -File scripts/request-cert.ps1 -Hostname <host> -Email <you>
+
+  Its default DNS-01 method needs no inbound ports, so it works behind CGNAT and
+  with port 80 closed. Pass -Method http instead if port 80 is reachable and you
+  want renewals to be automatable.
 
 .EXAMPLE
   pwsh -File scripts/deploy-public.ps1 -Hostname vigil365.in -PfxPath C:\certs\vigil365.pfx -PfxPassword (Read-Host -AsSecureString)
