@@ -15,4 +15,13 @@
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.1.6" />
   </ItemGroup>
 
+  <!-- The published application, zipped, carried inside the installer. Produced
+       by scripts/build-installer.ps1; absent during ordinary development, which
+       is why this is conditional. An installer built without it still compiles
+       and tells the user at runtime rather than failing the build for everyone
+       working on the wizard. -->
+  <ItemGroup Condition="Exists('payload.zip')">
+    <EmbeddedResource Include="payload.zip" LogicalName="Vigil365.payload.zip" />
+  </ItemGroup>
+
 </Project>

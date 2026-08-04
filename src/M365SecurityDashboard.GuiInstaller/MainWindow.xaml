@@ -27,16 +27,20 @@
             <StackPanel x:Name="PanelPrerequisites" Visibility="Visible">
                 <TextBlock Text="Checking Prerequisites" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,20" />
                 
-                <TextBlock Text="This installer requires .NET 8, Node.js, and Azure CLI." TextWrapping="Wrap" Margin="0,0,0,20" />
-                
+                <TextBlock Text="Vigil365 and everything it runs on are contained in this installer. Only one external tool is needed, and it is installed automatically if missing."
+                           TextWrapping="Wrap" Margin="0,0,0,20" />
+
                 <StackPanel Orientation="Horizontal" Margin="0,10">
-                    <TextBlock x:Name="DotnetStatus" Text="⌛ .NET 8 SDK" Width="200" />
+                    <TextBlock x:Name="AdminStatus" Text="⌛ Administrator rights" Width="240" />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="0,10">
-                    <TextBlock x:Name="NodeStatus" Text="⌛ Node.js" Width="200" />
+                    <TextBlock x:Name="AzStatus" Text="⌛ Azure CLI" Width="240" />
                 </StackPanel>
+                <TextBlock Text="Azure CLI is used only to register Vigil365 with Microsoft Entra so people can sign in."
+                           TextWrapping="Wrap" FontSize="11" Foreground="#475569" Margin="0,0,0,10" />
+
                 <StackPanel Orientation="Horizontal" Margin="0,10">
-                    <TextBlock x:Name="AzStatus" Text="⌛ Azure CLI" Width="200" />
+                    <TextBlock x:Name="PayloadStatus" Text="⌛ Application package" Width="240" />
                 </StackPanel>
 
                 <Button x:Name="BtnCheckPrereqs" Content="Check Now" Width="120" Height="35" HorizontalAlignment="Left" Margin="0,30,0,0" Click="BtnCheckPrereqs_Click" />

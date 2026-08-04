@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;   // ExtractToFile is an extension method on ZipArchiveEntry
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -12,7 +13,6 @@ namespace M365SecurityDashboard.GuiInstaller
 {
     public partial class MainWindow : Window
     {
-        private string repoRoot = string.Empty;
         private string tenantId = string.Empty;
         private string clientId = string.Empty;
         private string sqlConnectionString = string.Empty;
@@ -31,19 +31,6 @@ namespace M365SecurityDashboard.GuiInstaller
         public MainWindow()
         {
             InitializeComponent();
-            repoRoot = GetRepoRoot();
-        }
-
-        private string GetRepoRoot()
-        {
-            var current = AppDomain.CurrentDomain.BaseDirectory;
-            while (current != null)
-            {
-                if (Directory.Exists(Path.Combine(current, "src", "M365SecurityDashboard.Api")))
-                    return current;
-                current = Directory.GetParent(current)?.FullName;
-            }
-            return AppDomain.CurrentDomain.BaseDirectory;
         }
 
         private bool IsAdministrator()
@@ -77,15 +64,45 @@ namespace M365SecurityDashboard.GuiInstaller
         {
             BtnCheckPrereqs.IsEnabled = false;
 
-            if (!IsAdministrator())
+            if (IsAdministrator())
             {
-                MessageBox.Show("Please run this installer as an Administrator.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                AdminStatus.Text = "✅ Running as Administrator.";
+            }
+            else
+            {
+                AdminStatus.Text = "❌ Not running as Administrator.";
+                MessageBox.Show(
+                    "Please close this and run the installer as an Administrator.\n\n" +
+                    "Vigil365 registers a Windows service, creates a SQL login and may install a certificate — " +
+                    "none of which are possible without administrator rights.",
+                    "Administrator rights required", MessageBoxButton.OK, MessageBoxImage.Error);
+                BtnCheckPrereqs.IsEnabled = true;
                 return;
             }
 
-            await CheckAndInstallPrerequisite("dotnet", "https://download.visualstudio.microsoft.com/download/pr/45f9c464-90e6-4ea1-b25f-22fb8e57f00d/74c5d5ad14c9c7198bb602c31e4e4604/dotnet-sdk-8.0.303-win-x64.exe", "/install /quiet /norestart", DotnetStatus);
-            await CheckAndInstallPrerequisite("npm", "https://nodejs.org/dist/v20.15.1/node-v20.15.1-x64.msi", "/i \"{0}\" /quiet /norestart", NodeStatus, "msiexec.exe");
+            // .NET and Node used to be required because the application was built
+            // on the customer's server. It is now built at release time and
+            // carried inside this executable, so neither is needed.
             await CheckAndInstallPrerequisite("az", "https://aka.ms/installazurecliwindows", "/i \"{0}\" /quiet /norestart", AzStatus, "msiexec.exe");
+
+            // Catch a payload-less build here rather than after SQL Express has
+            // been installed and an Entra application registered.
+            var hasPayload = System.Reflection.Assembly.GetExecutingAssembly()
+                                 .GetManifestResourceNames().Contains(PayloadResource);
+            if (hasPayload)
+            {
+                PayloadStatus.Text = "✅ Application package is present.";
+            }
+            else
+            {
+                PayloadStatus.Text = "❌ Application package is missing.";
+                MessageBox.Show(
+                    "This installer was built without the Vigil365 application inside it, so it cannot install anything.\n\n" +
+                    "Rebuild it with scripts/build-installer.ps1.",
+                    "Incomplete installer", MessageBoxButton.OK, MessageBoxImage.Error);
+                BtnCheckPrereqs.IsEnabled = true;
+                return;
+            }
 
             BtnNextToConfig.Visibility = Visibility.Visible;
             BtnCheckPrereqs.Visibility = Visibility.Collapsed;
@@ -455,9 +472,9 @@ namespace M365SecurityDashboard.GuiInstaller
                     ? $"{uri.Scheme}://{uri.Host}"
                     : $"{uri.Scheme}://{uri.Host}:{uri.Port}");
 
-                // Build
-                UpdateProgress(60, "Building Application...");
-                await BuildApplication();
+                // Application files
+                UpdateProgress(60, "Installing application files...");
+                await InstallApplicationFiles();
 
                 // Service Setup
                 UpdateProgress(80, "Configuring Windows Service...");
@@ -606,18 +623,64 @@ namespace M365SecurityDashboard.GuiInstaller
             }
         }
 
-        private async Task BuildApplication()
-        {
-            var clientPath = Path.Combine(repoRoot, "src", "m365-security-dashboard-client");
-            Log("Installing NPM dependencies...");
-            await RunCommandAsync("npm", "install --no-audit --no-fund", clientPath);
-            Log("Building frontend bundle...");
-            await RunCommandAsync("npm", "run build", clientPath);
+        private const string PayloadResource = "Vigil365.payload.zip";
 
-            var apiPath = Path.Combine(repoRoot, "src", "M365SecurityDashboard.Api");
+        /// <summary>
+        /// Unpacks the application carried inside this executable.
+        ///
+        /// The build used to happen here — npm install, npm run build, dotnet
+        /// publish — which meant every customer needed the source tree, Node and
+        /// the .NET SDK on their server, and got a different build depending on
+        /// what their toolchain resolved that day. It is all done at release time
+        /// now (scripts/build-installer.ps1) and shipped as a compressed payload.
+        /// </summary>
+        private async Task InstallApplicationFiles()
+        {
             var publishPath = @"C:\Program Files\Vigil365";
-            Log("Publishing .NET Backend...");
-            await RunCommandAsync("dotnet", $"publish -c Release -o \"{publishPath}\"", apiPath);
+
+            var asm = System.Reflection.Assembly.GetExecutingAssembly();
+            await using var payload = asm.GetManifestResourceStream(PayloadResource);
+            if (payload == null)
+                throw new Exception(
+                    "This installer was built without the application payload, so there is nothing to install. " +
+                    "Rebuild it with scripts/build-installer.ps1.");
+
+            // An upgrade over a running service holds locks on the very files
+            // being replaced, and the extraction failure that produces reads as
+            // file corruption rather than "it is still running".
+            Log("Stopping any running Vigil365 service...");
+            RunCommand("sc", "stop Vigil365");
+            await Task.Delay(3000);
+
+            Log($"Extracting the application to {publishPath}...");
+            Directory.CreateDirectory(publishPath);
+
+            await Task.Run(() =>
+            {
+                using var archive = new System.IO.Compression.ZipArchive(
+                    payload, System.IO.Compression.ZipArchiveMode.Read);
+
+                foreach (var entry in archive.Entries)
+                {
+                    var target = Path.GetFullPath(Path.Combine(publishPath, entry.FullName));
+
+                    // Refuse entries that escape the install directory. A zip is
+                    // an untrusted format even when we built it, and this is the
+                    // check whose absence is the classic path-traversal bug.
+                    if (!target.StartsWith(Path.GetFullPath(publishPath) + Path.DirectorySeparatorChar,
+                                           StringComparison.OrdinalIgnoreCase))
+                        throw new Exception($"Refusing to extract outside the install folder: {entry.FullName}");
+
+                    if (string.IsNullOrEmpty(entry.Name)) { Directory.CreateDirectory(target); continue; }
+
+                    Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                    entry.ExtractToFile(target, overwrite: true);
+                }
+            });
+
+            var exe = Path.Combine(publishPath, "M365SecurityDashboard.Api.exe");
+            if (!File.Exists(exe)) throw new Exception($"Extraction finished but {exe} is missing.");
+            Log("Application files installed.");
         }
 
         private void SetupService()
@@ -830,25 +893,6 @@ namespace M365SecurityDashboard.GuiInstaller
             p.WaitForExit();
         }
 
-        private async Task RunCommandAsync(string fileName, string arguments, string workingDirectory = null)
-        {
-            var p = new Process();
-            p.StartInfo.FileName = "cmd.exe";
-            p.StartInfo.Arguments = $"/c {fileName} {arguments}";
-            p.StartInfo.UseShellExecute = false;
-            p.StartInfo.CreateNoWindow = true;
-            p.StartInfo.RedirectStandardOutput = true;
-            p.StartInfo.RedirectStandardError = true;
-            if (workingDirectory != null) p.StartInfo.WorkingDirectory = workingDirectory;
-
-            p.OutputDataReceived += (s, e) => { if (!string.IsNullOrEmpty(e.Data)) Log(e.Data); };
-            p.ErrorDataReceived += (s, e) => { if (!string.IsNullOrEmpty(e.Data)) Log(e.Data); };
-
-            p.Start();
-            p.BeginOutputReadLine();
-            p.BeginErrorReadLine();
-            await p.WaitForExitAsync();
-        }
 
         private string RunCommandAndCapture(string fileName, string arguments)
         {

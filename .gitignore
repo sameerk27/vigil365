@@ -55,3 +55,6 @@ keys/
 vigil365.pfx
 # Local SQL backups and exported key rings are operational secrets.
 backups/
+
+# Installer payload — 50MB build artifact produced by scripts/build-installer.ps1
+src/M365SecurityDashboard.GuiInstaller/payload.zip

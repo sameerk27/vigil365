@@ -63,7 +63,13 @@ A self-hosted Microsoft 365 security monitoring dashboard that aggregates alerts
 **Docker install (Option 1)** — just [Docker](https://docs.docker.com/get-docker/)
 (Windows, Linux, or macOS). Everything else runs in containers.
 
-**Windows / manual install (Options 2–3):**
+**Setup wizard (Option 2)** — `Vigil365-Setup.exe` carries the application and
+the .NET runtime inside it, so the server needs:
+1. Windows 10/11 or Windows Server 2019+, and local administrator rights
+2. Nothing else. SQL Server Express and Azure CLI are installed by the wizard if
+   they are not already there, and an existing SQL instance is detected and reused.
+
+**Building from source (Option 3):**
 1. Windows 10/11 or Windows Server 2019+
 2. [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) (or ASP.NET Core 8 Hosting Bundle)
 3. [SQL Server Express](https://www.microsoft.com/en-us/sql-server/sql-server-downloads) (free)
@@ -126,21 +132,22 @@ your tenant via Graph). You can let the new **Interactive Setup Wizard** create 
 
 ### Install (Interactive Setup Wizard)
 
-We provide a robust native C# Interactive Windows GUI Installer that will:
-1. Verify and automatically download prerequisites (.NET 8, Node.js, Azure CLI, SQL Server Express).
-2. Authenticate with Azure to create the App Registration.
-3. Build the frontend and publish the backend.
-4. Set up HTTPS, including the certificate.
-5. Deploy the application as an auto-starting Windows Service, and open the firewall.
+Download **`Vigil365-Setup.exe`** and run it **as Administrator**. That is the
+whole install: it is a single self-contained file that carries the application,
+the web UI and the .NET runtime, so the server needs no source tree, no Node.js
+and no .NET installed.
 
-To launch the native Windows setup wizard, simply run this command from the project root:
+The wizard will:
+1. Check administrator rights and install Azure CLI if it is missing.
+2. Register the Vigil365 application in Microsoft Entra (reusing an existing
+   registration if you have one).
+3. Install SQL Server Express, or detect and reuse an instance you already have,
+   and create the SQL login the service needs.
+4. Set up HTTPS, including the certificate, for a network install.
+5. Unpack the application and run it as an auto-starting Windows Service.
 
-```bash
-dotnet run --project src/M365SecurityDashboard.GuiInstaller
-```
-
-Run it **as Administrator** — it registers a Windows service and creates a SQL
-login for it.
+To build that installer from source instead, see
+[Building the installer](#building-the-installer).
 
 #### Choose who needs to reach it
 
@@ -182,6 +189,20 @@ rather than installing a second one.
 
 After the wizard finishes, open the app and finish **Setup** in the browser to
 supply the Graph credentials used for collection.
+
+#### Building the installer
+
+For maintainers shipping a release — customers never run this:
+
+```bash
+pwsh -File scripts/build-installer.ps1
+```
+
+It builds the SPA from the lockfile, publishes the API self-contained for
+`win-x64`, compresses that into a payload embedded in the installer, and emits a
+single `dist/Vigil365-Setup.exe` (~120 MB). The build happens here precisely so
+it does not happen on the customer's server, where the toolchain is not yours and
+the resulting binaries would differ from the ones you tested.
 
 
 
