@@ -112,11 +112,13 @@ $cfgPath = Join-Path $PublishPath "appsettings.Production.json"
 # email) and change only what public hosting requires.
 $cfg = if (Test-Path $cfgPath) { Get-Content $cfgPath -Raw | ConvertFrom-Json } else { [pscustomobject]@{} }
 
-# Bind every interface — 127.0.0.1 would be unreachable from outside.
+# Bind every interface — 127.0.0.1 would be unreachable from outside. [::] is
+# dual-stack on Windows (covers IPv4 too), which matters here: this connection is
+# behind carrier-grade NAT on IPv4, so IPv6 is the only path that accepts inbound.
 $cfg | Add-Member -NotePropertyName Kestrel -NotePropertyValue ([pscustomobject]@{
   Endpoints = [pscustomobject]@{
     Https = [pscustomobject]@{
-      Url = "https://0.0.0.0:$Port"
+      Url = "https://[::]:$Port"
       Certificate = [pscustomobject]@{ Path = (Split-Path -Leaf $pfxOut); Password = $pfxPlain }
     }
   }
