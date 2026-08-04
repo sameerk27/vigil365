@@ -9,13 +9,20 @@
   product trains people to click through TLS warnings — so it is not a resting
   state, it is a placeholder.
 
-  Two validation methods:
+  Three validation methods:
 
     dns  (default)  Solves DNS-01. You paste a TXT record into your DNS zone when
                     prompted. Needs NO inbound ports and NO firewall changes, so
                     it works behind CGNAT and with port 80 closed. INTERACTIVE —
                     lego waits on stdin, so run this yourself in a real terminal.
                     Cannot auto-renew: you repeat this every ~90 days.
+
+    godaddy         Same DNS-01 challenge, but lego creates and deletes the TXT
+                    record itself through GoDaddy's API. No manual step and
+                    renewals are unattended. Needs GODADDY_API_KEY and
+                    GODADDY_API_SECRET in the environment. GoDaddy restricts this
+                    API to accounts with 10+ domains or a Discount Domain Club
+                    plan; smaller accounts get 403 and must use -Method dns.
 
     http            Solves HTTP-01. lego binds port 80 and Let's Encrypt calls
                     back. Fully automatable for renewals, but port 80 must be
@@ -43,9 +50,11 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory)] [string]$Hostname,
-  [Parameter(Mandatory)] [string]$Email,
-  [ValidateSet("dns", "http")] [string]$Method = "dns",
+  [Parameter(ParameterSetName = "Issue", Mandatory)] [string]$Email,
+  [ValidateSet("dns", "godaddy", "http")] [string]$Method = "dns",
   [switch]$Staging,
+  [int]$PropagationTimeout = 600,
+  [Parameter(ParameterSetName = "Check", Mandatory)] [switch]$CheckTxt,
   [string]$OutDir = (Join-Path (Split-Path -Parent $PSScriptRoot) "certs")
 )
 
@@ -55,6 +64,66 @@ $repo = Split-Path -Parent $PSScriptRoot
 function Step($m) { Write-Host "`n== $m" -ForegroundColor Cyan }
 function Ok($m)   { Write-Host "   OK   $m" -ForegroundColor Green }
 function Warn($m) { Write-Host "   WARN $m" -ForegroundColor Yellow }
+function Bad($m)  { Write-Host "   FAIL $m" -ForegroundColor Red }
+
+# Asks the zone's AUTHORITATIVE nameservers, not a recursive resolver. A cached
+# NXDOMAIN from a resolver looks identical to a record that was never saved, and
+# only the authoritative answer distinguishes "not there yet" from "not there".
+function Get-AcmeTxt {
+  param([string]$Zone)
+  $name = "_acme-challenge.$Zone"
+  $out = [ordered]@{ Name = $name; Servers = @() }
+  $ns = @()
+  try {
+    $ns = Resolve-DnsName $Zone -Type NS -Server 8.8.8.8 -ErrorAction Stop |
+          Where-Object { $_.Type -eq "NS" } | Select-Object -ExpandProperty NameHost
+  } catch { }
+  foreach ($n in $ns) {
+    $ip = $null
+    try {
+      $ip = Resolve-DnsName $n -Type A -Server 8.8.8.8 -ErrorAction Stop |
+            Where-Object { $_.Type -eq "A" } | Select-Object -First 1 -ExpandProperty IPAddress
+    } catch { }
+    if (-not $ip) { continue }
+    $vals = @()
+    try {
+      $vals = Resolve-DnsName $name -Type TXT -Server $ip -ErrorAction Stop |
+              Where-Object { $_.Type -eq "TXT" } | ForEach-Object { $_.Strings -join "" }
+    } catch { }
+    $out.Servers += [pscustomobject]@{ Host = $n; Ip = $ip; Values = $vals }
+  }
+  [pscustomobject]$out
+}
+
+if ($CheckTxt) {
+  Step "Checking _acme-challenge.$Hostname on the authoritative nameservers"
+  $res = Get-AcmeTxt -Zone $Hostname
+  if ($res.Servers.Count -eq 0) { throw "Could not determine the authoritative nameservers for $Hostname." }
+  $found = $false
+  foreach ($s in $res.Servers) {
+    if ($s.Values.Count -gt 0) { $found = $true; foreach ($v in $s.Values) { Ok "$($s.Host)  TXT `"$v`"" } }
+    else { Bad "$($s.Host)  no TXT record" }
+  }
+  if ($found) {
+    Write-Host "`nRecord is live. Press Enter in the lego window now.`n" -ForegroundColor Green
+  } else {
+    Write-Host @"
+
+Not published yet. Either it has not saved, or it is still propagating.
+
+In GoDaddy's DNS manager the Name field must be exactly:
+
+    _acme-challenge
+
+NOT the full _acme-challenge.$Hostname — GoDaddy appends the zone for you, so
+pasting the FQDN creates _acme-challenge.$Hostname.$Hostname instead.
+
+The Value is the long string lego printed, with NO surrounding quotes.
+
+"@ -ForegroundColor Yellow
+  }
+  exit ($(if ($found) { 0 } else { 1 }))
+}
 
 Step "Locating lego"
 
@@ -118,7 +187,12 @@ $pfxPassword = [Guid]::NewGuid().ToString("N")
 
 Step "Requesting certificate from Let's Encrypt"
 Write-Host "   hostname   $Hostname"
-Write-Host "   method     $(if ($Method -eq 'dns') { 'DNS-01 (manual)' } else { 'HTTP-01 (port 80)' })"
+$methodLabel = switch ($Method) {
+  "dns"     { "DNS-01 (manual TXT)" }
+  "godaddy" { "DNS-01 (GoDaddy API — automatic)" }
+  "http"    { "HTTP-01 (port 80)" }
+}
+Write-Host "   method     $methodLabel"
 Write-Host "   CA         $(if ($Staging) { 'STAGING — result will NOT be trusted' } else { 'production' })"
 
 # Flag placement matters: lego 5.x global flags are only --help/--version/
@@ -136,12 +210,62 @@ $legoArgs = @("--log.level", "info", "run",
 
 if ($Staging) { $legoArgs += @("--server", "letsencrypt-staging") }
 
-if ($Method -eq "dns") {
-  $legoArgs += @("--dns", "manual")
-  Write-Host "`n   lego will print a TXT record. Add it to your DNS zone, wait for it to" -ForegroundColor Yellow
-  Write-Host "   propagate, then press Enter in this window." -ForegroundColor Yellow
-} else {
-  $legoArgs += @("--http", "--http.address", ":80")
+switch ($Method) {
+  "dns" {
+    $legoArgs += @("--dns", "manual")
+
+    # lego's manual provider polls for only 60s by default. GoDaddy's minimum
+    # TTL is 600s and its edge takes minutes to converge, so the default loses
+    # the race even when the record was saved correctly — the failure then reads
+    # as "time limit exceeded", which looks like a DNS fault rather than a
+    # too-short timeout. Give it room.
+    $env:MANUAL_PROPAGATION_TIMEOUT = "$PropagationTimeout"
+    $env:MANUAL_POLLING_INTERVAL    = "5"
+
+    Write-Host @"
+
+   lego will print a TXT record, then wait. In GoDaddy's DNS manager:
+
+       Type   TXT
+       Name   _acme-challenge          <- just this, GoDaddy appends the zone
+       Value  <the long string lego prints, no quotes>
+       TTL    600 (the minimum GoDaddy accepts)
+
+   Save it, then confirm it is actually live from a SECOND terminal:
+
+       pwsh -File scripts/request-cert.ps1 -Hostname $Hostname -CheckTxt
+
+   Only press Enter in the lego window once that reports the record.
+   After you press Enter lego keeps polling for up to $PropagationTimeout seconds.
+
+"@ -ForegroundColor Yellow
+  }
+
+  "godaddy" {
+    # lego reads these itself; the script only fails fast if they are absent so
+    # the run does not burn a Let's Encrypt failed-validation to tell you.
+    if (-not $env:GODADDY_API_KEY -or -not $env:GODADDY_API_SECRET) {
+      throw @"
+GoDaddy API credentials not set. Create a PRODUCTION key at
+https://developer.godaddy.com/keys then, in this terminal:
+
+    `$env:GODADDY_API_KEY    = '<key>'
+    `$env:GODADDY_API_SECRET = '<secret>'
+
+Note: since 2024 GoDaddy restricts this API to accounts holding 10+ domains or
+a Discount Domain Club plan. A single-domain account gets 403 ACCESS_DENIED —
+if that happens, fall back to -Method dns.
+"@
+    }
+    $legoArgs += @("--dns", "godaddy")
+    $env:GODADDY_PROPAGATION_TIMEOUT = "$PropagationTimeout"
+    Ok "GODADDY_API_KEY / GODADDY_API_SECRET present"
+    Write-Host "   No manual step — lego creates and removes the TXT record itself." -ForegroundColor Green
+  }
+
+  "http" {
+    $legoArgs += @("--http", "--http.address", ":80")
+  }
 }
 
 & $lego @legoArgs
@@ -184,4 +308,8 @@ if ($Staging) {
 }
 if ($Method -eq "dns") {
   Warn "`nDNS-01 manual does not auto-renew. This certificate expires $($cert.NotAfter.ToString('yyyy-MM-dd')) — repeat then."
+  Warn "To make renewals unattended, use -Method godaddy (your zone is on GoDaddy) or -Method http."
+}
+if ($Method -ne "dns") {
+  Write-Host "`nRenewable unattended: re-run the same command. Schedule it well before $($cert.NotAfter.ToString('yyyy-MM-dd'))." -ForegroundColor Green
 }
