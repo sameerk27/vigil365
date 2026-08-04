@@ -19,6 +19,14 @@ export function fmtDefenderSource(s: string): string {
   return map[s] ?? s.replace(/([A-Z])/g, " $1").replace(/^./, c => c.toUpperCase()).trim();
 }
 
+let _utcMode = localStorage.getItem("vigil365-tz-pref") === "utc";
+export function isUtcMode() { return _utcMode; }
+export function setUtcMode(utc: boolean) {
+  _utcMode = utc;
+  localStorage.setItem("vigil365-tz-pref", utc ? "utc" : "local");
+  window.dispatchEvent(new Event("timezone-changed"));
+}
+
 // Date formatting: exactly two formats app-wide — fmtDate (date + time) and
 // fmtShort (date only). Both add the year automatically when it isn't the
 // current year, and both pin en-US so output never varies by system locale.
@@ -26,6 +34,9 @@ export function fmtDate(iso?: string): string {
   if (!iso) return "–";
   const d = new Date(iso);
   const sameYear = d.getFullYear() === new Date().getFullYear();
+  if (_utcMode) {
+    return d.toLocaleString("en-US", { timeZone: "UTC", month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }), hour: "2-digit", minute: "2-digit" });
+  }
   return d.toLocaleString("en-US", { month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }), hour: "2-digit", minute: "2-digit" });
 }
 
@@ -33,6 +44,9 @@ export function fmtShort(iso?: string): string {
   if (!iso) return "–";
   const d = new Date(iso);
   const sameYear = d.getFullYear() === new Date().getFullYear();
+  if (_utcMode) {
+    return d.toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }) });
+  }
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }) });
 }
 
@@ -42,6 +56,7 @@ export function fmtShort(iso?: string): string {
  * (in the header) rather than suffixing every row. Returns e.g. "IST (UTC+5:30)".
  */
 export function tzLabel(): string {
+  if (_utcMode) return "UTC";
   const d = new Date();
   const name = new Intl.DateTimeFormat("en-US", { timeZoneName: "short" })
     .formatToParts(d).find(p => p.type === "timeZoneName")?.value ?? "local";

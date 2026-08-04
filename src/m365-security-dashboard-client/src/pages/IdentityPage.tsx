@@ -159,7 +159,8 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
           sub="Last 7 days" tone={(identity?.signIns.foreign??0)===0?"good":"warning"}
           onClick={() => { document.getElementById("foreign-signins-section")?.scrollIntoView({ behavior: "smooth" }); }}/>
         <KpiTile icon={<Users size={18}/>} label="GUEST ACCOUNTS" value={identity?.guests.total??0}
-          sub="External users" tone={((identity?.guests.total??0)>20)?"warning":"good"}/>
+          sub="External users" tone={((identity?.guests.total??0)>20)?"warning":"good"}
+          onClick={() => { document.getElementById("guest-governance-section")?.scrollIntoView({ behavior: "smooth" }); }}/>
       </div>
 
       <div className="sticky-filter-bar filters-bar">
@@ -492,6 +493,90 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
             )
         }
       </Card>
+
+      {/* Row 5: Guest Governance + MFA Method Breakdown */}
+      <div className="two-col" id="guest-governance-section">
+        <Card title="Guest Governance" badge={<Badge label={`${identity?.guests.inactive90d??0} inactive`} tone={(identity?.guests.inactive90d??0)>0?"warning":"good"}/>}>
+          {identity?.guests.licenseRequired ? (
+            <EmptyState icon={<AlertTriangle size={28}/>} message="Guest sign-in activity requires Azure AD P1/P2 license."/>
+          ) : (identity?.guests.total??0) === 0 ? (
+            <EmptyState icon={<Users size={28}/>} message="No guest accounts found."/>
+          ) : (
+            <>
+              <div className="stat-row3" data-inline-style="inline-8d16d0ba00">
+                <StatBox value={identity!.guests.total} label="Total Guests"/>
+                <StatBox value={Math.max(0, identity!.guests.total - (identity!.guests.inactive90d??0))} label="Active"/>
+                <StatBox value={identity!.guests.inactive90d??0} label="Inactive >90d" color={(identity!.guests.inactive90d??0)>0?"var(--status-warn-text)":undefined}/>
+              </div>
+              <div className="mini-list" data-inline-style="inline-3b6fad0b29">
+                <SectHdr>TOP GUEST DOMAINS</SectHdr>
+                {identity?.guests.domains?.length === 0 && <div className="td-empty" data-inline-style="inline-a905015236">No domain data available.</div>}
+                {identity?.guests.domains?.map((d,i) => (
+                  <div key={i} className="mini-row">
+                    <Globe size={11} color="var(--color-faint)"/>
+                    <span className="mr-user" data-inline-style="inline-126244f135">{d.domain}</span>
+                    <Badge label={String(d.count)} tone="neutral"/>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </Card>
+
+        <Card title="MFA Method Breakdown" badge={<Badge label={`${identity?.mfaMethods?.length??0} methods`} tone="neutral"/>}>
+          {(!identity?.mfaMethods || identity.mfaMethods.length === 0) ? (
+            <EmptyState icon={<ShieldCheck size={28}/>} message="No MFA method data available."/>
+          ) : (
+            <div className="mini-list" data-inline-style="inline-3b6fad0b29">
+              <SectHdr>REGISTERED METHODS</SectHdr>
+              {identity.mfaMethods.map((m,i) => {
+                const isWeak = m.method === "Phone/SMS" || m.method === "Email";
+                return (
+                  <div key={i} className="mini-row" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px', padding: '10px 0' }}>
+                    <div style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span className="mr-user" style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Lock size={12} color={isWeak ? "var(--status-warn-icon)" : "var(--color-faint)"}/>
+                        {m.method}
+                        {isWeak && <Badge label="Weak Method" tone="warning" />}
+                      </span>
+                      <span style={{ fontSize: '12px', fontWeight: 600 }}>{m.count} ({m.pct}%)</span>
+                    </div>
+                    <div style={{ width: '100%', backgroundColor: 'var(--color-bg-alt)', height: '4px', borderRadius: '2px', overflow: 'hidden' }}>
+                      <div style={{ width: `${m.pct}%`, backgroundColor: isWeak ? 'var(--status-warn-icon)' : 'var(--color-accent)', height: '100%' }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {/* Row 6: Stale Internal Accounts */}
+      <div className="two-col">
+        <Card title="Stale Internal Accounts" badge={<Badge label={`${identity?.staleAccounts?.length??0} accounts`} tone={(identity?.staleAccounts?.length??0)>0?"warning":"good"}/>}>
+          {(!identity?.staleAccounts || identity.staleAccounts.length === 0) ? (
+            <EmptyState icon={<UserCheck size={28}/>} message="No stale internal accounts found."/>
+          ) : (
+            <div className="mini-list" data-inline-style="inline-3b6fad0b29">
+              <SectHdr>NO SIGN-IN &gt; 90 DAYS</SectHdr>
+              {identity.staleAccounts.map((a,i) => (
+                <div key={i} className="mini-row al-item-noclick" style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--color-border)' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <div style={{ fontWeight: 600, fontSize: '13px' }}>{a.upn}</div>
+                    <div style={{ fontSize: '12px', color: 'var(--color-faint)' }}>{a.displayName}</div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+                    <Badge label={a.daysSince === -1 ? "Never signed in" : `${a.daysSince} days`} tone="warning"/>
+                    {a.lastSignIn && <span style={{ fontSize: '11px', color: 'var(--color-faint)' }}>{fmtDate(a.lastSignIn)}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+        <div></div>
+      </div>
     </div>
   );
 }

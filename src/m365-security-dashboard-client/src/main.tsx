@@ -5,7 +5,7 @@ import {
   Home, Users, Monitor, Mail, AlertTriangle, Bell, CheckSquare, Activity, Wifi,
   Package, ShieldCheck, BookOpen, MapPin, UserCheck, Settings, ChevronRight, ChevronLeft,
   Clock, RefreshCw, Sun, Moon, Rows2, Rows3, LogIn, LogOut, ShieldAlert, Shield, UserX, TrendingUp, Lightbulb, Lock,
-  Search as SearchIcon, Pause, Play
+  Search as SearchIcon, Pause, Play, Globe
 } from "lucide-react";
 import "./styles.css";
 
@@ -26,7 +26,7 @@ import { ConfirmDialog } from "./components/ConfirmDialog";
 import { PageHelp } from "./components/PageHelp";
 import { GlobalSearch } from "./components/GlobalSearch";
 import { Badge, AlertDetailModal, DashboardSkeleton } from "./components/SharedComponents";
-import { fmtDate, fmtCountdown, tzLabel, fmtUtc } from "./services/utils";
+import { fmtDate, fmtCountdown, tzLabel, fmtUtc, isUtcMode, setUtcMode } from "./services/utils";
 import { useSessionTimeout, clearSessionStart, IDLE_TIMEOUT_MIN, type ExpiryReason } from "./services/session";
 
 // Import pages
@@ -221,6 +221,14 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
   const [compact, setCompact] = useState(() => localStorage.getItem("m365-density") === "compact");
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false); // false = expanded
+
+  // Timezone toggle
+  const [, setTzTick] = useState(0);
+  useEffect(() => {
+    const handler = () => setTzTick(t => t + 1);
+    window.addEventListener("timezone-changed", handler);
+    return () => window.removeEventListener("timezone-changed", handler);
+  }, []);
 
   // Track the alert count at the time the user last visited each page.
   // Badge = current count − seen count (only new items show as unread).
@@ -560,6 +568,11 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
               title={compact ? "Comfortable rows" : "Compact rows"}>
               {compact ? <Rows3 size={15}/> : <Rows2 size={15}/>}
             </button>
+            <button className="theme-toggle" onClick={() => setUtcMode(!isUtcMode())}
+              aria-label={isUtcMode() ? "Switch to local time" : "Switch to UTC"}
+              title={isUtcMode() ? "UTC time" : "Local time"}>
+              {isUtcMode() ? <Globe size={15}/> : <Clock size={15}/>}
+            </button>
             <button className="theme-toggle" onClick={() => setDarkMode(d => !d)} aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"} title={darkMode ? "Light mode" : "Dark mode"}>
               {darkMode ? <Sun size={15}/> : <Moon size={15}/>}
             </button>
@@ -698,12 +711,12 @@ function AuthGate() {
       try {
         const res = await fetch(`${apiBase}/api/auth/config`);
         if (!res.ok) { setAuthReady(true); return; }
-        const cfg: { clientId: string; tenantId: string; redirectUri: string } = await res.json();
+        const cfg: { clientId: string; tenantId: string; redirectUri: string; instance?: string } = await res.json();
         if (!cfg.clientId || !cfg.tenantId) { setAuthReady(true); return; }
 
         setAuthEnabled(true);
         const msalConfig: Configuration = {
-          auth: { clientId: cfg.clientId, authority: `https://login.microsoftonline.com/${cfg.tenantId}`, redirectUri: cfg.redirectUri },
+          auth: { clientId: cfg.clientId, authority: `${cfg.instance ?? "https://login.microsoftonline.com/"}${cfg.tenantId}`, redirectUri: cfg.redirectUri },
           cache: { cacheLocation: "sessionStorage" },
         };
         const pca = new PublicClientApplication(msalConfig);

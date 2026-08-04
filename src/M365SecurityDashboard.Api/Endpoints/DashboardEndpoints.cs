@@ -143,19 +143,128 @@ public static class DashboardEndpoints
             // up 15s retry backoffs and hang the whole request. Cap them so the page
             // always returns the (fast) DB-backed data within a few seconds.
             int guestTotal = 0;
+            int guestInactive90d = 0;
+            bool guestLicenseRequired = false;
+            var guestDomains = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            var mfaMethods = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var staleAccountsList = new List<object>();
+
             object[] recentActivity = [];
             if (options.Value.IsConfigured())
             {
                 var graph = services.GetRequiredService<GraphApiClient>();
                 using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                budget.CancelAfter(TimeSpan.FromSeconds(10));
+                budget.CancelAfter(TimeSpan.FromSeconds(15));
                 var gct = budget.Token;
 
                 try
                 {
+                    // Guest Governance (requires Azure AD P1/P2 for signInActivity)
                     var guests = await graph.GetCollectionAsync(
-                        "/v1.0/users?$filter=userType eq 'Guest'&$select=id,displayName,userPrincipalName&$top=200", gct);
+                        "/v1.0/users?$filter=userType eq 'Guest'&$select=id,displayName,userPrincipalName,signInActivity", gct);
                     guestTotal = guests.Count;
+
+                    var threshold90 = DateTimeOffset.UtcNow.AddDays(-90);
+                    foreach (var guest in guests)
+                    {
+                        var upn = guest.TryGetProperty("userPrincipalName", out var p) ? p.GetString() : null;
+                        if (upn != null)
+                        {
+                            var parts = upn.Split("#EXT#@");
+                            if (parts.Length == 2)
+                            {
+                                var extDomain = parts[1];
+                                guestDomains[extDomain] = guestDomains.GetValueOrDefault(extDomain) + 1;
+                            }
+                            else if (upn.Contains("@"))
+                            {
+                                var domain = upn.Split('@')[1];
+                                guestDomains[domain] = guestDomains.GetValueOrDefault(domain) + 1;
+                            }
+                        }
+
+                        DateTimeOffset? lastSignIn = null;
+                        if (guest.TryGetProperty("signInActivity", out var sia) && sia.ValueKind == JsonValueKind.Object &&
+                            sia.TryGetProperty("lastSignInDateTime", out var lsd) && lsd.ValueKind == JsonValueKind.String &&
+                            DateTimeOffset.TryParse(lsd.GetString(), out var dt))
+                        {
+                            lastSignIn = dt;
+                        }
+
+                        // If lastSignIn is null, they've either never signed in or we don't have the data (or no P1/P2).
+                        // If they don't have P1/P2, signInActivity won't be returned at all for any user.
+                        if (lastSignIn == null || lastSignIn < threshold90)
+                        {
+                            guestInactive90d++;
+                        }
+                    }
+
+                    // Heuristic: If we have guests but absolutely none of them have signInActivity, we likely lack P1/P2.
+                    // A proper way would be to check the tenant SKUs, but this works well enough.
+                    if (guestTotal > 0 && guests.All(g => !g.TryGetProperty("signInActivity", out _)))
+                    {
+                        guestLicenseRequired = true;
+                    }
+                }
+                catch { /* permission not granted, or budget elapsed – skip */ }
+
+                try
+                {
+                    // MFA Methods Breakdown
+                    var regDetails = await graph.GetCollectionAsync(
+                        "/v1.0/reports/authenticationMethods/userRegistrationDetails", gct);
+                    foreach (var user in regDetails)
+                    {
+                        if (user.TryGetProperty("methodsRegistered", out var methods) && methods.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var method in methods.EnumerateArray())
+                            {
+                                var methodStr = method.GetString();
+                                if (!string.IsNullOrEmpty(methodStr))
+                                {
+                                    mfaMethods[methodStr] = mfaMethods.GetValueOrDefault(methodStr) + 1;
+                                }
+                            }
+                        }
+                    }
+                }
+                catch { /* permission not granted, or budget elapsed – skip */ }
+
+                try
+                {
+                    // Stale Accounts (Internal users, enabled, no sign in > 90 days)
+                    var users = await graph.GetCollectionAsync(
+                        "/v1.0/users?$filter=userType eq 'Member' and accountEnabled eq true&$select=id,displayName,userPrincipalName,signInActivity&$top=200", gct);
+                    var threshold90 = DateTimeOffset.UtcNow.AddDays(-90);
+                    
+                    var allStale = new List<(string upn, string name, DateTimeOffset? lastSignIn, int days)>();
+                    foreach (var user in users)
+                    {
+                        var upn = user.TryGetProperty("userPrincipalName", out var p) ? p.GetString() : null;
+                        var name = user.TryGetProperty("displayName", out var d) ? d.GetString() : null;
+                        
+                        DateTimeOffset? lastSignIn = null;
+                        if (user.TryGetProperty("signInActivity", out var sia) && sia.ValueKind == JsonValueKind.Object &&
+                            sia.TryGetProperty("lastSignInDateTime", out var lsd) && lsd.ValueKind == JsonValueKind.String &&
+                            DateTimeOffset.TryParse(lsd.GetString(), out var dt))
+                        {
+                            lastSignIn = dt;
+                        }
+
+                        if (lastSignIn == null || lastSignIn < threshold90)
+                        {
+                            var daysSince = lastSignIn.HasValue ? (int)(DateTimeOffset.UtcNow - lastSignIn.Value).TotalDays : 999;
+                            if (upn != null && name != null)
+                            {
+                                allStale.Add((upn, name, lastSignIn, daysSince));
+                            }
+                        }
+                    }
+                    
+                    staleAccountsList = allStale.OrderByDescending(x => x.days).Take(10)
+                        .Select(x => (object)new { upn = x.upn, displayName = x.name, lastSignIn = x.lastSignIn, daysSince = x.days == 999 ? -1 : x.days })
+                        .ToList();
                 }
                 catch { /* permission not granted, or budget elapsed – skip */ }
 
@@ -179,11 +288,34 @@ public static class DashboardEndpoints
                 catch { /* permission not granted, or budget elapsed – skip */ }
             }
 
+            int totalMfaMethods = mfaMethods.Values.Sum();
+            var friendlyMfaMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "microsoftAuthenticatorPush", "Microsoft Authenticator" },
+                { "mobilePhone", "Phone/SMS" },
+                { "email", "Email" },
+                { "fido2", "FIDO2 / Security Key" },
+                { "softwareOath", "OATH Token (App)" },
+                { "windowsHelloForBusiness", "Windows Hello" }
+            };
+
+            var mfaMethodsBreakdown = mfaMethods.Select(kv => new
+            {
+                method = friendlyMfaMap.TryGetValue(kv.Key, out var friendly) ? friendly : kv.Key,
+                count = kv.Value,
+                pct = totalMfaMethods > 0 ? Math.Round((double)kv.Value / totalMfaMethods * 100, 1) : 0
+            }).OrderByDescending(x => x.count).ToList();
+
+            var guestDomainsList = guestDomains.Select(kv => new { domain = kv.Key, count = kv.Value })
+                                               .OrderByDescending(x => x.count).Take(10).ToList();
+
             return Results.Ok(new
             {
                 configured = true,
                 mfa = new { registered = mfaRegistered, total = mfaTotal, percentage = mfaPct },
-                guests = new { total = guestTotal, active = guestTotal },
+                guests = new { total = guestTotal, active = guestTotal, inactive90d = guestInactive90d, licenseRequired = guestLicenseRequired, domains = guestDomainsList },
+                mfaMethods = mfaMethodsBreakdown,
+                staleAccounts = staleAccountsList,
                 riskyUsers,
                 signIns = new
                 {
@@ -209,14 +341,34 @@ public static class DashboardEndpoints
 
             // Try to get total device count from Graph
             int totalDevices = 120;
+            var osBuckets = new List<object>();
             if (options.Value.IsConfigured())
             {
                 try
                 {
                     var graph = services.GetRequiredService<GraphApiClient>();
                     var all = await graph.GetCollectionAsync(
-                        "/v1.0/deviceManagement/managedDevices?$select=id&$top=500", ct);
+                        "/v1.0/deviceManagement/managedDevices?$select=id,operatingSystem,osVersion&$top=500", ct);
                     totalDevices = all.Count;
+
+                    var buckets = new Dictionary<(string os, string version), int>();
+                    foreach (var d in all)
+                    {
+                        var os = d.TryGetProperty("operatingSystem", out var o) ? o.GetString() ?? "Unknown" : "Unknown";
+                        var version = d.TryGetProperty("osVersion", out var v) ? v.GetString() ?? "Unknown" : "Unknown";
+                        
+                        if (os.Contains("Windows", StringComparison.OrdinalIgnoreCase)) os = "Windows";
+                        else if (os.Contains("Mac", StringComparison.OrdinalIgnoreCase)) os = "macOS";
+                        else if (os.Contains("iOS", StringComparison.OrdinalIgnoreCase) || os.Contains("iPad", StringComparison.OrdinalIgnoreCase)) os = "iOS";
+                        else if (os.Contains("Android", StringComparison.OrdinalIgnoreCase)) os = "Android";
+                        else if (os.Contains("Linux", StringComparison.OrdinalIgnoreCase)) os = "Linux";
+                        
+                        var key = (os, version);
+                        buckets[key] = buckets.GetValueOrDefault(key) + 1;
+                    }
+                    
+                    osBuckets = buckets.Select(kv => (object)new { os = kv.Key.os, version = kv.Key.version, count = kv.Value })
+                                       .OrderByDescending(x => ((dynamic)x).count).ToList();
                 }
                 catch { /* skip */ }
             }
@@ -230,7 +382,7 @@ public static class DashboardEndpoints
             double compliancePct = totalDevices > 0 && totalDevices > nonCompliant
                 ? Math.Round((double)(totalDevices - nonCompliant) / totalDevices * 100, 1) : 0;
 
-            return Results.Ok(new { nonCompliant, notCheckedIn, totalDevices, compliancePct, nonCompliantDevices });
+            return Results.Ok(new { nonCompliant, notCheckedIn, totalDevices, compliancePct, nonCompliantDevices, osBuckets });
         });
 
         // Service health summary from DB
@@ -536,28 +688,62 @@ public static class DashboardEndpoints
             {
                 var graph = services.GetRequiredService<GraphApiClient>();
                 var items = await graph.GetCollectionAsync(
-                    "/v1.0/security/incidents?$top=50&$filter=status eq 'active'&$orderby=createdDateTime desc", ct);
+                    "/v1.0/security/incidents?$top=50&$filter=status eq 'active'&$expand=alerts&$orderby=createdDateTime desc", ct);
 
-                var incidents = items.Select(i => new
-                {
-                    id = i.TryGetProperty("id", out var id) ? id.GetString() : null,
-                    displayName = i.TryGetProperty("displayName", out var n) ? n.GetString() : null,
-                    severity = i.TryGetProperty("severity", out var s) ? s.GetString() : "unknown",
-                    status = i.TryGetProperty("status", out var st) ? st.GetString() : "unknown",
-                    classification = i.TryGetProperty("classification", out var cl) ? cl.GetString() : null,
-                    createdDateTime = i.TryGetProperty("createdDateTime", out var cr) ? cr.GetString() : null,
-                    lastUpdateDateTime = i.TryGetProperty("lastUpdateDateTime", out var lu) ? lu.GetString() : null,
-                    assignedTo = i.TryGetProperty("assignedTo", out var at) && at.ValueKind == JsonValueKind.String ? at.GetString() : null,
-                    incidentWebUrl = i.TryGetProperty("incidentWebUrl", out var url) ? url.GetString() : null,
-                    customTags = i.TryGetProperty("customTags", out var tags) && tags.ValueKind == JsonValueKind.Array
+                var trend = new Dictionary<string, int>();
+                var mitre = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+                var incidents = items.Select(i => {
+                    var id = i.TryGetProperty("id", out var idProp) ? idProp.GetString() : null;
+                    var displayName = i.TryGetProperty("displayName", out var n) ? n.GetString() : null;
+                    var severity = i.TryGetProperty("severity", out var s) ? s.GetString() : "unknown";
+                    var status = i.TryGetProperty("status", out var st) ? st.GetString() : "unknown";
+                    var classification = i.TryGetProperty("classification", out var cl) ? cl.GetString() : null;
+                    var createdDateTime = i.TryGetProperty("createdDateTime", out var cr) ? cr.GetString() : null;
+                    var lastUpdateDateTime = i.TryGetProperty("lastUpdateDateTime", out var lu) ? lu.GetString() : null;
+                    var assignedTo = i.TryGetProperty("assignedTo", out var at) && at.ValueKind == JsonValueKind.String ? at.GetString() : null;
+                    var incidentWebUrl = i.TryGetProperty("incidentWebUrl", out var url) ? url.GetString() : null;
+                    var customTags = i.TryGetProperty("customTags", out var tags) && tags.ValueKind == JsonValueKind.Array
                         ? tags.EnumerateArray().Select(x => x.GetString()).OfType<string>().ToArray()
-                        : Array.Empty<string>(),
-                    description = i.TryGetProperty("description", out var desc) && desc.ValueKind == JsonValueKind.String ? desc.GetString() : null,
-                    recommendedActions = i.TryGetProperty("recommendedActions", out var ra) && ra.ValueKind == JsonValueKind.String ? ra.GetString() : null,
+                        : Array.Empty<string>();
+                    var description = i.TryGetProperty("description", out var desc) && desc.ValueKind == JsonValueKind.String ? desc.GetString() : null;
+                    var recommendedActions = i.TryGetProperty("recommendedActions", out var ra) && ra.ValueKind == JsonValueKind.String ? ra.GetString() : null;
+
+                    if (DateTimeOffset.TryParse(createdDateTime, out var dt))
+                    {
+                        var dStr = dt.ToString("yyyy-MM-dd");
+                        trend[dStr] = trend.GetValueOrDefault(dStr) + 1;
+                    }
+
+                    if (i.TryGetProperty("alerts", out var al) && al.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var alert in al.EnumerateArray())
+                        {
+                            if (alert.TryGetProperty("mitreTechniques", out var mt) && mt.ValueKind == JsonValueKind.Array)
+                            {
+                                foreach (var t in mt.EnumerateArray())
+                                {
+                                    var tStr = t.GetString();
+                                    if (!string.IsNullOrEmpty(tStr)) mitre[tStr] = mitre.GetValueOrDefault(tStr) + 1;
+                                }
+                            }
+                        }
+                    }
+
+                    return new {
+                        id, displayName, severity, status, classification, createdDateTime, lastUpdateDateTime,
+                        assignedTo, incidentWebUrl, customTags, description, recommendedActions
+                    };
                 }).ToList();
 
                 var bySeverity = incidents.GroupBy(i => i.severity ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
-                return Results.Ok(new { configured = true, total = incidents.Count, bySeverity, incidents });
+                
+                var mitreList = mitre.Select(kv => new { technique = kv.Key, count = kv.Value })
+                                     .OrderByDescending(x => x.count).Take(5).ToList();
+                var trendList = trend.Select(kv => new { date = kv.Key, value = kv.Value })
+                                     .OrderBy(x => x.date).ToList();
+
+                return Results.Ok(new { configured = true, total = incidents.Count, bySeverity, incidents, mitre = mitreList, trend = trendList });
             }
             catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = GraphErrorHint.DescribeOrNull(ex.Message) ?? "An error occurred. Check server logs for details.", total = 0, incidents = Array.Empty<object>() }); }
         });
@@ -718,20 +904,64 @@ public static class DashboardEndpoints
                 var graph = services.GetRequiredService<GraphApiClient>();
                 var items = await graph.GetCollectionAsync(
                     "/v1.0/security/alerts_v2?$top=50&$filter=serviceSource eq 'microsoftDefenderForOffice365'&$orderby=createdDateTime desc", ct);
-                var alerts = items.Select(a => new
-                {
-                    id = a.TryGetProperty("id", out var id) ? id.GetString() : null,
-                    title = a.TryGetProperty("title", out var t) ? t.GetString() : null,
-                    severity = a.TryGetProperty("severity", out var s) ? s.GetString() : "unknown",
-                    status = a.TryGetProperty("status", out var st) ? st.GetString() : "unknown",
-                    category = a.TryGetProperty("category", out var cat) ? cat.GetString() : null,
-                    createdDateTime = a.TryGetProperty("createdDateTime", out var cr) ? cr.GetString() : null,
-                    description = a.TryGetProperty("description", out var d) && d.ValueKind == JsonValueKind.String ? d.GetString() : null,
-                    alertWebUrl = a.TryGetProperty("alertWebUrl", out var url) ? url.GetString() : null,
+                var topTargetedUsers = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                var trend = new Dictionary<string, int>();
+
+                var alerts = items.Select(a => {
+                    var id = a.TryGetProperty("id", out var idProp) ? idProp.GetString() : null;
+                    var title = a.TryGetProperty("title", out var t) ? t.GetString() : null;
+                    var severity = a.TryGetProperty("severity", out var s) ? s.GetString() : "unknown";
+                    var status = a.TryGetProperty("status", out var st) ? st.GetString() : "unknown";
+                    var category = a.TryGetProperty("category", out var cat) ? cat.GetString() : null;
+                    var createdDateTime = a.TryGetProperty("createdDateTime", out var cr) ? cr.GetString() : null;
+                    var description = a.TryGetProperty("description", out var d) && d.ValueKind == JsonValueKind.String ? d.GetString() : null;
+                    var alertWebUrl = a.TryGetProperty("alertWebUrl", out var url) ? url.GetString() : null;
+
+                    string? upn = null;
+                    if (a.TryGetProperty("evidence", out var ev) && ev.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var e in ev.EnumerateArray())
+                        {
+                            if (e.TryGetProperty("entityType", out var et) && et.GetString() == "User" &&
+                                e.TryGetProperty("userAccount", out var ua) && ua.ValueKind == JsonValueKind.Object &&
+                                ua.TryGetProperty("userPrincipalName", out var upnProp))
+                            {
+                                upn = upnProp.GetString();
+                                if (!string.IsNullOrEmpty(upn)) break;
+                            }
+                            else if (e.TryGetProperty("entityType", out var et2) && et2.GetString() == "Mailbox" &&
+                                     e.TryGetProperty("mailbox", out var mb) && mb.ValueKind == JsonValueKind.Object &&
+                                     mb.TryGetProperty("userPrincipalName", out var upnProp2))
+                            {
+                                upn = upnProp2.GetString();
+                                if (!string.IsNullOrEmpty(upn)) break;
+                            }
+                        }
+                    }
+
+                    if (!string.IsNullOrEmpty(upn))
+                    {
+                        topTargetedUsers[upn] = topTargetedUsers.GetValueOrDefault(upn) + 1;
+                    }
+
+                    if (DateTimeOffset.TryParse(createdDateTime, out var dt))
+                    {
+                        var dStr = dt.ToString("yyyy-MM-dd");
+                        trend[dStr] = trend.GetValueOrDefault(dStr) + 1;
+                    }
+
+                    return new { id, title, severity, status, category, createdDateTime, description, alertWebUrl, userPrincipalName = upn };
                 }).ToList();
+
                 var byCategory = alerts.GroupBy(a => a.category ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
                 var bySeverity = alerts.GroupBy(a => a.severity ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
-                return Results.Ok(new { configured = true, total = alerts.Count, byCategory, bySeverity, alerts });
+                
+                var topUsersList = topTargetedUsers.Select(kv => new { user = kv.Key, count = kv.Value })
+                                                   .OrderByDescending(x => x.count).Take(5).ToList();
+                var trendList = trend.Select(kv => new { date = kv.Key, value = kv.Value })
+                                     .OrderBy(x => x.date).ToList();
+
+                return Results.Ok(new { configured = true, total = alerts.Count, byCategory, bySeverity, alerts, topTargetedUsers = topUsersList, trend = trendList });
             }
             catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = GraphErrorHint.DescribeOrNull(ex.Message) ?? "An error occurred. Check server logs for details.", total = 0, alerts = Array.Empty<object>() }); }
         });

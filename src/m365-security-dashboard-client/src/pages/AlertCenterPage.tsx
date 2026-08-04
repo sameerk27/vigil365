@@ -315,8 +315,8 @@ function NotificationSettingsTab() {
   };
 
   const digestChip = (key: "teamsDigest"|"emailDigest"|"webhookDigest") => (
-    <label className="toggle-label" data-inline-style="inline-94b6caffd5" title="Batch this channel's alerts into a single daily rollup instead of sending each one instantly.">
-      <input type="checkbox" checked={!!cfg[key]} onChange={e=>set(key, e.target.checked)}/> Daily digest
+    <label className="toggle-label" data-inline-style="inline-94b6caffd5" title="Batch this channel's alerts into a single rollup instead of sending each one instantly.">
+      <input type="checkbox" checked={!!cfg[key]} onChange={e=>set(key, e.target.checked)}/> Rollup digest
     </label>
   );
 
@@ -375,7 +375,14 @@ function NotificationSettingsTab() {
             </select>
           </div>
           <div className="policy-field">
-            <span className="policy-label">Daily digest send hour (UTC)</span>
+            <span className="policy-label">Digest Frequency</span>
+            <select className="policy-input" value={cfg.digestFrequency ?? "daily"} onChange={e=>set("digestFrequency", e.target.value)}>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly (Monday)</option>
+            </select>
+          </div>
+          <div className="policy-field">
+            <span className="policy-label">Digest send hour (UTC)</span>
             <input className="policy-input" type="number" min={0} max={23} value={cfg.digestHourUtc ?? 8} onChange={e=>set("digestHourUtc", Number(e.target.value))}/>
           </div>
           <div className="policy-field">
@@ -383,7 +390,7 @@ function NotificationSettingsTab() {
             <input className="policy-input" type="number" min={1} value={cfg.failureAlertThreshold ?? 3} onChange={e=>set("failureAlertThreshold", Number(e.target.value))}/>
           </div>
         </div>
-        <p className="hdr-sub">Digest channels batch their alerts into one daily message at the send hour. If a channel fails to deliver this many times in a row, Vigil365 raises a high-severity delivery-failure alert on the still-working channels.</p>
+        <p className="hdr-sub">Digest channels batch their alerts into one rollup message. If a channel fails to deliver this many times in a row, Vigil365 raises a high-severity delivery-failure alert on the still-working channels.</p>
       </Card>
 
       <Card title="Notification History" badge={<Badge label={`${log.length} sent`} tone="neutral"/>}>

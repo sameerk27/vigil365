@@ -10,7 +10,6 @@ namespace M365SecurityDashboard.Api.Services;
 
 public sealed class GraphApiClient
 {
-    private static readonly string[] Scopes = ["https://graph.microsoft.com/.default"];
     private readonly HttpClient _http;
     private readonly GraphOptions _options;
     private readonly TokenCredential _credential;
@@ -74,7 +73,7 @@ public sealed class GraphApiClient
             {
                 using var request = new HttpRequestMessage(HttpMethod.Get, next);
                 request.Headers.TryAddWithoutValidation("User-Agent", "M365SecurityDashboard/1.0");
-                var token = await _credential.GetTokenAsync(new TokenRequestContext(Scopes), ct);
+                var token = await _credential.GetTokenAsync(new TokenRequestContext(new[] { $"{_options.BaseUrl.TrimEnd('/')}/.default" }), ct);
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
 
                 using var response = await _http.SendAsync(request, ct);
@@ -134,7 +133,7 @@ public sealed class GraphApiClient
 
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.TryAddWithoutValidation("User-Agent", "M365SecurityDashboard/1.0");
-        var token = await _credential.GetTokenAsync(new TokenRequestContext(Scopes), ct);
+        var token = await _credential.GetTokenAsync(new TokenRequestContext(new[] { $"{_options.BaseUrl.TrimEnd('/')}/.default" }), ct);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
 
         using var response = await _http.SendAsync(request, ct);

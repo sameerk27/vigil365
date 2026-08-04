@@ -3,7 +3,7 @@ import { Inbox, AlertTriangle, ShieldAlert, CheckCircle, Archive, Send, XCircle,
 import { SecurityAlert, EmailProtectionData, EmailProtectionAlert, Tone } from "../services/types";
 import { fmtDate, relTime, fmtFullTime } from "../services/utils";
 import { consumeNavSeed } from "../services/api";
-import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, ExportDropdown, SectHdr , SeverityFilter} from "../components/SharedComponents";
+import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, ExportDropdown, SectHdr , SeverityFilter, LineChart } from "../components/SharedComponents";
 
 export function EmailPage({ alerts, emailProtection, onAlertClick }:
   { alerts: SecurityAlert[]; emailProtection: EmailProtectionData|null; onAlertClick:(a:SecurityAlert)=>void }) {
@@ -157,6 +157,37 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
           ))}
         </div>
       </Card>
+
+      {emailProtection?.configured && !emailProtection?.error && (emailProtection.topTargetedUsers || emailProtection.trend) && (
+        <div className="two-col">
+          <Card title="Threat Trend (7d)" badge={<Badge label="MDO" tone="neutral"/>}>
+            {emailProtection.trend && emailProtection.trend.length > 0 ? (
+              <LineChart data={emailProtection.trend} color="var(--status-error-icon)" />
+            ) : (
+              <EmptyState icon={<ShieldCheck size={28}/>} message="No recent threat trend data" />
+            )}
+          </Card>
+          <Card title="Top Targeted Users" badge={<Badge label={emailProtection.topTargetedUsers?.length.toString() ?? "0"} tone="neutral"/>}>
+            {emailProtection.topTargetedUsers && emailProtection.topTargetedUsers.length > 0 ? (
+              <div className="mini-list">
+                <table className="data-tbl">
+                  <thead><tr><th scope="col">User</th><th scope="col" style={{textAlign: 'right'}}>Alerts</th></tr></thead>
+                  <tbody>
+                    {emailProtection.topTargetedUsers.map((u, i) => (
+                      <tr key={i} className="tbl-row-click" onClick={() => setSearch(u.user)}>
+                        <td><div className="trunc" title={u.user} style={{maxWidth: '200px'}}>{u.user}</div></td>
+                        <td style={{textAlign: 'right'}}><Badge label={u.count.toString()} tone="warning" /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState icon={<ShieldCheck size={28}/>} message="No targeted users identified" />
+            )}
+          </Card>
+        </div>
+      )}
 
       <Card title="MDO Protection Alerts"
         badge={<Badge label={`${filteredMdo.length} / ${emailProtection?.total??0} alerts`} tone={(emailProtection?.total??0)>0?"warning":"good"}/>}

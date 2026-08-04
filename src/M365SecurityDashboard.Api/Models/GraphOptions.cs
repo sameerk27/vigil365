@@ -16,6 +16,7 @@ public sealed class GraphOptions
     public string CertificatePassword { get; set; } = "";
 
     public string BaseUrl { get; set; } = "https://graph.microsoft.com";
+    public string LoginInstance { get; set; } = "https://login.microsoftonline.com";
     public int CollectionIntervalMinutes { get; set; } = 15;
     public int DevicesNotCheckedInDays { get; set; } = 7;
     public int SignInLookbackHours { get; set; } = 24;

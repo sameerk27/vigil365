@@ -304,12 +304,13 @@ app.Use(async (ctx, next) =>
 
 // Security headers must run before static files so the SPA shell and bundled
 // assets receive the same browser protections as API responses.
+var azureAdInstance = app.Configuration["AzureAd:Instance"]?.TrimEnd('/') ?? "https://login.microsoftonline.com";
 app.Use(async (ctx, next) =>
 {
     ctx.Response.Headers["X-Frame-Options"] = "DENY";
     ctx.Response.Headers["X-Content-Type-Options"] = "nosniff";
     ctx.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
-    ctx.Response.Headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://login.microsoftonline.com wss:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';";
+    ctx.Response.Headers["Content-Security-Policy"] = $"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' {azureAdInstance} wss:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';";
     ctx.Response.Headers["Permissions-Policy"] = "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()";
     await next();
 });

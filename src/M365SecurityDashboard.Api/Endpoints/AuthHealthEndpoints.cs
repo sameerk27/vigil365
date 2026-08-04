@@ -79,6 +79,7 @@ public static class AuthHealthEndpoints
             }
             return Results.Ok(new
             {
+                instance = config["AzureAd:Instance"] ?? "https://login.microsoftonline.com/",
                 clientId = Pick("AzureAd:ClientId", "Graph:ClientId"),
                 tenantId = Pick("AzureAd:TenantId", "Graph:TenantId"),
                 redirectUri = config["Auth:RedirectUri"] ?? "http://localhost:5173"

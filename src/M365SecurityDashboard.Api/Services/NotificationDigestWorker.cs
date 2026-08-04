@@ -60,7 +60,7 @@ public sealed class NotificationDigestWorker(
     {
         if (!ShouldSendDigest(cfg, now)) return;
 
-        var since = cfg.LastDigestAt ?? now.AddDays(-1);
+        var since = cfg.LastDigestAt ?? now.AddDays(string.Equals(cfg.DigestFrequency, "weekly", StringComparison.OrdinalIgnoreCase) ? -7 : -1);
         var candidates = await db.TriggeredAlerts.AsNoTracking()
             .Where(a => a.TriggeredAt > since)
             .ToListAsync(ct);
@@ -73,7 +73,7 @@ public sealed class NotificationDigestWorker(
             return;
         }
         var sent = await sender.SendDigestRollupAsync(db, cfg, pending, ct);
-        logger.LogInformation("Sent daily digest of {Count} alerts to {Channels} channel(s).", pending.Count, sent);
+        logger.LogInformation("Sent {Frequency} digest of {Count} alerts to {Channels} channel(s).", cfg.DigestFrequency, pending.Count, sent);
     }
 
     private async Task MaybeAlertOnFailuresAsync(AppDbContext db, NotificationSender sender, NotificationSettings cfg, DateTimeOffset now, CancellationToken ct)
@@ -116,6 +116,7 @@ public sealed class NotificationDigestWorker(
     {
         if (!(cfg.TeamsDigest || cfg.EmailDigest || cfg.WebhookDigest)) return false;
         if (now.Hour != Math.Clamp(cfg.DigestHourUtc, 0, 23)) return false;
+        if (string.Equals(cfg.DigestFrequency, "weekly", StringComparison.OrdinalIgnoreCase) && now.DayOfWeek != DayOfWeek.Monday) return false;
         // Only one digest per calendar day, even though the worker ticks hourly.
         if (cfg.LastDigestAt is { } last && last.UtcDateTime.Date == now.UtcDateTime.Date) return false;
         return true;

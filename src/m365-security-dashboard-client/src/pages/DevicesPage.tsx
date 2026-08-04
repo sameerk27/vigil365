@@ -133,6 +133,38 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
         </div>
       </Card>
 
+      {/* OS Distribution */}
+      <Card title="OS Distribution" badge={<Badge label={devices?.osBuckets ? `${devices.osBuckets.length} versions` : "0"} tone="neutral"/>}>
+        {!devices?.osBuckets || devices.osBuckets.length === 0 ? (
+          <EmptyState icon={<Laptop size={28}/>} message="No OS distribution data available."/>
+        ) : (
+          <>
+            {(() => {
+               const familySums: Record<string, number> = {};
+               devices.osBuckets.forEach(b => { familySums[b.os] = (familySums[b.os] ?? 0) + b.count; });
+               const families = Object.keys(familySums).map(f => ({ label: f, value: familySums[f], color: f === 'Windows' ? 'var(--color-primary)' : f === 'macOS' ? 'var(--color-faint)' : f === 'iOS' ? 'var(--color-text)' : f === 'Android' ? 'var(--status-good-icon)' : 'var(--status-warn-icon)' })).sort((a,b)=>b.value-a.value);
+               return <MiniBarChart items={families} />;
+            })()}
+            <div className="mini-list" style={{ marginTop: 16 }}>
+              <SectHdr>BY VERSION</SectHdr>
+              <table className="data-tbl">
+                <thead><tr><th scope="col">OS</th><th scope="col">Version</th><th scope="col" style={{textAlign: 'right'}}>Count</th></tr></thead>
+                <tbody>
+                  {devices.osBuckets.slice(0, 10).map((b, i) => (
+                    <tr key={i}>
+                      <td>{b.os}</td>
+                      <td>{b.version}</td>
+                      <td style={{textAlign: 'right'}}>{b.count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {devices.osBuckets.length > 10 && <div className="more-link">{devices.osBuckets.length - 10} more versions</div>}
+            </div>
+          </>
+        )}
+      </Card>
+
       {/* Non-Compliant Devices — full-width, search in card header */}
       <div ref={ncRef}/>
       <Card title="Non-Compliant Devices"

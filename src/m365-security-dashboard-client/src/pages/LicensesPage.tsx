@@ -70,17 +70,21 @@ export function LicensesPage({ licenses, inactive, passwords }: {
                 <MiniBarChart items={filteredSkus.slice(0,8).map(s=>({ label:s.name.replace(/_/g," ").slice(0,22), value:s.consumed, color:s.available<=5?"#dc2626":"#3b82f6" }))}/>
                 <div className="tbl-wrap" data-inline-style="inline-f2fecb34dc">
                   <table className="data-tbl">
-                    <thead><tr><th scope="col">SKU</th><th scope="col">Purchased</th><th scope="col">Consumed</th><th scope="col">Available</th></tr></thead>
+                    <thead><tr><th scope="col">SKU</th><th scope="col">Purchased</th><th scope="col">Consumed</th><th scope="col" style={{textAlign: 'right'}}>Available (Waste)</th></tr></thead>
                     <tbody>
                       {filteredSkus.length===0&&<tr><td colSpan={4} className="td-empty">No SKUs match.</td></tr>}
-                      {filteredSkus.map((s,i)=>(
+                      {filteredSkus.map((s,i)=>{
+                        const wastePct = s.purchased > 0 ? Math.round((s.available / s.purchased) * 100) : 0;
+                        return (
                         <tr key={i}>
                           <td><div className="al-title">{s.name}</div></td>
                           <td>{s.purchased}</td>
                           <td>{s.consumed}</td>
-                          <td style={{color:s.available<=5?"var(--status-error-text)":"var(--status-good-text)",fontWeight:600}}>{s.available}</td>
+                          <td style={{textAlign: 'right', color:s.available<=5?"var(--status-good-text)":"var(--status-warn-text)",fontWeight:600}}>
+                            {s.available} <span style={{opacity: 0.7, fontSize: '0.9em', marginLeft: 4}}>({wastePct}%)</span>
+                          </td>
                         </tr>
-                      ))}
+                      );})}
                     </tbody>
                   </table>
                 </div>

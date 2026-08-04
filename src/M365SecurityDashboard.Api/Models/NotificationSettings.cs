@@ -50,15 +50,19 @@ public sealed class NotificationSettings
     [MaxLength(20)]
     public string MinSeverity { get; set; } = "low";
 
-    // ── Digest mode (daily rollup) ──
+    // ── Digest mode (daily/weekly rollup) ──
     // When a channel's digest flag is on, individual alerts are NOT sent instantly
-    // on that channel; instead they are batched into a single daily rollup sent at
+    // on that channel; instead they are batched into a single rollup sent at
     // DigestHourUtc by the NotificationDigestWorker.
     public bool TeamsDigest { get; set; }
     public bool EmailDigest { get; set; }
     public bool WebhookDigest { get; set; }
 
-    /// <summary>Hour of day (UTC, 0–23) at which the daily digest rollup is sent.</summary>
+    /// <summary>Frequency of the digest: "daily" or "weekly" (sent on Monday).</summary>
+    [MaxLength(20)]
+    public string DigestFrequency { get; set; } = "daily";
+
+    /// <summary>Hour of day (UTC, 0–23) at which the digest rollup is sent.</summary>
     public int DigestHourUtc { get; set; } = 8;
 
     /// <summary>Watermark: alerts triggered after this instant are pending inclusion in the next digest.</summary>

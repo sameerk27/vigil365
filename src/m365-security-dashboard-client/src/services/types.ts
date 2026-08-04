@@ -32,7 +32,9 @@ export type SecureScore = {
 export type IdentityData = {
   configured: boolean;
   mfa: { registered: number; total: number; percentage: number };
-  guests: { total: number; active: number };
+  guests: { total: number; active: number; inactive90d?: number; licenseRequired?: boolean; domains?: {domain: string; count: number}[] };
+  mfaMethods?: { method: string; count: number; pct: number }[];
+  staleAccounts?: { upn: string; displayName?: string; lastSignIn?: string; daysSince: number }[];
   riskyUsers: number;
   signIns: { total: number; failed: number; risky: number; foreign: number };
   foreignSignIns: { title: string; userPrincipalName?: string; detectedAt: string }[];
@@ -42,6 +44,7 @@ export type IdentityData = {
 export type DevicesData = {
   nonCompliant: number; notCheckedIn: number; totalDevices: number; compliancePct: number;
   nonCompliantDevices: { deviceName?: string; userPrincipalName?: string; description?: string; lastUpdatedAt: string }[];
+  osBuckets?: { os: string; version: string; count: number }[];
 };
 
 export type ServiceHealthData = {
@@ -80,7 +83,13 @@ export type SecurityIncident = {
   assignedTo?: string; incidentWebUrl?: string; customTags: string[];
   description?: string; recommendedActions?: string;
 };
-export type SecurityIncidentsData = { configured: boolean; error?: string; total: number; bySeverity: Record<string,number>; incidents: SecurityIncident[] };
+export type SecurityIncidentsData = { 
+  configured: boolean; error?: string; total: number; 
+  bySeverity: Record<string,number>; 
+  incidents: SecurityIncident[];
+  mitre?: { technique: string; count: number }[];
+  trend?: { date: string; value: number }[];
+};
 
 export type PrivilegedRole = { roleId?: string; roleName?: string; memberCount: number; members: { displayName?: string; userPrincipalName?: string }[] };
 export type PrivilegedRolesData = { configured: boolean; error?: string; roles: PrivilegedRole[]; totalPrivilegedUsers: number };
@@ -91,12 +100,24 @@ export type MdeVulnerabilitiesData = { configured: boolean; error?: string; tota
 export type PimActivation = { id?: string; action?: string; status?: string; createdDateTime?: string; justification?: string; principalDisplayName?: string; principalUpn?: string; roleName?: string };
 export type PimData = { configured: boolean; error?: string; total: number; activations: PimActivation[] };
 export type EmailProtectionAlert = { id?: string; title?: string; severity: string; status: string; category?: string; createdDateTime?: string; description?: string; alertWebUrl?: string };
-export type EmailProtectionData = { configured: boolean; error?: string; total: number; byCategory: Record<string,number>; bySeverity: Record<string,number>; alerts: EmailProtectionAlert[] };
+export type EmailProtectionData = { 
+  configured: boolean; error?: string; total: number; 
+  byCategory: Record<string,number>; bySeverity: Record<string,number>; 
+  alerts: EmailProtectionAlert[];
+  topTargetedUsers?: { user: string; count: number }[];
+  trend?: { date: string; value: number }[];
+};
 export type PurviewLabel = { id?: string; name?: string; description?: string; color?: string; sensitivity: number; isActive: boolean };
 export type PurviewData = { configured: boolean; error?: string; labelCount: number; labels: PurviewLabel[] };
 
 export type MdiAlert = { id?: string; title?: string; severity: string; status: string; category?: string; createdDateTime?: string; description?: string; alertWebUrl?: string; mitreTechniques: string[] };
-export type MdiAlertsData = { configured: boolean; error?: string; total: number; bySeverity: Record<string,number>; byCategory: Record<string,number>; alerts: MdiAlert[] };
+export type MdoAlertsData = {
+  configured: boolean; total: number;
+  byCategory: Record<string, number>; bySeverity: Record<string, number>;
+  alerts: MdoAlert[]; error?: string;
+  topTargetedUsers?: { user: string; count: number }[];
+  trend?: { date: string; value: number }[];
+};
 
 export type McasAlert = { id?: string; title?: string; severity: string; status: string; category?: string; createdDateTime?: string; description?: string; alertWebUrl?: string };
 export type McasAlertsData = { configured: boolean; error?: string; total: number; bySeverity: Record<string,number>; byCategory: Record<string,number>; alerts: McasAlert[] };
@@ -194,7 +215,7 @@ export interface NotificationSettings {
   webhookEnabled: boolean; webhookUrl?: string; webhookSigningSecret?: string; hasWebhookSigningSecret?: boolean;
   minSeverity: string;
   teamsDigest?: boolean; emailDigest?: boolean; webhookDigest?: boolean;
-  digestHourUtc?: number; failureAlertThreshold?: number;
+  digestFrequency?: string; digestHourUtc?: number; failureAlertThreshold?: number;
 }
 
 export interface ChannelHealth {

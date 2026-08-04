@@ -1,11 +1,12 @@
 import React, { useState, useCallback, useEffect } from "react";
-import { CheckCircle, AlertTriangle, Bell, Users, ShieldCheck, ChevronRight } from "lucide-react";
+import { CheckCircle, AlertTriangle, Bell, Users, ShieldCheck, ChevronRight, Check, X, HelpCircle } from "lucide-react";
 import { apiBase, apiFetch, crossNavigate } from "../services/api";
 import { showToast } from "../services/toast";
 import { Card, Badge, CopyButton } from "../components/SharedComponents";
 
 export function SetupPage() {
   const [status, setStatus] = useState<{ configured: boolean; tenantId: string; clientId: string; hasSecret: boolean } | null>(null);
+  const [permissions, setPermissions] = useState<{ permission: string; features: string[]; status: "missing" | "granted" | "unknown" }[] | null>(null);
   const [tenantId, setTenantId] = useState("");
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
@@ -20,6 +21,11 @@ export function SetupPage() {
         setStatus(s);
         setTenantId(s.tenantId || "");
         setClientId(s.clientId || "");
+      }
+      const p = await apiFetch(`${apiBase}/api/setup/permissions`);
+      if (p.ok) {
+        const pdata = await p.json();
+        setPermissions(pdata.permissions);
       }
     } catch { /* ignore */ }
   }, []);
@@ -90,6 +96,32 @@ export function SetupPage() {
           the remaining onboarding steps rather than leaving them to find them.
           The SMTP form itself lives with notification settings — not duplicated
           here — so there is one place to configure delivery. */}
+      {status?.configured && permissions && (
+        <Card title="Required Graph Permissions" badge={<Badge label={permissions.some(p => p.status === "missing") ? "Action Required" : "Live Check"} tone={permissions.some(p => p.status === "missing") ? "error" : "good"}/>}>
+          <div data-inline-style="inline-ddbe82fa76">
+            Vigil365 requires the following Application permissions in Entra ID. The live status is evaluated based on the success of the most recent collection run.
+          </div>
+          <div className="tbl-wrap" style={{marginTop: 16}}>
+            <table className="data-tbl">
+              <thead><tr><th scope="col" style={{width:100}}>Status</th><th scope="col">Permission</th><th scope="col">Used For</th></tr></thead>
+              <tbody>
+                {permissions.map((p, i) => (
+                  <tr key={i}>
+                    <td>
+                      {p.status === "granted" ? <Badge label="Granted" tone="good" icon={<Check size={12}/>}/> :
+                       p.status === "missing" ? <Badge label="Missing" tone="error" icon={<X size={12}/>}/> :
+                       <Badge label="Unknown" tone="neutral" icon={<HelpCircle size={12}/>}/>}
+                    </td>
+                    <td><div className="al-title">{p.permission}</div></td>
+                    <td className="al-desc">{p.features.join(", ")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
       {status?.configured && (
         <Card title="Next steps">
           <div className="setup-next-grid">

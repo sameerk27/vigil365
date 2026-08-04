@@ -2,7 +2,7 @@ import React, { useState, useMemo } from "react";
 import { ShieldAlert, AlertCircle, AlertTriangle, Bell, Search, Eye, ExternalLink, Database } from "lucide-react";
 import { SecurityAlert, ServiceHealthData, DefenderAlertsData, SecurityIncidentsData, DefenderAlert, SecurityIncident } from "../services/types";
 import { fmtDate, relTime, fmtDefenderSource, fmtService, sevColor } from "../services/utils";
-import { DetailModal, DetailField, KpiTile, Card, Badge, MiniBarChart, InlineError, ExportDropdown, rowActivation} from "../components/SharedComponents";
+import { DetailModal, DetailField, KpiTile, Card, Badge, MiniBarChart, InlineError, ExportDropdown, rowActivation, LineChart } from "../components/SharedComponents";
 import { FilterPresets } from "../components/FilterPresets";
 
 export type UnifiedItem =
@@ -237,6 +237,38 @@ export function IncidentsPage({ alerts, alertsTotal, serviceHealth, defenderAler
         <Card title="Defender — By Source" badge={<Badge label={`${defenderCount} alerts`} tone="error"/>}>
           <MiniBarChart items={Object.entries(defenderAlerts.bySource??{}).map(([k,v])=>({ label:fmtDefenderSource(k), value:v, color:"var(--dot-high)" }))}/>
         </Card>
+      )}
+      {(securityIncidents?.configured && !securityIncidents.error && (securityIncidents.mitre || securityIncidents.trend)) && (
+        <div className="two-col">
+          <Card title="Incident Threat Trend (7d)" badge={<Badge label="Incidents" tone="neutral"/>}>
+            {securityIncidents.trend && securityIncidents.trend.length > 0 ? (
+              <LineChart data={securityIncidents.trend} color="var(--status-warn-icon)" />
+            ) : (
+              <EmptyState icon={<ShieldAlert size={28}/>} message="No recent incident trend data" />
+            )}
+          </Card>
+          <Card title="Top MITRE Techniques" badge={<Badge label={securityIncidents.mitre?.length.toString() ?? "0"} tone="neutral"/>}>
+            {securityIncidents.mitre && securityIncidents.mitre.length > 0 ? (
+              <div className="mini-list">
+                <table className="data-tbl">
+                  <thead><tr><th scope="col">Technique</th><th scope="col" style={{textAlign: 'right'}}>Alerts</th></tr></thead>
+                  <tbody>
+                    {securityIncidents.mitre.map((m, i) => (
+                      <tr key={i}>
+                        <td>
+                          <a href={`https://attack.mitre.org/techniques/${m.technique.replace(".", "/") || m.technique}`} target="_blank" rel="noopener noreferrer" className="mitre-tag">{m.technique}</a>
+                        </td>
+                        <td style={{textAlign: 'right'}}><Badge label={m.count.toString()} tone="warning" /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState icon={<ShieldAlert size={28}/>} message="No MITRE techniques found" />
+            )}
+          </Card>
+        </div>
       )}
       {(defenderAlerts?.error || securityIncidents?.error) && (
         <Card title="Missing Permissions" badge={<Badge label="Action Required" tone="error"/>}>
