@@ -46,46 +46,75 @@
             <!-- Step 2: Configuration -->
             <ScrollViewer x:Name="PanelConfig" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
               <StackPanel>
-                <TextBlock Text="Application Settings" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,20" />
+                <TextBlock Text="Application Settings" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,16" />
 
-                <TextBlock Text="Address people will use (e.g. https://vigil365.mycompany.com)" FontWeight="SemiBold" Margin="0,10,0,5" />
-                <TextBox x:Name="TxtUrl" Height="30" Padding="5" Text="https://" TextChanged="TxtUrl_TextChanged" />
-                <TextBlock x:Name="UrlHint" Text="" TextWrapping="Wrap" FontSize="11" Foreground="#B45309" Margin="0,4,0,0" />
+                <!-- Everything below keys off this. Evaluating on one box needs no
+                     hostname, no certificate and no firewall hole, so asking for
+                     them is pure friction. -->
+                <TextBlock Text="Who needs to reach Vigil365?" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,8" />
 
-                <TextBlock Text="First Administrator Email" FontWeight="SemiBold" Margin="0,15,0,5" />
+                <RadioButton x:Name="RadScopeLocal" GroupName="Scope" IsChecked="True" Margin="0,4" Checked="Scope_Changed">
+                    <StackPanel>
+                        <TextBlock Text="Just this computer" FontWeight="SemiBold" />
+                        <TextBlock Text="For trying Vigil365 out. No certificate or firewall changes needed." FontSize="11" Foreground="#475569" />
+                    </StackPanel>
+                </RadioButton>
+
+                <RadioButton x:Name="RadScopeNetwork" GroupName="Scope" Margin="0,8" Checked="Scope_Changed">
+                    <StackPanel>
+                        <TextBlock Text="Other people on our network" FontWeight="SemiBold" />
+                        <TextBlock Text="Needs a hostname and an HTTPS certificate." FontSize="11" Foreground="#475569" />
+                    </StackPanel>
+                </RadioButton>
+
+                <Border x:Name="PanelLocalSummary" Background="#EFF6FF" BorderBrush="#93C5FD" BorderThickness="1" Padding="10" Margin="0,12,0,0">
+                    <TextBlock x:Name="TxtLocalSummary" Text="Vigil365 will be available at http://localhost:8080 on this computer."
+                               TextWrapping="Wrap" FontSize="12" />
+                </Border>
+
+                <StackPanel x:Name="PanelNetworkSettings" Visibility="Collapsed">
+                    <TextBlock Text="Address people will use (e.g. https://vigil365.mycompany.com)" FontWeight="SemiBold" Margin="0,16,0,5" />
+                    <TextBox x:Name="TxtUrl" Height="30" Padding="5" Text="https://" TextChanged="TxtUrl_TextChanged" />
+                    <TextBlock x:Name="UrlHint" Text="" TextWrapping="Wrap" FontSize="11" Foreground="#B45309" Margin="0,4,0,0" />
+
+                    <!-- Entra refuses plain HTTP redirect URIs for anything but
+                         localhost, so once this is reachable by hostname a
+                         certificate stops being optional. -->
+                    <TextBlock Text="HTTPS Certificate" FontSize="16" FontWeight="SemiBold" Margin="0,20,0,4" />
+                    <TextBlock Text="Microsoft sign-in will not work without HTTPS on a named host."
+                               TextWrapping="Wrap" FontSize="12" Foreground="#475569" Margin="0,0,0,10" />
+
+                    <RadioButton x:Name="RadCertStore" GroupName="Cert" Content="Use a certificate already installed on this server" Margin="0,4"
+                                 Checked="CertOption_Changed" />
+                    <ComboBox x:Name="CmbCertStore" Height="28" Margin="22,4,0,6" IsEnabled="False" DisplayMemberPath="Display" />
+
+                    <RadioButton x:Name="RadCertPfx" GroupName="Cert" Content="Use a certificate file (.pfx)" Margin="0,4"
+                                 Checked="CertOption_Changed" />
+                    <Grid Margin="22,4,0,6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="150" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="TxtPfxPath" Grid.Column="0" Height="28" Padding="5" IsEnabled="False" />
+                        <Button x:Name="BtnBrowsePfx" Grid.Column="1" Content="Browse..." Width="80" Height="28" Margin="6,0" IsEnabled="False" Click="BtnBrowsePfx_Click" />
+                        <PasswordBox x:Name="TxtPfxPassword" Grid.Column="2" Height="28" Padding="5" IsEnabled="False" />
+                    </Grid>
+
+                    <RadioButton x:Name="RadCertSelfSigned" GroupName="Cert" Content="Create one for me (quickest)" IsChecked="True" Margin="0,4"
+                                 Checked="CertOption_Changed" />
+                    <TextBlock Text="Browsers on other machines will warn until you replace it with one from your own CA."
+                               TextWrapping="Wrap" FontSize="11" Foreground="#B45309" Margin="22,2,0,0" />
+                </StackPanel>
+
+                <TextBlock Text="Who is the first administrator?" FontSize="16" FontWeight="SemiBold" Margin="0,22,0,4" />
+                <TextBlock x:Name="TxtAdminEmailHint" Text="Taken from your Azure sign-in. Change it if someone else should be the first admin."
+                           TextWrapping="Wrap" FontSize="11" Foreground="#475569" Margin="0,0,0,5" />
                 <TextBox x:Name="TxtAdminEmail" Height="30" Padding="5" />
 
-                <!-- HTTPS. Sign-in goes through Entra, which refuses plain HTTP for
-                     anything but localhost, so a certificate is not optional here.
-                     Default is the option that needs no decision. -->
-                <TextBlock Text="HTTPS Certificate" FontSize="18" FontWeight="SemiBold" Margin="0,25,0,4" />
-                <TextBlock Text="Vigil365 must be served over HTTPS — Microsoft sign-in will not work otherwise."
-                           TextWrapping="Wrap" FontSize="12" Foreground="#475569" Margin="0,0,0,10" />
-
-                <RadioButton x:Name="RadCertStore" GroupName="Cert" Content="Use a certificate already installed on this server" Margin="0,4"
-                             Checked="CertOption_Changed" />
-                <ComboBox x:Name="CmbCertStore" Height="28" Margin="22,4,0,6" IsEnabled="False" DisplayMemberPath="Display" />
-
-                <RadioButton x:Name="RadCertPfx" GroupName="Cert" Content="Use a certificate file (.pfx)" Margin="0,4"
-                             Checked="CertOption_Changed" />
-                <Grid Margin="22,4,0,6">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="150" />
-                    </Grid.ColumnDefinitions>
-                    <TextBox x:Name="TxtPfxPath" Grid.Column="0" Height="28" Padding="5" IsEnabled="False" />
-                    <Button x:Name="BtnBrowsePfx" Grid.Column="1" Content="Browse..." Width="80" Height="28" Margin="6,0" IsEnabled="False" Click="BtnBrowsePfx_Click" />
-                    <PasswordBox x:Name="TxtPfxPassword" Grid.Column="2" Height="28" Padding="5" IsEnabled="False" />
-                </Grid>
-
-                <RadioButton x:Name="RadCertSelfSigned" GroupName="Cert" Content="Create one for me (recommended to get started)" IsChecked="True" Margin="0,4"
-                             Checked="CertOption_Changed" />
-                <TextBlock Text="Vigil365 generates a certificate and trusts it on this server. Browsers on other machines will warn until you replace it with one from your own CA."
-                           TextWrapping="Wrap" FontSize="11" Foreground="#B45309" Margin="22,2,0,0" />
-
-                <TextBlock Text="Database Settings" FontSize="18" FontWeight="SemiBold" Margin="0,25,0,10" />
-                <CheckBox x:Name="ChkInstallSql" Content="Download and install SQL Server Express locally (Recommended)" IsChecked="True" Checked="ChkInstallSql_Checked" Unchecked="ChkInstallSql_Unchecked" />
+                <TextBlock Text="Database" FontSize="16" FontWeight="SemiBold" Margin="0,22,0,6" />
+                <TextBlock x:Name="TxtSqlDetected" Text="" TextWrapping="Wrap" FontSize="11" Foreground="#475569" Margin="0,0,0,6" />
+                <CheckBox x:Name="ChkInstallSql" Content="Install SQL Server Express locally" IsChecked="True" Checked="ChkInstallSql_Checked" Unchecked="ChkInstallSql_Unchecked" />
 
                 <StackPanel x:Name="PanelSqlString" Visibility="Collapsed" Margin="0,10,0,0">
                     <TextBlock Text="Existing SQL Connection String" FontWeight="SemiBold" Margin="0,5,0,5" />

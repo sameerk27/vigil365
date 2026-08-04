@@ -162,6 +162,68 @@ namespace M365SecurityDashboard.GuiInstaller
 
             RefreshCertificateList();
             CertOption_Changed(this, e);
+            Scope_Changed(this, e);
+            PrefillAdministrator();
+            DetectExistingSqlServer();
+        }
+
+        /// <summary>
+        /// Fills the admin box from the Azure CLI session. The person running the
+        /// installer is nearly always the first admin, so asking them to type an
+        /// address the machine already knows is a question for its own sake.
+        /// </summary>
+        private void PrefillAdministrator()
+        {
+            if (!string.IsNullOrWhiteSpace(TxtAdminEmail.Text)) return;
+            try
+            {
+                var upn = RunCommandAndCapture("az", "account show --query user.name -o tsv").Trim();
+                if (!string.IsNullOrWhiteSpace(upn) && upn.Contains('@'))
+                {
+                    TxtAdminEmail.Text = upn;
+                    TxtAdminEmailHint.Text = $"Taken from your Azure sign-in ({upn}). Change it if someone else should be the first admin.";
+                }
+                else
+                {
+                    TxtAdminEmailHint.Text = "Enter the email address of the person who should administer Vigil365.";
+                }
+            }
+            catch
+            {
+                TxtAdminEmailHint.Text = "Enter the email address of the person who should administer Vigil365.";
+            }
+        }
+
+        /// <summary>
+        /// Reinstalling SQL Express over a working instance is destructive and
+        /// slow, so detect one and default to using it.
+        /// </summary>
+        private void DetectExistingSqlServer()
+        {
+            try
+            {
+                // The canonical list of installed instances. Named values are the
+                // instance names ("SQLEXPRESS"); MSSQLSERVER is the default one.
+                using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
+                    @"SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL");
+                var instances = key?.GetValueNames() ?? Array.Empty<string>();
+
+                if (instances.Length > 0)
+                {
+                    var preferred = instances.FirstOrDefault(i => i.Equals("SQLEXPRESS", StringComparison.OrdinalIgnoreCase))
+                                    ?? instances[0];
+                    var server = preferred.Equals("MSSQLSERVER", StringComparison.OrdinalIgnoreCase) ? "." : $".\\{preferred}";
+                    TxtSqlDetected.Text = $"Found SQL Server already installed ({string.Join(", ", instances)}). Vigil365 will use it.";
+                    ChkInstallSql.IsChecked = false;
+                    TxtSqlString.Text = $"Server={server};Database=Vigil365;Trusted_Connection=True;TrustServerCertificate=True";
+                }
+                else
+                {
+                    TxtSqlDetected.Text = "No SQL Server found on this computer. Vigil365 will install SQL Server Express (about 5-10 minutes).";
+                    ChkInstallSql.IsChecked = true;
+                }
+            }
+            catch { /* detection is a convenience; the checkbox still governs */ }
         }
 
         // --- Step 2: Configuration ---
@@ -237,6 +299,28 @@ namespace M365SecurityDashboard.GuiInstaller
             }
         }
 
+        /// <summary>
+        /// Loopback-only evaluation address. Entra permits http for loopback
+        /// redirect URIs, which is what lets this mode skip certificates
+        /// altogether rather than fobbing the user off with a broken warning.
+        /// </summary>
+        private const string LocalUrl = "http://localhost:8080";
+
+        private bool IsLocalScope => RadScopeLocal?.IsChecked == true;
+
+        /// <summary>The address the install will actually serve and advertise.</summary>
+        private Uri EffectiveUri =>
+            IsLocalScope ? new Uri(LocalUrl) : (ParseUrl(TxtUrl.Text) ?? new Uri(LocalUrl));
+
+        private void Scope_Changed(object sender, RoutedEventArgs e)
+        {
+            if (PanelNetworkSettings == null) return;
+            var local = IsLocalScope;
+            PanelNetworkSettings.Visibility = local ? Visibility.Collapsed : Visibility.Visible;
+            PanelLocalSummary.Visibility    = local ? Visibility.Visible : Visibility.Collapsed;
+            if (!local) RefreshCertificateList();
+        }
+
         private void CertOption_Changed(object sender, RoutedEventArgs e)
         {
             if (CmbCertStore == null) return;
@@ -258,16 +342,24 @@ namespace M365SecurityDashboard.GuiInstaller
 
         private async void BtnStartInstall_Click(object sender, RoutedEventArgs e)
         {
-            if (string.IsNullOrWhiteSpace(TxtUrl.Text) || string.IsNullOrWhiteSpace(TxtAdminEmail.Text))
+            if (string.IsNullOrWhiteSpace(TxtAdminEmail.Text) || !TxtAdminEmail.Text.Contains('@'))
             {
-                MessageBox.Show("Please fill out all fields.");
+                MessageBox.Show("Enter the email address of the first administrator.");
                 return;
             }
 
-            var uri = ParseUrl(TxtUrl.Text);
-            if (uri == null)
+            if (!IsLocalScope && ParseUrl(TxtUrl.Text) == null)
             {
                 MessageBox.Show("That address is not a valid URL. Example: https://vigil365.mycompany.com");
+                return;
+            }
+
+            // Loopback evaluation needs no certificate at all — Entra allows http
+            // for loopback redirect URIs.
+            if (IsLocalScope)
+            {
+                certificate = null;
+                await StartInstall();
                 return;
             }
 
@@ -305,6 +397,11 @@ namespace M365SecurityDashboard.GuiInstaller
                 return;
             }
 
+            await StartInstall();
+        }
+
+        private async Task StartInstall()
+        {
             PanelConfig.Visibility = Visibility.Collapsed;
             PanelInstall.Visibility = Visibility.Visible;
             Step2Label.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(128, 255, 255, 255));
@@ -335,9 +432,28 @@ namespace M365SecurityDashboard.GuiInstaller
                     sqlConnectionString = TxtSqlString.Text;
                 }
 
-                // App Registration
+                // Without this the service has no SQL login at all and dies on its
+                // first connection. Doing it here, while the installer still holds
+                // administrator rights, is the only moment it is straightforward.
+                UpdateProgress(30, "Preparing the database...");
+                try
+                {
+                    DatabaseSetup.GrantServiceAccess(sqlConnectionString, "NT AUTHORITY\\LOCAL SERVICE", Log);
+                }
+                catch (Exception ex)
+                {
+                    throw new Exception(
+                        "Could not prepare the database for the Vigil365 service. " +
+                        "The service account would not be able to sign in to SQL Server.\r\n\r\n" + ex.Message, ex);
+                }
+
+                // App Registration. Must be the canonical origin, not the raw text:
+                // Entra matches redirect URIs by exact string.
                 UpdateProgress(40, "Creating Azure App Registration...");
-                RegisterAzureApp(TxtUrl.Text);
+                var uri = EffectiveUri;
+                RegisterAzureApp(uri.IsDefaultPort
+                    ? $"{uri.Scheme}://{uri.Host}"
+                    : $"{uri.Scheme}://{uri.Host}:{uri.Port}");
 
                 // Build
                 UpdateProgress(60, "Building Application...");
@@ -416,14 +532,40 @@ namespace M365SecurityDashboard.GuiInstaller
             tenantId = RunCommandAndCapture("az", "account show --query tenantId -o tsv").Trim();
             if (string.IsNullOrEmpty(tenantId)) throw new Exception("Could not retrieve tenant ID");
 
-            Log("Creating Entra Application...");
-            var appJson = RunCommandAndCapture("az", "ad app create --display-name \"Vigil365\" --sign-in-audience AzureADMyOrg");
-            
-            var app = JsonSerializer.Deserialize<JsonElement>(appJson);
-            clientId = app.GetProperty("appId").GetString();
-            var objectId = app.GetProperty("id").GetString();
+            // Reuse an existing registration rather than minting another one.
+            // Re-running the wizard is a documented action — it is how you replace
+            // the certificate or change the address — and creating a fresh app
+            // every time would litter the tenant with near-identical registrations
+            // and silently strand whichever one was configured last.
+            string? objectId = null;
+            try
+            {
+                var existingJson = RunCommandAndCapture("az",
+                    "ad app list --display-name \"Vigil365\" --query \"[0]\" -o json").Trim();
+                if (!string.IsNullOrEmpty(existingJson) && existingJson != "null")
+                {
+                    var existing = JsonSerializer.Deserialize<JsonElement>(existingJson);
+                    if (existing.ValueKind == JsonValueKind.Object)
+                    {
+                        clientId = existing.GetProperty("appId").GetString();
+                        objectId = existing.GetProperty("id").GetString();
+                        Log($"Reusing the existing Vigil365 app registration ({clientId}).");
+                    }
+                }
+            }
+            catch { /* fall through to creating one */ }
 
-            Log($"Created App Registration. Client ID: {clientId}");
+            if (objectId == null)
+            {
+                Log("Creating Entra Application...");
+                var appJson = RunCommandAndCapture("az", "ad app create --display-name \"Vigil365\" --sign-in-audience AzureADMyOrg");
+
+                var app = JsonSerializer.Deserialize<JsonElement>(appJson);
+                clientId = app.GetProperty("appId").GetString();
+                objectId = app.GetProperty("id").GetString();
+
+                Log($"Created App Registration. Client ID: {clientId}");
+            }
 
             var patchJson = $$"""
             {
@@ -483,7 +625,17 @@ namespace M365SecurityDashboard.GuiInstaller
             var publishPath = @"C:\Program Files\Vigil365";
             var adminEmail = TxtAdminEmail.Text;
 
-            var uri = ParseUrl(TxtUrl.Text)!;
+            // DataProtection keys must live somewhere the service account can
+            // WRITE. They previously went under Program Files, which is read-only
+            // for LOCAL SERVICE — the keyring could never be persisted, so every
+            // restart invalidated anything protected with it, including the Graph
+            // client secret saved on the Setup page.
+            var dataDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Vigil365");
+            var keyPath = Path.Combine(dataDir, "keys");
+
+            var localOnly = IsLocalScope;
+            var uri = EffectiveUri;
             var hostname = uri.Host;
             var port = uri.Port;
             var isHttps = uri.Scheme == Uri.UriSchemeHttps;
@@ -505,13 +657,16 @@ namespace M365SecurityDashboard.GuiInstaller
 
             // Previously this bound http://127.0.0.1:8080 regardless of what was
             // typed, so any hostname the admin entered was written into Entra and
-            // CORS while nothing ever listened on it. Bind what we advertise.
+            // CORS while nothing ever listened on it. Bind what we advertise —
+            // and for the evaluation mode, bind loopback only so "just this
+            // computer" is enforced rather than merely promised.
             var scheme = isHttps ? "https" : "http";
+            var bindHost = localOnly ? "127.0.0.1" : "*";
             var kestrel = new System.Text.StringBuilder();
             kestrel.AppendLine("    \"Kestrel\": {");
             kestrel.AppendLine("        \"Endpoints\": {");
             kestrel.AppendLine("            \"Public\": {");
-            kestrel.Append($"                \"Url\": \"{scheme}://*:{port}\"");
+            kestrel.Append($"                \"Url\": \"{scheme}://{bindHost}:{port}\"");
             if (certificate != null)
             {
                 kestrel.AppendLine(",");
@@ -548,16 +703,34 @@ namespace M365SecurityDashboard.GuiInstaller
                     "RequireHttps": {{(isHttps ? "true" : "false")}}
                 },
                 "DataProtection": {
-                    "KeyPath": "{{publishPath.Replace("\\", "\\\\")}}\\keys"
+                    "KeyPath": "{{keyPath.Replace("\\", "\\\\")}}"
                 }
             }
             """;
 
             Log("Writing Configuration File...");
             File.WriteAllText(Path.Combine(publishPath, "appsettings.Production.json"), configJson);
-            Directory.CreateDirectory(Path.Combine(publishPath, "keys"));
 
             const string serviceAccount = "NT AUTHORITY\\LOCAL SERVICE";
+
+            Directory.CreateDirectory(keyPath);
+            try
+            {
+                var acl = new DirectoryInfo(keyPath).GetAccessControl();
+                acl.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
+                    serviceAccount,
+                    System.Security.AccessControl.FileSystemRights.Modify,
+                    System.Security.AccessControl.InheritanceFlags.ContainerInherit |
+                    System.Security.AccessControl.InheritanceFlags.ObjectInherit,
+                    System.Security.AccessControl.PropagationFlags.None,
+                    System.Security.AccessControl.AccessControlType.Allow));
+                new DirectoryInfo(keyPath).SetAccessControl(acl);
+                Log($"Data protection keys will be stored in {keyPath}.");
+            }
+            catch (Exception ex)
+            {
+                Log($"Could not grant write access to {keyPath} ({ex.Message}). Saving Graph credentials may fail.");
+            }
 
             // A certificate the service account cannot read is the same as no
             // certificate: the service registers, then dies on startup.
@@ -576,10 +749,18 @@ namespace M365SecurityDashboard.GuiInstaller
 
             // Windows Firewall blocks inbound by default, so without this the site
             // is reachable from the server itself and nowhere else — which looks
-            // exactly like a broken install.
-            Log($"Opening the firewall for inbound TCP {port}...");
-            RunCommand("netsh", $"advfirewall firewall delete rule name=\"Vigil365\"");
-            RunCommand("netsh", $"advfirewall firewall add rule name=\"Vigil365\" dir=in action=allow protocol=TCP localport={port}");
+            // exactly like a broken install. Loopback-only installs need no hole
+            // punched, and opening one would contradict "just this computer".
+            RunCommand("netsh", "advfirewall firewall delete rule name=\"Vigil365\"");
+            if (!localOnly)
+            {
+                Log($"Opening the firewall for inbound TCP {port}...");
+                RunCommand("netsh", $"advfirewall firewall add rule name=\"Vigil365\" dir=in action=allow protocol=TCP localport={port}");
+            }
+            else
+            {
+                Log("Loopback-only install — no firewall change needed.");
+            }
 
             Log("Installing Windows Service...");
             RunCommand("sc", $"stop {serviceName}");

@@ -8,4 +8,11 @@
     <UseWPF>true</UseWPF>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Used to create the SQL login the Windows service authenticates with.
+         Pinned to the version EF Core 8.0.11 resolves so the installer and the
+         API do not disagree about the driver. -->
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.1.6" />
+  </ItemGroup>
+
 </Project>

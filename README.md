@@ -139,27 +139,35 @@ To launch the native Windows setup wizard, simply run this command from the proj
 dotnet run --project src/M365SecurityDashboard.GuiInstaller
 ```
 
-Run it **as Administrator** — it registers a Windows service, writes a firewall
-rule, and installs a certificate.
+Run it **as Administrator** — it registers a Windows service and creates a SQL
+login for it.
 
-#### The certificate step
+#### Choose who needs to reach it
 
-Sign-in goes through Microsoft Entra, and Entra refuses plain `http://` redirect
-URIs for anything but localhost. Vigil365 therefore has to be served over HTTPS,
-so the wizard asks where its certificate comes from:
+The wizard's first question decides everything else:
+
+**Just this computer** — the default, for evaluating Vigil365. It binds
+`http://localhost:8080` (loopback only), needs no certificate, and changes no
+firewall rules. Entra permits `http` for loopback redirect URIs, so sign-in works
+as-is. Nothing else on your network can reach it.
+
+**Other people on our network** — asks for a hostname and a certificate. Entra
+refuses plain `http://` redirect URIs for anything but localhost, so once
+Vigil365 is reachable by name, HTTPS is required and the wizard asks where the
+certificate comes from:
 
 | Option | Use when |
 | --- | --- |
-| **A certificate already on this server** | Your organisation issues certificates from an internal CA (most common). The wizard lists what is in `LocalMachine\My` and marks the ones matching your hostname with a ✓. |
+| **A certificate already on this server** | Your organisation issues certificates from an internal CA (most common). The wizard lists what is in `LocalMachine\My` and marks hostname matches with a ✓. |
 | **A `.pfx` file** | You hold a wildcard or externally-issued certificate as a file. |
 | **Create one for me** (default) | You have neither and want to get running now. |
 
-The default generates a certificate and trusts it **on that server only** — the
-machine itself stops warning, but every other browser still shows a security
-warning. That is fine for evaluating Vigil365 and not fine to leave in place: on
-a security product, a warning you tell people to click through is training them
-to ignore the one that matters. Replace it by re-running the wizard and choosing
-one of the first two options.
+The last option generates a certificate and trusts it **on that server only** —
+that machine stops warning, every other browser still warns. Fine for a pilot,
+not fine to leave in place: on a security product, a warning you tell people to
+click through is training them to ignore the one that matters. Re-run the wizard
+and pick one of the first two options to replace it; re-running reuses the
+existing Entra app registration rather than creating another.
 
 If the server is reachable from the internet, `scripts/request-cert.ps1` gets a
 free, publicly-trusted certificate from Let's Encrypt instead:
@@ -168,8 +176,12 @@ free, publicly-trusted certificate from Let's Encrypt instead:
 pwsh -File scripts/request-cert.ps1 -Hostname vigil365.yourcompany.com -Email you@yourcompany.com
 ```
 
-After the wizard finishes, add the same URL to Entra as a **Single-page
-application** redirect URI, then open the app and finish **Setup** in the browser.
+Everything else is detected or derived: the first administrator is taken from
+your Azure CLI sign-in, and an existing SQL Server instance is found and reused
+rather than installing a second one.
+
+After the wizard finishes, open the app and finish **Setup** in the browser to
+supply the Graph credentials used for collection.
 
 
 
