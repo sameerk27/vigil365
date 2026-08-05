@@ -15,6 +15,9 @@ namespace M365SecurityDashboard.GuiInstaller
         public string Subject { get; set; } = "";
         public string Thumbprint { get; set; } = "";
         public string Display { get; set; } = "";
+
+        /// <summary>Whether this certificate actually covers the hostname being installed.</summary>
+        public bool MatchesHost { get; set; }
     }
 
     /// <summary>
@@ -67,9 +70,14 @@ namespace M365SecurityDashboard.GuiInstaller
                 if (!cert.HasPrivateKey) continue;
                 if (cert.NotAfter < DateTime.Now) continue;
 
+                // Server Authentication must be present, not merely unprohibited.
+                // Treating an absent EKU as "unrestricted" pulled in CA and
+                // identity certificates that can never serve a site.
                 var eku = cert.Extensions.OfType<X509EnhancedKeyUsageExtension>().FirstOrDefault();
-                if (eku != null && !eku.EnhancedKeyUsages.Cast<Oid>().Any(o => o.Value == ServerAuthOid))
+                if (eku == null || !eku.EnhancedKeyUsages.Cast<Oid>().Any(o => o.Value == ServerAuthOid))
                     continue;
+
+                if (IsMachineIdentity(cert)) continue;
 
                 var cn = CommonName(cert.Subject);
                 // Flagging the match is worth more than filtering on it: wildcard
@@ -80,12 +88,36 @@ namespace M365SecurityDashboard.GuiInstaller
                 {
                     Subject = cn,
                     Thumbprint = cert.Thumbprint ?? "",
+                    MatchesHost = matches,
                     Display = $"{(matches ? "✓ " : "")}{cn}  —  expires {cert.NotAfter:yyyy-MM-dd}"
+                                + (matches ? "" : "  (does not cover this address)")
                 });
             }
 
             store.Close();
             return result.OrderByDescending(c => c.Display.StartsWith("✓")).ThenBy(c => c.Subject).ToList();
+        }
+
+        /// <summary>
+        /// Rejects certificates that identify the machine rather than a website.
+        ///
+        /// An Entra-joined or Intune-managed Windows box issues itself several of
+        /// these automatically, and MS-Organization-P2P-Access certificates
+        /// genuinely carry Server Authentication with a private key — so they pass
+        /// every structural test and are still useless. Their subject is a device
+        /// GUID, no browser trusts the issuer, and they rotate about daily. Offered
+        /// in a list of "certificates on this server" they look like a valid
+        /// choice, and picking one yields a site nobody can open.
+        /// </summary>
+        private static bool IsMachineIdentity(X509Certificate2 cert)
+        {
+            var issuer = cert.Issuer ?? "";
+            if (issuer.Contains("MS-Organization", StringComparison.OrdinalIgnoreCase)) return true;
+            if (issuer.Contains("Microsoft Intune", StringComparison.OrdinalIgnoreCase)) return true;
+            if (issuer.Contains("MS-Device", StringComparison.OrdinalIgnoreCase)) return true;
+
+            // A bare GUID for a common name is a device identifier, never a host.
+            return Guid.TryParse(CommonName(cert.Subject), out _);
         }
 
         private static bool Matches(X509Certificate2 cert, string hostname)

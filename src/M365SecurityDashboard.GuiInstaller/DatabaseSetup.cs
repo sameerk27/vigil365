@@ -18,6 +18,39 @@ namespace M365SecurityDashboard.GuiInstaller
     /// </summary>
     internal static class DatabaseSetup
     {
+        // The statements live here as constants rather than inline so their syntax
+        // can be verified against a real server without executing them (SET
+        // PARSEONLY). An earlier version used EXEC('...' + QUOTENAME(@account)),
+        // which is a syntax error — EXEC() concatenates only literals and
+        // variables, never function calls — and nothing caught it until an install
+        // failed in front of a user.
+        internal const string SqlCreateLogin = """
+            IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = @account)
+            BEGIN
+                DECLARE @sql nvarchar(max) = N'CREATE LOGIN ' + QUOTENAME(@account) + N' FROM WINDOWS';
+                EXEC sp_executesql @sql;
+            END
+            """;
+
+        internal const string SqlCreateDatabase = """
+            IF DB_ID(@db) IS NULL
+            BEGIN
+                DECLARE @sql nvarchar(max) = N'CREATE DATABASE ' + QUOTENAME(@db);
+                EXEC sp_executesql @sql;
+            END
+            """;
+
+        internal const string SqlGrantDbOwner = """
+            DECLARE @sql nvarchar(max);
+            IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = @account)
+            BEGIN
+                SET @sql = N'CREATE USER ' + QUOTENAME(@account) + N' FOR LOGIN ' + QUOTENAME(@account);
+                EXEC sp_executesql @sql;
+            END
+            SET @sql = N'ALTER ROLE db_owner ADD MEMBER ' + QUOTENAME(@account);
+            EXEC sp_executesql @sql;
+            """;
+
         public static void GrantServiceAccess(string connectionString, string account, Action<string> log)
         {
             var builder = new SqlConnectionStringBuilder(connectionString);
@@ -38,18 +71,18 @@ namespace M365SecurityDashboard.GuiInstaller
             using var conn = new SqlConnection(adminConnection);
             conn.Open();
 
-            Execute(conn, $"""
-                IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = @account)
-                    EXEC('CREATE LOGIN ' + QUOTENAME(@account) + ' FROM WINDOWS');
-                """, account);
+            // QUOTENAME rather than raw concatenation, and sp_executesql rather
+            // than EXEC(): EXEC() accepts only string literals and variables
+            // concatenated together, so a function call inside it is a syntax
+            // error ("Incorrect syntax near 'QUOTENAME'"). Building the statement
+            // into a variable first is what makes the two combine.
+            Execute(conn, SqlCreateLogin, account);
             log($"SQL login for {account} is present.");
 
             // EF applies migrations on startup, which needs the database to exist.
             // Creating it here rather than granting the service dbcreator keeps the
             // service account's rights scoped to this one database.
-            Execute(conn, $"""
-                IF DB_ID(@db) IS NULL EXEC('CREATE DATABASE ' + QUOTENAME(@db));
-                """, account, database);
+            Execute(conn, SqlCreateDatabase, account, database);
             log($"Database {database} is present.");
 
             var dbConnection = new SqlConnectionStringBuilder(adminConnection) { InitialCatalog = database }.ConnectionString;
@@ -59,11 +92,7 @@ namespace M365SecurityDashboard.GuiInstaller
             // db_owner because migrations create and alter tables. Narrower roles
             // cannot apply a schema change, and this install owns the database
             // outright.
-            Execute(dbConn, $"""
-                IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = @account)
-                    EXEC('CREATE USER ' + QUOTENAME(@account) + ' FOR LOGIN ' + QUOTENAME(@account));
-                EXEC('ALTER ROLE db_owner ADD MEMBER ' + QUOTENAME(@account));
-                """, account);
+            Execute(dbConn, SqlGrantDbOwner, account);
             log($"{account} can now read and write {database}.");
         }
 

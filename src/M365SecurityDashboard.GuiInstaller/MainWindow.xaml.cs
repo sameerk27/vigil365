@@ -311,8 +311,12 @@ namespace M365SecurityDashboard.GuiInstaller
             {
                 RadCertStore.IsEnabled = true;
                 RadCertStore.Content = "Use a certificate already installed on this server";
+
+                // Only preselect something that actually covers the address.
+                // Defaulting to whatever happened to be first offers a certificate
+                // for the wrong name as though it were the recommendation.
                 CmbCertStore.SelectedItem = storeCertificates.FirstOrDefault(c => c.Thumbprint == selected)
-                                            ?? storeCertificates[0];
+                                            ?? storeCertificates.FirstOrDefault(c => c.MatchesHost);
             }
         }
 
@@ -486,8 +490,120 @@ namespace M365SecurityDashboard.GuiInstaller
             catch (Exception ex)
             {
                 Log($"ERROR: {ex.Message}");
-                MessageBox.Show($"Installation failed: {ex.Message}");
+                ShowInstallFailure(ex);
             }
+        }
+
+        /// <summary>
+        /// Turns a failure into something the user can act on, and leaves a way
+        /// back. Stopping on a raw exception message with the wizard stuck on step
+        /// three gives them nothing to do but close it and guess.
+        /// </summary>
+        private void ShowInstallFailure(Exception ex)
+        {
+            var message = ex.Message ?? "";
+            string title, remedy;
+
+            if (message.Contains("database", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("SQL", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("login", StringComparison.OrdinalIgnoreCase))
+            {
+                title = "Vigil365 could not set up its database.";
+                remedy =
+                    "• Check SQL Server is running: open Services and look for \"SQL Server (SQLEXPRESS)\".\n" +
+                    "• Go back and check the connection string names a server you can reach. The default is " +
+                    ".\\SQLEXPRESS.\n" +
+                    "• You must be a SQL administrator on that instance. If someone else administers SQL Server, " +
+                    "ask them to run this installer, or to create a login for NT AUTHORITY\\LOCAL SERVICE with " +
+                    "db_owner on the Vigil365 database.\n" +
+                    "• Nothing has been installed as a service yet, so it is safe to fix this and try again.";
+            }
+            else if (message.Contains("certificate", StringComparison.OrdinalIgnoreCase)
+                     || message.Contains(".pfx", StringComparison.OrdinalIgnoreCase))
+            {
+                title = "The certificate could not be used.";
+                remedy =
+                    "• Go back and check the .pfx password.\n" +
+                    "• The certificate must include its private key — a .cer or .crt file will not work.\n" +
+                    "• If you do not have one to hand, choose \"Create one for me\" to get running now and " +
+                    "replace it later.";
+            }
+            else if (message.Contains("payload", StringComparison.OrdinalIgnoreCase))
+            {
+                title = "This installer does not contain the Vigil365 application.";
+                remedy =
+                    "• This build is incomplete and cannot install anything.\n" +
+                    "• Download the official Vigil365-Setup.exe, or rebuild it with scripts/build-installer.ps1.";
+            }
+            else if (message.Contains("az ", StringComparison.OrdinalIgnoreCase)
+                     || message.Contains("Entra", StringComparison.OrdinalIgnoreCase)
+                     || message.Contains("tenant", StringComparison.OrdinalIgnoreCase)
+                     || message.Contains("app registration", StringComparison.OrdinalIgnoreCase))
+            {
+                title = "Vigil365 could not register itself with Microsoft Entra.";
+                remedy =
+                    "• Sign in to Azure first: open a terminal and run  az login\n" +
+                    "• Your account needs permission to create app registrations (Application Administrator or " +
+                    "Cloud Application Administrator). If it does not have that, ask an administrator to run this " +
+                    "step, or register the application manually — see the README.\n" +
+                    "• Then come back and try again.";
+            }
+            else
+            {
+                title = "Installation did not complete.";
+                remedy =
+                    "• Read the log below for the step that failed.\n" +
+                    "• Go back, correct the setting it names, and run the installation again.\n" +
+                    "• Use \"Copy details\" to capture the log if you need to send it on.";
+            }
+
+            TxtFailureTitle.Text = title + "\n\n" + message.Trim();
+            TxtFailureRemedy.Text = remedy;
+            PanelFailure.Visibility = Visibility.Visible;
+            BtnNextToDone.Visibility = Visibility.Collapsed;
+
+            InstallHeading.Text = "Installation failed";
+            InstallStatusText.Text = "Stopped. Nothing further was changed.";
+            InstallProgress.Foreground = System.Windows.Media.Brushes.IndianRed;
+        }
+
+        private void BtnBackToConfig_Click(object sender, RoutedEventArgs e)
+        {
+            // Reset the run so a retry starts clean rather than resuming into
+            // half-applied state from the previous attempt.
+            PanelFailure.Visibility = Visibility.Collapsed;
+            InstallHeading.Text = "Installing Vigil365...";
+            InstallStatusText.Text = "Starting...";
+            InstallProgress.Value = 0;
+            InstallProgress.Foreground = System.Windows.Media.Brushes.ForestGreen;
+            TxtLog.Clear();
+            certificate = null;
+            usedSelfSignedCertificate = false;
+
+            PanelInstall.Visibility = Visibility.Collapsed;
+            PanelConfig.Visibility = Visibility.Visible;
+            Step3Label.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(128, 255, 255, 255));
+            Step2Label.Foreground = System.Windows.Media.Brushes.White;
+            Step2Label.FontWeight = FontWeights.Bold;
+        }
+
+        private void BtnBackToPrereqs_Click(object sender, RoutedEventArgs e)
+        {
+            PanelConfig.Visibility = Visibility.Collapsed;
+            PanelPrerequisites.Visibility = Visibility.Visible;
+            Step2Label.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(128, 255, 255, 255));
+            Step1Label.Foreground = System.Windows.Media.Brushes.White;
+            Step1Label.FontWeight = FontWeights.Bold;
+        }
+
+        private void BtnCopyLog_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Clipboard.SetText($"{TxtFailureTitle.Text}\r\n\r\n--- log ---\r\n{TxtLog.Text}");
+                BtnCopyLog.Content = "Copied";
+            }
+            catch { BtnCopyLog.Content = "Copy failed"; }
         }
 
         private void EnsureAzureLogin()
