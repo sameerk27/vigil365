@@ -114,7 +114,16 @@
                 <TextBlock Text="Who is the first administrator?" FontSize="16" FontWeight="SemiBold" Margin="0,22,0,4" />
                 <TextBlock x:Name="TxtAdminEmailHint" Text="This person gets full access and can add everyone else."
                            TextWrapping="Wrap" FontSize="11" Foreground="#475569" Margin="0,0,0,5" />
-                <TextBox x:Name="TxtAdminEmail" Height="30" Padding="5" />
+                <TextBox x:Name="TxtAdminEmail" Height="30" Padding="5" TextChanged="TxtAdminEmail_TextChanged" />
+
+                <!-- Which Microsoft 365 tenant Vigil365 is registered in. Taken from
+                     the administrator's address, because registering into whatever
+                     tenant the Azure CLI happened to be signed into produced an app
+                     that the intended users could never sign in to. -->
+                <TextBlock Text="Microsoft 365 tenant" FontSize="16" FontWeight="SemiBold" Margin="0,18,0,4" />
+                <TextBlock x:Name="TxtTenantHint" Text="Taken from the administrator's email address. You will be asked to sign in to this tenant."
+                           TextWrapping="Wrap" FontSize="11" Foreground="#475569" Margin="0,0,0,5" />
+                <TextBox x:Name="TxtTenant" Height="30" Padding="5" />
 
                 <TextBlock Text="Database" FontSize="16" FontWeight="SemiBold" Margin="0,22,0,6" />
                 <TextBlock x:Name="TxtSqlDetected" Text="" TextWrapping="Wrap" FontSize="11" Foreground="#475569" Margin="0,0,0,6" />

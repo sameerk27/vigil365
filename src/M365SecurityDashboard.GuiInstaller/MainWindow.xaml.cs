@@ -180,6 +180,7 @@ namespace M365SecurityDashboard.GuiInstaller
             RefreshCertificateList();
             CertOption_Changed(this, e);
             Scope_Changed(this, e);
+            TxtTenant.TextChanged += (_, __) => { if (TxtTenant.IsKeyboardFocusWithin) tenantEditedByUser = true; };
             PrefillAdministrator();
             DetectExistingSqlServer();
         }
@@ -268,6 +269,20 @@ namespace M365SecurityDashboard.GuiInstaller
             return Uri.TryCreate(text.Trim(), UriKind.Absolute, out var uri)
                    && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
                    ? uri : null;
+        }
+
+        // True once the operator edits the tenant box, after which it stops
+        // tracking the email domain — the two legitimately differ when a tenant
+        // uses a vanity mail domain.
+        private bool tenantEditedByUser;
+
+        private void TxtAdminEmail_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (TxtTenant == null || tenantEditedByUser) return;
+            var at = TxtAdminEmail.Text.LastIndexOf('@');
+            TxtTenant.Text = at >= 0 && at < TxtAdminEmail.Text.Length - 1
+                ? TxtAdminEmail.Text[(at + 1)..].Trim()
+                : "";
         }
 
         private void TxtUrl_TextChanged(object sender, TextChangedEventArgs e)
@@ -371,6 +386,12 @@ namespace M365SecurityDashboard.GuiInstaller
                 return;
             }
 
+            if (string.IsNullOrWhiteSpace(TxtTenant.Text))
+            {
+                MessageBox.Show("Enter the Microsoft 365 tenant Vigil365 should be registered in.");
+                return;
+            }
+
             if (!IsLocalScope && ParseUrl(TxtUrl.Text) == null)
             {
                 MessageBox.Show("That address is not a valid URL. Example: https://vigil365.mycompany.com");
@@ -440,6 +461,7 @@ namespace M365SecurityDashboard.GuiInstaller
             plannedLocalOnly = IsLocalScope;
             plannedUri = EffectiveUri;
             plannedAdminEmail = TxtAdminEmail.Text.Trim();
+            plannedTenant = TxtTenant.Text.Trim();
             await System.Windows.Threading.Dispatcher.Yield(
                 System.Windows.Threading.DispatcherPriority.Background);
 
@@ -455,14 +477,18 @@ namespace M365SecurityDashboard.GuiInstaller
         private bool plannedLocalOnly;
         private Uri plannedUri = new("http://localhost:8080");
         private string plannedAdminEmail = "";
+        private string plannedTenant = "";
 
         private async Task RunInstallationAsync()
         {
             try
             {
                 // Ensure Azure login first
-                UpdateProgress(10, "Checking Azure Login...");
-                await Task.Run(EnsureAzureLogin);
+                UpdateProgress(10, $"Signing in to {plannedTenant}...");
+                Log($"Looking up the Microsoft 365 tenant '{plannedTenant}'...");
+                tenantId = await ResolveTenantIdAsync(plannedTenant);
+                var tenantForLogin = plannedTenant;
+                await Task.Run(() => EnsureAzureLogin(tenantForLogin, tenantId));
 
                 // SQL Setup
                 if (installSqlServer)
@@ -629,23 +655,81 @@ namespace M365SecurityDashboard.GuiInstaller
             catch { BtnCopyLog.Content = "Copy failed"; }
         }
 
-        private void EnsureAzureLogin()
+        /// <summary>
+        /// Resolves a tenant domain to its directory id without needing to be
+        /// signed in. The OpenID discovery document is public, and its issuer
+        /// carries the tenant GUID.
+        ///
+        /// Doing this up front means a typo in the tenant is caught before SQL
+        /// Server is touched, rather than after.
+        /// </summary>
+        private async Task<string> ResolveTenantIdAsync(string tenant)
         {
-            var p = new Process();
-            p.StartInfo.FileName = "cmd.exe";
-            p.StartInfo.Arguments = "/c az account show";
-            p.StartInfo.RedirectStandardOutput = true;
-            p.StartInfo.RedirectStandardError = true;
-            p.StartInfo.UseShellExecute = false;
-            p.StartInfo.CreateNoWindow = true;
-            p.Start();
-            p.WaitForExit();
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+            var url = $"https://login.microsoftonline.com/{Uri.EscapeDataString(tenant)}/v2.0/.well-known/openid-configuration";
 
-            if (p.ExitCode != 0)
+            HttpResponseMessage res;
+            try { res = await http.GetAsync(url); }
+            catch (Exception ex) { throw new Exception($"Could not reach Microsoft to look up '{tenant}'. {ex.Message}"); }
+
+            if (!res.IsSuccessStatusCode)
+                throw new Exception(
+                    $"'{tenant}' is not a Microsoft 365 tenant, or the name is misspelt.\r\n\r\n" +
+                    "Use the domain your users sign in with (for example contoso.com), or the " +
+                    "tenant's contoso.onmicrosoft.com name.");
+
+            var doc = JsonSerializer.Deserialize<JsonElement>(await res.Content.ReadAsStringAsync());
+            var issuer = doc.GetProperty("issuer").GetString() ?? "";
+            var id = issuer.Split('/', StringSplitOptions.RemoveEmptyEntries)
+                           .FirstOrDefault(part => Guid.TryParse(part, out _));
+
+            if (string.IsNullOrEmpty(id))
+                throw new Exception($"Microsoft did not return a directory id for '{tenant}'.");
+            return id;
+        }
+
+        /// <summary>
+        /// Signs the Azure CLI in to the tenant this install is for.
+        ///
+        /// It used to accept whatever tenant the CLI happened to be signed into.
+        /// If that was not the administrator's own tenant, the application was
+        /// registered in the wrong directory as a single-tenant app — so the
+        /// people it was installed for could never sign in, and nothing said so.
+        /// </summary>
+        private void EnsureAzureLogin(string tenant, string expectedTenantId)
+        {
+            var current = "";
+            try { current = RunCommandAndCapture("az", "account show --query tenantId -o tsv").Trim(); }
+            catch { /* not signed in */ }
+
+            if (string.Equals(current, expectedTenantId, StringComparison.OrdinalIgnoreCase))
             {
-                Log("Not logged into Azure CLI. Launching browser to authenticate...");
-                RunCommand("az", "login");
+                Log($"Azure CLI is signed in to {tenant} ({expectedTenantId}).");
+                return;
             }
+
+            if (string.IsNullOrEmpty(current))
+                Log($"Signing in to {tenant} — a browser window will open...");
+            else
+                Log($"Azure CLI is signed in to a different tenant ({current}). Switching to {tenant}...");
+
+            // --allow-no-subscriptions because a Microsoft 365 tenant frequently
+            // has no Azure subscription, and without it the CLI refuses to
+            // complete a sign-in that is otherwise perfectly valid.
+            RunCommand("az", $"login --tenant {tenant} --allow-no-subscriptions");
+
+            try { current = RunCommandAndCapture("az", "account show --query tenantId -o tsv").Trim(); }
+            catch { current = ""; }
+
+            if (!string.Equals(current, expectedTenantId, StringComparison.OrdinalIgnoreCase))
+                throw new Exception(
+                    $"Signed in to the wrong Microsoft 365 tenant.\r\n\r\n" +
+                    $"Expected {tenant} ({expectedTenantId}) but the Azure CLI is in " +
+                    $"{(string.IsNullOrEmpty(current) ? "no tenant" : current)}.\r\n\r\n" +
+                    "Sign in with an account in that tenant when the browser opens. " +
+                    "If you were already signed in as someone else, run  az logout  first.");
+
+            Log($"Signed in to {tenant} ({expectedTenantId}).");
         }
 
         private async Task<string> SetupSqlServer()
@@ -684,9 +768,12 @@ namespace M365SecurityDashboard.GuiInstaller
 
         private void RegisterAzureApp(string publicUrl)
         {
-            Log("Retrieving Tenant ID...");
-            tenantId = RunCommandAndCapture("az", "account show --query tenantId -o tsv").Trim();
-            if (string.IsNullOrEmpty(tenantId)) throw new Exception("Could not retrieve tenant ID");
+            // tenantId was resolved from the administrator's tenant and the CLI was
+            // signed in to it, so it is not re-read from the ambient context here.
+            // Reading it from "az account show" is what silently registered the
+            // application in whichever directory the CLI happened to be pointed at.
+            if (string.IsNullOrEmpty(tenantId)) throw new Exception("Tenant was not resolved before registration.");
+            Log($"Registering in tenant {tenantId}...");
 
             // Reuse an existing registration rather than minting another one.
             // Re-running the wizard is a documented action — it is how you replace
