@@ -54,10 +54,24 @@ public sealed class GraphApiClient
             var thumb = o.CertificateThumbprint.Replace(" ", "").ToUpperInvariant();
             foreach (var location in new[] { StoreLocation.CurrentUser, StoreLocation.LocalMachine })
             {
-                using var store = new X509Store(StoreName.My, location);
-                store.Open(OpenFlags.ReadOnly);
-                var match = store.Certificates.Find(X509FindType.FindByThumbprint, thumb, validOnly: false);
-                if (match.Count > 0) return match[0];
+                // A store that cannot be opened is skipped, not fatal. On Linux
+                // (the Docker deployment) LocalMachine\My does not exist and
+                // Open() throws CryptographicException — which otherwise escapes
+                // as a cryptic error instead of the clear "not found" below, and
+                // masks a certificate that IS present in the other store.
+                try
+                {
+                    using var store = new X509Store(StoreName.My, location);
+                    store.Open(OpenFlags.ReadOnly);
+                    var match = store.Certificates.Find(X509FindType.FindByThumbprint, thumb, validOnly: false);
+                    if (match.Count > 0) return match[0];
+                }
+                catch (Exception ex) when (ex is System.Security.Cryptography.CryptographicException
+                                             or PlatformNotSupportedException
+                                             or UnauthorizedAccessException)
+                {
+                    // store unavailable on this platform/host — try the next one
+                }
             }
             throw new InvalidOperationException(
                 $"Certificate with thumbprint '{thumb}' was not found in CurrentUser\\My or LocalMachine\\My.");
