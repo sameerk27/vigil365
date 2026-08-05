@@ -64,8 +64,13 @@ jobs:
       - name: Restore .NET dependencies
         run: dotnet restore M365SecurityAlertDashboard.sln
 
-      - name: Build .NET solution
-        run: dotnet build M365SecurityAlertDashboard.sln --configuration Release --no-restore
+      # The installer is WPF and only builds on Windows, so it is compiled in the
+      # separate build-installer job below. Everything shipped to the server —
+      # the API and its tests — builds here.
+      - name: Build .NET projects
+        run: |
+          dotnet build src/M365SecurityDashboard.Api/M365SecurityDashboard.Api.csproj --configuration Release --no-restore
+          dotnet build src/M365SecurityDashboard.Api.Tests/M365SecurityDashboard.Api.Tests.csproj --configuration Release --no-restore
 
       - name: Audit NuGet dependencies
         run: |
@@ -74,5 +79,25 @@ jobs:
             echo "::error::Vulnerable NuGet packages detected"; exit 1
           fi
 
+      # Point at the test project, not the solution: `dotnet test <sln>` evaluates
+      # every project, and the WPF installer does not resolve on Linux.
       - name: Run .NET tests
-        run: dotnet test M365SecurityAlertDashboard.sln --configuration Release --no-build --verbosity normal
+        run: dotnet test src/M365SecurityDashboard.Api.Tests/M365SecurityDashboard.Api.Tests.csproj --configuration Release --no-build --verbosity normal
+
+  build-installer:
+    name: Build installer (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      # Compiles the WPF installer so a break here fails CI instead of surfacing
+      # only when someone builds the release. Does not produce the shipping
+      # single-file exe (that is scripts/build-installer.ps1, run at release time).
+      - name: Build the installer project
+        run: dotnet build src/M365SecurityDashboard.GuiInstaller/M365SecurityDashboard.GuiInstaller.csproj --configuration Release

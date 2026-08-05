@@ -8,6 +8,8 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Security.Principal;
+using MessageBox = System.Windows.MessageBox;
+using Clipboard = System.Windows.Clipboard;
 
 namespace M365SecurityDashboard.GuiInstaller
 {
@@ -16,6 +18,10 @@ namespace M365SecurityDashboard.GuiInstaller
         private string tenantId = string.Empty;
         private string clientId = string.Empty;
         private string sqlConnectionString = string.Empty;
+
+        // App-only credential the collector uses against Graph. Empty if the
+        // tenant refused to mint one, in which case Setup asks for it.
+        private string graphClientSecret = string.Empty;
 
         private List<StoreCertificate> storeCertificates = new();
 
@@ -848,10 +854,24 @@ namespace M365SecurityDashboard.GuiInstaller
                 Log($"Created App Registration. Client ID: {clientId}");
             }
 
+            // Graph application permissions. Without these the install completes,
+            // people can sign in, and every collector then fails on authorization
+            // — the dashboard is simply empty with no indication why.
+            Log("Resolving Microsoft Graph permissions for this tenant...");
+            var appRolesJson = RunCommandAndCapture("az",
+                $"ad sp show --id {GraphPermissions.GraphAppId} --query appRoles -o json");
+
+            var wanted = GraphPermissions.Required.Concat(GraphPermissions.Optional);
+            var (requiredResourceAccess, missing) = GraphPermissions.BuildRequiredResourceAccess(appRolesJson, wanted);
+            foreach (var name in missing)
+                Log($"   note: this tenant does not offer '{name}' — skipped.");
+            Log($"Requesting {GraphPermissions.Required.Length} Graph permissions.");
+
             var patchJson = $$"""
             {
                 "spa": { "redirectUris": [ "{{publicUrl}}" ] },
                 "identifierUris": [ "api://{{clientId}}" ],
+                "requiredResourceAccess": {{requiredResourceAccess}},
                 "api": {
                     "oauth2PermissionScopes": [{
                         "id": "{{Guid.NewGuid()}}",
@@ -870,20 +890,79 @@ namespace M365SecurityDashboard.GuiInstaller
             var tempPatch = Path.GetTempFileName();
             File.WriteAllText(tempPatch, patchJson);
             
-            Log("Configuring Redirect URIs and Scopes...");
-            RunCommand("az", $"rest --method PATCH --uri \"https://graph.microsoft.com/v1.0/applications/{objectId}\" --headers \"Content-Type=application/json\" --body \"@{tempPatch}\"");
+            Log("Configuring redirect URI, exposed scope and Graph permissions...");
+            var (patchOk, _, patchErr) = RunCommandChecked("az",
+                $"rest --method PATCH --uri \"https://graph.microsoft.com/v1.0/applications/{objectId}\" " +
+                $"--headers \"Content-Type=application/json\" --body \"@{tempPatch}\"");
             File.Delete(tempPatch);
 
-            RunCommand("az", $"ad sp create --id {clientId}");
+            // If this fails the app has no Graph permissions and no SPA redirect
+            // URI, so neither collection nor sign-in can work. That is not a
+            // warning to note and move past — stop, so the failure UI explains it
+            // rather than the browser doing so later.
+            if (!patchOk)
+                throw new Exception(
+                    "Could not configure the Vigil365 app registration (redirect URI, scope and Graph permissions).\r\n\r\n" +
+                    patchErr);
 
-            Log("Attempting to grant Admin Consent for Graph API...");
-            try
+            // Idempotent — the service principal may already exist if the app is
+            // being reused, and that is not an error.
+            RunCommandChecked("az", $"ad sp create --id {clientId}");
+
+            // Admin consent routinely fails on the first try: the permissions and
+            // service principal we just created take a few seconds to replicate
+            // across Entra, and consent against a not-yet-visible SP returns an
+            // error. Retry with a short backoff before giving up, and only report
+            // success when az actually succeeds — RunCommand's old fire-and-forget
+            // reported consent as granted even when it was not.
+            Log("Granting admin consent for the Graph permissions...");
+            var consented = false;
+            string lastConsentError = "";
+            for (var attempt = 1; attempt <= 5; attempt++)
             {
-                RunCommand("az", $"ad app permission admin-consent --id {clientId}");
+                var (ok, _, stderr) = RunCommandChecked("az", $"ad app permission admin-consent --id {clientId}");
+                if (ok) { consented = true; break; }
+                lastConsentError = stderr;
+                if (attempt < 5) { Log($"   consent not ready yet (attempt {attempt}/5), retrying..."); System.Threading.Thread.Sleep(6000); }
             }
-            catch 
+
+            if (consented)
             {
-                Log("WARNING: Could not grant admin consent automatically. You may need to do this in the Azure Portal.");
+                Log("Admin consent granted.");
+            }
+            else
+            {
+                Log($"WARNING: Could not grant admin consent automatically. {lastConsentError}");
+                Log("   The install continues, but collection stays empty until consent is granted:");
+                Log("   Entra admin center > App registrations > Vigil365 > API permissions > Grant admin consent.");
+            }
+
+            // The collector authenticates to Graph app-only, so it needs a
+            // credential of its own — the user's sign-in cannot be reused. Nothing
+            // created one before, so collection could never start and the Setup
+            // page demanded a secret the operator had to mint by hand.
+            //
+            // --append so an existing credential someone else added is not
+            // destroyed; the trade-off is that re-running the wizard leaves the
+            // previous installer secret behind, unused, until it expires.
+            Log("Creating a client secret for data collection...");
+            // Stdout carries only the password (--query password -o tsv); az prints
+            // its "protect these credentials" notice to stderr, kept separate so it
+            // cannot contaminate the secret. Checking the exit code means a failure
+            // is a failure, not an empty string quietly written into the config.
+            var (secretOk, secretOut, secretErr) = RunCommandChecked("az",
+                $"ad app credential reset --id {clientId} --append --years 2 " +
+                $"--display-name \"Vigil365 collector\" --query password -o tsv");
+
+            if (secretOk && !string.IsNullOrWhiteSpace(secretOut))
+            {
+                graphClientSecret = secretOut;
+                Log("Client secret created and stored in the Vigil365 configuration.");
+            }
+            else
+            {
+                Log($"WARNING: Could not create a client secret. {secretErr}");
+                Log("   Collection stays disabled until a secret is added on the Setup page in the browser.");
             }
         }
 
@@ -1007,17 +1086,30 @@ namespace M365SecurityDashboard.GuiInstaller
             kestrel.Append("    },");
             var kestrelJson = kestrel.ToString();
 
+            // Serialize the free-form values through System.Text.Json rather than
+            // hand-escaping. A client secret or connection string can in principle
+            // contain any character, and JsonSerializer emits a complete, quoted,
+            // fully-escaped JSON string — so these are interpolated WITHOUT
+            // surrounding quotes.
+            var secretJson = JsonSerializer.Serialize(graphClientSecret);
+            var connJson = JsonSerializer.Serialize(sqlConnectionString);
+
             var configJson = $$"""
             {
             {{kestrelJson}}
                 "ConnectionStrings": {
-                    "DefaultConnection": "{{sqlConnectionString.Replace("\\", "\\\\")}}"
+                    "DefaultConnection": {{connJson}}
                 },
                 "AzureAd": {
                     "Instance": "https://login.microsoftonline.com/",
                     "TenantId": "{{tenantId}}",
                     "ClientId": "{{clientId}}",
                     "Audience": "api://{{clientId}}"
+                },
+                "Graph": {
+                    "TenantId": "{{tenantId}}",
+                    "ClientId": "{{clientId}}",
+                    "ClientSecret": {{secretJson}}
                 },
                 "Auth": {
                     "RedirectUri": "{{publicUrl}}",
@@ -1242,11 +1334,35 @@ namespace M365SecurityDashboard.GuiInstaller
             p.StartInfo.RedirectStandardOutput = true;
             p.StartInfo.UseShellExecute = false;
             p.StartInfo.CreateNoWindow = true;
-            
+
             p.Start();
             var output = p.StandardOutput.ReadToEnd();
             p.WaitForExit();
             return output;
+        }
+
+        /// <summary>
+        /// Runs a command and reports whether it actually succeeded, with stdout
+        /// and stderr captured together for the log. RunCommand discards the exit
+        /// code, so callers that branched on its "success" were really branching
+        /// on "it ran at all" — which is how a failed admin-consent still reported
+        /// as granted.
+        /// </summary>
+        private (bool Ok, string Stdout, string Stderr) RunCommandChecked(string fileName, string arguments)
+        {
+            var p = new Process();
+            p.StartInfo.FileName = "cmd.exe";
+            p.StartInfo.Arguments = $"/c {fileName} {arguments}";
+            p.StartInfo.RedirectStandardOutput = true;
+            p.StartInfo.RedirectStandardError = true;
+            p.StartInfo.UseShellExecute = false;
+            p.StartInfo.CreateNoWindow = true;
+
+            p.Start();
+            var stdout = p.StandardOutput.ReadToEnd();
+            var stderr = p.StandardError.ReadToEnd();
+            p.WaitForExit();
+            return (p.ExitCode == 0, stdout.Trim(), stderr.Trim());
         }
     }
 }
