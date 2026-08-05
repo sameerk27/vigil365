@@ -61,3 +61,6 @@ src/M365SecurityDashboard.GuiInstaller/payload.zip
 
 # ACME account keys and issued certificates — private key material
 certs/
+
+# Installer build output — superseded by dist/, which is also ignored
+installer-bin/
