@@ -942,19 +942,95 @@ namespace M365SecurityDashboard.GuiInstaller
             }
 
             Log("Installing Windows Service...");
-            RunCommand("sc", $"stop {serviceName}");
-            RunCommand("sc", $"delete {serviceName}");
+            RunSc($"stop {serviceName}", check: false);      // not running yet on a first install
+            RunSc($"delete {serviceName}", check: false);
             System.Threading.Thread.Sleep(2000);
 
+            // The binPath needs the executable quoted because "Program Files"
+            // contains a space, and that inner quote has to survive being nested
+            // inside the quoted binPath value — hence \" here. Routing this
+            // through cmd.exe re-parses the quotes and hands sc a truncated path
+            // ("binPath= ""C:\Program"), which is why RunSc invokes sc.exe
+            // directly.
+            //
             // No --urls: it overrides Kestrel's configured endpoints, which is how
             // the certificate would get silently ignored.
-            var binPath = $"\"{exePath}\" --environment Production";
-            RunCommand("sc", $"create {serviceName} binPath= \"{binPath}\" start= auto obj= \"NT AUTHORITY\\LocalService\"");
-            RunCommand("sc", $"description {serviceName} \"Vigil365 Microsoft 365 security monitoring service\"");
-            RunCommand("sc", $"failure {serviceName} reset= 86400 actions= restart/5000/restart/15000/restart/60000");
-            
+            var binPath = $"\\\"{exePath}\\\" --environment Production";
+            RunSc($"create {serviceName} binPath= \"{binPath}\" start= auto obj= \"NT AUTHORITY\\LocalService\"");
+            RunSc($"description {serviceName} \"Vigil365 Microsoft 365 security monitoring service\"", check: false);
+            RunSc($"failure {serviceName} reset= 86400 actions= restart/5000/restart/15000/restart/60000", check: false);
+
             Log("Starting Service...");
-            RunCommand("sc", $"start {serviceName}");
+            RunSc($"start {serviceName}");
+
+            // Confirm it is actually running. Previously nothing checked, so a
+            // service that was never created — or that started and immediately
+            // died — still reached the "Installation Complete!" screen, and the
+            // first sign of trouble was the browser refusing to connect.
+            VerifyServiceRunning(serviceName);
+        }
+
+        /// <summary>
+        /// Runs sc.exe directly and, unless told otherwise, fails loudly.
+        /// </summary>
+        private void RunSc(string arguments, bool check = true)
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "sc.exe",
+                Arguments = arguments,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+
+            using var p = Process.Start(psi)!;
+            var stdout = p.StandardOutput.ReadToEnd();
+            var stderr = p.StandardError.ReadToEnd();
+            p.WaitForExit();
+
+            var output = (stdout + stderr).Trim();
+            if (p.ExitCode != 0)
+            {
+                if (!check) return;   // expected for stop/delete on a clean machine
+                throw new Exception(
+                    $"The Windows service command failed (sc {arguments.Split(' ')[0]}, exit code {p.ExitCode}).\r\n\r\n{output}");
+            }
+            if (!string.IsNullOrWhiteSpace(output)) Log("   " + output.Replace("\n", "\n   ").Trim());
+        }
+
+        /// <summary>
+        /// Waits for the service to reach Running. A service that dies on startup
+        /// reports success from "sc start" and then stops a second later, so the
+        /// exit code alone proves nothing.
+        /// </summary>
+        private void VerifyServiceRunning(string serviceName)
+        {
+            for (var attempt = 0; attempt < 15; attempt++)
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "sc.exe",
+                    Arguments = $"query {serviceName}",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true
+                };
+                using var p = Process.Start(psi)!;
+                var text = p.StandardOutput.ReadToEnd();
+                p.WaitForExit();
+
+                if (text.Contains("RUNNING")) { Log($"Service '{serviceName}' is running."); return; }
+                if (text.Contains("STOPPED") && attempt > 2) break;
+                System.Threading.Thread.Sleep(1000);
+            }
+
+            throw new Exception(
+                $"The '{serviceName}' service was installed but is not running. " +
+                "It usually means it could not reach SQL Server, could not read its certificate, " +
+                "or the port is already in use. Windows Event Viewer > Windows Logs > Application " +
+                "records the reason.");
         }
 
         private void BtnNextToDone_Click(object sender, RoutedEventArgs e)
