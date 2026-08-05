@@ -59,6 +59,35 @@ export const APP_VERSION: string = __APP_VERSION__;
 let _msalInstance: PublicClientApplication | null = null;
 let _msalScopes: string[] = [];
 
+/**
+ * MSAL records "an interactive sign-in is underway" in sessionStorage the moment
+ * a redirect starts, and clears it when the redirect comes back. If it never
+ * comes back — the tab was reloaded mid-flight, the user backed out of the
+ * Microsoft page, or a TLS warning interrupted the round trip — the flag is left
+ * set and every later sign-in throws interaction_in_progress instead of
+ * navigating anywhere. The button then looks dead with no way out short of
+ * clearing site data by hand.
+ *
+ * Stale entries for a client id that no longer exists are cleared too:
+ * re-running the installer can register a different application, leaving the
+ * previous one's keys behind.
+ */
+function clearStaleMsalInteraction(): void {
+  try {
+    for (const key of Object.keys(sessionStorage)) {
+      if (key.startsWith("msal.") && key.includes("interaction.status")) {
+        sessionStorage.removeItem(key);
+      }
+    }
+  } catch { /* storage blocked — nothing to clear */ }
+}
+
+function isInteractionInProgress(e: unknown): boolean {
+  const code = (e as { errorCode?: string } | null)?.errorCode;
+  if (code === "interaction_in_progress") return true;
+  return e instanceof Error && e.message.includes("interaction_in_progress");
+}
+
 // ─── Navigation: 8 sections, each holding one or more tab pages ────────────────
 // Every original page id still exists (crossNavigate targets are unchanged) —
 // pages are grouped into sections; multi-page sections render a tab bar.
@@ -736,6 +765,12 @@ function AuthGate() {
           if (accounts.length > 0) {
             pca.setActiveAccount(accounts[0]);
             setAccount(accounts[0]);
+          } else {
+            // handleRedirectPromise has settled and nobody is signed in, so no
+            // interaction can still be genuinely in flight. Anything left over is
+            // debris from an abandoned attempt — drop it now so the sign-in
+            // button works on the first click rather than the second.
+            clearStaleMsalInteraction();
           }
         }
       } catch (e) {
@@ -751,7 +786,20 @@ function AuthGate() {
     try {
       await _msalInstance.loginRedirect({ scopes: _msalScopes });
     } catch (e: unknown) {
-      setLoginError(e instanceof Error ? e.message : "Login failed");
+      // A previous redirect that never completed leaves MSAL's interaction flag
+      // set, and it refuses to start another. Clear it and try once more, rather
+      // than showing a raw error code the user cannot act on.
+      if (isInteractionInProgress(e)) {
+        clearStaleMsalInteraction();
+        try {
+          await _msalInstance.loginRedirect({ scopes: _msalScopes });
+          return;
+        } catch (retry: unknown) {
+          setLoginError(retry instanceof Error ? retry.message : "Sign-in failed");
+          return;
+        }
+      }
+      setLoginError(e instanceof Error ? e.message : "Sign-in failed");
     }
   };
 
