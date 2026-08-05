@@ -25,4 +25,14 @@
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.9.0" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
+
+  <!-- Transitive-dependency security overrides. These are pulled in by the
+       packages above at versions with known High-severity advisories; pinning a
+       patched version here is the standard NuGet remediation and is what keeps
+       the CI vulnerability audit green. Revisit when the parent packages are
+       upgraded — they may then satisfy these directly. -->
+  <ItemGroup>
+    <!-- GHSA-g8r8-53c2-pm3f (via Microsoft.Identity.Web) -->
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="8.0.4" />
+  </ItemGroup>
 </Project>

@@ -18,6 +18,10 @@
          Pinned to the version EF Core 8.0.11 resolves so the installer and the
          API do not disagree about the driver. -->
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.1.6" />
+    <!-- Transitive security override: Microsoft.Data.SqlClient 5.1.6 pulls
+         System.Formats.Asn1 5.0.0, which has GHSA-447r-wph3-92pm (High). Pin the
+         patched version to keep the CI vulnerability audit green. -->
+    <PackageReference Include="System.Formats.Asn1" Version="8.0.2" />
   </ItemGroup>
 
   <!-- The published application, zipped, carried inside the installer. Produced
