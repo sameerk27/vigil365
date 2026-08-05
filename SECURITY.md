@@ -4,6 +4,45 @@
 
 If you find a security issue (e.g. credentials being logged, an endpoint leaking data), please **do not open a public issue**. Open a [GitHub Security Advisory](https://github.com/sameerk27/vigil365/security/advisories/new) instead so it can be fixed before public disclosure.
 
+Please include the affected version/commit, reproduction steps, and potential impact. We aim to acknowledge reports within a few business days and ask for reasonable time to remediate before public disclosure.
+
+---
+
+## Supported Versions
+
+Actively developed; security fixes target the latest `master`. Pin to a released commit for production and review changes before upgrading.
+
+---
+
+## Design & Deployment Model
+
+Vigil365 is a **self-hosted, single-tenant** application meant to run on infrastructure the operating organisation controls — **not** a public multi-tenant SaaS.
+
+- **Read-only against your tenant** — Graph access is app-only (client credentials) with `*.Read.All` permissions only; the app never writes to the M365 tenant.
+- **Data stays in-tenant** — collected data is stored in the operator's own SQL database; nothing is sent to any third-party service.
+- **Network isolation is a primary control** — designed to sit on a private network / behind a reverse proxy, not exposed directly to the internet.
+
+---
+
+## Current Security Controls
+
+- **Secrets encrypted at rest** — SMTP password, webhook URLs, and the Graph client secret are DPAPI-encrypted; secrets are never returned by the API.
+- **Database transport encryption** — SQL connections use `Encrypt=True`.
+- **TLS in production** — HSTS + HTTPS redirection enforced outside Development; TLS via reverse proxy or Kestrel certificate (see README "HTTPS / TLS").
+- **Safe error handling** — API errors return generic messages; detail goes to server logs only.
+- **Security headers** — `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`.
+- **Least privilege** — read-only Graph permission set scoped to the monitored services.
+
+## Hardening In Progress
+
+Implemented on a development branch and rolling into releases: identity sign-in (Entra ID / MSAL), role-based access control (Admin/Analyst/Viewer), an append-only audit trail, and certificate-based Graph auth. See `docs/PROJECT_SUMMARY.md`.
+
+## Operator Responsibilities
+
+- Keep the app registration's client secret/certificate in a secret store; never commit credentials; rotate anything that may have been exposed.
+- Serve over HTTPS in production and restrict network exposure.
+- Apply OS, .NET, SQL Server, and dependency updates.
+
 ---
 
 ## Reporting a Broken Graph API Endpoint

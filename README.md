@@ -206,6 +206,117 @@ the resulting binaries would differ from the ones you tested.
 
 
 
+## Build from source (Option 3)
+
+Only needed if you are not using the setup wizard or Docker — for development,
+or to run Vigil365 on a host you build on yourself.
+
+### 1. Clone and configure secrets
+
+```powershell
+git clone https://github.com/sameerk27/vigil365.git
+cd vigil365
+
+cd src\M365SecurityDashboard.Api
+dotnet user-secrets init
+dotnet user-secrets set "Graph:TenantId"     "YOUR_TENANT_ID"
+dotnet user-secrets set "Graph:ClientId"     "YOUR_CLIENT_ID"
+dotnet user-secrets set "Graph:ClientSecret" "YOUR_CLIENT_SECRET"
+```
+
+> **Never put real credentials in `appsettings.json`** — use User Secrets for development and environment variables or `appsettings.Production.json` (gitignored) for production.
+
+### 2. Set up the database
+
+```powershell
+# Option A: let the API auto-create on first run (requires db-create rights)
+# Option B: pre-create manually
+sqlcmd -S .\SQLEXPRESS -E -I -i .\database\schema.sql
+```
+
+### 3. Build the frontend
+
+```powershell
+cd src\m365-security-dashboard-client
+npm install
+npm run build
+```
+
+> `npm run build` outputs directly into `..\M365SecurityDashboard.Api\wwwroot`
+> (configured via Vite `outDir`) — no copy step needed.
+
+### 4. Run the API
+
+```powershell
+cd src\M365SecurityDashboard.Api
+$env:ASPNETCORE_ENVIRONMENT = "Development"
+dotnet run
+```
+
+Open **http://localhost:5000**
+
+---
+
+## Development (hot-reload)
+
+Run both simultaneously:
+
+```powershell
+# Terminal 1 — backend
+cd src\M365SecurityDashboard.Api
+$env:ASPNETCORE_ENVIRONMENT = "Development"
+dotnet watch run
+
+# Terminal 2 — frontend
+cd src\m365-security-dashboard-client
+npm run dev
+```
+
+Frontend dev server: `http://localhost:5173` (proxies API calls to backend)
+
+---
+
+## Production Deployment (Windows Service)
+
+```powershell
+# 1. Build frontend (outputs straight into the API's wwwroot)
+cd src\m365-security-dashboard-client
+npm install && npm run build
+
+# 2. Publish API
+cd ..\M365SecurityDashboard.Api
+dotnet publish -c Release -o C:\Apps\M365SecurityDashboard
+
+# 3. Create appsettings.Production.json in publish folder
+# (see template below — this file is gitignored)
+
+# 4. Install as Windows Service
+sc.exe create M365SecurityDashboard `
+  binPath= "C:\Apps\M365SecurityDashboard\M365SecurityDashboard.Api.exe --environment Production --urls http://localhost:8080" `
+  start= auto
+sc.exe start M365SecurityDashboard
+```
+
+**`appsettings.Production.json` template** (create this file manually, never commit it):
+
+```json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=.\\SQLEXPRESS;Database=M365SecurityDashboard;Trusted_Connection=True;Encrypt=True;TrustServerCertificate=True"
+  },
+  "Graph": {
+    "TenantId": "YOUR_TENANT_ID",
+    "ClientId": "YOUR_CLIENT_ID",
+    "ClientSecret": "YOUR_CLIENT_SECRET",
+    "CollectionIntervalMinutes": 15,
+    "DevicesNotCheckedInDays": 7,
+    "SignInLookbackHours": 24
+  }
+}
+```
+
+---
+
 ## HTTPS / TLS (required for production)
 
 Outside Development the app enforces HTTPS (HSTS + redirect). Plain HTTP is only
