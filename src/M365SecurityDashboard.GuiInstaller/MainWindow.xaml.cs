@@ -656,6 +656,39 @@ namespace M365SecurityDashboard.GuiInstaller
         }
 
         /// <summary>
+        /// Signs the Azure CLI in interactively, in a window the user can see.
+        ///
+        /// This deliberately does not go through RunCommand: that hides the
+        /// console and redirects its streams, which is right for every
+        /// non-interactive command and fatal for this one. az login opens a
+        /// browser and may fall back to printing a device code — with the window
+        /// hidden there is nothing to read and nothing to answer, so it blocks
+        /// indefinitely.
+        /// </summary>
+        private void RunAzLogin(string tenant)
+        {
+            Log("A sign-in window has opened. Sign in there with an account in this tenant, then installation continues.");
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = $"/c az login --tenant {tenant} --allow-no-subscriptions",
+                UseShellExecute = false,
+                CreateNoWindow = false,   // interactive: the user must be able to see and answer it
+            };
+
+            using var p = Process.Start(psi)
+                ?? throw new Exception("Could not start the Azure CLI to sign in.");
+            p.WaitForExit();
+
+            if (p.ExitCode != 0)
+                throw new Exception(
+                    $"Azure sign-in did not complete (exit code {p.ExitCode}).\r\n\r\n" +
+                    $"Sign in manually and then run the installation again:\r\n\r\n" +
+                    $"    az login --tenant {tenant} --allow-no-subscriptions");
+        }
+
+        /// <summary>
         /// Resolves a tenant domain to its directory id without needing to be
         /// signed in. The OpenID discovery document is public, and its issuer
         /// carries the tenant GUID.
@@ -716,7 +749,12 @@ namespace M365SecurityDashboard.GuiInstaller
             // --allow-no-subscriptions because a Microsoft 365 tenant frequently
             // has no Azure subscription, and without it the CLI refuses to
             // complete a sign-in that is otherwise perfectly valid.
-            RunCommand("az", $"login --tenant {tenant} --allow-no-subscriptions");
+            //
+            // Run in a VISIBLE console. RunCommand hides the window, and az login
+            // is interactive — it prints a device code or waits on a prompt — so
+            // hidden it simply blocks forever with the wizard stuck on "Signing
+            // in…" and nothing to click.
+            RunAzLogin(tenant);
 
             try { current = RunCommandAndCapture("az", "account show --query tenantId -o tsv").Trim(); }
             catch { current = ""; }
