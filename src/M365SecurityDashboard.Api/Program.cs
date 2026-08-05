@@ -190,7 +190,7 @@ using (var scope = app.Services.CreateScope())
     // Loaded BEFORE any demo seeding so a configured install never gets sample data.
     var graphOpts = scope.ServiceProvider.GetRequiredService<IOptions<GraphOptions>>().Value;
     var protector = scope.ServiceProvider.GetRequiredService<SecretProtector>();
-    var saved = db.GraphConfig.FirstOrDefault(g => g.Id == 1);
+    var saved = db.GraphConfig.OrderBy(g => g.Id).FirstOrDefault();
     if (saved is not null && !string.IsNullOrWhiteSpace(saved.TenantId))
     {
         graphOpts.TenantId = saved.TenantId;

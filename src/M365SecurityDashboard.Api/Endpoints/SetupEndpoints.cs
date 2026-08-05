@@ -134,8 +134,11 @@ public static class SetupEndpoints
             if (tenantId == "" || clientId == "")
                 return Results.BadRequest(new { error = "Tenant ID and Client ID are required." });
 
-            var row = await db.GraphConfig.FirstOrDefaultAsync(g => g.Id == 1, ct);
-            if (row is null) { row = new GraphConfig { Id = 1 }; db.GraphConfig.Add(row); }
+            // Single-row table, so match on "the row" rather than on Id == 1: the
+            // Id is store-generated, and assigning it made EF send it in the
+            // INSERT, which an identity column rejects.
+            var row = await db.GraphConfig.OrderBy(g => g.Id).FirstOrDefaultAsync(ct);
+            if (row is null) { row = new GraphConfig(); db.GraphConfig.Add(row); }
             row.TenantId = tenantId;
             row.ClientId = clientId;
             // Keep the existing secret if the field was left blank (e.g. editing tenant only).

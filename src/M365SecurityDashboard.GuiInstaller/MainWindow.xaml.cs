@@ -189,26 +189,28 @@ namespace M365SecurityDashboard.GuiInstaller
         /// installer is nearly always the first admin, so asking them to type an
         /// address the machine already knows is a question for its own sake.
         /// </summary>
+        /// <summary>
+        /// Suggests the signed-in account as a hint only. Deliberately does not
+        /// fill the box: the first administrator is a real decision, and a
+        /// pre-filled value is the one people click past without reading.
+        /// </summary>
         private void PrefillAdministrator()
         {
-            if (!string.IsNullOrWhiteSpace(TxtAdminEmail.Text)) return;
-            try
+            // Off the UI thread: "az account show" spawns a process and can take a
+            // second or two, which on the UI thread stalls the step transition.
+            _ = Task.Run(() =>
             {
-                var upn = RunCommandAndCapture("az", "account show --query user.name -o tsv").Trim();
-                if (!string.IsNullOrWhiteSpace(upn) && upn.Contains('@'))
+                string? upn = null;
+                try { upn = RunCommandAndCapture("az", "account show --query user.name -o tsv").Trim(); }
+                catch { /* not signed in yet; the plain hint is fine */ }
+
+                Dispatcher.Invoke(() =>
                 {
-                    TxtAdminEmail.Text = upn;
-                    TxtAdminEmailHint.Text = $"Taken from your Azure sign-in ({upn}). Change it if someone else should be the first admin.";
-                }
-                else
-                {
-                    TxtAdminEmailHint.Text = "Enter the email address of the person who should administer Vigil365.";
-                }
-            }
-            catch
-            {
-                TxtAdminEmailHint.Text = "Enter the email address of the person who should administer Vigil365.";
-            }
+                    TxtAdminEmailHint.Text = !string.IsNullOrWhiteSpace(upn) && upn.Contains('@')
+                        ? $"This person gets full access and can add everyone else. You are signed in to Azure as {upn}."
+                        : "This person gets full access and can add everyone else.";
+                });
+            });
         }
 
         /// <summary>
@@ -429,10 +431,30 @@ namespace M365SecurityDashboard.GuiInstaller
             Step3Label.Foreground = System.Windows.Media.Brushes.White;
             Step3Label.FontWeight = FontWeights.Bold;
 
+            // Let WPF actually paint this step before any blocking work starts.
+            // Without the yield the whole install ran on the UI thread, so the
+            // window stayed frozen on Configuration and then jumped straight to a
+            // half-finished progress bar.
+            installSqlServer = ChkInstallSql.IsChecked == true;
+            existingSqlConnectionString = TxtSqlString.Text;
+            plannedLocalOnly = IsLocalScope;
+            plannedUri = EffectiveUri;
+            plannedAdminEmail = TxtAdminEmail.Text.Trim();
+            await System.Windows.Threading.Dispatcher.Yield(
+                System.Windows.Threading.DispatcherPriority.Background);
+
             await RunInstallationAsync();
         }
 
         // --- Step 3: Installation ---
+
+        // Captured from the UI before the install begins, so the work itself never
+        // touches controls from a background thread.
+        private bool installSqlServer;
+        private string existingSqlConnectionString = "";
+        private bool plannedLocalOnly;
+        private Uri plannedUri = new("http://localhost:8080");
+        private string plannedAdminEmail = "";
 
         private async Task RunInstallationAsync()
         {
@@ -440,17 +462,17 @@ namespace M365SecurityDashboard.GuiInstaller
             {
                 // Ensure Azure login first
                 UpdateProgress(10, "Checking Azure Login...");
-                EnsureAzureLogin();
+                await Task.Run(EnsureAzureLogin);
 
                 // SQL Setup
-                if (ChkInstallSql.IsChecked == true)
+                if (installSqlServer)
                 {
                     UpdateProgress(20, "Downloading & Installing SQL Server Express...");
                     sqlConnectionString = await SetupSqlServer();
                 }
                 else
                 {
-                    sqlConnectionString = TxtSqlString.Text;
+                    sqlConnectionString = existingSqlConnectionString;
                 }
 
                 // Without this the service has no SQL login at all and dies on its
@@ -471,10 +493,11 @@ namespace M365SecurityDashboard.GuiInstaller
                 // App Registration. Must be the canonical origin, not the raw text:
                 // Entra matches redirect URIs by exact string.
                 UpdateProgress(40, "Creating Azure App Registration...");
-                var uri = EffectiveUri;
-                RegisterAzureApp(uri.IsDefaultPort
+                var uri = plannedUri;
+                var origin = uri.IsDefaultPort
                     ? $"{uri.Scheme}://{uri.Host}"
-                    : $"{uri.Scheme}://{uri.Host}:{uri.Port}");
+                    : $"{uri.Scheme}://{uri.Host}:{uri.Port}";
+                await Task.Run(() => RegisterAzureApp(origin));
 
                 // Application files
                 UpdateProgress(60, "Installing application files...");
@@ -482,7 +505,7 @@ namespace M365SecurityDashboard.GuiInstaller
 
                 // Service Setup
                 UpdateProgress(80, "Configuring Windows Service...");
-                SetupService();
+                await Task.Run(SetupService);
 
                 UpdateProgress(100, "Done!");
                 BtnNextToDone.Visibility = Visibility.Visible;
@@ -802,7 +825,7 @@ namespace M365SecurityDashboard.GuiInstaller
         private void SetupService()
         {
             var publishPath = @"C:\Program Files\Vigil365";
-            var adminEmail = TxtAdminEmail.Text;
+            var adminEmail = plannedAdminEmail;
 
             // DataProtection keys must live somewhere the service account can
             // WRITE. They previously went under Program Files, which is read-only
@@ -813,8 +836,8 @@ namespace M365SecurityDashboard.GuiInstaller
                 Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Vigil365");
             var keyPath = Path.Combine(dataDir, "keys");
 
-            var localOnly = IsLocalScope;
-            var uri = EffectiveUri;
+            var localOnly = plannedLocalOnly;
+            var uri = plannedUri;
             var hostname = uri.Host;
             var port = uri.Port;
             var isHttps = uri.Scheme == Uri.UriSchemeHttps;

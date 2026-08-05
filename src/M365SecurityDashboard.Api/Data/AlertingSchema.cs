@@ -49,6 +49,9 @@ public static class AlertingSchema
 
         IF OBJECT_ID(N'[NotificationSettings]', N'U') IS NULL
         CREATE TABLE [NotificationSettings] (
+            -- Deliberately NOT an identity column: this is a singleton row with
+            -- a fixed key of 1, and the model supplies it. Identity here would
+            -- make SQL Server reject the explicit key.
             [Id] int NOT NULL PRIMARY KEY,
             [TeamsEnabled] bit NOT NULL,
             [TeamsWebhookUrl] nvarchar(2048) NULL,
@@ -148,6 +151,7 @@ public static class AlertingSchema
 
         IF OBJECT_ID(N'[GraphConfig]', N'U') IS NULL
         CREATE TABLE [GraphConfig] (
+            -- Singleton row with a fixed key; see NotificationSettings above.
             [Id] int NOT NULL PRIMARY KEY,
             [TenantId] nvarchar(100) NOT NULL,
             [ClientId] nvarchar(100) NOT NULL,
@@ -271,8 +275,12 @@ public static class AlertingSchema
             }
         }
 
+        // The model defaults Id to 1 and the column is not store-generated, so
+        // no key is set here. This is the first write a fresh install performs;
+        // when the column was an identity it rejected the explicit key and took
+        // the whole service down on startup.
         if (!db.NotificationSettings.Any())
-            db.NotificationSettings.Add(new NotificationSettings { Id = 1 });
+            db.NotificationSettings.Add(new NotificationSettings());
         db.SaveChanges();
     }
 }

@@ -112,7 +112,7 @@
                 </StackPanel>
 
                 <TextBlock Text="Who is the first administrator?" FontSize="16" FontWeight="SemiBold" Margin="0,22,0,4" />
-                <TextBlock x:Name="TxtAdminEmailHint" Text="Taken from your Azure sign-in. Change it if someone else should be the first admin."
+                <TextBlock x:Name="TxtAdminEmailHint" Text="This person gets full access and can add everyone else."
                            TextWrapping="Wrap" FontSize="11" Foreground="#475569" Margin="0,0,0,5" />
                 <TextBox x:Name="TxtAdminEmail" Height="30" Padding="5" />
 

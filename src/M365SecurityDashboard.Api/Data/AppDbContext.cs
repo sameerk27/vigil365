@@ -64,6 +64,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         modelBuilder.Entity<NotificationSettings>(entity =>
         {
             entity.HasKey(s => s.Id);
+            // Singleton row with a fixed key of 1 (see the model's default). EF's
+            // convention would make an int key an identity column, and then the
+            // explicit 1 gets sent in the INSERT and SQL Server rejects it —
+            // which crashed every fresh install on its first startup write.
+            entity.Property(s => s.Id).ValueGeneratedNever();
         });
 
         modelBuilder.Entity<NotificationLog>(entity =>
@@ -90,7 +95,14 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.HasIndex(a => a.Timestamp);
         });
 
-        modelBuilder.Entity<GraphConfig>(entity => entity.HasKey(g => g.Id));
+        modelBuilder.Entity<GraphConfig>(entity =>
+        {
+            entity.HasKey(g => g.Id);
+            // Singleton row with a fixed key of 1, as for NotificationSettings
+            // above. Left as an identity column this fails the moment someone
+            // saves Graph credentials on the setup page.
+            entity.Property(g => g.Id).ValueGeneratedNever();
+        });
 
         modelBuilder.Entity<AlertNote>(entity =>
         {

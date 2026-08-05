@@ -31,7 +31,9 @@ public static class NotificationsEndpoints
         app.MapPut("/api/notification-settings", async (AppDbContext db, SecretProtector protector, AuditLogger audit, NotificationSettings input, CancellationToken ct) =>
         {
             var s = await db.NotificationSettings.FirstOrDefaultAsync(ct);
-            if (s is null) { s = new NotificationSettings { Id = 1 }; db.NotificationSettings.Add(s); }
+            // Id is store-generated; setting it makes EF include it in the INSERT
+            // and SQL Server rejects that against an identity column.
+            if (s is null) { s = new NotificationSettings(); db.NotificationSettings.Add(s); }
             s.TeamsEnabled = input.TeamsEnabled;
             s.TeamsWebhookUrl = protector.Protect(input.TeamsWebhookUrl);
             s.EmailEnabled = input.EmailEnabled;

@@ -97,7 +97,21 @@ $exe = Join-Path $OutDir "M365SecurityDashboard.GuiInstaller.exe"
 if (-not (Test-Path $exe)) { throw "Installer executable was not produced." }
 
 $final = Join-Path $OutDir "Vigil365-Setup.exe"
-Move-Item $exe $final -Force
+# -Force does not reliably overwrite an existing destination here, so the second
+# build in a row failed with "Cannot create a file when that file already
+# exists". Clear it first — and say so plainly if the previous build is still
+# open, because the raw error is an unexplained "access is denied".
+if (Test-Path $final) {
+  try { Remove-Item $final -Force -ErrorAction Stop }
+  catch {
+    $running = Get-Process -Name "Vigil365-Setup" -ErrorAction SilentlyContinue
+    if ($running) {
+      throw "Vigil365-Setup.exe is still running (PID $($running.Id -join ', ')). Close it and build again."
+    }
+    throw "Could not replace $final — it is locked by another process. $($_.Exception.Message)"
+  }
+}
+Move-Item $exe $final
 
 # Loose files beside a single-file exe invite shipping the wrong thing.
 Get-ChildItem $OutDir -File | Where-Object { $_.Name -ne "Vigil365-Setup.exe" } | Remove-Item -Force
