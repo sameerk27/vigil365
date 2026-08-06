@@ -825,6 +825,7 @@ namespace M365SecurityDashboard.GuiInstaller
             // every time would litter the tenant with near-identical registrations
             // and silently strand whichever one was configured last.
             string? objectId = null;
+            var reused = false;
             try
             {
                 var existingJson = RunCommandAndCapture("az",
@@ -836,6 +837,7 @@ namespace M365SecurityDashboard.GuiInstaller
                     {
                         clientId = existing.GetProperty("appId").GetString();
                         objectId = existing.GetProperty("id").GetString();
+                        reused = true;
                         Log($"Reusing the existing Vigil365 app registration ({clientId}).");
                     }
                 }
@@ -854,6 +856,27 @@ namespace M365SecurityDashboard.GuiInstaller
                 Log($"Created App Registration. Client ID: {clientId}");
             }
 
+            // Decide whether to (re)define the exposed access_as_user scope. Entra
+            // rejects a PATCH that replaces an already-enabled scope with
+            // CannotDeleteOrUpdateEnabledEntitlement, and our scope carries a fresh
+            // GUID each run — so on a reused app that already exposes the scope we
+            // must leave it untouched. Only define it when it is genuinely absent.
+            var defineScope = true;
+            if (reused)
+            {
+                try
+                {
+                    var scopesJson = RunCommandAndCapture("az",
+                        $"ad app show --id {clientId} --query \"api.oauth2PermissionScopes[].value\" -o json");
+                    if (scopesJson.Contains("access_as_user", StringComparison.OrdinalIgnoreCase))
+                    {
+                        defineScope = false;
+                        Log("   access_as_user scope already present — leaving it as-is.");
+                    }
+                }
+                catch { /* if we cannot tell, fall back to defining it */ }
+            }
+
             // Graph application permissions. Without these the install completes,
             // people can sign in, and every collector then fails on authorization
             // — the dashboard is simply empty with no indication why.
@@ -867,23 +890,32 @@ namespace M365SecurityDashboard.GuiInstaller
                 Log($"   note: this tenant does not offer '{name}' — skipped.");
             Log($"Requesting {GraphPermissions.Required.Length} Graph permissions.");
 
+            // The exposed scope is included only when it needs defining (new app,
+            // or a reused app that somehow lacks it). Re-sending it on an app that
+            // already exposes it is what triggers CannotDeleteOrUpdateEnabledEntitlement.
+            var apiBlock = defineScope
+                ? $$"""
+                ,
+                    "identifierUris": [ "api://{{clientId}}" ],
+                    "api": {
+                        "oauth2PermissionScopes": [{
+                            "id": "{{Guid.NewGuid()}}",
+                            "type": "User",
+                            "value": "access_as_user",
+                            "isEnabled": true,
+                            "adminConsentDisplayName": "Access Vigil365",
+                            "adminConsentDescription": "Allows the signed-in user to access Vigil365 on their behalf.",
+                            "userConsentDisplayName": "Access Vigil365",
+                            "userConsentDescription": "Allows you to access Vigil365 on your behalf."
+                        }]
+                    }
+                """
+                : "";
+
             var patchJson = $$"""
             {
                 "spa": { "redirectUris": [ "{{publicUrl}}" ] },
-                "identifierUris": [ "api://{{clientId}}" ],
-                "requiredResourceAccess": {{requiredResourceAccess}},
-                "api": {
-                    "oauth2PermissionScopes": [{
-                        "id": "{{Guid.NewGuid()}}",
-                        "type": "User",
-                        "value": "access_as_user",
-                        "isEnabled": true,
-                        "adminConsentDisplayName": "Access Vigil365",
-                        "adminConsentDescription": "Allows the signed-in user to access Vigil365 on their behalf.",
-                        "userConsentDisplayName": "Access Vigil365",
-                        "userConsentDescription": "Allows you to access Vigil365 on your behalf."
-                    }]
-                }
+                "requiredResourceAccess": {{requiredResourceAccess}}{{apiBlock}}
             }
             """;
 
