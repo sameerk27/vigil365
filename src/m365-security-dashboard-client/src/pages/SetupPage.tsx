@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect } from "react";
 import { CheckCircle, AlertTriangle, Bell, Users, ShieldCheck, ChevronRight, Check, X, HelpCircle } from "lucide-react";
 import { apiBase, apiFetch, crossNavigate } from "../services/api";
 import { showToast } from "../services/toast";
-import { Card, Badge, CopyButton } from "../components/SharedComponents";
+import { Card, Badge, CopyButton, EmptyState } from "../components/SharedComponents";
 
 export function SetupPage() {
   const [status, setStatus] = useState<{ configured: boolean; tenantId: string; clientId: string; hasSecret: boolean; loginInstance?: string; baseUrl?: string } | null>(null);
@@ -15,6 +15,7 @@ export function SetupPage() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [errors, setErrors] = useState<{ tenantId?: string; clientId?: string; clientSecret?: string }>({});
 
   const loadStatus = useCallback(async () => {
     try {
@@ -38,8 +39,22 @@ export function SetupPage() {
 
   useEffect(() => { loadStatus(); }, [loadStatus]);
 
+  const validate = () => {
+    const errs: typeof errors = {};
+    if (!tenantId.trim()) errs.tenantId = "Tenant ID is required";
+    else if (!/^([0-9a-fA-F-]{36}|[a-zA-Z0-9.-]+\.onmicrosoft\.com)$/.test(tenantId.trim())) errs.tenantId = "Must be a valid GUID or .onmicrosoft.com domain";
+    
+    if (!clientId.trim()) errs.clientId = "Client ID is required";
+    else if (!/^[0-9a-fA-F-]{36}$/.test(clientId.trim())) errs.clientId = "Must be a valid GUID";
+
+    if (!status?.hasSecret && !clientSecret.trim()) errs.clientSecret = "Client Secret is required";
+
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
   const save = async () => {
-    if (!tenantId.trim() || !clientId.trim()) { showToast("Tenant ID and Client ID are required", "error"); return; }
+    if (!validate()) return;
     setSaving(true); setResult(null);
     try {
       const r = await apiFetch(`${apiBase}/api/setup/graph`, {
@@ -67,18 +82,22 @@ export function SetupPage() {
     } finally { setSaving(false); }
   };
 
-  const field = (label: string, value: string, set: (v: string) => void, placeholder: string, type = "text", copyable = false) => (
+  const field = (label: string, value: string, set: (v: string) => void, placeholder: string, type = "text", copyable = false, error?: string) => (
     <div className="policy-field">
       <span className="policy-label" data-inline-style="inline-c82cd24e1a">
         {label}
         {copyable && value.trim() && <CopyButton value={value.trim()} label={label} size={12}/>}
       </span>
-      <input className="policy-input" type={type} value={value} placeholder={placeholder} onChange={e => set(e.target.value)} />
+      <input className={`policy-input ${error ? 'err-input' : ''}`} type={type} value={value} placeholder={placeholder} onChange={e => { set(e.target.value); setErrors(prev => ({ ...prev, [label.includes('tenant') ? 'tenantId' : label.includes('client)') ? 'clientId' : 'clientSecret']: undefined })); }} />
+      {error && <div className="field-err" style={{ color: "var(--status-error-text)", fontSize: 12, marginTop: 4 }}>{error}</div>}
     </div>
   );
 
   return (
     <div className="page">
+      <div style={{ display: "flex", marginBottom: 16 }}>
+        <button className="btn-export" style={{ padding: "4px 12px" }} onClick={() => crossNavigate({ page: "overview" })}>← Back to Dashboard</button>
+      </div>
       <Card title="Microsoft Graph Setup"
         badge={<Badge label={status?.configured ? "Configured" : "Not configured"} tone={status?.configured ? "good" : "warning"}/>}>
         <div data-inline-style="inline-ddbe82fa76">
@@ -87,9 +106,9 @@ export function SetupPage() {
           encrypted at rest and is never shown again after saving.
         </div>
         <div data-inline-style="inline-33a4af2463">
-          {field("Directory (tenant) ID", tenantId, setTenantId, "00000000-0000-0000-0000-000000000000", "text", true)}
-          {field("Application (client) ID", clientId, setClientId, "00000000-0000-0000-0000-000000000000", "text", true)}
-          {field(status?.hasSecret ? "Client secret (leave blank to keep current)" : "Client secret", clientSecret, setClientSecret, status?.hasSecret ? "••••••••" : "Paste secret value", "password")}
+          {field("Directory (tenant) ID", tenantId, setTenantId, "00000000-0000-0000-0000-000000000000", "text", true, errors.tenantId)}
+          {field("Application (client) ID", clientId, setClientId, "00000000-0000-0000-0000-000000000000", "text", true, errors.clientId)}
+          {field(status?.hasSecret ? "Client secret (leave blank to keep current)" : "Client secret", clientSecret, setClientSecret, status?.hasSecret ? "••••••••" : "Paste secret value", "password", false, errors.clientSecret)}
           
           <div style={{ marginTop: 16 }}>
             <button type="button" onClick={() => setShowAdvanced(a => !a)} style={{ background: "none", border: "none", color: "var(--color-primary)", cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", gap: 4 }}>
@@ -122,29 +141,33 @@ export function SetupPage() {
           the remaining onboarding steps rather than leaving them to find them.
           The SMTP form itself lives with notification settings — not duplicated
           here — so there is one place to configure delivery. */}
-      {status?.configured && permissions && (
-        <Card title="Required Graph Permissions" badge={<Badge label={permissions.some(p => p.status === "missing") ? "Action Required" : "Live Check"} tone={permissions.some(p => p.status === "missing") ? "error" : "good"}/>}>
+      {status?.configured && (
+        <Card title="Required Graph Permissions" badge={<Badge label={permissions?.some(p => p.status === "missing") ? "Action Required" : "Live Check"} tone={permissions?.some(p => p.status === "missing") ? "error" : "good"}/>}>
           <div data-inline-style="inline-ddbe82fa76">
             Vigil365 requires the following Application permissions in Entra ID. The live status is evaluated based on the success of the most recent collection run.
           </div>
-          <div className="tbl-wrap" style={{marginTop: 16}}>
-            <table className="data-tbl">
-              <thead><tr><th scope="col" style={{width:100}}>Status</th><th scope="col">Permission</th><th scope="col">Used For</th></tr></thead>
-              <tbody>
-                {permissions.map((p, i) => (
-                  <tr key={i}>
-                    <td>
-                      {p.status === "granted" ? <Badge label="Granted" tone="good" icon={<Check size={12}/>}/> :
-                       p.status === "missing" ? <Badge label="Missing" tone="error" icon={<X size={12}/>}/> :
-                       <Badge label="Unknown" tone="neutral" icon={<HelpCircle size={12}/>}/>}
-                    </td>
-                    <td><div className="al-title">{p.permission}</div></td>
-                    <td className="al-desc">{p.features.join(", ")}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {!permissions || permissions.length === 0 ? (
+            <EmptyState icon={<ShieldCheck size={28}/>} message="Run a collection to evaluate Graph permissions."/>
+          ) : (
+            <div className="tbl-wrap" style={{marginTop: 16}}>
+              <table className="data-tbl">
+                <thead><tr><th scope="col" style={{width:100}}>Status</th><th scope="col">Permission</th><th scope="col">Used For</th></tr></thead>
+                <tbody>
+                  {permissions.map((p, i) => (
+                    <tr key={i}>
+                      <td>
+                        {p.status === "granted" ? <Badge label="Granted" tone="good" icon={<Check size={12}/>}/> :
+                         p.status === "missing" ? <Badge label="Missing" tone="error" icon={<X size={12}/>}/> :
+                         <Badge label="Unknown" tone="neutral" icon={<HelpCircle size={12}/>}/>}
+                      </td>
+                      <td><div className="al-title">{p.permission}</div></td>
+                      <td className="al-desc">{p.features.join(", ")}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Card>
       )}
 
