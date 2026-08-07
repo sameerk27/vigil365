@@ -1,4 +1,4 @@
-# M365 Security Alert Dashboard
+# Vigil365 (M365 Security Alert Dashboard) - v1.0.0
 
 A self-hosted Microsoft 365 security monitoring dashboard that aggregates alerts from Defender XDR, Entra ID Protection, Intune, Exchange Online, Compliance, and more — all in one place, collected on a schedule (every 15 minutes by default).
 
@@ -277,6 +277,26 @@ Frontend dev server: `http://localhost:5173` (proxies API calls to backend)
 
 ---
 
+## Testing (E2E)
+
+Vigil365 uses [Playwright](https://playwright.dev/) for end-to-end testing. The test suite automatically spins up the backend API and the frontend dev server, verifies the login flow, and ensures the dashboard renders correctly.
+
+To run the tests locally:
+
+```powershell
+cd src\m365-security-dashboard-client
+npm install
+npx playwright install --with-deps
+npx playwright test
+```
+
+To run tests in UI mode:
+```powershell
+npx playwright test --ui
+```
+
+---
+
 ## Production Deployment (Windows Service)
 
 ```powershell
@@ -398,7 +418,7 @@ HTTPS URL (e.g. `https://vigil365.yourcompany.com`).
 
 ## Security & Maturity
 
-> **Read this before relying on Vigil365.** This is an open-source **read-only visibility aggregator**, currently **beta**. It surfaces signals that already exist across your Microsoft 365 admin centers in one place. It is **not** a replacement for native Microsoft security tooling (Defender XDR, Entra ID Protection, Purview), and it does **not** make security decisions or change configuration for you. Treat its output as a convenience view, verify findings in the source portal before acting, and do your own review of the code before deploying it in a sensitive environment.
+> **Read this before relying on Vigil365.** This is an open-source **read-only visibility aggregator**, currently ready for production (v1.0.0). It surfaces signals that already exist across your Microsoft 365 admin centers in one place. It is **not** a replacement for native Microsoft security tooling (Defender XDR, Entra ID Protection, Purview), and it does **not** make security decisions or change configuration for you. Treat its output as a convenience view, verify findings in the source portal before acting, and do your own review of the code before deploying it in a sensitive environment.
 
 ### What is in scope by design
 
