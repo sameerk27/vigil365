@@ -126,15 +126,17 @@ your tenant via Graph). You can let the new **Interactive Setup Wizard** create 
 
 ### Install (Interactive Setup Wizard)
 
-**1. Build the installer**
-Since there are no pre-built releases yet, you must generate the setup executable yourself. Open PowerShell and run:
+**Option 1: Download pre-built installer (Recommended)**
+Download **`Vigil365-Setup.exe`** from the [latest release](https://github.com/sameerk27/vigil365/releases/latest) and run it **as Administrator**.
 
+**Option 2: Build the installer yourself (Optional)**
+If you prefer to build the executable yourself from source, open PowerShell and run:
 ```powershell
 pwsh -File scripts/build-installer.ps1
 ```
+Then execute the generated `dist/Vigil365-Setup.exe` **as Administrator**.
 
-**2. Run the setup**
-Execute the generated **`dist/Vigil365-Setup.exe`** as **Administrator**. That is the whole install: it is a single self-contained file that carries the application, the web UI, and the .NET runtime, so the deployment server needs no source tree, no Node.js, and no .NET installed.
+That is the whole install: it is a single self-contained file that carries the application, the web UI, and the .NET runtime, so the deployment server needs no source tree, no Node.js, and no .NET installed.
 
 The wizard will:
 1. Check administrator rights and install Azure CLI if it is missing.
