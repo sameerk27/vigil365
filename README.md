@@ -277,6 +277,26 @@ Frontend dev server: `http://localhost:5173` (proxies API calls to backend)
 
 ---
 
+## Testing (E2E)
+
+Vigil365 uses [Playwright](https://playwright.dev/) for end-to-end testing. The test suite automatically spins up the backend API and the frontend dev server, verifies the login flow, and ensures the dashboard renders correctly.
+
+To run the tests locally:
+
+```powershell
+cd src\m365-security-dashboard-client
+npm install
+npx playwright install --with-deps
+npx playwright test
+```
+
+To run tests in UI mode:
+```powershell
+npx playwright test --ui
+```
+
+---
+
 ## Production Deployment (Windows Service)
 
 ```powershell

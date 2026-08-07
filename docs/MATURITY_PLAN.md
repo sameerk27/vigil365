@@ -68,7 +68,7 @@ is shippable. Security Phase A items are interleaved where they belong.
 
 ## Phase M5 — Product machinery (ongoing; gates "1.0")
 26. Tagged releases + changelog + upgrade-from-N−1 test; version chip from build metadata.
-27. Playwright smoke suite in CI (login → overview → bundle-hash assert).
+27. [x] Playwright smoke suite in CI (login → overview → bundle-hash assert).
 28. Metrics endpoint (collection duration, Graph call/429 counts).
 29. String centralization (future i18n).
 30. Program.cs split into endpoint-group modules. *(architecture B5 — do before M3/M4
