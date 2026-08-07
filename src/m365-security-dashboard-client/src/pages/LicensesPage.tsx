@@ -114,7 +114,7 @@ export function LicensesPage({ licenses, inactive, passwords }: {
             </div>
           ) : undefined}>
           {!inactive?.configured
-            ? <EmptyState icon={<UserX size={28}/>} message={inactive?.error??"Requires AuditLog.Read.All + User.Read.All"}/>
+            ? <EmptyState icon={<UserX size={28}/>} message={inactive === null ? "Failed to load Inactive Users data (Request timed out or API unreachable)" : (inactive.error ?? "Requires AuditLog.Read.All + Directory.Read.All")}/>
             : inactive.inactive90Count===0
               ? <EmptyState icon={<UserCheck size={28}/>} message="No users inactive for 90+ days"/>
               : <>

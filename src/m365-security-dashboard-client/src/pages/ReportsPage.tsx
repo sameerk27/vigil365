@@ -131,10 +131,17 @@ export function ReportsPage() {
               ) : (
                 <ul className="digest-alert-list">
                   {preview.topAlerts.map((a, i) => (
-                    <li key={i}>
-                      <Badge label={a.severity.toUpperCase()} tone={a.severity === "critical" || a.severity === "high" ? "error" : a.severity === "medium" ? "warning" : "info"}/>
-                      <span className="digest-alert-name">{a.policyName}</span>
-                      <span className="digest-alert-cond">{a.condition}</span>
+                    <li key={i} style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px 0' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Badge label={a.severity.toUpperCase()} tone={a.severity === "critical" || a.severity === "high" ? "error" : a.severity === "medium" ? "warning" : "info"}/>
+                        <Badge label={(a.category || "UNKNOWN").toUpperCase()} tone="neutral"/>
+                        <span className="digest-alert-name">{a.policyName}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingLeft: '4px' }}>
+                        <span className="digest-alert-cond">{a.condition}</span>
+                        <Badge label={a.status || "new"} tone="neutral" />
+                        <span style={{ fontSize: '0.85em', color: 'var(--text-muted)' }}>👤 {a.assignedTo || "Unassigned"}</span>
+                      </div>
                     </li>
                   ))}
                 </ul>

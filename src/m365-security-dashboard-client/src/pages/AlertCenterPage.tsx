@@ -25,15 +25,15 @@ export const fmtStatus = (s: string) => STATUS_LABELS[s] ?? s.replace(/_/g, " ")
 type AcTab = "dashboard" | "alerts" | "policies" | "templates" | "coverage" | "notifications" | "metrics" | "suppression" | "runs";
 
 export const POLICY_TEMPLATES_CATALOG = [
-  { name: "Critical Alerts Monitor",   desc: "Triggers when any critical security alert is detected",              metric: "criticalAlertCount", threshold: 1, severity: "critical" as const, category: "identity"   as const },
-  { name: "MFA Coverage Drop",         desc: "Triggers when more than 5 users are missing MFA",                   metric: "mfaMissingCount",    threshold: 5, severity: "high"     as const, category: "identity"   as const },
-  { name: "Risky User Detected",       desc: "Triggers immediately when any user is marked as risky",             metric: "riskyUsersCount",    threshold: 1, severity: "high"     as const, category: "identity"   as const },
-  { name: "Device Compliance Breach",  desc: "Triggers when non-compliant devices are found",                     metric: "nonCompliantCount",  threshold: 1, severity: "medium"   as const, category: "devices"    as const },
-  { name: "Email Threat Surge",        desc: "Triggers when high-priority email alerts exceed threshold",          metric: "highAlertCount",     threshold: 3, severity: "high"     as const, category: "email"      as const },
-  { name: "Stale Device",             desc: "Triggers when devices haven't checked in for 30+ days",             metric: "staleDeviceCount",   threshold: 1, severity: "medium"   as const, category: "devices"    as const },
-  { name: "Sign-in Anomaly",          desc: "Triggers when failed sign-ins spike above threshold",               metric: "alertCount",         threshold: 10,severity: "high"     as const, category: "identity"   as const },
-  { name: "Insider Risk Alert",       desc: "Triggers on any insider risk management alert",                     metric: "alertCount",         threshold: 1, severity: "high"     as const, category: "compliance" as const },
-  { name: "Admin Role Change",        desc: "Tracks privileged role assignments via audit log",                  metric: "alertCount",         threshold: 1, severity: "medium"   as const, category: "identity"   as const },
+  { name: "Critical Alerts Monitor",   desc: "Triggers when any critical security alert is detected",              metric: "criticalAlertCount", threshold: 1, severity: "Critical" as const, category: "identity"   as const },
+  { name: "MFA Coverage Drop",         desc: "Triggers when more than 5 users are missing MFA",                   metric: "mfaMissingCount",    threshold: 5, severity: "High"     as const, category: "identity"   as const },
+  { name: "Risky User Detected",       desc: "Triggers immediately when any user is marked as risky",             metric: "riskyUsersCount",    threshold: 1, severity: "High"     as const, category: "identity"   as const },
+  { name: "Device Compliance Breach",  desc: "Triggers when non-compliant devices are found",                     metric: "nonCompliantCount",  threshold: 1, severity: "Medium"   as const, category: "devices"    as const },
+  { name: "Email Threat Surge",        desc: "Triggers when high-priority email alerts exceed threshold",          metric: "highAlertCount",     threshold: 3, severity: "High"     as const, category: "email"      as const },
+  { name: "Stale Device",             desc: "Triggers when devices haven't checked in for 30+ days",             metric: "staleDeviceCount",   threshold: 1, severity: "Medium"   as const, category: "devices"    as const },
+  { name: "Sign-in Anomaly",          desc: "Triggers when failed sign-ins spike above threshold",               metric: "alertCount",         threshold: 10,severity: "High"     as const, category: "identity"   as const },
+  { name: "Insider Risk Alert",       desc: "Triggers on any insider risk management alert",                     metric: "alertCount",         threshold: 1, severity: "High"     as const, category: "compliance" as const },
+  { name: "Admin Role Change",        desc: "Tracks privileged role assignments via audit log",                  metric: "alertCount",         threshold: 1, severity: "Medium"   as const, category: "identity"   as const },
 ];
 
 // Delegates to the shared app-wide severity mapping (services/utils.sevTone).
@@ -107,7 +107,7 @@ function PolicyModal({ policy, onSave, onClose }: {
   onSave: (p: AlertPolicy) => void;
   onClose: () => void;
 }) {
-  const [form, setForm] = useState<Partial<AlertPolicy>>(policy ?? { enabled: true, severity: "medium", category: "identity", threshold: 1, triggerCount: 0, notifyEmail: "" });
+  const [form, setForm] = useState<Partial<AlertPolicy>>(policy ?? { enabled: true, severity: "Medium", category: "identity", threshold: 1, triggerCount: 0, notifyEmail: "" });
   const set = (k: keyof AlertPolicy, v: unknown) => setForm(f => ({ ...f, [k]: v }));
 
   const metricOptions: Record<string, { label: string; value: string }[]> = {
@@ -145,7 +145,7 @@ function PolicyModal({ policy, onSave, onClose }: {
       baselineMultiplier,
       baselineDays,
       threshold,
-      severity: form.severity ?? "medium",
+      severity: form.severity ?? "Medium",
       notifyEmail: form.notifyEmail ?? "",
       createdAt: form.createdAt ?? new Date().toISOString(),
       lastTriggered: form.lastTriggered,
@@ -252,11 +252,11 @@ function PolicyModal({ policy, onSave, onClose }: {
           )}
           <div className="policy-field">
             <label className="policy-label">Severity</label>
-            <select className="policy-input" value={form.severity ?? "medium"} onChange={e => set("severity", e.target.value)}>
-              <option value="critical">Critical</option>
-              <option value="high">High</option>
-              <option value="medium">Medium</option>
-              <option value="low">Low</option>
+            <select className="policy-input" value={form.severity ?? "Medium"} onChange={e => set("severity", e.target.value)}>
+              <option value="Critical">Critical</option>
+              <option value="High">High</option>
+              <option value="Medium">Medium</option>
+              <option value="Low">Low</option>
             </select>
           </div>
           <div className="policy-field">

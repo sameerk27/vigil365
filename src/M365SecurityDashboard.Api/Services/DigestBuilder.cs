@@ -16,7 +16,7 @@ public sealed class DigestBuilder(AppDbContext db)
 {
     public sealed record Metric(string Label, string Value, double? Delta, string DeltaLabel, bool HigherIsWorse);
 
-    public sealed record TopAlert(string PolicyName, string Severity, string Condition, int MetricValue, DateTimeOffset TriggeredAt);
+    public sealed record TopAlert(string PolicyName, string Severity, string Condition, int MetricValue, DateTimeOffset TriggeredAt, string Category, string Status, string? AssignedTo);
 
     public sealed record Digest(
         string Subject,
@@ -56,7 +56,7 @@ public sealed class DigestBuilder(AppDbContext db)
             .OrderByDescending(a => SeverityRank(a.Severity))
             .ThenByDescending(a => a.TriggeredAt)
             .Take(10)
-            .Select(a => new TopAlert(a.PolicyName, a.Severity, a.Condition, a.MetricValue, a.TriggeredAt))
+            .Select(a => new TopAlert(a.PolicyName, a.Severity, a.Condition, a.MetricValue, a.TriggeredAt, a.Category, a.Status, a.AssignedTo))
             .ToList();
 
         var newInWindow = openAlerts.Count(a => a.TriggeredAt >= windowStart);
@@ -64,7 +64,7 @@ public sealed class DigestBuilder(AppDbContext db)
 
         var subject = $"[Vigil365] Weekly security digest — {now:yyyy-MM-dd}";
         var html = RenderHtml(now, windowDays, metrics, topAlerts, openAlerts.Count, newInWindow, latest == null);
-        var csv = RenderCsv(now, metrics, topAlerts);
+        var csv = RenderCsv(now, metrics, openAlerts);
 
         return new Digest(subject, html, csv, now, metrics, topAlerts, hasData);
     }
@@ -154,12 +154,21 @@ public sealed class DigestBuilder(AppDbContext db)
             sb.Append("<table style=\"border-collapse:collapse;width:100%;font-size:13px;margin:0 0 20px\">");
             foreach (var a in topAlerts)
             {
+                var assigned = string.IsNullOrEmpty(a.AssignedTo) ? "Unassigned" : WebUtility.HtmlEncode(a.AssignedTo);
                 sb.Append("<tr>"
-                    + $"<td style=\"padding:6px 8px;border-bottom:1px solid #f1f5f9;white-space:nowrap\">"
-                    + $"<span style=\"display:inline-block;padding:1px 8px;border-radius:10px;color:#fff;font-size:11px;background:#{SevColor(a.Severity)}\">{WebUtility.HtmlEncode(a.Severity.ToUpperInvariant())}</span></td>"
-                    + $"<td style=\"padding:6px 8px;border-bottom:1px solid #f1f5f9\"><b>{WebUtility.HtmlEncode(a.PolicyName)}</b><br>"
-                    + $"<span style=\"color:#64748b\">{WebUtility.HtmlEncode(a.Condition)}</span></td>"
-                    + $"<td style=\"padding:6px 8px;border-bottom:1px solid #f1f5f9;color:#64748b;white-space:nowrap\">{a.TriggeredAt:dd MMM}</td></tr>");
+                    + $"<td style=\"padding:8px 8px;border-bottom:1px solid #f1f5f9;vertical-align:top;white-space:nowrap\">"
+                    + $"<div style=\"display:inline-block;padding:2px 8px;border-radius:12px;color:#fff;font-size:11px;font-weight:600;background:#{SevColor(a.Severity)};margin-bottom:4px;\">{WebUtility.HtmlEncode(a.Severity.ToUpperInvariant())}</div><br>"
+                    + $"<div style=\"color:#64748b;font-size:11px;\">{WebUtility.HtmlEncode(a.Category.ToUpperInvariant())}</div>"
+                    + $"</td>"
+                    + $"<td style=\"padding:8px 8px;border-bottom:1px solid #f1f5f9;vertical-align:top\">"
+                    + $"<b style=\"color:#0f172a;font-size:14px;\">{WebUtility.HtmlEncode(a.PolicyName)}</b><br>"
+                    + $"<span style=\"color:#475569;display:block;margin-top:2px;\">{WebUtility.HtmlEncode(a.Condition)}</span>"
+                    + $"<div style=\"margin-top:6px;font-size:12px;color:#64748b;\">"
+                    + $"<span style=\"display:inline-block;background:#e2e8f0;padding:2px 6px;border-radius:4px;margin-right:6px;\">{WebUtility.HtmlEncode(a.Status)}</span>"
+                    + $"<span>👤 {assigned}</span>"
+                    + $"</div>"
+                    + $"</td>"
+                    + $"<td style=\"padding:8px 8px;border-bottom:1px solid #f1f5f9;vertical-align:top;color:#64748b;white-space:nowrap;text-align:right;\">{a.TriggeredAt:dd MMM}</td></tr>");
             }
             sb.Append("</table>");
         }
@@ -169,7 +178,7 @@ public sealed class DigestBuilder(AppDbContext db)
         return sb.ToString();
     }
 
-    private static string RenderCsv(DateTimeOffset now, IReadOnlyList<Metric> metrics, IReadOnlyList<TopAlert> topAlerts)
+    private static string RenderCsv(DateTimeOffset now, IReadOnlyList<Metric> metrics, IReadOnlyList<TriggeredAlert> allOpenAlerts)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"Vigil365 Weekly Security Digest,{now:yyyy-MM-dd HH:mm} UTC");
@@ -181,9 +190,9 @@ public sealed class DigestBuilder(AppDbContext db)
             sb.AppendLine($"{Csv(m.Label)},{Csv(m.Value)},{Csv(delta)}");
         }
         sb.AppendLine();
-        sb.AppendLine("Severity,Policy,Condition,Value,Triggered (UTC)");
-        foreach (var a in topAlerts)
-            sb.AppendLine($"{Csv(a.Severity)},{Csv(a.PolicyName)},{Csv(a.Condition)},{a.MetricValue},{a.TriggeredAt:yyyy-MM-dd HH:mm}");
+        sb.AppendLine("Severity,Category,Policy,Condition,Status,Assigned To,Value,Triggered (UTC)");
+        foreach (var a in allOpenAlerts)
+            sb.AppendLine($"{Csv(a.Severity)},{Csv(a.Category)},{Csv(a.PolicyName)},{Csv(a.Condition)},{Csv(a.Status)},{Csv(a.AssignedTo)},{a.MetricValue},{a.TriggeredAt:yyyy-MM-dd HH:mm}");
         return sb.ToString();
     }
 

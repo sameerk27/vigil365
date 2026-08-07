@@ -27,12 +27,22 @@ const WINDOWS = [7, 30, 90] as const;
  * is safe", which is exactly the wrong conclusion to draw from missing data.
  */
 export function PolicyDryRun({ buildDraft }: { buildDraft: () => AlertPolicy }) {
-  const [days, setDays] = useState<number>(30);
+  const [days, setDays] = useState<number>(0);
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const clear = () => {
+    setDays(0);
+    setResult(null);
+    setError(null);
+  };
+
   const run = async (windowDays: number) => {
+    if (days === windowDays && result) {
+      clear();
+      return;
+    }
     setDays(windowDays);
     setRunning(true); setError(null); setResult(null);
     try {

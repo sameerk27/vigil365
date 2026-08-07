@@ -262,6 +262,7 @@ export interface DigestMetric {
 }
 export interface DigestTopAlert {
   policyName: string; severity: string; condition: string; metricValue: number; triggeredAt: string;
+  category: string; status: string; assignedTo?: string | null;
 }
 export interface DigestPreview {
   subject: string; htmlBody: string; csv?: string | null; generatedAt: string;

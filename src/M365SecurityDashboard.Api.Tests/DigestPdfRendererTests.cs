@@ -23,7 +23,7 @@ public class DigestPdfRendererTests
             Csv: null,
             GeneratedAt: new DateTimeOffset(2026, 7, 30, 9, 0, 0, TimeSpan.Zero),
             Metrics: metrics ?? [new DigestBuilder.Metric("Secure Score", "51%", -2.4, "pts", true)],
-            TopAlerts: alerts ?? [new DigestBuilder.TopAlert("Privileged role assigned", "high", "count >= 1", 3, DateTimeOffset.UtcNow)],
+            TopAlerts: alerts ?? [new DigestBuilder.TopAlert("Privileged role assigned", "high", "count >= 1", 3, DateTimeOffset.UtcNow, "identity", "new", null)],
             HasData: true);
 
     private static string Ascii(byte[] pdf) => Encoding.ASCII.GetString(pdf);
@@ -92,7 +92,7 @@ public class DigestPdfRendererTests
     {
         // An unescaped ) would terminate the PDF string early and corrupt the page.
         var digest = Sample(alerts: [new DigestBuilder.TopAlert(
-            "Odd (policy) name \\ here", "high", "value >= 1 (spike)", 1, DateTimeOffset.UtcNow)]);
+            "Odd (policy) name \\ here", "high", "value >= 1 (spike)", 1, DateTimeOffset.UtcNow, "identity", "new", null)]);
         var text = Ascii(new DigestPdfRenderer().Render(digest));
 
         Assert.Contains(@"Odd \(policy\) name \\ here", text);
@@ -104,7 +104,7 @@ public class DigestPdfRendererTests
         // The writer emits ASCII; em dashes and arrows must be folded, not dropped
         // into '?' which would look like corruption in the report.
         var digest = Sample(alerts: [new DigestBuilder.TopAlert(
-            "Role → admin", "high", "score — dropped ▼", 1, DateTimeOffset.UtcNow)]);
+            "Role → admin", "high", "score — dropped ▼", 1, DateTimeOffset.UtcNow, "identity", "new", null)]);
         var text = Ascii(new DigestPdfRenderer().Render(digest));
 
         Assert.Contains("Role > admin", text);
@@ -132,7 +132,7 @@ public class DigestPdfRendererTests
         // The writer stops at the bottom margin; it must not run off the page or
         // emit negative coordinates.
         var alerts = Enumerable.Range(0, 200)
-            .Select(i => new DigestBuilder.TopAlert($"Policy {i}", "low", "c", i, DateTimeOffset.UtcNow))
+            .Select(i => new DigestBuilder.TopAlert($"Policy {i}", "low", "c", i, DateTimeOffset.UtcNow, "identity", "new", null))
             .ToList();
         var pdf = new DigestPdfRenderer().Render(Sample(alerts: alerts));
         var text = Ascii(pdf);

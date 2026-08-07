@@ -24,8 +24,8 @@
   --row-py:    10px;  /* table cell vertical padding */
   --row-px:    10px;  /* table cell horizontal padding */
   --head-py:    9px;  /* table header vertical padding */
-  --card-pad:  16px;
-  --card-gap:  12px;
+  --card-pad:  24px;
+  --card-gap:  16px;
 
   /* ── Accent ── */
   --color-primary:       #2563eb;
@@ -46,6 +46,7 @@
   --shadow-card:    0 1px 3px rgba(0,0,0,.07), 0 1px 2px rgba(0,0,0,.04);
   --shadow-modal:   0 8px 32px rgba(0,0,0,.14);
   --shadow-raised:  0 4px 14px rgba(0,0,0,.08);
+  --backdrop-blur:  blur(12px);
 
   /* ── Aliases (referenced across components; must always resolve) ── */
   --color-surface:  var(--color-raised);
@@ -113,7 +114,7 @@
   --row-hover:    #f0f7ff;
 
   /* ── Radius ── */
-  --radius-card: 12px;
+  --radius-card: 16px;
   --radius-ctl:   8px;
   --radius-pill:  6px;
 }
@@ -200,6 +201,71 @@
   --color-primary-border: #1d4ed8;
 
   --row-hover: #1a2e4a;
+}
+
+/* ── Neon Dark Mode Theme Overrides ────────────────────────────────────────── */
+html.dark {
+  --color-primary:       #3b82f6;
+  --color-primary-hover: #60a5fa;
+  --color-primary-subtle:rgba(59, 130, 246, 0.15);
+  --color-primary-border:rgba(59, 130, 246, 0.3);
+
+  --color-sidebar:  #000000;
+  --color-bg:       #09090b;
+  --color-card:     rgba(24, 24, 27, 0.7);
+  --color-raised:   rgba(39, 39, 42, 0.7);
+  --color-overlay:  #18181b;
+
+  --color-border:   #27272a;
+  --color-border-subtle: #3f3f46;
+  --shadow-card:    0 4px 20px rgba(0, 0, 0, 0.5);
+  --shadow-modal:   0 8px 32px rgba(0, 0, 0, 0.7);
+  --shadow-raised:  0 4px 14px rgba(0, 0, 0, 0.5);
+
+  --color-text:     #f8fafc;
+  --color-text-secondary: #e2e8f0;
+  --color-muted:    #94a3b8;
+  --color-faint:    #64748b;
+  --color-hint:     #475569;
+
+  /* Semantic Neon Tints */
+  --sev-critical-bg:   rgba(225, 29, 72, 0.1);
+  --sev-critical-border:rgba(225, 29, 72, 0.3);
+  --sev-critical-text: #f43f5e;
+  --sev-critical-icon: #f43f5e;
+
+  --sev-high-bg:       rgba(234, 88, 12, 0.1);
+  --sev-high-border:   rgba(234, 88, 12, 0.3);
+  --sev-high-text:     #fb923c;
+  --sev-high-icon:     #fb923c;
+
+  --sev-medium-bg:     rgba(217, 119, 6, 0.1);
+  --sev-medium-border: rgba(217, 119, 6, 0.3);
+  --sev-medium-text:   #fbbf24;
+  --sev-medium-icon:   #fbbf24;
+
+  --sev-low-bg:        rgba(37, 99, 235, 0.1);
+  --sev-low-border:    rgba(37, 99, 235, 0.3);
+  --sev-low-text:      #60a5fa;
+  --sev-low-icon:      #60a5fa;
+
+  --sev-info-bg:       rgba(100, 116, 139, 0.1);
+  --sev-info-border:   rgba(100, 116, 139, 0.3);
+  --sev-info-text:     #94a3b8;
+  --sev-info-icon:     #94a3b8;
+
+  --status-good-bg:    rgba(22, 163, 74, 0.1);
+  --status-good-border:rgba(22, 163, 74, 0.3);
+  --status-good-text:  #4ade80;
+  --status-good-icon:  #4ade80;
+  --status-warn-bg:    rgba(217, 119, 6, 0.1);
+  --status-warn-border:rgba(217, 119, 6, 0.3);
+  --status-warn-text:  #fbbf24;
+  --status-warn-icon:  #fbbf24;
+  --status-error-bg:   rgba(225, 29, 72, 0.1);
+  --status-error-border:rgba(225, 29, 72, 0.3);
+  --status-error-text: #f43f5e;
+  --status-error-icon: #f43f5e;
 }
 
 /* ── Reset & Base ────────────────────────────────────────────────────────── */
@@ -356,6 +422,8 @@ select, input { font: inherit; }
      subtle shadow so content scrolling underneath reads as a separate layer */
   min-height: 61px; box-sizing: border-box;
   box-shadow: 0 1px 3px rgba(0,0,0,.05);
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
 }
 
 .hdr-title { font-size: var(--fs-xl); font-weight: 700; color: var(--color-text); }
@@ -426,6 +494,8 @@ select, input { font: inherit; }
   min-width: 0;
   box-shadow: var(--shadow-card);
   overflow: hidden;
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
 }
 
 .card-head {
@@ -718,7 +788,8 @@ tr.clickable:focus-visible,
 .kpi-clickable { cursor: pointer; }
 .kpi-clickable:hover { border-color: var(--color-primary); }
 .kpi-clickable:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
-.kpi-active { border-color: var(--color-primary); box-shadow: 0 0 0 1px var(--color-primary) inset; }
+.kpi-active { border-color: var(--color-primary); box-shadow: 0 0 0 1px var(--color-primary) inset, 0 0 12px var(--color-primary-subtle); }
+html.dark .kpi-active { box-shadow: 0 0 0 1px var(--color-primary) inset, 0 0 20px var(--color-primary-border); }
 .copy-btn:hover { color: var(--color-primary) !important; }
 
 .kpi-icon {

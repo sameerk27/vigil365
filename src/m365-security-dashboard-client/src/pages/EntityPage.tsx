@@ -5,7 +5,7 @@ import { entityApi } from "../services/api";
 import { Card, Badge, EmptyState, LoadingSkeleton, KpiTile } from "../components/SharedComponents";
 import { fmtDate, relTime, sevTone } from "../services/utils";
 
-export function EntityPage({ kind, id, onBack }: { kind: "user" | "device"; id: string; onBack: () => void }) {
+export function EntityPage({ kind, id, onBack }: { kind: "user" | "device"; id: string; onBack: () => void; fromAlertId?: number | null }) {
   const [profile, setProfile] = useState<EntityProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
