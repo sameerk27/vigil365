@@ -4,7 +4,7 @@
 
 .DESCRIPTION
   deploy.ps1 targets a LOCAL install: a hosts-file alias, a self-signed
-  certificate, and a high port. This script is the public counterpart — it binds
+  certificate, and a high port. This script is the public counterpart - it binds
   every interface on 443 with a real certificate and opens the Windows firewall.
 
   READ THIS FIRST. Publishing Vigil365 to the internet changes its threat model:
@@ -20,9 +20,9 @@
 .PARAMETER PfxPath
   A real certificate for the public hostname. Without it the script falls back to
   a self-signed certificate so you can verify the plumbing, but every visitor
-  will see a browser warning — do not leave that in place.
+  will see a browser warning - do not leave that in place.
 
-  To get a real certificate, run scripts/request-cert.ps1 first — it drives lego
+  To get a real certificate, run scripts/request-cert.ps1 first - it drives lego
   against Let's Encrypt and prints the exact -PfxPath / -PfxPassword to pass here:
 
       winget install GoACME.lego        # then open a NEW terminal for PATH
@@ -43,6 +43,7 @@ param(
   [System.Security.SecureString]$PfxPassword,
   [string]$PublishPath = (Join-Path (Split-Path -Parent $PSScriptRoot) "publish"),
   [switch]$SkipFirewall,
+  [switch]$SkipDns,
   [switch]$NoRun
 )
 
@@ -57,31 +58,35 @@ function Bad($msg)  { $script:fail++; Write-Host "   FAIL $msg" -ForegroundColor
 
 Step "Preflight"
 
-# Elevation — binding 443 and firewall changes both need it.
+# Elevation - binding 443 and firewall changes both need it.
 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
          ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if ($admin) { Ok "running elevated" } else { Bad "not elevated — re-run PowerShell as Administrator" }
+if ($admin) { Ok "running elevated" } else { Bad "not elevated - re-run PowerShell as Administrator" }
 
 # DNS must point at this connection, or nobody reaches the app.
-try {
-  $resolved = (Resolve-DnsName $Hostname -Type A -ErrorAction Stop |
-               Where-Object { $_.IPAddress } | Select-Object -First 1).IPAddress
-  $public = (Invoke-RestMethod -Uri "https://api.ipify.org?format=json" -TimeoutSec 8).ip
-  if ($resolved -eq $public) { Ok "$Hostname -> $resolved (matches this connection)" }
-  else { Bad "$Hostname resolves to $resolved but this connection is $public — update the A record" }
-  Warn "residential IPs usually change; the A record will go stale unless it is static or dynamic-DNS updated"
-} catch {
-  Bad "could not verify DNS: $($_.Exception.Message)"
+if ($SkipDns) {
+  Warn "skipped DNS check by request (-SkipDns)"
+} else {
+  try {
+    $resolved = (Resolve-DnsName $Hostname -Type A -ErrorAction Stop |
+                 Where-Object { $_.IPAddress } | Select-Object -First 1).IPAddress
+    $public = (Invoke-RestMethod -Uri "https://api.ipify.org?format=json" -TimeoutSec 8).ip
+    if ($resolved -eq $public) { Ok "$Hostname -> $resolved (matches this connection)" }
+    else { Bad "$Hostname resolves to $resolved but this connection is $public - update the A record" }
+    Warn "residential IPs usually change; the A record will go stale unless it is static or dynamic-DNS updated"
+  } catch {
+    Bad "could not verify DNS: $($_.Exception.Message)"
+  }
 }
 
-# Port must be free. Note netstat also lists OUTBOUND :443 connections — only a
+# Port must be free. Note netstat also lists OUTBOUND :443 connections - only a
 # LISTENING socket is a conflict.
 $listening = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
 if ($listening) { Bad "port $Port already has a listener (PID $($listening[0].OwningProcess))" }
 else { Ok "port $Port is free" }
 
 if (-not (Test-Path (Join-Path $PublishPath "M365SecurityDashboard.Api.exe"))) {
-  Bad "no published build at $PublishPath — run: dotnet publish src/M365SecurityDashboard.Api -c Release -o publish"
+  Bad "no published build at $PublishPath - run: dotnet publish src/M365SecurityDashboard.Api -c Release -o publish"
 } else { Ok "published build found" }
 
 if ($fail -gt 0) { Write-Host "`n$fail preflight check(s) failed. Nothing was changed.`n" -ForegroundColor Red; exit 1 }
@@ -99,7 +104,7 @@ if ($PfxPath) {
   }
   Ok "using supplied certificate"
 } else {
-  Warn "no -PfxPath given — generating a SELF-SIGNED certificate"
+  Warn "no -PfxPath given - generating a SELF-SIGNED certificate"
   Warn "every visitor will get a browser trust warning; replace before real use"
   $pfxPlain = [Guid]::NewGuid().ToString("N")
   $cert = New-SelfSignedCertificate -DnsName $Hostname -FriendlyName "Vigil365 $Hostname" `
@@ -118,7 +123,7 @@ $cfgPath = Join-Path $PublishPath "appsettings.Production.json"
 # email) and change only what public hosting requires.
 $cfg = if (Test-Path $cfgPath) { Get-Content $cfgPath -Raw | ConvertFrom-Json } else { [pscustomobject]@{} }
 
-# Bind every interface — 127.0.0.1 would be unreachable from outside. [::] is
+# Bind every interface - 127.0.0.1 would be unreachable from outside. [::] is
 # dual-stack on Windows (covers IPv4 too), which matters here: this connection is
 # behind carrier-grade NAT on IPv4, so IPv6 is the only path that accepts inbound.
 $cfg | Add-Member -NotePropertyName Kestrel -NotePropertyValue ([pscustomobject]@{
@@ -142,7 +147,7 @@ Ok "wrote $cfgPath (bind 0.0.0.0:$Port, redirect $url)"
 
 Step "Firewall"
 if ($SkipFirewall) {
-  Warn "skipped by request — inbound $Port must be allowed some other way"
+  Warn "skipped by request - inbound $Port must be allowed some other way"
 } else {
   $ruleName = "Vigil365 HTTPS $Port"
   Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue | Remove-NetFirewallRule
@@ -177,3 +182,4 @@ try {
   Write-Host "   $url`n" -ForegroundColor Green
   & (Join-Path $PublishPath "M365SecurityDashboard.Api.exe")
 } finally { Pop-Location }
+

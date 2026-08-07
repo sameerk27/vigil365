@@ -6,14 +6,14 @@
 .DESCRIPTION
   This replaces the self-signed certificate that deploy-public.ps1 falls back to.
   Self-signed means every visitor sees a browser warning, which on a security
-  product trains people to click through TLS warnings — so it is not a resting
+  product trains people to click through TLS warnings - so it is not a resting
   state, it is a placeholder.
 
   Three validation methods:
 
     dns  (default)  Solves DNS-01. You paste a TXT record into your DNS zone when
                     prompted. Needs NO inbound ports and NO firewall changes, so
-                    it works behind CGNAT and with port 80 closed. INTERACTIVE —
+                    it works behind CGNAT and with port 80 closed. INTERACTIVE -
                     lego waits on stdin, so run this yourself in a real terminal.
                     Cannot auto-renew: you repeat this every ~90 days.
 
@@ -27,7 +27,7 @@
     http            Solves HTTP-01. lego binds port 80 and Let's Encrypt calls
                     back. Fully automatable for renewals, but port 80 must be
                     reachable from the internet. On an IPv6-only path (no A
-                    record) Let's Encrypt validates over IPv6 — your router and
+                    record) Let's Encrypt validates over IPv6 - your router and
                     Windows firewall must both allow inbound TCP 80. Requires
                     elevation to bind 80.
 
@@ -37,7 +37,7 @@
 
 .PARAMETER Staging
   Use the Let's Encrypt staging CA. The resulting certificate is NOT trusted by
-  browsers — it only proves the validation plumbing works. Worth it before a
+  browsers - it only proves the validation plumbing works. Worth it before a
   first HTTP-01 attempt; less worth it for DNS-01, where the manual TXT step is
   the toil and you would just do it twice.
 
@@ -115,7 +115,7 @@ In GoDaddy's DNS manager the Name field must be exactly:
 
     _acme-challenge
 
-NOT the full _acme-challenge.$Hostname — GoDaddy appends the zone for you, so
+NOT the full _acme-challenge.$Hostname - GoDaddy appends the zone for you, so
 pasting the FQDN creates _acme-challenge.$Hostname.$Hostname instead.
 
 The Value is the long string lego printed, with NO surrounding quotes.
@@ -127,7 +127,7 @@ The Value is the long string lego printed, with NO surrounding quotes.
 
 Step "Locating lego"
 
-# winget puts lego on PATH, but only for shells started AFTER the install —
+# winget puts lego on PATH, but only for shells started AFTER the install -
 # hence also probing the package directory.
 $lego = (Get-Command lego -ErrorAction SilentlyContinue).Source
 if (-not $lego) {
@@ -149,7 +149,7 @@ Ok "version $((& $lego --version) -replace '^lego version\s*','')"
 Step "Preflight"
 
 # No AAAA/A record means nothing Let's Encrypt does can succeed, whichever
-# challenge you pick — DNS-01 still requires the name to resolve for issuance.
+# challenge you pick - DNS-01 still requires the name to resolve for issuance.
 $records = @()
 foreach ($t in @("A", "AAAA")) {
   try { $records += Resolve-DnsName -Name $Hostname -Type $t -ErrorAction Stop |
@@ -163,11 +163,11 @@ foreach ($r in $records) { Ok "$($r.Type) -> $($r.IPAddress)" }
 if ($Method -eq "http") {
   $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
            ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-  if (-not $admin) { throw "HTTP-01 binds port 80 — re-run from an ELEVATED PowerShell." }
+  if (-not $admin) { throw "HTTP-01 binds port 80 - re-run from an ELEVATED PowerShell." }
   Ok "running elevated"
 
   if (-not ($records | Where-Object { $_.Type -eq "A" })) {
-    Warn "No A record — Let's Encrypt will validate over IPv6."
+    Warn "No A record - Let's Encrypt will validate over IPv6."
     Warn "Inbound TCP 80 must be open on BOTH the router and the Windows firewall."
   }
 
@@ -189,11 +189,11 @@ Step "Requesting certificate from Let's Encrypt"
 Write-Host "   hostname   $Hostname"
 $methodLabel = switch ($Method) {
   "dns"     { "DNS-01 (manual TXT)" }
-  "godaddy" { "DNS-01 (GoDaddy API — automatic)" }
+  "godaddy" { "DNS-01 (GoDaddy API - automatic)" }
   "http"    { "HTTP-01 (port 80)" }
 }
 Write-Host "   method     $methodLabel"
-Write-Host "   CA         $(if ($Staging) { 'STAGING — result will NOT be trusted' } else { 'production' })"
+Write-Host "   CA         $(if ($Staging) { 'STAGING - result will NOT be trusted' } else { 'production' })"
 
 # Flag placement matters: lego 5.x global flags are only --help/--version/
 # --log.*/--config. Everything else belongs to the `run` SUBCOMMAND and must
@@ -216,7 +216,7 @@ switch ($Method) {
 
     # lego's manual provider polls for only 60s by default. GoDaddy's minimum
     # TTL is 600s and its edge takes minutes to converge, so the default loses
-    # the race even when the record was saved correctly — the failure then reads
+    # the race even when the record was saved correctly - the failure then reads
     # as "time limit exceeded", which looks like a DNS fault rather than a
     # too-short timeout. Give it room.
     $env:MANUAL_PROPAGATION_TIMEOUT = "$PropagationTimeout"
@@ -253,14 +253,14 @@ https://developer.godaddy.com/keys then, in this terminal:
     `$env:GODADDY_API_SECRET = '<secret>'
 
 Note: since 2024 GoDaddy restricts this API to accounts holding 10+ domains or
-a Discount Domain Club plan. A single-domain account gets 403 ACCESS_DENIED —
+a Discount Domain Club plan. A single-domain account gets 403 ACCESS_DENIED -
 if that happens, fall back to -Method dns.
 "@
     }
     $legoArgs += @("--dns", "godaddy")
     $env:GODADDY_PROPAGATION_TIMEOUT = "$PropagationTimeout"
     Ok "GODADDY_API_KEY / GODADDY_API_SECRET present"
-    Write-Host "   No manual step — lego creates and removes the TXT record itself." -ForegroundColor Green
+    Write-Host "   No manual step - lego creates and removes the TXT record itself." -ForegroundColor Green
   }
 
   "http" {
@@ -270,7 +270,7 @@ if that happens, fall back to -Method dns.
 
 & $lego @legoArgs
 if ($LASTEXITCODE -ne 0) {
-  throw "lego exited $LASTEXITCODE — certificate NOT issued. Nothing was changed."
+  throw "lego exited $LASTEXITCODE - certificate NOT issued. Nothing was changed."
 }
 
 $pfx = Join-Path $OutDir "certificates\$Hostname.pfx"
@@ -286,18 +286,18 @@ $cert = New-Object Security.Cryptography.X509Certificates.X509Certificate2 $pfx,
 Ok "subject  $($cert.Subject)"
 Ok "issuer   $($cert.Issuer)"
 Ok "expires  $($cert.NotAfter)"
-if ($cert.Subject -eq $cert.Issuer) { Warn "Self-signed — this is not a CA-issued certificate." }
+if ($cert.Subject -eq $cert.Issuer) { Warn "Self-signed - this is not a CA-issued certificate." }
 
 Write-Host "`n== Next step" -ForegroundColor Cyan
 Write-Host @"
-Install it (ELEVATED PowerShell — binding 443 needs administrator):
+Install it (ELEVATED PowerShell - binding 443 needs administrator):
 
     pwsh -File scripts/deploy-public.ps1 ``
         -Hostname $Hostname ``
         -PfxPath '$pfx' ``
         -PfxPassword (ConvertTo-SecureString '$pfxPassword' -AsPlainText -Force)
 
-Then fully close and reopen the browser — TLS decisions are cached per session.
+Then fully close and reopen the browser - TLS decisions are cached per session.
 
 If you previously ran trust-local-cert.ps1, remove the self-signed certificate
 from your Root store afterwards; leaving it trusted means a stale certificate for
@@ -307,9 +307,10 @@ if ($Staging) {
   Warn "`nThis is a STAGING certificate. Browsers will still warn. Re-run without -Staging for a real one."
 }
 if ($Method -eq "dns") {
-  Warn "`nDNS-01 manual does not auto-renew. This certificate expires $($cert.NotAfter.ToString('yyyy-MM-dd')) — repeat then."
+  Warn "`nDNS-01 manual does not auto-renew. This certificate expires $($cert.NotAfter.ToString('yyyy-MM-dd')) - repeat then."
   Warn "To make renewals unattended, use -Method godaddy (your zone is on GoDaddy) or -Method http."
 }
 if ($Method -ne "dns") {
   Write-Host "`nRenewable unattended: re-run the same command. Schedule it well before $($cert.NotAfter.ToString('yyyy-MM-dd'))." -ForegroundColor Green
 }
+

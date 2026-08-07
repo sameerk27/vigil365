@@ -2194,3 +2194,4 @@ button.countdown-chip:hover { color: var(--color-text); }
 [data-inline-style="inline-ff270db33d"] { margin-top: 14px; }
 
 /* Dynamic inline-style replacements: static declarations retained. */
+.banner-link { background: none; border: none; cursor: pointer; font-size: 12px; text-decoration: none; font-weight: 500; } .banner-link:hover { text-decoration: underline; }

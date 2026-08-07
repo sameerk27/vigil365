@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Download, ChevronRight, Copy, ClipboardCheck, ExternalLink, AlertTriangle, Activity, X, Lock, UserCheck, MessageSquare } from "lucide-react";
 import { Tone, SecurityAlert, AlertNote } from "../services/types";
-import { fmtService, fmtDate, relTime, fmtUtc, downloadCsv, copyToClipboard } from "../services/utils";
+import { fmtService, fmtDate, fmtShort, relTime, fmtUtc, downloadCsv, copyToClipboard } from "../services/utils";
 import { showToast } from "../services/toast";
 import { useAuth, acApi, wbApi, openEntity, requestRefresh } from "../services/api";
 
@@ -44,7 +44,7 @@ export function ExportDropdown({ rows, filename, scopeTotal }: {
               ? `Exported ${rows.length} of ${scopeTotal} rows to ${filename}`
               : `Exported ${rows.length} rows to ${filename}`);
             setOpen(false);
-          }}><Download size={13}/> Export CSV</button>
+          }}><Download size={13}/> {partial ? `Export visible rows (${rows.length})` : "Export CSV"}</button>
           <hr/>
           <button role="menuitem" onClick={() => {
             copyToClipboard(rows).then(() => { showToast("Copied JSON to clipboard"); setOpen(false); });
@@ -103,7 +103,7 @@ export function CircleGauge({ pct, size = 72, color }: { pct: number; size?: num
   const dash = Math.min(1, pct / 100) * circ;
   const c = color ?? (pct >= 90 ? "var(--status-good-icon)" : pct >= 70 ? "var(--status-warn-icon)" : "var(--status-error-icon)");
   return (
-    <svg width={size} height={size} data-inline-style="inline-69271fc98e">
+    <svg viewBox={`0 0 ${size} ${size}`} style={{ width: "100%", height: "100%", maxWidth: size, maxHeight: size }} data-inline-style="inline-69271fc98e">
       <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--color-border)" strokeWidth="6" />
       <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={c} strokeWidth="6"
         strokeDasharray={`${dash} ${circ}`} strokeLinecap="round"
@@ -166,12 +166,12 @@ export function LineChart({ data, color = "#3b82f6", onClick }: { data: { date: 
   const fmtLabel = (dateStr: string) => {
     try {
       const d = new Date(dateStr + (dateStr.includes("T") ? "" : "T00:00:00"));
-      return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      return fmtShort(d.toISOString());
     } catch { return dateStr.slice(5); }
   };
 
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="line-chart-svg" preserveAspectRatio="xMidYMid meet" data-inline-style="inline-ca8b563226" onMouseLeave={() => setHoverIdx(null)}
+    <svg viewBox={`0 0 ${w} ${h}`} className="line-chart-svg" style={{ width: "100%", height: "100%" }} data-inline-style="inline-ca8b563226" onMouseLeave={() => setHoverIdx(null)}
       role="img" aria-label={`Line chart, ${data.length} points, from ${data[0].value} (${data[0].date}) to ${data.at(-1)!.value} (${data.at(-1)!.date}); min ${rawMin}, max ${rawMax}`}>
       <defs>
         <linearGradient id={`grad-${chartId}`} x1="0" y1="0" x2="0" y2="1">
@@ -188,8 +188,8 @@ export function LineChart({ data, color = "#3b82f6", onClick }: { data: { date: 
 
       {/* Area fill and line */}
       <path d={area} fill={`url(#grad-${chartId})`} data-inline-style="inline-bbe464ff90" />
-      <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" data-inline-style="inline-bbe464ff90"/>
-      <circle cx={pts.at(-1)!.x} cy={pts.at(-1)!.y} r="4" fill="var(--color-bg, #fff)" stroke={color} strokeWidth="2" data-inline-style="inline-bbe464ff90" />
+      <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" data-inline-style="inline-bbe464ff90"/>
+      <circle cx={pts.at(-1)!.x} cy={pts.at(-1)!.y} r="4" fill="var(--color-bg, #fff)" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" data-inline-style="inline-bbe464ff90" />
 
       {/* X-axis labels — short format, well spaced */}
       {data.map((d, i) => {
@@ -208,8 +208,13 @@ export function LineChart({ data, color = "#3b82f6", onClick }: { data: { date: 
             x={i === 0 ? pad.l - 4 : p.x - sliceW / 2}
             y={0} width={i === 0 || i === pts.length - 1 ? sliceW / 2 + 4 : sliceW} height={h}
             fill="transparent" onMouseEnter={() => setHoverIdx(i)}
+            onFocus={() => setHoverIdx(i)}
+            tabIndex={0}
             onClick={() => onClick && onClick(p.date)}
-            style={{ cursor: onClick ? "pointer" : "default" }}
+            onKeyDown={e => { if (onClick && (e.key === "Enter" || e.key === " ")) onClick(p.date); }}
+            style={{ cursor: onClick ? "pointer" : "default", outline: "none" }}
+            aria-label={`Point ${i+1}: ${fmtLabel(p.date)}, value ${p.value}`}
+            role="button"
           />
         );
       })}
@@ -305,15 +310,16 @@ export function Card({ title, badge, action, children, className="", id, updated
 
 export function KpiTile({ icon, label, value, sub, tone="neutral", needsPerm, onClick, active, help }:
   { icon: React.ReactNode; label: string; value: React.ReactNode; sub?: string; tone?: Tone; needsPerm?: boolean; onClick?: () => void; active?: boolean; help?: string }) {
+  const displayValue = typeof value === "number" && value < 0 ? 0 : value;
   const inner = (
     <>
       <div className="kpi-icon">{icon}</div>
       <div className="kpi-body">
         <div className="kpi-label">{label}</div>
-        <div className="kpi-value">{value}</div>
+        <div className="kpi-value">{displayValue}</div>
         {needsPerm
           ? <div className="kpi-perm"><Lock size={9}/> Needs permission</div>
-          : sub && <div className="kpi-sub" title={sub}>{sub}</div>}
+          : <div className="kpi-sub" title={sub ?? ""}>{sub || "\u00A0"}</div>}
       </div>
     </>
   );
@@ -356,7 +362,7 @@ export function SeverityFilter({ value, onChange, ariaLabel = "Filter by severit
   value: string; onChange: (v: string) => void; ariaLabel?: string;
 }) {
   return (
-    <select value={value} onChange={e => onChange(e.target.value)}
+    <select value={value.toLowerCase()} onChange={e => onChange(e.target.value.toLowerCase())}
       className="filter-sel" aria-label={ariaLabel}
       data-inline-style="inline-1c8c76b2ad">
       <option value="">All severities</option>
@@ -576,7 +582,7 @@ export function TriageSection({ kind, targetId, assignedTo, disposition, showDis
   const [assignInput, setAssignInput] = useState("");
   const [notes, setNotes] = useState<AlertNote[] | null>(null);
   const [noteText, setNoteText] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string | false>(false);
 
   useEffect(() => {
     setCurAssignee(assignedTo ?? null);
@@ -589,7 +595,7 @@ export function TriageSection({ kind, targetId, assignedTo, disposition, showDis
   }, [kind, targetId]);
 
   const doAssign = async (to: string) => {
-    setBusy(true);
+    setBusy(to === myEmail ? "assign" : to === "" ? "unassign" : "assign_other");
     const ok = kind === "policy"
       ? await acApi.assign(targetId, to)
       : await wbApi.workbench(Number(targetId), { assignedTo: to });
@@ -599,7 +605,7 @@ export function TriageSection({ kind, targetId, assignedTo, disposition, showDis
   };
 
   const doDisposition = async (d: string) => {
-    setBusy(true);
+    setBusy("disposition");
     const ok = await wbApi.workbench(Number(targetId), { disposition: d });
     setBusy(false);
     if (ok) { setCurDisposition(d || null); showToast(d ? `Marked ${d.replace("_", " ")}` : "Disposition cleared"); }
@@ -609,7 +615,7 @@ export function TriageSection({ kind, targetId, assignedTo, disposition, showDis
   const addNote = async () => {
     const t = noteText.trim();
     if (!t) return;
-    setBusy(true);
+    setBusy("note");
     const ok = await wbApi.addNote(kind, targetId, t);
     setBusy(false);
     if (ok) { setNoteText(""); setNotes(await wbApi.listNotes(kind, targetId)); onNoteAdded?.(); }
@@ -625,15 +631,16 @@ export function TriageSection({ kind, targetId, assignedTo, disposition, showDis
         {canMutate && (
           <span className="triage-actions">
             {curAssignee !== myEmail && (
-              <button className="btn-export" data-inline-style="inline-aabab229b1" disabled={busy}
-                onClick={() => doAssign(myEmail)}>Assign to me</button>
+              <button className="btn-export" data-inline-style="inline-aabab229b1" disabled={!!busy}
+                onClick={() => doAssign(myEmail)}>{busy === "assign" ? "Working..." : "Assign to me"}</button>
             )}
             {curAssignee && (
-              <button className="btn-export" data-inline-style="inline-aabab229b1" disabled={busy}
-                onClick={() => doAssign("")}>Unassign</button>
+              <button className="btn-export" data-inline-style="inline-aabab229b1" disabled={!!busy}
+                onClick={() => doAssign("")}>{busy === "unassign" ? "Working..." : "Unassign"}</button>
             )}
-            <input className="form-input" data-inline-style="inline-68fa3635ad"
+            <input className="form-input" style={{ width: 140, padding: "2px 6px", fontSize: 11, borderColor: assignInput && !assignInput.includes("@") ? "var(--status-error-icon)" : undefined }}
               placeholder="assign by email…" value={assignInput}
+              disabled={!!busy}
               onChange={e => setAssignInput(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter" && assignInput.includes("@")) doAssign(assignInput.trim().toLowerCase()); }}/>
           </span>
@@ -643,9 +650,9 @@ export function TriageSection({ kind, targetId, assignedTo, disposition, showDis
         <div className="triage-row">
           <span className="triage-label">Disposition</span>
           {canMutate ? (
-            <select className="filter-sel" data-inline-style="inline-29f4818e18" disabled={busy}
+            <select className="filter-sel" data-inline-style="inline-29f4818e18" disabled={!!busy}
               value={curDisposition ?? ""} onChange={e => doDisposition(e.target.value)}>
-              <option value="">Untriaged</option>
+              <option value="">{busy === "disposition" ? "Working..." : "Untriaged"}</option>
               <option value="reviewed">Reviewed</option>
               <option value="escalated">Escalated</option>
               <option value="false_positive">False positive</option>
@@ -680,11 +687,12 @@ export function TriageSection({ kind, targetId, assignedTo, disposition, showDis
       </>}
       {canMutate && (
         <div style={{ display: "flex", gap: 6, marginTop: showNotes ? 8 : 12 }}>
-          <input className="form-input" style={{ flex: 1, fontSize: 12 }} placeholder="Add a note â€” what did you find?"
+          <input className="form-input" style={{ flex: 1, fontSize: 12 }} placeholder="Add a note — what did you find?"
             value={noteText} maxLength={2000}
+            disabled={!!busy}
             onChange={e => setNoteText(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter") addNote(); }}/>
-          <button className="btn-apply" data-inline-style="inline-b58cc65177" disabled={busy || !noteText.trim()} onClick={addNote}>Add</button>
+          <button className="btn-apply" data-inline-style="inline-b58cc65177" disabled={!!busy || !noteText.trim()} onClick={addNote}>{busy === "note" ? "Adding..." : "Add"}</button>
         </div>
       )}
     </div>
@@ -742,11 +750,11 @@ export function AlertDetailModal({ alert, allAlerts, onSelectAlert, onClose }: {
       <DetailField label="Status" value={alert.isResolved ? "Resolved" : "Active"}/>
       {/* The entity investigation profile was previously reachable only from the
           Ctrl+K palette — surface it where an analyst actually is: on the alert. */}
-      <DetailField label="User" value={alert.userPrincipalName} copy={!!alert.userPrincipalName}
-        onNavigate={alert.userPrincipalName ? () => { onClose(); openEntity("user", alert.userPrincipalName!); } : undefined}
+      <DetailField label="User" value={alert.userPrincipalName} copy={!!alert.userPrincipalName} title={alert.userPrincipalName}
+        onNavigate={alert.userPrincipalName ? () => { onClose(); openEntity("user", alert.userPrincipalName!, alert.id); } : undefined}
         navLabel="Investigate →"/>
-      <DetailField label="Device" value={alert.deviceName} copy={!!alert.deviceName}
-        onNavigate={alert.deviceName ? () => { onClose(); openEntity("device", alert.deviceName!); } : undefined}
+      <DetailField label="Device" value={alert.deviceName} copy={!!alert.deviceName} title={alert.deviceName}
+        onNavigate={alert.deviceName ? () => { onClose(); openEntity("device", alert.deviceName!, alert.id); } : undefined}
         navLabel="Investigate →"/>
       <DetailField label="External ID" value={alert.externalId} copy={!!alert.externalId}/>
       <DetailField label="Detected" value={alert.detectedAt ? `${relTime(alert.detectedAt)} (${fmtDate(alert.detectedAt)})` : undefined} title={fmtDate(alert.detectedAt)}/>
@@ -774,14 +782,14 @@ export function AlertDetailModal({ alert, allAlerts, onSelectAlert, onClose }: {
           ) : (
             <div className="mini-list">
               {related.map(r => (
-                <div key={r.id} className="mini-row al-clickable"
-                  onClick={() => onSelectAlert?.(r)} style={{ cursor: onSelectAlert ? "pointer" : "default" }}
-                  role={onSelectAlert ? "button" : undefined} tabIndex={onSelectAlert ? 0 : undefined}
-                  onKeyDown={e => { if (onSelectAlert && e.key === "Enter") onSelectAlert(r); }}>
+                <button key={r.id} className="mini-row al-clickable"
+                  onClick={() => onSelectAlert?.(r)}
+                  style={{ cursor: onSelectAlert ? "pointer" : "default", textAlign: "left", background: "none", border: "none", display: "flex", width: "100%", alignItems: "center" }}
+                  aria-label={`Open related alert: ${r.title}`}>
                   <span className={`sev-dot sev-${r.severity.toLowerCase()}`}/>
                   <span className="mr-user" data-inline-style="inline-126244f135">{r.title}</span>
                   <Badge label={fmtService(r.service)} tone="neutral"/>
-                </div>
+                </button>
               ))}
             </div>
           )}

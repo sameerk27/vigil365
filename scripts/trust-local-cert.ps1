@@ -4,7 +4,7 @@
   warning. Testing convenience only.
 
 .DESCRIPTION
-  This does not make the certificate valid — it tells this one computer to
+  This does not make the certificate valid - it tells this one computer to
   accept it. Every other visitor still gets the warning, which on a security
   product trains people to click through TLS warnings. Use it to test locally,
   then replace the certificate with a real one (see deploy-public.ps1 header).
@@ -24,7 +24,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $cfgPath = Join-Path $PublishPath "appsettings.Production.json"
-if (-not (Test-Path $cfgPath)) { throw "No appsettings.Production.json at $cfgPath — run deploy-public.ps1 first." }
+if (-not (Test-Path $cfgPath)) { throw "No appsettings.Production.json at $cfgPath - run deploy-public.ps1 first." }
 
 $cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json
 $certNode = $cfg.Kestrel.Endpoints.Https.Certificate
@@ -37,7 +37,7 @@ $loaded = New-Object Security.Cryptography.X509Certificates.X509Certificate2 `
     $pfx, $certNode.Password, "MachineKeySet,PersistKeySet"
 
 if ($loaded.Subject -ne $loaded.Issuer) {
-  Write-Host "This certificate is NOT self-signed — it is issued by:" -ForegroundColor Yellow
+  Write-Host "This certificate is NOT self-signed - it is issued by:" -ForegroundColor Yellow
   Write-Host "  $($loaded.Issuer)" -ForegroundColor Yellow
   Write-Host "If browsers still warn, the chain is likely incomplete rather than untrusted." -ForegroundColor Yellow
   exit 0
@@ -53,5 +53,6 @@ $store.Add($loaded)
 $store.Close()
 
 Write-Host "`nTrusted '$($loaded.Subject)' in $storeLocation\Root (expires $($loaded.NotAfter))." -ForegroundColor Green
-Write-Host "Fully close and reopen the browser — TLS decisions are cached per session.`n"
+Write-Host "Fully close and reopen the browser - TLS decisions are cached per session.`n"
 Write-Host "Remember: only THIS machine trusts it. Replace with a real certificate before anyone else uses the site." -ForegroundColor Yellow
+

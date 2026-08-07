@@ -171,7 +171,7 @@ export interface AlertPolicy {
   /** Historical baseline lookback in days — kind=anomaly */
   baselineDays?: number;
   threshold: number;
-  severity: "critical" | "high" | "medium" | "low";
+  severity: "Critical" | "High" | "Medium" | "Low";
   notifyEmail: string;
   suppressionMinutes?: number;
   createdAt: string;
@@ -312,7 +312,7 @@ export interface SecurityRecommendation {
   id: string;
   category: string;
   title: string;
-  severity: "critical" | "high" | "medium" | "low" | string;
+  severity: "Critical" | "High" | "Medium" | "Low" | string;
   affectedCount: number;
   whyItMatters: string;
   remediationSteps: string[];

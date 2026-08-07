@@ -5,7 +5,7 @@
 .DESCRIPTION
   Catches the deployment failures that unit tests structurally cannot:
 
-    * a stale wwwroot — index.html referencing a bundle that is not on disk
+    * a stale wwwroot - index.html referencing a bundle that is not on disk
       (this shipped twice before it was caught by hand)
     * assets returning 404
     * the API being up but the database being unreachable
@@ -115,3 +115,4 @@ if ($script:Failures -gt 0) {
   exit 1
 }
 Write-Host "All checks passed." -ForegroundColor Green
+

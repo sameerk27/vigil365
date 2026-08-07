@@ -115,10 +115,10 @@ const SECTIONS: SectionDef[] = [
   { id:"health",   label:"M365 Health",    icon:<Activity size={17}/>,      pages:[
       { id:"servicehealth", label:"Service Health" },
       { id:"network",       label:"Connectivity" }] },
+  { id:"licenses", label:"Licenses",       icon:<Package size={17}/>,       pages:[{ id:"licenses", label:"Licenses" }] },
   { id:"admin",    label:"Administration", icon:<Settings size={17}/>,      pages:[
-      { id:"licenses", label:"Licenses & Users" },
       { id:"users",    label:"User Management", adminOnly:true },
-      { id:"setup",    label:"Setup", adminOnly:true }] },
+      { id:"setup",    label:"Setup / App Config", adminOnly:true }] },
 ];
 const sectionOf = (p: NavPage): SectionDef => SECTIONS.find(s => s.pages.some(pg => pg.id === p)) ?? SECTIONS[0];
 const pageLabel = (p: NavPage): string => {
@@ -133,13 +133,13 @@ const VALID_PAGES = new Set<string>(SECTIONS.flatMap(s => s.pages.map(p => p.id)
 // collected M365 security alerts; GUIDs are triggered policy alerts (the kind
 // notifications link to). Keeps pages refresh-safe, bookmarkable, shareable.
 type EntityRef = { kind: "user" | "device"; id: string };
-function parseHash(): { page: NavPage | null; alertId: number | null; triggeredId: string | null; entity: EntityRef | null } {
-  // Entity drill-down route: #/entity/{user|device}/{encoded-id}
-  const ent = window.location.hash.match(/^#\/entity\/(user|device)\/(.+)$/);
+function parseHash(): { page: NavPage | null; alertId: number | null; triggeredId: string | null; entity: EntityRef | null; fromAlertId: number | null } {
+  // Entity drill-down route: #/entity/{user|device}/{encoded-id}?fromAlert={id}
+  const ent = window.location.hash.match(/^#\/entity\/(user|device)\/([^?]+)(?:\?fromAlert=([0-9]+))?/);
   if (ent) {
     let id = ent[2];
     try { id = decodeURIComponent(id); } catch { /* leave raw if malformed */ }
-    return { page: null, alertId: null, triggeredId: null, entity: { kind: ent[1] as "user" | "device", id } };
+    return { page: null, alertId: null, triggeredId: null, entity: { kind: ent[1] as "user" | "device", id }, fromAlertId: ent[3] ? Number(ent[3]) : null };
   }
   const m = window.location.hash.match(/^#\/([a-z]+)(?:\?alert=([0-9a-fA-F-]+))?/);
   const page = m && VALID_PAGES.has(m[1]) ? (m[1] as NavPage) : null;
@@ -150,6 +150,7 @@ function parseHash(): { page: NavPage | null; alertId: number | null; triggeredI
     alertId: raw && !isGuid ? Number(raw) : null,
     triggeredId: isGuid ? raw : null,
     entity: null,
+    fromAlertId: null
   };
 }
 
@@ -227,16 +228,19 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
   const [pendingAlertId, setPendingAlertId] = useState<number | null>(() => parseHash().alertId);
   const [pendingTriggeredId, setPendingTriggeredId] = useState<string | null>(() => parseHash().triggeredId);
   const [entity, setEntity] = useState<EntityRef | null>(() => parseHash().entity);
+  const [fromAlertId, setFromAlertId] = useState<number | null>(() => parseHash().fromAlertId);
   const setPage = useCallback((p: NavPage) => {
     setPageState(p);
     setEntity(null);
+    setFromAlertId(null);
     if (window.location.hash !== `#/${p}`) window.history.pushState(null, "", `#/${p}`);
   }, []);
   useEffect(() => {
     if (!window.location.hash) window.history.replaceState(null, "", `#/${parseHash().page ?? "overview"}`);
     const sync = () => {
-      const { page: p, alertId, triggeredId, entity: e } = parseHash();
+      const { page: p, alertId, triggeredId, entity: e, fromAlertId: f } = parseHash();
       setEntity(e);
+      setFromAlertId(f);
       if (p) setPageState(p);
       if (alertId != null) setPendingAlertId(alertId);
       if (triggeredId != null) setPendingTriggeredId(triggeredId);
@@ -564,9 +568,9 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
             <p className="hdr-sub">
               Vigil365 · M365 Security Operations · Updated{" "}
               <span title={fmtUtc(lastRefresh.toISOString())}>
-                {lastRefresh.toLocaleTimeString("en-US")}
+                {isUtcMode() ? lastRefresh.toLocaleTimeString("en-US", { timeZone: "UTC" }) : lastRefresh.toLocaleTimeString("en-US")}
               </span>
-              {" "}<span className="hdr-tz" title="All timestamps in this app use your local timezone">{tzLabel()}</span>
+              {" "}<span className="hdr-tz" title={isUtcMode() ? "All timestamps in this app are shown in UTC" : "All timestamps in this app use your local timezone"}>{tzLabel()}</span>
               {" · "}
               <button className="countdown-chip" onClick={() => setRefreshPaused(p => !p)}
                 title={refreshPaused ? "Resume auto-refresh" : "Pause auto-refresh"}
@@ -660,7 +664,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
         {isInitialLoad ? (
           <DashboardSkeleton />
         ) : entity ? (
-          <EntityPage kind={entity.kind} id={entity.id}
+          <EntityPage kind={entity.kind} id={entity.id} fromAlertId={fromAlertId}
             onBack={() => { if (window.history.length > 1) window.history.back(); else setPage("overview"); }}/>
         ) : (
           <>
@@ -715,12 +719,10 @@ function AuthGate() {
   // only armed once a session actually exists.
   const expireSession = useCallback(async (reason: ExpiryReason) => {
     clearSessionStart();
+    // Wipe MSAL cache locally so they are unauthenticated.
+    sessionStorage.clear();
     sessionStorage.setItem("vigil365-signout-reason", reason);
-    if (_msalInstance) {
-      await _msalInstance.logoutRedirect({ postLogoutRedirectUri: window.location.origin });
-    } else {
-      window.location.reload();
-    }
+    window.location.reload();
   }, []);
   useSessionTimeout(expireSession, !!account);
 
@@ -771,6 +773,7 @@ function AuthGate() {
             // debris from an abandoned attempt — drop it now so the sign-in
             // button works on the first click rather than the second.
             clearStaleMsalInteraction();
+            clearSessionStart();
           }
         }
       } catch (e) {
@@ -784,6 +787,7 @@ function AuthGate() {
     if (!_msalInstance) return;
     setLoginError(null);
     try {
+      clearSessionStart();
       await _msalInstance.loginRedirect({ scopes: _msalScopes });
     } catch (e: unknown) {
       // A previous redirect that never completed leaves MSAL's interaction flag

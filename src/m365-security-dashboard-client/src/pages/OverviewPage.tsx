@@ -276,7 +276,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
         <Card title="Device Compliance"
           badge={devNonCompliant>0?<Badge label={`${devNonCompliant} non-compliant`} tone={devNonCompliant>3?"error":"warning"}/>:<Badge label="All compliant" tone="good"/>}>
           <div className="device-hero">
-            <CircleGauge pct={devices ? devComplPct : 0} size={70}/>
+            <CircleGauge pct={devices ? devComplPct : 0} size={70} color={devices && (devices.totalDevices??0)>0 ? undefined : "var(--color-muted)"}/>
             <div className="stat-col">
               <StatBox value={devices ? Math.max(0, devEffectiveTotal - devNonCompliant) : "—"} label="Compliant"/>
               <StatBox value={devNonCompliant} label="Non-compliant" color={devNonCompliant>0?"var(--status-error-text)":undefined}/>

@@ -22,7 +22,7 @@ $repo = Split-Path -Parent $PSScriptRoot
 $csprojPath = Join-Path $repo "src/M365SecurityDashboard.Api/M365SecurityDashboard.Api.csproj"
 $packagePath = Join-Path $repo "src/m365-security-dashboard-client/package.json"
 
-# Targeted replacements — a full XML/JSON round-trip would reformat the files.
+# Targeted replacements - a full XML/JSON round-trip would reformat the files.
 $csproj = Get-Content $csprojPath -Raw
 $updated = [regex]::Replace($csproj, '<Version>[^<]*</Version>', "<Version>$Version</Version>", 1)
 if ($updated -eq $csproj) { throw "No <Version> element found in $csprojPath" }
@@ -38,3 +38,4 @@ Write-Host "Set version to $Version in both projects.`n" -ForegroundColor Green
 
 Write-Host "`nNext: update CHANGELOG.md, commit, then tag:" -ForegroundColor Cyan
 Write-Host "  git tag -a v$Version -m ""Vigil365 v$Version""" -ForegroundColor Cyan
+

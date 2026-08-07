@@ -286,3 +286,7 @@ export function copyToClipboard(rows: Record<string, unknown>[]): Promise<void> 
   if (!rows.length) return Promise.resolve();
   return navigator.clipboard.writeText(JSON.stringify(rows, null, 2));
 }
+
+export function getSevCount(dict: Record<string, number> | undefined, sev: string): number {
+  return dict ? (dict[sev] ?? dict[sev.toLowerCase()] ?? 0) : 0;
+}

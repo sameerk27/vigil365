@@ -148,7 +148,7 @@ export function IncidentsPage({ alerts, alertsTotal, serviceHealth, defenderAler
   }, [unified, typeFilter, severity, search, dateRange]);
 
   const dbBySeverity = useMemo(() =>
-    alerts.reduce((acc,a)=>({...acc,[a.severity]:(acc[a.severity]??0)+1}),{} as Record<string,number>),
+    alerts.reduce((acc,a)=>({...acc,[(a.severity??"unknown").toLowerCase()]:(acc[(a.severity??"unknown").toLowerCase()]??0)+1}),{} as Record<string,number>),
   [alerts]);
 
   const defenderCount = defenderAlerts?.total ?? 0;
@@ -220,14 +220,14 @@ export function IncidentsPage({ alerts, alertsTotal, serviceHealth, defenderAler
           sub={securityIncidents?.error?"Permission needed":"Active incidents"} tone={incidentCount>0?"warning":"good"}
           active={typeFilter==="incidents"} onClick={()=>{setSeverity("");setTypeFilter("incidents");}}/>
         <KpiTile icon={<AlertTriangle size={16}/>} label="CRITICAL ALERTS"
-          value={dbBySeverity["Critical"]??0}
+          value={dbBySeverity["critical"]??0}
           sub="Critical severity, unresolved"
-          tone={(dbBySeverity["Critical"]??0)>0?"error":"good"}
+          tone={(dbBySeverity["critical"]??0)>0?"error":"good"}
           active={typeFilter==="alerts"&&severity==="critical"} onClick={()=>{setTypeFilter("alerts");setSeverity("critical");}}/>
         <KpiTile icon={<AlertTriangle size={16}/>} label="HIGH ALERTS"
-          value={dbBySeverity["High"]??0}
+          value={dbBySeverity["high"]??0}
           sub="High severity, unresolved"
-          tone={(dbBySeverity["High"]??0)>0?"warning":"good"}
+          tone={(dbBySeverity["high"]??0)>0?"warning":"good"}
           active={typeFilter==="alerts"&&severity==="high"} onClick={()=>{setTypeFilter("alerts");setSeverity("high");}}/>
         <KpiTile icon={<Bell size={18}/>} label="M365 ADVISORIES" value={advisoryCount} sub="Active advisories" tone={advisoryCount>0?"warning":"good"}
           active={typeFilter==="advisories"} onClick={()=>{setSeverity("");setTypeFilter("advisories");}}/>

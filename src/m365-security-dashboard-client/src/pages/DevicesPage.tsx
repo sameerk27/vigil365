@@ -119,9 +119,9 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
       </div>
 
       {/* Compliance Overview — full-width summary at top */}
-      <Card title="Compliance Overview" badge={<Badge label={`${devComplPct}%`} tone={pctTone(devComplPct)}/>}>
+      <Card title="Compliance Overview" badge={<Badge label={devices && devices.totalDevices > 0 ? `${devComplPct}%` : "—"} tone={devices && devices.totalDevices > 0 ? pctTone(devComplPct) : "neutral"}/>}>
         <div className="compliance-hero">
-          <CircleGauge pct={devComplPct} size={100}/>
+          <CircleGauge pct={devComplPct} size={100} color={devices && (devices.totalDevices??0)>0 ? undefined : "var(--color-muted)"}/>
           <div data-inline-style="inline-126244f135">
             <MiniBarChart items={complianceData}/>
           </div>

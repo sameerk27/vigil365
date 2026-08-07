@@ -187,37 +187,7 @@ namespace M365SecurityDashboard.GuiInstaller
             CertOption_Changed(this, e);
             Scope_Changed(this, e);
             TxtTenant.TextChanged += (_, __) => { if (TxtTenant.IsKeyboardFocusWithin) tenantEditedByUser = true; };
-            PrefillAdministrator();
             DetectExistingSqlServer();
-        }
-
-        /// <summary>
-        /// Fills the admin box from the Azure CLI session. The person running the
-        /// installer is nearly always the first admin, so asking them to type an
-        /// address the machine already knows is a question for its own sake.
-        /// </summary>
-        /// <summary>
-        /// Suggests the signed-in account as a hint only. Deliberately does not
-        /// fill the box: the first administrator is a real decision, and a
-        /// pre-filled value is the one people click past without reading.
-        /// </summary>
-        private void PrefillAdministrator()
-        {
-            // Off the UI thread: "az account show" spawns a process and can take a
-            // second or two, which on the UI thread stalls the step transition.
-            _ = Task.Run(() =>
-            {
-                string? upn = null;
-                try { upn = RunCommandAndCapture("az", "account show --query user.name -o tsv").Trim(); }
-                catch { /* not signed in yet; the plain hint is fine */ }
-
-                Dispatcher.Invoke(() =>
-                {
-                    TxtAdminEmailHint.Text = !string.IsNullOrWhiteSpace(upn) && upn.Contains('@')
-                        ? $"This person gets full access and can add everyone else. You are signed in to Azure as {upn}."
-                        : "This person gets full access and can add everyone else.";
-                });
-            });
         }
 
         /// <summary>
@@ -737,20 +707,10 @@ namespace M365SecurityDashboard.GuiInstaller
         /// </summary>
         private void EnsureAzureLogin(string tenant, string expectedTenantId)
         {
-            var current = "";
-            try { current = RunCommandAndCapture("az", "account show --query tenantId -o tsv").Trim(); }
-            catch { /* not signed in */ }
-
-            if (string.Equals(current, expectedTenantId, StringComparison.OrdinalIgnoreCase))
-            {
-                Log($"Azure CLI is signed in to {tenant} ({expectedTenantId}).");
-                return;
-            }
-
-            if (string.IsNullOrEmpty(current))
-                Log($"Signing in to {tenant} — a browser window will open...");
-            else
-                Log($"Azure CLI is signed in to a different tenant ({current}). Switching to {tenant}...");
+            Log($"Signing in to {tenant} — a browser window will open...");
+            
+            // Clear any existing session to ensure we always start a fresh one
+            try { RunCommandAndCapture("az", "account clear"); } catch { }
 
             // --allow-no-subscriptions because a Microsoft 365 tenant frequently
             // has no Azure subscription, and without it the CLI refuses to
@@ -762,6 +722,7 @@ namespace M365SecurityDashboard.GuiInstaller
             // in…" and nothing to click.
             RunAzLogin(tenant);
 
+            string current;
             try { current = RunCommandAndCapture("az", "account show --query tenantId -o tsv").Trim(); }
             catch { current = ""; }
 

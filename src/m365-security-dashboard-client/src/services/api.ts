@@ -237,9 +237,11 @@ export function crossNavigate(target: CrossNavTarget): void {
 
 // Navigate to the entity investigation drill-down. Sets the hash; App's
 // hashchange listener renders the EntityPage overlay.
-export function openEntity(kind: "user" | "device", id: string): void {
+export function openEntity(kind: "user" | "device", id: string, fromAlertId?: number): void {
   if (typeof window !== "undefined" && id) {
-    window.location.hash = `#/entity/${kind}/${encodeURIComponent(id)}`;
+    let hash = `#/entity/${kind}/${encodeURIComponent(id)}`;
+    if (fromAlertId) hash += `?fromAlert=${fromAlertId}`;
+    window.location.hash = hash;
   }
 }
 

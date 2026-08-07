@@ -34,5 +34,8 @@ export default defineConfig({
     proxy: {
       "/api": { target: "https://vigil365.local:5001", changeOrigin: true, secure: false }
     }
+  },
+  test: {
+    exclude: ['node_modules', 'dist', 'e2e/**']
   }
 });

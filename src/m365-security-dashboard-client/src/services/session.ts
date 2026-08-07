@@ -78,6 +78,10 @@ export function useSessionTimeout(onExpire: (reason: ExpiryReason) => void, enab
       localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
       warned.current = false;
     };
+    
+    // Initialize activity on mount so we don't inherit an old timestamp from a previous session
+    markActive();
+
     ACTIVITY_EVENTS.forEach(e => window.addEventListener(e, markActive, { passive: true }));
 
     const timer = window.setInterval(() => {

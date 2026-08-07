@@ -316,7 +316,19 @@ app.Use(async (ctx, next) =>
 });
 
 app.UseDefaultFiles();
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        // Prevent caching of index.html so the SPA always loads the latest JS bundles.
+        if (ctx.File.Name.Equals("index.html", StringComparison.OrdinalIgnoreCase))
+        {
+            ctx.Context.Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+            ctx.Context.Response.Headers["Pragma"] = "no-cache";
+            ctx.Context.Response.Headers["Expires"] = "-1";
+        }
+    }
+});
 app.UseCors();
 app.UseRateLimiter();
 app.UseAuthentication();
@@ -349,7 +361,15 @@ app.Map("/api/{**rest}", (HttpContext ctx) =>
         statusCode: StatusCodes.Status404NotFound);
 }).AllowAnonymous();
 
-app.MapFallbackToFile("index.html").AllowAnonymous();
+app.MapFallbackToFile("index.html", new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        ctx.Context.Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+        ctx.Context.Response.Headers["Pragma"] = "no-cache";
+        ctx.Context.Response.Headers["Expires"] = "-1";
+    }
+}).AllowAnonymous();
 
 app.Run();
 

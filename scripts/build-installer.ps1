@@ -1,13 +1,13 @@
 <#
 .SYNOPSIS
-  Builds Vigil365-Setup.exe — a single self-contained installer.
+  Builds Vigil365-Setup.exe - a single self-contained installer.
 
 .DESCRIPTION
   This is a RELEASE-time script, run by whoever ships Vigil365. It does all the
   building here so the customer's server does not have to: the published
   application is compressed and embedded inside the installer executable.
 
-  The result needs nothing on the target machine — no source tree, no Node, no
+  The result needs nothing on the target machine - no source tree, no Node, no
   .NET SDK, not even the .NET runtime. Both the application and the installer
   are published self-contained.
 
@@ -16,7 +16,7 @@
 
 .PARAMETER SkipClient
   Reuse the existing wwwroot instead of running npm. Only for iterating on the
-  installer itself — a shipped build must never skip it, or the SPA in the
+  installer itself - a shipped build must never skip it, or the SPA in the
   payload is whatever happened to be lying around.
 
 .EXAMPLE
@@ -42,7 +42,7 @@ $payload = Join-Path $installerProj "payload.zip"
 
 Step "Building the SPA"
 if ($SkipClient) {
-  Write-Host "   skipped (-SkipClient) — payload will reuse the existing wwwroot" -ForegroundColor Yellow
+  Write-Host "   skipped (-SkipClient) - payload will reuse the existing wwwroot" -ForegroundColor Yellow
 } else {
   Push-Location $clientDir
   try {
@@ -58,17 +58,17 @@ if ($SkipClient) {
 }
 
 $indexPath = Join-Path $repo "src\M365SecurityDashboard.Api\wwwroot\index.html"
-if (-not (Test-Path $indexPath)) { throw "No wwwroot/index.html — the SPA did not build, so the payload would ship without a UI." }
+if (-not (Test-Path $indexPath)) { throw "No wwwroot/index.html - the SPA did not build, so the payload would ship without a UI." }
 
 Step "Publishing the application (self-contained)"
 Remove-Item $staging -Recurse -Force -ErrorAction SilentlyContinue
 # Self-contained so the target server needs no .NET at all. NOT trimmed: EF Core
 # and the config binder resolve types by reflection, and trimming silently
-# removes them — the failure shows up at runtime, not here.
+# removes them - the failure shows up at runtime, not here.
 dotnet publish $apiProj -c Release -r win-x64 --self-contained true -o $staging --nologo
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed for the API" }
 
-if (-not (Test-Path (Join-Path $staging "wwwroot\index.html"))) { throw "Published output has no wwwroot — refusing to ship a payload with no UI." }
+if (-not (Test-Path (Join-Path $staging "wwwroot\index.html"))) { throw "Published output has no wwwroot - refusing to ship a payload with no UI." }
 if (-not (Test-Path (Join-Path $staging "hostfxr.dll")))        { throw "Published output is not self-contained (no hostfxr.dll)." }
 
 # appsettings.Production.json is written by the wizard at install time from the
@@ -99,7 +99,7 @@ if (-not (Test-Path $exe)) { throw "Installer executable was not produced." }
 $final = Join-Path $OutDir "Vigil365-Setup.exe"
 # -Force does not reliably overwrite an existing destination here, so the second
 # build in a row failed with "Cannot create a file when that file already
-# exists". Clear it first — and say so plainly if the previous build is still
+# exists". Clear it first - and say so plainly if the previous build is still
 # open, because the raw error is an unexplained "access is denied".
 if (Test-Path $final) {
   try { Remove-Item $final -Force -ErrorAction Stop }
@@ -108,7 +108,7 @@ if (Test-Path $final) {
     if ($running) {
       throw "Vigil365-Setup.exe is still running (PID $($running.Id -join ', ')). Close it and build again."
     }
-    throw "Could not replace $final — it is locked by another process. $($_.Exception.Message)"
+    throw "Could not replace $final - it is locked by another process. $($_.Exception.Message)"
   }
 }
 Move-Item $exe $final
@@ -123,8 +123,9 @@ Ok ("{0}  ({1:N1} MB)" -f $final, ((Get-Item $final).Length / 1MB))
 Write-Host @"
 
 Ship that one file. On the target server it needs no source tree, no Node, and
-no .NET — it carries the application and the runtime with it.
+no .NET - it carries the application and the runtime with it.
 
 It must be run as Administrator: it registers a Windows service, creates a SQL
 login, and may install a certificate.
 "@
+
