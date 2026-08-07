@@ -95,8 +95,6 @@ The wizard will:
 4. Set up HTTPS, including the certificate, for a network install.
 5. Unpack the application and run it as an auto-starting Windows Service.
 
-To build that installer from source instead, see
-[Building the installer](#building-the-installer).
 
 #### Choose who needs to reach it
 
