@@ -62,8 +62,6 @@ A self-hosted Microsoft 365 security monitoring dashboard that aggregates alerts
 
 ## Prerequisites
 
-## Prerequisites
-
 1. Windows 10/11 or Windows Server 2019+, and local administrator rights
 2. [Node.js 20+](https://nodejs.org/) (for building the installer)
 3. [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) (for building the installer)
@@ -72,57 +70,7 @@ Nothing else is required on the server. SQL Server Express and Azure CLI are ins
 
 All paths also need a Microsoft 365 tenant where you can create an app registration.
 
----
 
-## Microsoft Entra App Registration
-
-> **Tip:** `register-app.ps1` does all of this for you (permissions, redirect URI,
-> exposed scope, secret, admin consent). Do it manually only if you prefer.
-
-### Create the app
-
-1. Go to [Entra admin center](https://entra.microsoft.com) → **App registrations** → **New registration**
-2. Name it (e.g. `Vigil365`)
-3. Select **Accounts in this organizational directory only**
-4. Under **Redirect URI**, choose **Single-page application (SPA)** and enter the URL you'll serve the app on (e.g. `http://localhost:8080` for Docker, or `https://vigil365.yourco.local:5001`)
-5. Click **Register**, then note the **Tenant ID** and **Application (client) ID**
-6. **Certificates & secrets** → **New client secret** — copy the value immediately
-7. **Expose an API** → set Application ID URI to `api://<client-id>` → **Add a scope** named `access_as_user` (this is what the browser sign-in requests)
-
-### Required API permissions (Application, not Delegated)
-
-Grant **admin consent** for all of these:
-
-| Permission | Used for |
-|-----------|---------|
-| `SecurityAlert.Read.All` | Defender XDR alerts |
-| `SecurityIncident.Read.All` | Defender XDR incidents |
-| `IdentityRiskyUser.Read.All` | Entra ID risky users |
-| `IdentityRiskEvent.Read.All` | Risk detections |
-| `AuditLog.Read.All` | Sign-in logs, audit logs |
-| `Reports.Read.All` | MFA registration, auth methods |
-| `DeviceManagementManagedDevices.Read.All` | Intune devices |
-| `ServiceHealth.Read.All` | M365 service health |
-| `Policy.Read.All` | Conditional Access policies |
-| `Directory.Read.All` | Users, groups, PIM |
-| `PrivilegedAccess.Read.AzureAD` | PIM assignments |
-| `ThreatHunting.Read.All` | Advanced hunting / MDI |
-| `UserAuthenticationMethod.Read.All` | MFA method details |
-| `SharePointTenantSettings.Read.All` | SharePoint/OneDrive sharing posture |
-| `AttackSimulation.ReadWrite.All` | Attack-simulation results (read-only in-app; Graph has no read-only variant — optional) |
-
-The in-app **Graph Permissions** reference (below Collection Runs) shows each of
-these with a live granted/missing status inferred from the last collection run.
-
-> Some features (IRM, Attack Simulation, Identity Health) require additional Purview/Defender licensing in your tenant. The dashboard gracefully shows a permission error card for unavailable features.
-
----
-
-## Install
-
-You need **one** thing first: an **Entra app registration** (so Vigil365 can read
-your tenant via Graph). You can let the new **Interactive Setup Wizard** create this automatically, or create it manually
-(see [Microsoft Entra App Registration](#microsoft-entra-app-registration)).
 
 ### Install (Interactive Setup Wizard)
 
