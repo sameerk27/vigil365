@@ -8,9 +8,14 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: 'list',
   use: {
-    baseURL: process.env.PLAYWRIGHT_TEST_BASE_URL || 'http://localhost:8080',
+    baseURL: process.env.PLAYWRIGHT_TEST_BASE_URL || 'http://localhost:5173',
     trace: 'on-first-retry',
     ignoreHTTPSErrors: true,
+  },
+  webServer: {
+    command: 'npm run dev',
+    url: 'http://localhost:5173',
+    reuseExistingServer: !process.env.CI,
   },
   projects: [
     {

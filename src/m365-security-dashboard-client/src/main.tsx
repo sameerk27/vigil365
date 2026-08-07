@@ -836,7 +836,7 @@ function AuthGate() {
           <div>
             <div className="login-live">
               <span className="login-live-dot" />
-              <span className="login-live-label">Scheduled Security Monitoring</span>
+              <span className="login-live-label">Security Monitoring</span>
             </div>
             <h1 className="login-title">Microsoft 365<br />Security Operations</h1>
             <p className="login-desc">
