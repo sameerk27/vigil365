@@ -47,3 +47,20 @@ dotnet
 *.sqlite
 *.mdf
 *.ldf
+publish/
+publish-install-test/
+keys/
+
+*.pfx
+vigil365.pfx
+# Local SQL backups and exported key rings are operational secrets.
+backups/
+
+# Installer payload — 50MB build artifact produced by scripts/build-installer.ps1
+src/M365SecurityDashboard.GuiInstaller/payload.zip
+
+# ACME account keys and issued certificates — private key material
+certs/
+
+# Installer build output — superseded by dist/, which is also ignored
+installer-bin/

@@ -34,4 +34,14 @@ public sealed class SecurityAlert
     public DateTimeOffset LastUpdatedAt { get; set; }
     public bool IsResolved { get; set; }
     public string RawJson { get; set; } = "{}";
+
+    // ── Workbench fields (local triage state — never written back to M365) ──
+    /// <summary>Vigil365 user (email) this alert is assigned to.</summary>
+    [MaxLength(320)]
+    public string? AssignedTo { get; set; }
+
+    /// <summary>Local analyst disposition: reviewed | escalated | false_positive.
+    /// Null = untriaged. Purely informational; the source alert is untouched.</summary>
+    [MaxLength(30)]
+    public string? Disposition { get; set; }
 }

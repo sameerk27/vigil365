@@ -1,35 +1,132 @@
 using M365SecurityDashboard.Api.Data;
+using M365SecurityDashboard.Api.Endpoints;
 using M365SecurityDashboard.Api.Models;
 using M365SecurityDashboard.Api.Services;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Microsoft.Identity.Web;
+using Serilog;
+using Serilog.Events;
+using Serilog.Formatting.Compact;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseWindowsService();
+
+// JSON logs preserve correlation IDs and structured fields for Docker,
+// journald, Splunk, or Sentinel. Files roll daily and at a size limit so logs
+// remain useful without consuming the host disk indefinitely.
+var configuredLogPath = builder.Configuration["Logging:File:Path"] ?? "logs/vigil365-.json";
+var logPath = Path.GetFullPath(configuredLogPath, AppContext.BaseDirectory);
+Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+var retainedLogFiles = Math.Max(1, builder.Configuration.GetValue("Logging:File:RetainedFileCountLimit", 14));
+var maxLogFileBytes = Math.Max(1_048_576, builder.Configuration.GetValue("Logging:File:FileSizeLimitBytes", 10 * 1024 * 1024));
+
+builder.Host.UseSerilog((context, _, logger) => logger
+    .MinimumLevel.Information()
+    .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.AspNetCore.Hosting", LogEventLevel.Warning)
+    .Enrich.FromLogContext()
+    .Enrich.WithProperty("Application", "Vigil365")
+    .Enrich.WithProperty("Environment", context.HostingEnvironment.EnvironmentName)
+    .WriteTo.Console(new RenderedCompactJsonFormatter())
+    .WriteTo.File(new RenderedCompactJsonFormatter(), logPath,
+        rollingInterval: RollingInterval.Day,
+        fileSizeLimitBytes: maxLogFileBytes,
+        rollOnFileSizeLimit: true,
+        retainedFileCountLimit: retainedLogFiles,
+        shared: true,
+        flushToDiskInterval: TimeSpan.FromSeconds(1)));
 builder.Services.Configure<GraphOptions>(builder.Configuration.GetSection("Graph"));
 builder.Services.Configure<AlertingOptions>(builder.Configuration.GetSection("Alerting"));
+builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection("Retention"));
+
+// ── Authentication & Authorization ──────────────────────────────────────────────
+// Validates Entra ID Bearer tokens. The SPA (MSAL) acquires a token for the
+// scope api://{clientId}/access_as_user, so the token audience is api://{clientId}.
+// AzureAd:Audience in config must match that, or validation fails with 401.
+// Role claims ("Admin"/"Analyst"/"Viewer") come from Entra ID App Roles.
+builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration, "AzureAd");
+// Attaches each user's in-app role (from AppUsers table) as a role claim after
+// token validation. Scoped so it can use the request-scoped AppDbContext.
+// Roles are memory-cached (short TTL) so hot paths skip the per-request DB lookup.
+builder.Services.AddMemoryCache();
+builder.Services.AddScoped<Microsoft.AspNetCore.Authentication.IClaimsTransformation, RoleClaimsTransformation>();
+builder.Services.AddAuthorization(options =>
+{
+    // Role claims come from RoleClaimsTransformation (AppUsers table). Analyst
+    // actions are also allowed for Admins. Viewer needs no policy — the fallback
+    // (any authenticated user) covers read access.
+    options.AddPolicy("RequireAdmin", p => p.RequireAuthenticatedUser().RequireRole(AppRoles.Admin));
+    options.AddPolicy("RequireAnalyst", p => p.RequireAuthenticatedUser().RequireRole(AppRoles.Admin, AppRoles.Analyst));
+    // Deny-by-default: every endpoint requires a validated token unless it opts
+    // out with AllowAnonymous (/health, /api/auth/config, SPA fallback).
+    options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+});
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 builder.Services.AddHttpClient<GraphApiClient>();
 builder.Services.AddHttpClient();
+
+// Cross-platform secret encryption key ring. Persisted to disk so secrets survive
+// restarts; in Docker, mount DataProtection:KeyPath as a volume.
+var keyPath = builder.Configuration["DataProtection:KeyPath"]
+    ?? Path.Combine(AppContext.BaseDirectory, "keys");
+Directory.CreateDirectory(keyPath);
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(keyPath))
+    .SetApplicationName("Vigil365");
 builder.Services.AddSingleton<SecretProtector>();
 builder.Services.AddScoped<GraphCollector>();
 builder.Services.AddScoped<NotificationSender>();
+builder.Services.AddScoped<DigestBuilder>();
+builder.Services.AddSingleton<DigestPdfRenderer>();
+builder.Services.AddScoped<EntityProfileBuilder>();
 builder.Services.AddScoped<AlertEvaluator>();
+builder.Services.AddScoped<ApiTokenService>();
+builder.Services.AddScoped<PolicyBacktester>();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<AuditLogger>();
 builder.Services.AddHostedService<GraphCollectionWorker>();
+builder.Services.AddHostedService<DataRetentionWorker>();
+builder.Services.AddHostedService<ReportScheduleWorker>();
+builder.Services.AddHostedService<NotificationDigestWorker>();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddEndpointsApiExplorer();
 if (builder.Environment.IsDevelopment()) builder.Services.AddSwaggerGen();
+// CORS origins are config-driven so real deployments (custom hostnames, reverse
+// proxies) work without a rebuild; localhost defaults cover dev out of the box.
+var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+    ?? ["http://localhost:5000", "http://localhost:5173"];
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
-        policy.WithOrigins("http://localhost:5000", "http://localhost:5173")
+        policy.WithOrigins(corsOrigins)
               .AllowAnyHeader()
               .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+});
+
+// Basic abuse protection: per-client fixed-window limiter on the API. Generous
+// enough for the SPA's parallel dashboard fan-out, tight enough to blunt scraping
+// or brute-force attempts. 429s include Retry-After via the default handler.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.GlobalLimiter = System.Threading.RateLimiting.PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
+        System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+            ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 300,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
 });
 
 var app = builder.Build();
@@ -37,25 +134,205 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.EnsureCreated();
-    // EnsureCreated() does not add tables to a pre-existing database, so create
-    // the alerting tables idempotently for installs that predate this feature.
-    db.Database.ExecuteSqlRaw(AlertingSchema.EnsureTablesSql);
+
+    // Versioned schema via EF migrations. Wait for the database server — in
+    // Docker the SQL container may still be starting. Retry for up to ~60s.
+    //
+    // Installs created before migrations existed (EnsureCreated + raw DDL) are
+    // BASELINED: their schema is first brought fully up to the current model by
+    // the idempotent legacy DDL, then InitialCreate is recorded as applied
+    // without running. Newer migrations then apply normally on every start.
+    var dbLog = app.Services.GetRequiredService<ILogger<Program>>();
+    for (var attempt = 1; ; attempt++)
+    {
+        try
+        {
+            if (db.Database.CanConnect() && !db.Database.GetAppliedMigrations().Any())
+            {
+                var isLegacyDb = db.Database
+                    .SqlQueryRaw<int>("SELECT CASE WHEN OBJECT_ID(N'[SecurityAlerts]', N'U') IS NOT NULL THEN 1 ELSE 0 END AS [Value]")
+                    .AsEnumerable().First() == 1;
+                if (isLegacyDb)
+                {
+                    // Older installs may be missing later idempotent patches —
+                    // apply them all so the DB matches the model we baseline to.
+                    db.Database.ExecuteSqlRaw(AlertingSchema.EnsureTablesSql);
+                    var baseline = db.Database.GetMigrations().First();
+                    db.Database.ExecuteSqlRaw("""
+                        IF OBJECT_ID(N'[__EFMigrationsHistory]', N'U') IS NULL
+                        CREATE TABLE [__EFMigrationsHistory] (
+                            [MigrationId] nvarchar(150) NOT NULL CONSTRAINT [PK___EFMigrationsHistory] PRIMARY KEY,
+                            [ProductVersion] nvarchar(32) NOT NULL);
+                        """);
+                    db.Database.ExecuteSql($"""
+                        IF NOT EXISTS (SELECT 1 FROM [__EFMigrationsHistory] WHERE [MigrationId] = {baseline})
+                        INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion]) VALUES ({baseline}, '8.0.11');
+                        """);
+                    dbLog.LogInformation("Baselined pre-migration database at {Migration}.", baseline);
+                }
+            }
+            db.Database.Migrate();
+            break;
+        }
+        catch (Exception ex) when (attempt < 30)
+        {
+            dbLog.LogWarning("Database not ready (attempt {Attempt}): {Message}. Retrying in 2s…", attempt, ex.Message);
+            Thread.Sleep(2000);
+        }
+    }
+
     AlertingSchema.SeedDefaultPolicies(db);
+
+    // Apply Graph credentials saved via the setup wizard over the GraphOptions
+    // singleton. Because IOptions<GraphOptions>.Value is a singleton, mutating it
+    // here makes every consumer (and IsConfigured()) see the wizard-entered values
+    // without any config file. DB values win over appsettings when present.
+    // Loaded BEFORE any demo seeding so a configured install never gets sample data.
+    var graphOpts = scope.ServiceProvider.GetRequiredService<IOptions<GraphOptions>>().Value;
+    var protector = scope.ServiceProvider.GetRequiredService<SecretProtector>();
+    var saved = db.GraphConfig.OrderBy(g => g.Id).FirstOrDefault();
+    if (saved is not null && !string.IsNullOrWhiteSpace(saved.TenantId))
+    {
+        graphOpts.TenantId = saved.TenantId;
+        graphOpts.ClientId = saved.ClientId;
+        var secret = protector.Unprotect(saved.ClientSecret);
+        if (!string.IsNullOrWhiteSpace(secret)) graphOpts.ClientSecret = secret;
+    }
+
+    if (graphOpts.IsConfigured())
+    {
+        // One-time cleanup: purge demo/sample alerts (identified by the seed
+        // ExternalId prefixes) so they never commingle with real tenant data.
+        // Installs that seeded before configuring Graph carry these forever
+        // otherwise — the collector never matches their ExternalIds.
+        var purged = db.SecurityAlerts
+            .Where(a => a.ExternalId != null && (
+                a.ExternalId.StartsWith("def-crit-") || a.ExternalId.StartsWith("def-high-") ||
+                a.ExternalId.StartsWith("def-med-") || a.ExternalId.StartsWith("entra-risk-") ||
+                a.ExternalId.StartsWith("entra-signin-") || a.ExternalId.StartsWith("intune-nc-") ||
+                a.ExternalId.StartsWith("intune-nia-") || a.ExternalId.StartsWith("mfa-ok-") ||
+                a.ExternalId.StartsWith("mfa-miss-")))
+            .ExecuteDelete();
+        if (purged > 0)
+            dbLog.LogInformation("Purged {Count} demo/sample alerts now that Graph is configured.", purged);
+    }
+    else if (builder.Configuration.GetValue("Seed:DemoData", false) && !db.SecurityAlerts.Any())
+    {
+        db.CollectionRuns.Add(new CollectionRun
+        {
+            StartedAt = DateTimeOffset.UtcNow.AddMinutes(-15),
+            CompletedAt = DateTimeOffset.UtcNow.AddMinutes(-14),
+            Status = CollectionStatus.Completed,
+            AlertsUpserted = 14
+        });
+
+        // Defender XDR Alerts
+        db.SecurityAlerts.Add(new SecurityAlert { ExternalId = "def-crit-1", AlertType = "ImpossibleTravel", Service = M365ServiceArea.DefenderXdr, Severity = AlertSeverity.Critical, Title = "Impossible travel detected for executive user", Description = "User signed in from two distant geographical locations within 45 minutes.", UserPrincipalName = "sarah.connor@vigil365.local", DetectedAt = DateTimeOffset.UtcNow.AddHours(-1), LastUpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-30) });
+        db.SecurityAlerts.Add(new SecurityAlert { ExternalId = "def-crit-2", AlertType = "SuspiciousExecution", Service = M365ServiceArea.DefenderXdr, Severity = AlertSeverity.Critical, Title = "Suspicious PowerShell command execution detected", Description = "Encoded command executed to dump process memory.", DeviceName = "SEC-WORKSTATION-04", DetectedAt = DateTimeOffset.UtcNow.AddHours(-2), LastUpdatedAt = DateTimeOffset.UtcNow.AddHours(-1) });
+        db.SecurityAlerts.Add(new SecurityAlert { ExternalId = "def-crit-3", AlertType = "DataExfiltration", Service = M365ServiceArea.DefenderXdr, Severity = AlertSeverity.Critical, Title = "Mass SharePoint file exfiltration observed", Description = "Over 1,500 sensitive files downloaded by user in 10 minutes.", UserPrincipalName = "alexw@vigil365.local", DetectedAt = DateTimeOffset.UtcNow.AddHours(-3), LastUpdatedAt = DateTimeOffset.UtcNow.AddHours(-2) });
+        
+        db.SecurityAlerts.Add(new SecurityAlert { ExternalId = "def-high-1", AlertType = "MailboxPersistence", Service = M365ServiceArea.DefenderXdr, Severity = AlertSeverity.High, Title = "Malicious inbox forwarding rule created", Description = "Rule created to forward incoming finance emails to external domain.", UserPrincipalName = "finance.lead@vigil365.local", DetectedAt = DateTimeOffset.UtcNow.AddHours(-4), LastUpdatedAt = DateTimeOffset.UtcNow.AddHours(-3) });
+        db.SecurityAlerts.Add(new SecurityAlert { ExternalId = "def-high-2", AlertType = "PhishingCampaign", Service = M365ServiceArea.DefenderXdr, Severity = AlertSeverity.High, Title = "Credential harvesting phishing campaign blocked", Description = "Multiple inbound phishing messages intercepted by Defender for Office 365.", DetectedAt = DateTimeOffset.UtcNow.AddHours(-5), LastUpdatedAt = DateTimeOffset.UtcNow.AddHours(-4) });
+        db.SecurityAlerts.Add(new SecurityAlert { ExternalId = "def-high-3", AlertType = "AnomalousGrant", Service = M365ServiceArea.DefenderXdr, Severity = AlertSeverity.High, Title = "Anomalous OAuth app consent grant", Description = "User granted Mail.Read permissions to unverified multi-tenant application.", UserPrincipalName = "john.doe@vigil365.local", DetectedAt = DateTimeOffset.UtcNow.AddHours(-6), LastUpdatedAt = DateTimeOffset.UtcNow.AddHours(-5) });
+        db.SecurityAlerts.Add(new SecurityAlert { ExternalId = "def-high-4", AlertType = "BruteForce", Service = M365ServiceArea.DefenderXdr, Severity = AlertSeverity.High, Title = "Potential password spray attack against tenant", Description = "Over 300 failed login attempts across 45 user accounts from single AS.", DetectedAt = DateTimeOffset.UtcNow.AddHours(-8), LastUpdatedAt = DateTimeOffset.UtcNow.AddHours(-7) });
+        db.SecurityAlerts.Add(new SecurityAlert { ExternalId = "def-high-5", AlertType = "UnfamiliarSignIn", Service = M365ServiceArea.DefenderXdr, Severity = AlertSeverity.High, Title = "Sign-in from unfamiliar properties", Description = "First time sign-in from new OS and ISP.", UserPrincipalName = "jane.smith@vigil365.local", DetectedAt = DateTimeOffset.UtcNow.AddHours(-9), LastUpdatedAt = DateTimeOffset.UtcNow.AddHours(-8) });
+
+        db.SecurityAlerts.Add(new SecurityAlert { ExternalId = "def-med-1", AlertType = "SuspiciousExtension", Service = M365ServiceArea.DefenderXdr, Severity = AlertSeverity.Medium, Title = "Suspicious browser extension installed", DeviceName = "DEV-LAPTOP-12", DetectedAt = DateTimeOffset.UtcNow.AddHours(-10), LastUpdatedAt = DateTimeOffset.UtcNow.AddHours(-9) });
+        db.SecurityAlerts.Add(new SecurityAlert { ExternalId = "def-med-2", AlertType = "LegacyAuth", Service = M365ServiceArea.DefenderXdr, Severity = AlertSeverity.Medium, Title = "Legacy authentication protocol detected", UserPrincipalName = "old.svc@vigil365.local", DetectedAt = DateTimeOffset.UtcNow.AddHours(-11), LastUpdatedAt = DateTimeOffset.UtcNow.AddHours(-10) });
+        db.SecurityAlerts.Add(new SecurityAlert { ExternalId = "def-med-3", AlertType = "NetworkScan", Service = M365ServiceArea.DefenderXdr, Severity = AlertSeverity.Medium, Title = "Internal port scanning activity detected", DeviceName = "FIN-PC-09", DetectedAt = DateTimeOffset.UtcNow.AddHours(-12), LastUpdatedAt = DateTimeOffset.UtcNow.AddHours(-11) });
+        db.SecurityAlerts.Add(new SecurityAlert { ExternalId = "def-med-4", AlertType = "AutoInvestigate", Service = M365ServiceArea.DefenderXdr, Severity = AlertSeverity.Medium, Title = "Automated investigation pending approval", DeviceName = "HR-TABLET-03", DetectedAt = DateTimeOffset.UtcNow.AddHours(-14), LastUpdatedAt = DateTimeOffset.UtcNow.AddHours(-13) });
+
+        // Entra ID Alerts
+        db.SecurityAlerts.Add(new SecurityAlert { ExternalId = "entra-risk-1", AlertType = "RiskyUser", Service = M365ServiceArea.EntraId, Severity = AlertSeverity.High, Title = "Risky user detected: Leaked credentials", UserPrincipalName = "sarah.connor@vigil365.local", DetectedAt = DateTimeOffset.UtcNow.AddHours(-2), LastUpdatedAt = DateTimeOffset.UtcNow.AddHours(-1) });
+        db.SecurityAlerts.Add(new SecurityAlert { ExternalId = "entra-signin-1", AlertType = "RiskySignIn", Service = M365ServiceArea.EntraId, Severity = AlertSeverity.Medium, Title = "Sign-in from anonymous VPN proxy", UserPrincipalName = "alexw@vigil365.local", DetectedAt = DateTimeOffset.UtcNow.AddHours(-3), LastUpdatedAt = DateTimeOffset.UtcNow.AddHours(-2) });
+
+        // Intune Alerts
+        db.SecurityAlerts.Add(new SecurityAlert { ExternalId = "intune-nc-1", AlertType = "NonCompliantDevice", Service = M365ServiceArea.Intune, Severity = AlertSeverity.Medium, Title = "Non-compliant device: BitLocker encryption inactive", DeviceName = "DEV-LAPTOP-12", UserPrincipalName = "john.doe@vigil365.local", DetectedAt = DateTimeOffset.UtcNow.AddHours(-4), LastUpdatedAt = DateTimeOffset.UtcNow.AddHours(-3) });
+        db.SecurityAlerts.Add(new SecurityAlert { ExternalId = "intune-nc-2", AlertType = "NonCompliantDevice", Service = M365ServiceArea.Intune, Severity = AlertSeverity.Medium, Title = "Non-compliant device: Minimum OS build requirement failed", DeviceName = "HR-TABLET-03", UserPrincipalName = "jane.smith@vigil365.local", DetectedAt = DateTimeOffset.UtcNow.AddHours(-6), LastUpdatedAt = DateTimeOffset.UtcNow.AddHours(-5) });
+        db.SecurityAlerts.Add(new SecurityAlert { ExternalId = "intune-nc-3", AlertType = "NonCompliantDevice", Service = M365ServiceArea.Intune, Severity = AlertSeverity.Medium, Title = "Non-compliant device: Real-time protection disabled", DeviceName = "FIN-PC-09", UserPrincipalName = "finance.lead@vigil365.local", DetectedAt = DateTimeOffset.UtcNow.AddHours(-8), LastUpdatedAt = DateTimeOffset.UtcNow.AddHours(-7) });
+        db.SecurityAlerts.Add(new SecurityAlert { ExternalId = "intune-nia-1", AlertType = "DeviceNotCheckedIn", Service = M365ServiceArea.Intune, Severity = AlertSeverity.Low, Title = "Device not checked in for 14 days", DeviceName = "OLD-LAPTOP-01", DetectedAt = DateTimeOffset.UtcNow.AddDays(-2), LastUpdatedAt = DateTimeOffset.UtcNow.AddDays(-1) });
+        db.SecurityAlerts.Add(new SecurityAlert { ExternalId = "intune-nia-2", AlertType = "DeviceNotCheckedIn", Service = M365ServiceArea.Intune, Severity = AlertSeverity.Low, Title = "Device not checked in for 21 days", DeviceName = "TEMP-DESKTOP-02", DetectedAt = DateTimeOffset.UtcNow.AddDays(-3), LastUpdatedAt = DateTimeOffset.UtcNow.AddDays(-2) });
+
+        // MFA Status Alerts (242 registered, 15 missing)
+        for (int i = 0; i < 242; i++)
+        {
+            db.SecurityAlerts.Add(new SecurityAlert { ExternalId = $"mfa-ok-{i}", AlertType = "MfaStatus", Service = M365ServiceArea.EntraId, Severity = AlertSeverity.Informational, Title = "MFA Registered", UserPrincipalName = $"user{i}@vigil365.local", DetectedAt = DateTimeOffset.UtcNow.AddDays(-1), LastUpdatedAt = DateTimeOffset.UtcNow, IsResolved = true });
+        }
+        for (int i = 0; i < 15; i++)
+        {
+            db.SecurityAlerts.Add(new SecurityAlert { ExternalId = $"mfa-miss-{i}", AlertType = "MfaStatus", Service = M365ServiceArea.EntraId, Severity = AlertSeverity.Medium, Title = "User missing MFA registration", UserPrincipalName = $"nomfa{i}@vigil365.local", DetectedAt = DateTimeOffset.UtcNow.AddDays(-1), LastUpdatedAt = DateTimeOffset.UtcNow, IsResolved = false });
+        }
+
+        db.SaveChanges();
+    }
 }
 
-app.UseDefaultFiles();
-app.UseStaticFiles();
-app.UseCors();
+// Enforce TLS outside Development. The app should be reached over HTTPS — either
+// Kestrel with a certificate, or a reverse proxy terminating TLS. When a proxy
+// (or Docker) handles TLS and forwards plain HTTP to the app, set
+// Security:RequireHttps=false to avoid in-app redirect loops; the proxy enforces HTTPS.
+var requireHttps = builder.Configuration.GetValue("Security:RequireHttps", !app.Environment.IsDevelopment());
+if (requireHttps)
+{
+    app.UseHsts();
+    app.UseHttpsRedirection();
+}
 
-// Security headers
+// Correlation id: honour an inbound X-Correlation-Id (from a proxy or caller),
+// otherwise generate one. Echoed on the response and pushed as a logging scope
+// so every log line for the request can be tied together across services.
+app.Use(async (ctx, next) =>
+{
+    var correlationId = ctx.Request.Headers["X-Correlation-Id"].ToString();
+    if (string.IsNullOrWhiteSpace(correlationId) || correlationId.Length > 64)
+        correlationId = Guid.NewGuid().ToString("N")[..16];
+    ctx.TraceIdentifier = correlationId;
+    ctx.Response.Headers["X-Correlation-Id"] = correlationId;
+
+    var loggerFactory = ctx.RequestServices.GetRequiredService<ILoggerFactory>();
+    var reqLogger = loggerFactory.CreateLogger("Vigil365.Request");
+    using (reqLogger.BeginScope(new Dictionary<string, object> { ["CorrelationId"] = correlationId }))
+    {
+        await next();
+        // One structured line per API request; static assets and /health probes
+        // (which fire every few seconds from orchestrators) stay quiet.
+        if (ctx.Request.Path.StartsWithSegments("/api"))
+            reqLogger.LogInformation("{Method} {Path} => {StatusCode}",
+                ctx.Request.Method, ctx.Request.Path.Value, ctx.Response.StatusCode);
+    }
+});
+
+// Security headers must run before static files so the SPA shell and bundled
+// assets receive the same browser protections as API responses.
+var azureAdInstance = app.Configuration["AzureAd:Instance"]?.TrimEnd('/') ?? "https://login.microsoftonline.com";
 app.Use(async (ctx, next) =>
 {
     ctx.Response.Headers["X-Frame-Options"] = "DENY";
     ctx.Response.Headers["X-Content-Type-Options"] = "nosniff";
-    ctx.Response.Headers["Referrer-Policy"] = "no-referrer";
+    ctx.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    ctx.Response.Headers["Content-Security-Policy"] = $"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' {azureAdInstance} wss:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';";
+    ctx.Response.Headers["Permissions-Policy"] = "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()";
     await next();
 });
+
+app.UseDefaultFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        // Prevent caching of index.html so the SPA always loads the latest JS bundles.
+        if (ctx.File.Name.Equals("index.html", StringComparison.OrdinalIgnoreCase))
+        {
+            ctx.Context.Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+            ctx.Context.Response.Headers["Pragma"] = "no-cache";
+            ctx.Context.Response.Headers["Expires"] = "-1";
+        }
+    }
+});
+app.UseCors();
+app.UseRateLimiter();
+app.UseAuthentication();
+app.UseAuthorization();
 
 if (app.Environment.IsDevelopment())
 {
@@ -63,1123 +340,61 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.MapGet("/api/dashboard/overview", async (AppDbContext db, CancellationToken ct) =>
+// ── Endpoint modules ────────────────────────────────────────────────────────
+// Each module is a plain extension method over WebApplication, so the global
+// deny-by-default FallbackPolicy still applies to everything it registers.
+// These must all come before the /api catch-all and the SPA fallback below.
+app.MapAuthHealthEndpoints();
+app.MapSetupEndpoints();
+app.MapDashboardEndpoints();
+app.MapAdminEndpoints();
+app.MapAlertsEndpoints();
+app.MapNotificationsEndpoints();
+app.MapReportsEndpoints();
+app.MapIntegrationsEndpoints();
+app.MapPlatformEndpoints();
+
+app.Map("/api/{**rest}", (HttpContext ctx) =>
 {
-    var since = DateTimeOffset.UtcNow.AddDays(-30);
-    var alerts = db.SecurityAlerts.AsNoTracking().Where(a => !a.IsResolved);
-    var totalActive = await alerts.CountAsync(ct);
-    var high = await alerts.CountAsync(a => a.Severity == AlertSeverity.High || a.Severity == AlertSeverity.Critical, ct);
-    var lastRun = await db.CollectionRuns.AsNoTracking().OrderByDescending(r => r.StartedAt).FirstOrDefaultAsync(ct);
+    ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+    return Results.Json(new { error = "No such API endpoint.", path = ctx.Request.Path.Value },
+        statusCode: StatusCodes.Status404NotFound);
+}).AllowAnonymous();
 
-    var byService = await alerts
-        .GroupBy(a => a.Service)
-        .Select(g => new { service = g.Key.ToString(), count = g.Count() })
-        .OrderByDescending(x => x.count)
-        .ToListAsync(ct);
-
-    var trends = await db.SecurityAlerts.AsNoTracking()
-        .Where(a => a.DetectedAt >= since)
-        .GroupBy(a => new { Date = a.DetectedAt.Date, a.Severity })
-        .Select(g => new { date = g.Key.Date, severity = g.Key.Severity.ToString(), count = g.Count() })
-        .OrderBy(x => x.date)
-        .ToListAsync(ct);
-
-    return Results.Ok(new
-    {
-        totalActive,
-        highPriority = high,
-        lastRun,
-        byService,
-        trends,
-        generatedAt = DateTimeOffset.UtcNow
-    });
-});
-
-app.MapGet("/api/alerts", async (
-    AppDbContext db,
-    string? search,
-    AlertSeverity? severity,
-    M365ServiceArea? service,
-    bool? resolved,
-    int page,
-    int pageSize,
-    CancellationToken ct) =>
+app.MapFallbackToFile("index.html", new StaticFileOptions
 {
-    page = page < 1 ? 1 : page;
-    pageSize = pageSize is < 1 or > 200 ? 50 : pageSize;
-
-    var query = db.SecurityAlerts.AsNoTracking().AsQueryable();
-    if (!string.IsNullOrWhiteSpace(search))
+    OnPrepareResponse = ctx =>
     {
-        query = query.Where(a =>
-            a.Title.Contains(search) ||
-            (a.UserPrincipalName != null && a.UserPrincipalName.Contains(search)) ||
-            (a.DeviceName != null && a.DeviceName.Contains(search)) ||
-            (a.ExternalId != null && a.ExternalId.Contains(search)));
+        ctx.Context.Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+        ctx.Context.Response.Headers["Pragma"] = "no-cache";
+        ctx.Context.Response.Headers["Expires"] = "-1";
     }
-    if (severity.HasValue) query = query.Where(a => a.Severity == severity.Value);
-    if (service.HasValue) query = query.Where(a => a.Service == service.Value);
-    if (resolved.HasValue) query = query.Where(a => a.IsResolved == resolved.Value);
-
-    var total = await query.CountAsync(ct);
-    var items = await query.OrderByDescending(a => a.DetectedAt)
-        .Skip((page - 1) * pageSize)
-        .Take(pageSize)
-        .ToListAsync(ct);
-
-    return Results.Ok(new { total, page, pageSize, items });
-});
-
-app.MapGet("/api/collector/runs", async (AppDbContext db, CancellationToken ct) =>
-    await db.CollectionRuns.AsNoTracking().OrderByDescending(r => r.StartedAt).Take(20).ToListAsync(ct));
-
-app.MapPost("/api/collector/run", async (
-    IServiceProvider services,
-    Microsoft.Extensions.Options.IOptions<GraphOptions> options,
-    CancellationToken ct) =>
-{
-    if (!options.Value.IsConfigured())
-    {
-        return Results.BadRequest(new { error = "Graph credentials are not configured." });
-    }
-
-    var collector = services.GetRequiredService<GraphCollector>();
-    var run = await collector.CollectAsync(ct);
-    return Results.Ok(run);
-});
-
-// ── New dashboard endpoints ────────────────────────────────────────────────
-
-// Secure Score trend (direct Graph call)
-app.MapGet("/api/dashboard/securescore", async (
-    IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
-{
-    if (!options.Value.IsConfigured())
-        return Results.Ok(new { configured = false, currentScore = 0.0, maxScore = 100.0, percentage = 0.0, trend = Array.Empty<object>() });
-    try
-    {
-        var graph = services.GetRequiredService<GraphApiClient>();
-        var items = await graph.GetCollectionAsync("/v1.0/security/secureScores?$top=30", ct);
-        if (items.Count == 0)
-            return Results.Ok(new { configured = true, currentScore = 0.0, maxScore = 100.0, percentage = 0.0, trend = Array.Empty<object>() });
-
-        var latest = items[0];
-        var currentScore = latest.TryGetProperty("currentScore", out var cs) && cs.ValueKind == JsonValueKind.Number ? cs.GetDouble() : 0;
-        var maxScore = latest.TryGetProperty("maxScore", out var ms) && ms.ValueKind == JsonValueKind.Number ? ms.GetDouble() : 100;
-        if (maxScore == 0) maxScore = 100;
-        var percentage = Math.Round(currentScore / maxScore * 100, 1);
-
-        var trend = items.Select(s =>
-        {
-            var sc = s.TryGetProperty("currentScore", out var sv) && sv.ValueKind == JsonValueKind.Number ? sv.GetDouble() : 0;
-            var mx = s.TryGetProperty("maxScore", out var mv) && mv.ValueKind == JsonValueKind.Number ? mv.GetDouble() : 100;
-            var dt = s.TryGetProperty("createdDateTime", out var dv) ? dv.GetString() : null;
-            return new { date = dt != null && dt.Length >= 10 ? dt[..10] : dt, score = sc, maxScore = mx == 0 ? 100 : mx };
-        }).Where(x => x.date != null).OrderBy(x => x.date).ToList();
-
-        return Results.Ok(new { configured = true, currentScore, maxScore, percentage, trend });
-    }
-    catch (Exception ex)
-    {
-        return Results.Ok(new { configured = true, error = ex.Message, currentScore = 0.0, maxScore = 100.0, percentage = 0.0, trend = Array.Empty<object>() });
-    }
-});
-
-// Identity summary: MFA from DB + guests & admin activity from Graph
-app.MapGet("/api/dashboard/identity", async (
-    AppDbContext db, IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
-{
-    // MFA stats from already-collected alerts
-    var mfaAlerts = await db.SecurityAlerts.AsNoTracking()
-        .Where(a => a.AlertType == "MfaStatus").ToListAsync(ct);
-    var mfaRegistered = mfaAlerts.Count(a => a.IsResolved);
-    var mfaTotal = mfaAlerts.Count;
-    var mfaPct = mfaTotal > 0 ? Math.Round((double)mfaRegistered / mfaTotal * 100, 1) : 0.0;
-
-    // Sign-in summary from DB
-    var since24h = DateTimeOffset.UtcNow.AddHours(-24);
-    var signInAlerts = await db.SecurityAlerts.AsNoTracking()
-        .Where(a => (a.AlertType == "RiskySignIn" || a.AlertType == "FailedSignIn") && a.DetectedAt >= since24h)
-        .ToListAsync(ct);
-    var foreignSignIns = signInAlerts.Where(a => a.AlertType == "RiskySignIn")
-        .OrderByDescending(a => a.DetectedAt).Take(5)
-        .Select(a => new { title = a.Title, userPrincipalName = a.UserPrincipalName, detectedAt = a.DetectedAt })
-        .ToList();
-
-    // Risky users from DB
-    var riskyUsers = await db.SecurityAlerts.AsNoTracking()
-        .CountAsync(a => a.AlertType == "RiskyUser" && !a.IsResolved, ct);
-
-    // Guest accounts and admin activity from Graph (best-effort, time-boxed).
-    // These are live Graph calls; under throttling they could otherwise stack
-    // up 15s retry backoffs and hang the whole request. Cap them so the page
-    // always returns the (fast) DB-backed data within a few seconds.
-    int guestTotal = 0;
-    object[] recentActivity = [];
-    if (options.Value.IsConfigured())
-    {
-        var graph = services.GetRequiredService<GraphApiClient>();
-        using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        budget.CancelAfter(TimeSpan.FromSeconds(10));
-        var gct = budget.Token;
-
-        try
-        {
-            var guests = await graph.GetCollectionAsync(
-                "/v1.0/users?$filter=userType eq 'Guest'&$select=id,displayName,userPrincipalName&$top=200", gct);
-            guestTotal = guests.Count;
-        }
-        catch { /* permission not granted, or budget elapsed – skip */ }
-
-        try
-        {
-            // Single page only — we want the latest 10, not the entire audit
-            // history. GetCollectionAsync would follow @odata.nextLink through
-            // every page (thousands of records).
-            var audits = await graph.GetSinglePageAsync(
-                "/v1.0/auditLogs/directoryAudits?$top=10&$orderby=activityDateTime desc", gct);
-            recentActivity = audits.Select(a => (object)new
-            {
-                activityDateTime = a.TryGetProperty("activityDateTime", out var dt) ? dt.GetString() : null,
-                activityDisplayName = a.TryGetProperty("activityDisplayName", out var n) ? n.GetString() : null,
-                initiatedByUser = a.TryGetProperty("initiatedBy", out var ib) &&
-                                  ib.TryGetProperty("user", out var u) &&
-                                  u.TryGetProperty("userPrincipalName", out var upn) ? upn.GetString() : null,
-                result = a.TryGetProperty("result", out var r) ? r.GetString() : null
-            }).ToArray();
-        }
-        catch { /* permission not granted, or budget elapsed – skip */ }
-    }
-
-    return Results.Ok(new
-    {
-        configured = true,
-        mfa = new { registered = mfaRegistered, total = mfaTotal, percentage = mfaPct },
-        guests = new { total = guestTotal, active = guestTotal },
-        riskyUsers,
-        signIns = new
-        {
-            total = signInAlerts.Count,
-            failed = signInAlerts.Count(a => a.AlertType == "FailedSignIn"),
-            risky = signInAlerts.Count(a => a.AlertType == "RiskySignIn"),
-            foreign = foreignSignIns.Count
-        },
-        foreignSignIns,
-        recentAdminActivity = recentActivity
-    });
-});
-
-// Device compliance summary from DB
-app.MapGet("/api/dashboard/devices", async (
-    AppDbContext db, IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
-{
-    var deviceAlerts = await db.SecurityAlerts.AsNoTracking()
-        .Where(a => a.Service == M365ServiceArea.Intune && !a.IsResolved).ToListAsync(ct);
-
-    var nonCompliant = deviceAlerts.Count(a => a.AlertType == "NonCompliantDevice");
-    var notCheckedIn = deviceAlerts.Count(a => a.AlertType == "DeviceNotCheckedIn");
-
-    // Try to get total device count from Graph
-    int totalDevices = 0;
-    if (options.Value.IsConfigured())
-    {
-        try
-        {
-            var graph = services.GetRequiredService<GraphApiClient>();
-            var all = await graph.GetCollectionAsync(
-                "/v1.0/deviceManagement/managedDevices?$select=id&$top=500", ct);
-            totalDevices = all.Count;
-        }
-        catch { /* skip */ }
-    }
-
-    var nonCompliantDevices = deviceAlerts
-        .Where(a => a.AlertType == "NonCompliantDevice")
-        .OrderByDescending(a => a.LastUpdatedAt).Take(5)
-        .Select(a => new { a.DeviceName, a.UserPrincipalName, a.Description, a.LastUpdatedAt })
-        .ToList();
-
-    double compliancePct = totalDevices > 0 && totalDevices > nonCompliant
-        ? Math.Round((double)(totalDevices - nonCompliant) / totalDevices * 100, 1) : 0;
-
-    return Results.Ok(new { nonCompliant, notCheckedIn, totalDevices, compliancePct, nonCompliantDevices });
-});
-
-// Service health summary from DB
-app.MapGet("/api/dashboard/servicehealth", async (AppDbContext db, CancellationToken ct) =>
-{
-    var issues = await db.SecurityAlerts.AsNoTracking()
-        .Where(a => a.Service == M365ServiceArea.ServiceHealth && !a.IsResolved)
-        .OrderByDescending(a => a.DetectedAt).ToListAsync(ct);
-
-    return Results.Ok(new
-    {
-        total = issues.Count,
-        issues = issues.Select(i => new
-        {
-            title = i.Title,
-            description = i.Description,
-            severity = i.Severity.ToString(),
-            detectedAt = i.DetectedAt,
-            portalUrl = i.PortalUrl
-        })
-    });
-});
-
-// ── Enterprise feature endpoints ──────────────────────────────────────────────
-
-// License usage (subscribedSkus)
-app.MapGet("/api/dashboard/licenses", async (
-    IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
-{
-    if (!options.Value.IsConfigured())
-        return Results.Ok(new { configured = false, skus = Array.Empty<object>(), totalPurchased = 0, totalConsumed = 0 });
-    try
-    {
-        var graph = services.GetRequiredService<GraphApiClient>();
-        var skus = await graph.GetCollectionAsync("/v1.0/subscribedSkus", ct);
-        var result = skus.Select(s =>
-        {
-            var name = s.TryGetProperty("skuPartNumber", out var n) ? n.GetString() : "Unknown";
-            var consumed = s.TryGetProperty("consumedUnits", out var c) && c.ValueKind == JsonValueKind.Number ? c.GetInt32() : 0;
-            var purchased = s.TryGetProperty("prepaidUnits", out var p) &&
-                            p.TryGetProperty("enabled", out var e) && e.ValueKind == JsonValueKind.Number ? e.GetInt32() : 0;
-            return new { name, consumed, purchased, available = Math.Max(0, purchased - consumed) };
-        }).Where(s => s.purchased > 0).ToList();
-        return Results.Ok(new { configured = true, skus = result, totalPurchased = result.Sum(s => s.purchased), totalConsumed = result.Sum(s => s.consumed) });
-    }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", skus = Array.Empty<object>(), totalPurchased = 0, totalConsumed = 0 }); }
-});
-
-// Inactive users (last sign-in > 90 days)
-app.MapGet("/api/dashboard/inactive-users", async (
-    IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
-{
-    if (!options.Value.IsConfigured())
-        return Results.Ok(new { configured = false, inactive90Count = 0, neverSignedInCount = 0, totalUsers = 0, inactive90 = Array.Empty<object>(), neverSignedIn = Array.Empty<object>() });
-    try
-    {
-        var graph = services.GetRequiredService<GraphApiClient>();
-        var users = await graph.GetCollectionAsync(
-            "/v1.0/users?$select=id,displayName,userPrincipalName,signInActivity,accountEnabled,assignedLicenses&$top=200", ct);
-        var threshold90 = DateTimeOffset.UtcNow.AddDays(-90);
-        var result = users.Select(u =>
-        {
-            var upn = u.TryGetProperty("userPrincipalName", out var p) ? p.GetString() : null;
-            var name = u.TryGetProperty("displayName", out var d) ? d.GetString() : null;
-            var enabled = !u.TryGetProperty("accountEnabled", out var ae) || ae.GetBoolean();
-            DateTimeOffset? lastSignIn = null;
-            if (u.TryGetProperty("signInActivity", out var sia) && sia.ValueKind == JsonValueKind.Object &&
-                sia.TryGetProperty("lastSignInDateTime", out var lsd) && lsd.ValueKind == JsonValueKind.String &&
-                DateTimeOffset.TryParse(lsd.GetString(), out var dt)) lastSignIn = dt;
-            var hasLicense = u.TryGetProperty("assignedLicenses", out var al) && al.ValueKind == JsonValueKind.Array && al.GetArrayLength() > 0;
-            var daysSince = lastSignIn.HasValue ? (int)(DateTimeOffset.UtcNow - lastSignIn.Value).TotalDays : -1;
-            return new { upn, name, enabled, lastSignIn, hasLicense, daysSince };
-        }).Where(u => u.upn != null && !u.upn.Contains("#EXT#") && u.enabled).ToList();
-
-        var inactive90 = result.Where(u => u.lastSignIn == null || u.lastSignIn < threshold90).OrderBy(u => u.lastSignIn).Take(20).ToList();
-        var neverSignedIn = result.Where(u => u.lastSignIn == null).Take(20).ToList();
-        return Results.Ok(new { configured = true, inactive90Count = inactive90.Count, neverSignedInCount = neverSignedIn.Count, totalUsers = result.Count, inactive90, neverSignedIn });
-    }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", inactive90Count = 0, neverSignedInCount = 0, totalUsers = 0, inactive90 = Array.Empty<object>(), neverSignedIn = Array.Empty<object>() }); }
-});
-
-// Password expiry
-app.MapGet("/api/dashboard/password-expiry", async (
-    IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
-{
-    if (!options.Value.IsConfigured())
-        return Results.Ok(new { configured = false, expiringSoonCount = 0, expiredCount = 0, neverExpiresCount = 0, totalUsers = 0, expiringSoon = Array.Empty<object>(), expired = Array.Empty<object>(), neverExpire = Array.Empty<object>() });
-    try
-    {
-        var graph = services.GetRequiredService<GraphApiClient>();
-        var users = await graph.GetCollectionAsync(
-            "/v1.0/users?$select=id,displayName,userPrincipalName,passwordPolicies,lastPasswordChangeDateTime,accountEnabled&$top=200", ct);
-        var now = DateTimeOffset.UtcNow;
-        var result = users.Select(u =>
-        {
-            var upn = u.TryGetProperty("userPrincipalName", out var p) ? p.GetString() : null;
-            var name = u.TryGetProperty("displayName", out var d) ? d.GetString() : null;
-            var enabled = !u.TryGetProperty("accountEnabled", out var ae) || ae.GetBoolean();
-            var policies = u.TryGetProperty("passwordPolicies", out var pp) ? pp.GetString() : null;
-            var neverExpires = policies != null && policies.Contains("DisablePasswordExpiration");
-            DateTimeOffset? lastChanged = null;
-            if (u.TryGetProperty("lastPasswordChangeDateTime", out var lcd) && lcd.ValueKind == JsonValueKind.String &&
-                DateTimeOffset.TryParse(lcd.GetString(), out var dt)) lastChanged = dt;
-            var daysSinceChange = lastChanged.HasValue ? (int)(now - lastChanged.Value).TotalDays : -1;
-            var daysUntilExpiry = neverExpires || daysSinceChange < 0 ? -1 : 90 - daysSinceChange;
-            return new { upn, name, enabled, neverExpires, lastChanged, daysSinceChange, daysUntilExpiry };
-        }).Where(u => u.upn != null && !u.upn.Contains("#EXT#") && u.enabled).ToList();
-
-        var expiringSoon = result.Where(u => !u.neverExpires && u.daysUntilExpiry >= 0 && u.daysUntilExpiry <= 14).OrderBy(u => u.daysUntilExpiry).Take(20).ToList();
-        var expired = result.Where(u => !u.neverExpires && u.daysUntilExpiry < 0 && u.lastChanged.HasValue).Take(20).ToList();
-        var neverExpire = result.Where(u => u.neverExpires).Take(10).ToList();
-        return Results.Ok(new { configured = true, expiringSoonCount = expiringSoon.Count, expiredCount = expired.Count, neverExpiresCount = neverExpire.Count, totalUsers = result.Count, expiringSoon, expired, neverExpire });
-    }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", expiringSoonCount = 0, expiredCount = 0, neverExpiresCount = 0, totalUsers = 0, expiringSoon = Array.Empty<object>(), expired = Array.Empty<object>(), neverExpire = Array.Empty<object>() }); }
-});
-
-// Conditional Access policies
-app.MapGet("/api/dashboard/conditional-access", async (
-    IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
-{
-    if (!options.Value.IsConfigured())
-        return Results.Ok(new { configured = false, enabled = 0, disabled = 0, reportOnly = 0, policies = Array.Empty<object>() });
-    try
-    {
-        var graph = services.GetRequiredService<GraphApiClient>();
-        var policies = await graph.GetCollectionAsync("/v1.0/identity/conditionalAccess/policies", ct);
-        var result = policies.Select(p =>
-        {
-            var name = p.TryGetProperty("displayName", out var n) ? n.GetString() : "Unnamed";
-            var state = p.TryGetProperty("state", out var s) ? s.GetString() : "unknown";
-            var inclUsers = "All Users"; var exclUsers = "None"; var apps = "All Apps";
-            if (p.TryGetProperty("conditions", out var cond))
-            {
-                if (cond.TryGetProperty("users", out var u))
-                {
-                    if (u.TryGetProperty("includeUsers", out var inc) && inc.ValueKind == JsonValueKind.Array)
-                        inclUsers = inc.EnumerateArray().Select(x => x.GetString()).FirstOrDefault() == "All" ? "All Users" : $"{inc.GetArrayLength()} users";
-                    if (u.TryGetProperty("excludeUsers", out var exc) && exc.ValueKind == JsonValueKind.Array && exc.GetArrayLength() > 0)
-                        exclUsers = $"{exc.GetArrayLength()} excluded";
-                    if (u.TryGetProperty("includeGroups", out var grp) && grp.ValueKind == JsonValueKind.Array && grp.GetArrayLength() > 0 && inclUsers == "All Users")
-                        inclUsers = $"{grp.GetArrayLength()} groups";
-                }
-                if (cond.TryGetProperty("applications", out var ap) && ap.TryGetProperty("includeApplications", out var incA) && incA.ValueKind == JsonValueKind.Array)
-                    apps = incA.EnumerateArray().Select(x => x.GetString()).FirstOrDefault() == "All" ? "All Apps" : $"{incA.GetArrayLength()} apps";
-            }
-            var controls = new List<string>();
-            if (p.TryGetProperty("grantControls", out var gc) && gc.ValueKind == JsonValueKind.Object &&
-                gc.TryGetProperty("builtInControls", out var bic) && bic.ValueKind == JsonValueKind.Array)
-                controls.AddRange(bic.EnumerateArray().Select(x => x.GetString() ?? "").Where(x => x.Length > 0));
-            return new { name, state, inclUsers, exclUsers, apps, controls = controls.ToArray() };
-        }).ToList();
-        return Results.Ok(new { configured = true, enabled = result.Count(p => p.state == "enabled"), disabled = result.Count(p => p.state == "disabled"), reportOnly = result.Count(p => p.state == "enabledForReportingButNotEnforced"), policies = result });
-    }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", enabled = 0, disabled = 0, reportOnly = 0, policies = Array.Empty<object>() }); }
-});
-
-// Admin audit log
-app.MapGet("/api/dashboard/audit-log", async (
-    IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
-{
-    if (!options.Value.IsConfigured())
-        return Results.Ok(new { configured = false, total = 0, failures = 0, events = Array.Empty<object>() });
-    try
-    {
-        var graph = services.GetRequiredService<GraphApiClient>();
-        var audits = await graph.GetSinglePageAsync(
-            "/v1.0/auditLogs/directoryAudits?$top=50&$orderby=activityDateTime desc", ct);
-        var events = audits.Select(a => new
-        {
-            activityDateTime = a.TryGetProperty("activityDateTime", out var dt) ? dt.GetString() : null,
-            activityDisplayName = a.TryGetProperty("activityDisplayName", out var n) ? n.GetString() : null,
-            category = a.TryGetProperty("category", out var cat) ? cat.GetString() : null,
-            result = a.TryGetProperty("result", out var r) ? r.GetString() : null,
-            resultReason = a.TryGetProperty("resultReason", out var rr) && rr.ValueKind == JsonValueKind.String ? rr.GetString() : null,
-            initiatedByUser = a.TryGetProperty("initiatedBy", out var ib) && ib.TryGetProperty("user", out var u) && u.ValueKind == JsonValueKind.Object && u.TryGetProperty("userPrincipalName", out var upn) ? upn.GetString() : null,
-            targetResources = a.TryGetProperty("targetResources", out var tr) && tr.ValueKind == JsonValueKind.Array
-                ? tr.EnumerateArray().Take(2).Select(t => t.TryGetProperty("displayName", out var dn) ? dn.GetString() : null).OfType<string>().ToArray()
-                : Array.Empty<string>()
-        }).ToList();
-        return Results.Ok(new { configured = true, total = events.Count, failures = events.Count(e => e.result == "failure"), events });
-    }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, failures = 0, events = Array.Empty<object>() }); }
-});
-
-// Sign-in locations
-app.MapGet("/api/dashboard/signin-locations", async (
-    IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
-{
-    if (!options.Value.IsConfigured())
-        return Results.Ok(new { configured = false, total = 0, countries = 0, failures = 0, byCountry = Array.Empty<object>(), recent = Array.Empty<object>() });
-    try
-    {
-        var graph = services.GetRequiredService<GraphApiClient>();
-        // Single page only — the latest 100 sign-ins for the location map.
-        // GetCollectionAsync would paginate through the entire sign-in history.
-        var signIns = await graph.GetSinglePageAsync(
-            "/v1.0/auditLogs/signIns?$top=100&$select=location,userPrincipalName,createdDateTime,status,appDisplayName&$orderby=createdDateTime desc", ct);
-        var result = signIns.Select(s =>
-        {
-            var upn = s.TryGetProperty("userPrincipalName", out var p) ? p.GetString() : null;
-            var appName = s.TryGetProperty("appDisplayName", out var a) ? a.GetString() : null;
-            var created = s.TryGetProperty("createdDateTime", out var cd) ? cd.GetString() : null;
-            string? city = null, country = null;
-            if (s.TryGetProperty("location", out var loc) && loc.ValueKind == JsonValueKind.Object)
-            {
-                if (loc.TryGetProperty("city", out var cv)) city = cv.GetString();
-                if (loc.TryGetProperty("countryOrRegion", out var cov)) country = cov.GetString();
-            }
-            var success = s.TryGetProperty("status", out var st) && st.ValueKind == JsonValueKind.Object &&
-                          st.TryGetProperty("errorCode", out var ec) && ec.ValueKind == JsonValueKind.Number && ec.GetInt32() == 0;
-            return new { upn, app = appName, created, city, country, success };
-        }).ToList();
-        var byCountry = result.Where(s => s.country != null)
-            .GroupBy(s => s.country!)
-            .Select(g => new { country = g.Key, count = g.Count(), failures = g.Count(s => !s.success) })
-            .OrderByDescending(g => g.count).Take(15).ToList();
-        return Results.Ok(new { configured = true, total = result.Count, countries = byCountry.Count, failures = result.Count(s => !s.success), byCountry, recent = result.Take(20).ToList() });
-    }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, countries = 0, failures = 0, byCountry = Array.Empty<object>(), recent = Array.Empty<object>() }); }
-});
-
-// Unified Defender alerts (alerts_v2 — all products)
-app.MapGet("/api/dashboard/defender-alerts", async (
-    IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
-{
-    if (!options.Value.IsConfigured())
-        return Results.Ok(new { configured = false, total = 0, alerts = Array.Empty<object>() });
-    try
-    {
-        var graph = services.GetRequiredService<GraphApiClient>();
-        var items = await graph.GetCollectionAsync(
-            "/v1.0/security/alerts_v2?$top=100&$filter=status ne 'resolved'&$orderby=createdDateTime desc", ct);
-
-        var alerts = items.Select(a => new
-        {
-            id = a.TryGetProperty("id", out var id) ? id.GetString() : null,
-            title = a.TryGetProperty("title", out var t) ? t.GetString() : null,
-            description = a.TryGetProperty("description", out var d) ? d.GetString() : null,
-            severity = a.TryGetProperty("severity", out var s) ? s.GetString() : "unknown",
-            status = a.TryGetProperty("status", out var st) ? st.GetString() : "unknown",
-            classification = a.TryGetProperty("classification", out var cl) ? cl.GetString() : null,
-            serviceSource = a.TryGetProperty("serviceSource", out var ss) ? ss.GetString() : null,
-            detectionSource = a.TryGetProperty("detectionSource", out var ds) ? ds.GetString() : null,
-            category = a.TryGetProperty("category", out var cat) ? cat.GetString() : null,
-            createdDateTime = a.TryGetProperty("createdDateTime", out var cr) ? cr.GetString() : null,
-            lastUpdateDateTime = a.TryGetProperty("lastUpdateDateTime", out var lu) ? lu.GetString() : null,
-            assignedTo = a.TryGetProperty("assignedTo", out var at) && at.ValueKind == JsonValueKind.String ? at.GetString() : null,
-            alertWebUrl = a.TryGetProperty("alertWebUrl", out var url) ? url.GetString() : null,
-            incidentId = a.TryGetProperty("incidentId", out var inc) ? inc.GetString() : null,
-            mitreTechniques = a.TryGetProperty("mitreTechniques", out var mt) && mt.ValueKind == JsonValueKind.Array
-                ? mt.EnumerateArray().Select(x => x.GetString()).OfType<string>().ToArray()
-                : Array.Empty<string>(),
-            recommendedActions = a.TryGetProperty("recommendedActions", out var ra) && ra.ValueKind == JsonValueKind.String ? ra.GetString() : null,
-            actorDisplayName = a.TryGetProperty("actorDisplayName", out var actor) && actor.ValueKind == JsonValueKind.String ? actor.GetString() : null,
-            threatDisplayName = a.TryGetProperty("threatDisplayName", out var threat) && threat.ValueKind == JsonValueKind.String ? threat.GetString() : null,
-        }).ToList();
-
-        var bySeverity = alerts.GroupBy(a => a.severity ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
-        var bySource = alerts.GroupBy(a => a.serviceSource ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
-        return Results.Ok(new { configured = true, total = alerts.Count, bySeverity, bySource, alerts });
-    }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, alerts = Array.Empty<object>() }); }
-});
-
-// Security incidents (grouped correlated alerts)
-app.MapGet("/api/dashboard/security-incidents", async (
-    IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
-{
-    if (!options.Value.IsConfigured())
-        return Results.Ok(new { configured = false, total = 0, incidents = Array.Empty<object>() });
-    try
-    {
-        var graph = services.GetRequiredService<GraphApiClient>();
-        var items = await graph.GetCollectionAsync(
-            "/v1.0/security/incidents?$top=50&$filter=status eq 'active'&$orderby=createdDateTime desc", ct);
-
-        var incidents = items.Select(i => new
-        {
-            id = i.TryGetProperty("id", out var id) ? id.GetString() : null,
-            displayName = i.TryGetProperty("displayName", out var n) ? n.GetString() : null,
-            severity = i.TryGetProperty("severity", out var s) ? s.GetString() : "unknown",
-            status = i.TryGetProperty("status", out var st) ? st.GetString() : "unknown",
-            classification = i.TryGetProperty("classification", out var cl) ? cl.GetString() : null,
-            createdDateTime = i.TryGetProperty("createdDateTime", out var cr) ? cr.GetString() : null,
-            lastUpdateDateTime = i.TryGetProperty("lastUpdateDateTime", out var lu) ? lu.GetString() : null,
-            assignedTo = i.TryGetProperty("assignedTo", out var at) && at.ValueKind == JsonValueKind.String ? at.GetString() : null,
-            incidentWebUrl = i.TryGetProperty("incidentWebUrl", out var url) ? url.GetString() : null,
-            customTags = i.TryGetProperty("customTags", out var tags) && tags.ValueKind == JsonValueKind.Array
-                ? tags.EnumerateArray().Select(x => x.GetString()).OfType<string>().ToArray()
-                : Array.Empty<string>(),
-            description = i.TryGetProperty("description", out var desc) && desc.ValueKind == JsonValueKind.String ? desc.GetString() : null,
-            recommendedActions = i.TryGetProperty("recommendedActions", out var ra) && ra.ValueKind == JsonValueKind.String ? ra.GetString() : null,
-        }).ToList();
-
-        var bySeverity = incidents.GroupBy(i => i.severity ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
-        return Results.Ok(new { configured = true, total = incidents.Count, bySeverity, incidents });
-    }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, incidents = Array.Empty<object>() }); }
-});
-
-// Privileged roles
-app.MapGet("/api/dashboard/privileged-roles", async (
-    IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
-{
-    if (!options.Value.IsConfigured())
-        return Results.Ok(new { configured = false, roles = Array.Empty<object>(), totalPrivilegedUsers = 0 });
-    try
-    {
-        var graph = services.GetRequiredService<GraphApiClient>();
-        var highPriv = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "Global Administrator", "Security Administrator", "Compliance Administrator",
-            "SharePoint Administrator", "Exchange Administrator", "User Administrator",
-            "Privileged Role Administrator", "Global Reader", "Billing Administrator"
-        };
-        var directoryRoles = await graph.GetCollectionAsync("/v1.0/directoryRoles", ct);
-        var roles = new List<object>();
-        var totalPrivilegedUsers = 0;
-        foreach (var role in directoryRoles)
-        {
-            var roleName = role.TryGetProperty("displayName", out var dn) ? dn.GetString() : null;
-            if (roleName == null || !highPriv.Contains(roleName)) continue;
-            var roleId = role.TryGetProperty("id", out var id) ? id.GetString() : null;
-            var members = new List<object>();
-            try
-            {
-                if (roleId != null)
-                {
-                    var memberItems = await graph.GetCollectionAsync($"/v1.0/directoryRoles/{roleId}/members?$select=displayName,userPrincipalName", ct);
-                    members = memberItems.Select(m => (object)new
-                    {
-                        displayName = m.TryGetProperty("displayName", out var md) ? md.GetString() : null,
-                        userPrincipalName = m.TryGetProperty("userPrincipalName", out var mu) ? mu.GetString() : null
-                    }).ToList();
-                }
-            }
-            catch { /* 403 or per-role failure — leave members empty */ }
-            totalPrivilegedUsers += members.Count;
-            roles.Add(new { roleId, roleName, memberCount = members.Count, members });
-        }
-        return Results.Ok(new { configured = true, roles, totalPrivilegedUsers });
-    }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", roles = Array.Empty<object>(), totalPrivilegedUsers = 0 }); }
-});
-
-// DLP alerts
-app.MapGet("/api/dashboard/dlp-alerts", async (
-    IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
-{
-    if (!options.Value.IsConfigured())
-        return Results.Ok(new { configured = false, total = 0, alerts = Array.Empty<object>() });
-    try
-    {
-        var graph = services.GetRequiredService<GraphApiClient>();
-        var items = await graph.GetCollectionAsync(
-            "/v1.0/security/alerts_v2?$top=50&$orderby=createdDateTime desc&$filter=category eq 'DataLossPrevention'", ct);
-        var alerts = items.Select(a => new
-        {
-            id = a.TryGetProperty("id", out var id) ? id.GetString() : null,
-            title = a.TryGetProperty("title", out var t) ? t.GetString() : null,
-            severity = a.TryGetProperty("severity", out var s) ? s.GetString() : "unknown",
-            status = a.TryGetProperty("status", out var st) ? st.GetString() : "unknown",
-            category = a.TryGetProperty("category", out var cat) ? cat.GetString() : null,
-            serviceSource = a.TryGetProperty("serviceSource", out var ss) ? ss.GetString() : null,
-            createdDateTime = a.TryGetProperty("createdDateTime", out var cr) ? cr.GetString() : null,
-            description = a.TryGetProperty("description", out var d) && d.ValueKind == JsonValueKind.String ? d.GetString() : null,
-            alertWebUrl = a.TryGetProperty("alertWebUrl", out var url) ? url.GetString() : null,
-        }).ToList();
-        var bySeverity = alerts.GroupBy(a => a.severity ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
-        var bySource = alerts.GroupBy(a => a.serviceSource ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
-        return Results.Ok(new { configured = true, total = alerts.Count, bySeverity, bySource, alerts });
-    }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, alerts = Array.Empty<object>() }); }
-});
-
-// MDE vulnerabilities / endpoint alerts
-app.MapGet("/api/dashboard/mde-vulnerabilities", async (
-    IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
-{
-    if (!options.Value.IsConfigured())
-        return Results.Ok(new { configured = false, total = 0, alerts = Array.Empty<object>() });
-    try
-    {
-        var graph = services.GetRequiredService<GraphApiClient>();
-        var items = await graph.GetCollectionAsync(
-            "/v1.0/security/alerts_v2?$top=50&$filter=serviceSource eq 'microsoftDefenderForEndpoint'&$orderby=createdDateTime desc", ct);
-        var alerts = items.Select(a => new
-        {
-            id = a.TryGetProperty("id", out var id) ? id.GetString() : null,
-            title = a.TryGetProperty("title", out var t) ? t.GetString() : null,
-            severity = a.TryGetProperty("severity", out var s) ? s.GetString() : "unknown",
-            status = a.TryGetProperty("status", out var st) ? st.GetString() : "unknown",
-            category = a.TryGetProperty("category", out var cat) ? cat.GetString() : null,
-            createdDateTime = a.TryGetProperty("createdDateTime", out var cr) ? cr.GetString() : null,
-            description = a.TryGetProperty("description", out var d) && d.ValueKind == JsonValueKind.String ? d.GetString() : null,
-            alertWebUrl = a.TryGetProperty("alertWebUrl", out var url) ? url.GetString() : null,
-            mitreTechniques = a.TryGetProperty("mitreTechniques", out var mt) && mt.ValueKind == JsonValueKind.Array
-                ? mt.EnumerateArray().Select(x => x.GetString()).OfType<string>().ToArray()
-                : Array.Empty<string>(),
-        }).ToList();
-        var bySeverity = alerts.GroupBy(a => a.severity ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
-        var byCategory = alerts.GroupBy(a => a.category ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
-        return Results.Ok(new { configured = true, total = alerts.Count, bySeverity, byCategory, alerts });
-    }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, alerts = Array.Empty<object>() }); }
-});
-
-// PIM role activations
-app.MapGet("/api/dashboard/pim", async (
-    IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
-{
-    if (!options.Value.IsConfigured())
-        return Results.Ok(new { configured = false, total = 0, activations = Array.Empty<object>() });
-    try
-    {
-        var graph = services.GetRequiredService<GraphApiClient>();
-        var items = await graph.GetCollectionAsync(
-            "/v1.0/roleManagement/directory/roleAssignments?$top=20&$expand=roleDefinition($select=displayName)", ct);
-        var activations = items.Select(a =>
-        {
-            string? principalDisplayName = null, principalUpn = null, roleName = null;
-            if (a.TryGetProperty("principal", out var p) && p.ValueKind == JsonValueKind.Object)
-            {
-                if (p.TryGetProperty("displayName", out var pd)) principalDisplayName = pd.GetString();
-                if (p.TryGetProperty("userPrincipalName", out var pu)) principalUpn = pu.GetString();
-            }
-            if (a.TryGetProperty("roleDefinition", out var rd) && rd.ValueKind == JsonValueKind.Object &&
-                rd.TryGetProperty("displayName", out var rdn)) roleName = rdn.GetString();
-            return new
-            {
-                id = a.TryGetProperty("id", out var id) ? id.GetString() : null,
-                action = "Assigned",
-                status = "Active",
-                createdDateTime = (string?)null,
-                justification = (string?)null,
-                principalDisplayName,
-                principalUpn,
-                roleName
-            };
-        }).ToList();
-        return Results.Ok(new { configured = true, total = activations.Count, activations });
-    }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, activations = Array.Empty<object>() }); }
-});
-
-// Email protection (Defender for Office 365)
-app.MapGet("/api/dashboard/email-protection", async (
-    IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
-{
-    if (!options.Value.IsConfigured())
-        return Results.Ok(new { configured = false, total = 0, alerts = Array.Empty<object>() });
-    try
-    {
-        var graph = services.GetRequiredService<GraphApiClient>();
-        var items = await graph.GetCollectionAsync(
-            "/v1.0/security/alerts_v2?$top=50&$filter=serviceSource eq 'microsoftDefenderForOffice365'&$orderby=createdDateTime desc", ct);
-        var alerts = items.Select(a => new
-        {
-            id = a.TryGetProperty("id", out var id) ? id.GetString() : null,
-            title = a.TryGetProperty("title", out var t) ? t.GetString() : null,
-            severity = a.TryGetProperty("severity", out var s) ? s.GetString() : "unknown",
-            status = a.TryGetProperty("status", out var st) ? st.GetString() : "unknown",
-            category = a.TryGetProperty("category", out var cat) ? cat.GetString() : null,
-            createdDateTime = a.TryGetProperty("createdDateTime", out var cr) ? cr.GetString() : null,
-            description = a.TryGetProperty("description", out var d) && d.ValueKind == JsonValueKind.String ? d.GetString() : null,
-            alertWebUrl = a.TryGetProperty("alertWebUrl", out var url) ? url.GetString() : null,
-        }).ToList();
-        var byCategory = alerts.GroupBy(a => a.category ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
-        var bySeverity = alerts.GroupBy(a => a.severity ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
-        return Results.Ok(new { configured = true, total = alerts.Count, byCategory, bySeverity, alerts });
-    }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, alerts = Array.Empty<object>() }); }
-});
-
-// Purview sensitivity labels
-app.MapGet("/api/dashboard/purview", async (
-    IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
-{
-    if (!options.Value.IsConfigured())
-        return Results.Ok(new { configured = false, labelCount = 0, labels = Array.Empty<object>() });
-    try
-    {
-        var graph = services.GetRequiredService<GraphApiClient>();
-        var items = await graph.GetSinglePageAsync("https://graph.microsoft.com/beta/security/informationProtection/sensitivityLabels", ct);
-        var labels = items.Select(l => new
-        {
-            id = l.TryGetProperty("id", out var id) ? id.GetString() : null,
-            name = l.TryGetProperty("name", out var n) ? n.GetString() : null,
-            description = l.TryGetProperty("description", out var d) && d.ValueKind == JsonValueKind.String ? d.GetString() : null,
-            color = l.TryGetProperty("color", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString() : null,
-            sensitivity = l.TryGetProperty("sensitivity", out var s) && s.ValueKind == JsonValueKind.Number ? s.GetInt32() : 0,
-            isActive = l.TryGetProperty("isActive", out var ia) && (ia.ValueKind == JsonValueKind.True || ia.ValueKind == JsonValueKind.False) && ia.GetBoolean(),
-        }).ToList();
-        return Results.Ok(new { configured = true, labelCount = labels.Count, labels });
-    }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", labelCount = 0, labels = Array.Empty<object>() }); }
-});
-
-// MDI alerts (Defender for Identity — on-prem AD lateral movement, credential theft)
-app.MapGet("/api/dashboard/mdi-alerts", async (
-    IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
-{
-    if (!options.Value.IsConfigured())
-        return Results.Ok(new { configured = false, total = 0, alerts = Array.Empty<object>() });
-    try
-    {
-        var graph = services.GetRequiredService<GraphApiClient>();
-        var items = await graph.GetCollectionAsync(
-            "/v1.0/security/alerts_v2?$top=50&$filter=serviceSource eq 'microsoftDefenderForIdentity'&$orderby=createdDateTime desc", ct);
-        var alerts = items.Select(a => new
-        {
-            id = a.TryGetProperty("id", out var id) ? id.GetString() : null,
-            title = a.TryGetProperty("title", out var t) ? t.GetString() : null,
-            severity = a.TryGetProperty("severity", out var s) ? s.GetString() : "unknown",
-            status = a.TryGetProperty("status", out var st) ? st.GetString() : "unknown",
-            category = a.TryGetProperty("category", out var cat) ? cat.GetString() : null,
-            createdDateTime = a.TryGetProperty("createdDateTime", out var cr) ? cr.GetString() : null,
-            description = a.TryGetProperty("description", out var d) && d.ValueKind == JsonValueKind.String ? d.GetString() : null,
-            alertWebUrl = a.TryGetProperty("alertWebUrl", out var url) ? url.GetString() : null,
-            mitreTechniques = a.TryGetProperty("mitreTechniques", out var mt) && mt.ValueKind == JsonValueKind.Array
-                ? mt.EnumerateArray().Select(x => x.GetString()).OfType<string>().ToArray()
-                : Array.Empty<string>(),
-        }).ToList();
-        var bySeverity = alerts.GroupBy(a => a.severity ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
-        var byCategory = alerts.GroupBy(a => a.category ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
-        return Results.Ok(new { configured = true, total = alerts.Count, bySeverity, byCategory, alerts });
-    }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, alerts = Array.Empty<object>() }); }
-});
-
-// MCAS alerts (Defender for Cloud Apps — SaaS anomalies, impossible travel, mass download)
-app.MapGet("/api/dashboard/mcas-alerts", async (
-    IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
-{
-    if (!options.Value.IsConfigured())
-        return Results.Ok(new { configured = false, total = 0, alerts = Array.Empty<object>() });
-    try
-    {
-        var graph = services.GetRequiredService<GraphApiClient>();
-        var items = await graph.GetCollectionAsync(
-            "/v1.0/security/alerts_v2?$top=50&$filter=serviceSource eq 'microsoftDefenderForCloudApps'&$orderby=createdDateTime desc", ct);
-        var alerts = items.Select(a => new
-        {
-            id = a.TryGetProperty("id", out var id) ? id.GetString() : null,
-            title = a.TryGetProperty("title", out var t) ? t.GetString() : null,
-            severity = a.TryGetProperty("severity", out var s) ? s.GetString() : "unknown",
-            status = a.TryGetProperty("status", out var st) ? st.GetString() : "unknown",
-            category = a.TryGetProperty("category", out var cat) ? cat.GetString() : null,
-            createdDateTime = a.TryGetProperty("createdDateTime", out var cr) ? cr.GetString() : null,
-            description = a.TryGetProperty("description", out var d) && d.ValueKind == JsonValueKind.String ? d.GetString() : null,
-            alertWebUrl = a.TryGetProperty("alertWebUrl", out var url) ? url.GetString() : null,
-        }).ToList();
-        var bySeverity = alerts.GroupBy(a => a.severity ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
-        var byCategory = alerts.GroupBy(a => a.category ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
-        return Results.Ok(new { configured = true, total = alerts.Count, bySeverity, byCategory, alerts });
-    }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, alerts = Array.Empty<object>() }); }
-});
-
-// Insider Risk Management (Purview IRM — data exfiltration, departing employees)
-app.MapGet("/api/dashboard/insider-risk", async (
-    IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
-{
-    if (!options.Value.IsConfigured())
-        return Results.Ok(new { configured = false, total = 0, alerts = Array.Empty<object>() });
-    try
-    {
-        var graph = services.GetRequiredService<GraphApiClient>();
-        var items = await graph.GetCollectionAsync(
-            "/v1.0/security/alerts_v2?$top=50&$filter=serviceSource eq 'microsoftPurviewInsiderRiskManagement'&$orderby=createdDateTime desc", ct);
-        var alerts = items.Select(a => new
-        {
-            id = a.TryGetProperty("id", out var id) ? id.GetString() : null,
-            title = a.TryGetProperty("title", out var t) ? t.GetString() : null,
-            severity = a.TryGetProperty("severity", out var s) ? s.GetString() : "unknown",
-            status = a.TryGetProperty("status", out var st) ? st.GetString() : "unknown",
-            category = a.TryGetProperty("category", out var cat) ? cat.GetString() : null,
-            createdDateTime = a.TryGetProperty("createdDateTime", out var cr) ? cr.GetString() : null,
-            description = a.TryGetProperty("description", out var d) && d.ValueKind == JsonValueKind.String ? d.GetString() : null,
-            alertWebUrl = a.TryGetProperty("alertWebUrl", out var url) ? url.GetString() : null,
-        }).ToList();
-        var bySeverity = alerts.GroupBy(a => a.severity ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
-        return Results.Ok(new { configured = true, total = alerts.Count, bySeverity, alerts });
-    }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, alerts = Array.Empty<object>() }); }
-});
-
-// Entra ID Risk Detections (25+ specific detection types: leaked creds, password spray, nation-state IPs)
-app.MapGet("/api/dashboard/risk-detections", async (
-    IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
-{
-    if (!options.Value.IsConfigured())
-        return Results.Ok(new { configured = false, total = 0, detections = Array.Empty<object>() });
-    try
-    {
-        var graph = services.GetRequiredService<GraphApiClient>();
-        var items = await graph.GetSinglePageAsync(
-            "/v1.0/identityProtection/riskDetections?$top=50", ct);
-        var detections = items.Select(d =>
-        {
-            string? city = null, country = null;
-            if (d.TryGetProperty("location", out var loc) && loc.ValueKind == JsonValueKind.Object)
-            {
-                if (loc.TryGetProperty("city", out var cv)) city = cv.GetString();
-                if (loc.TryGetProperty("countryOrRegion", out var cov)) country = cov.GetString();
-            }
-            return new
-            {
-                id = d.TryGetProperty("id", out var id) ? id.GetString() : null,
-                riskEventType = d.TryGetProperty("riskEventType", out var ret) ? ret.GetString() : null,
-                riskLevel = d.TryGetProperty("riskLevel", out var rl) ? rl.GetString() : "unknown",
-                riskState = d.TryGetProperty("riskState", out var rs) ? rs.GetString() : "unknown",
-                userDisplayName = d.TryGetProperty("userDisplayName", out var udn) ? udn.GetString() : null,
-                userPrincipalName = d.TryGetProperty("userPrincipalName", out var upn) ? upn.GetString() : null,
-                lastUpdatedDateTime = d.TryGetProperty("lastUpdatedDateTime", out var lu) ? lu.GetString() : null,
-                activityDateTime = d.TryGetProperty("activityDateTime", out var ad) ? ad.GetString() : null,
-                ipAddress = d.TryGetProperty("ipAddress", out var ip) && ip.ValueKind == JsonValueKind.String ? ip.GetString() : null,
-                city, country
-            };
-        }).ToList();
-        var byType = detections.GroupBy(d => d.riskEventType ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
-        var byLevel = detections.GroupBy(d => d.riskLevel ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
-        return Results.Ok(new { configured = true, total = detections.Count, byType, byLevel, detections });
-    }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, detections = Array.Empty<object>() }); }
-});
-
-// MDI Identity Sensor Health Issues (requires IdentityBaseline.Read.All)
-app.MapGet("/api/dashboard/identity-health", async (
-    IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
-{
-    if (!options.Value.IsConfigured())
-        return Results.Ok(new { configured = false, total = 0, issues = Array.Empty<object>() });
-    try
-    {
-        var graph = services.GetRequiredService<GraphApiClient>();
-        var items = await graph.GetCollectionAsync("/v1.0/security/identities/healthIssues", ct);
-        var issues = items.Select(i => new
-        {
-            id = i.TryGetProperty("id", out var id) ? id.GetString() : null,
-            displayName = i.TryGetProperty("displayName", out var n) ? n.GetString() : null,
-            issueType = i.TryGetProperty("issueType", out var it) ? it.GetString() : null,
-            severity = i.TryGetProperty("severity", out var s) ? s.GetString() : "unknown",
-            status = i.TryGetProperty("status", out var st) ? st.GetString() : "unknown",
-            description = i.TryGetProperty("description", out var d) && d.ValueKind == JsonValueKind.String ? d.GetString() : null,
-            recommendations = i.TryGetProperty("recommendations", out var r) && r.ValueKind == JsonValueKind.String ? r.GetString() : null,
-            createdDateTime = i.TryGetProperty("createdDateTime", out var cr) ? cr.GetString() : null,
-            domainNames = i.TryGetProperty("domainNames", out var dn) && dn.ValueKind == JsonValueKind.Array
-                ? dn.EnumerateArray().Select(x => x.GetString()).OfType<string>().ToArray()
-                : Array.Empty<string>(),
-            sensorDNSNames = i.TryGetProperty("sensorDNSNames", out var sdn) && sdn.ValueKind == JsonValueKind.Array
-                ? sdn.EnumerateArray().Select(x => x.GetString()).OfType<string>().ToArray()
-                : Array.Empty<string>(),
-        }).ToList();
-        var bySeverity = issues.GroupBy(i => i.severity ?? "unknown").ToDictionary(g => g.Key, g => g.Count());
-        return Results.Ok(new { configured = true, total = issues.Count, bySeverity, issues });
-    }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, issues = Array.Empty<object>() }); }
-});
-
-// Attack Simulation & Training (requires AttackSimulation.ReadWrite.All)
-app.MapGet("/api/dashboard/attack-simulation", async (
-    IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
-{
-    if (!options.Value.IsConfigured())
-        return Results.Ok(new { configured = false, total = 0, simulations = Array.Empty<object>() });
-    try
-    {
-        var graph = services.GetRequiredService<GraphApiClient>();
-        var items = await graph.GetCollectionAsync(
-            "/v1.0/security/attackSimulation/simulations?$top=20", ct);
-        var simulations = items.Select(s =>
-        {
-            int targeted = 0, clicked = 0, didNotClick = 0; double compromisedRate = 0;
-            if (s.TryGetProperty("report", out var rpt) && rpt.ValueKind == JsonValueKind.Object)
-            {
-                if (rpt.TryGetProperty("numberOfUsersTargeted", out var nut) && nut.ValueKind == JsonValueKind.Number) targeted = nut.GetInt32();
-                if (rpt.TryGetProperty("simulationEventsContent", out var sec) && sec.ValueKind == JsonValueKind.Object)
-                {
-                    if (sec.TryGetProperty("compromisedRate", out var cr2) && cr2.ValueKind == JsonValueKind.Number) compromisedRate = cr2.GetDouble();
-                    if (sec.TryGetProperty("clickedPhishingLinkCount", out var cpl) && cpl.ValueKind == JsonValueKind.Number) clicked = cpl.GetInt32();
-                    if (sec.TryGetProperty("didNotClickLinkCount", out var dnc) && dnc.ValueKind == JsonValueKind.Number) didNotClick = dnc.GetInt32();
-                }
-            }
-            return new
-            {
-                id = s.TryGetProperty("id", out var id) ? id.GetString() : null,
-                displayName = s.TryGetProperty("displayName", out var n) ? n.GetString() : null,
-                attackType = s.TryGetProperty("attackType", out var at) ? at.GetString() : null,
-                status = s.TryGetProperty("status", out var st) ? st.GetString() : "unknown",
-                createdDateTime = s.TryGetProperty("createdDateTime", out var cr) ? cr.GetString() : null,
-                completionDateTime = s.TryGetProperty("completionDateTime", out var cd) && cd.ValueKind == JsonValueKind.String ? cd.GetString() : null,
-                numberOfUsersTargeted = targeted,
-                compromisedRate,
-                clickedPhishingLinkCount = clicked,
-                didNotClickLinkCount = didNotClick,
-            };
-        }).ToList();
-        var totalTargeted = simulations.Sum(s => s.numberOfUsersTargeted);
-        var avgCompromiseRate = simulations.Count > 0
-            ? Math.Round(simulations.Average(s => s.compromisedRate), 1) : 0.0;
-        return Results.Ok(new { configured = true, total = simulations.Count, totalTargeted, avgCompromiseRate, simulations });
-    }
-    catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = "An error occurred. Check server logs for details.", total = 0, simulations = Array.Empty<object>() }); }
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Alert Center — server-side policies, triggered alerts, notifications
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Policies CRUD
-app.MapGet("/api/alert-policies", async (AppDbContext db, CancellationToken ct) =>
-    Results.Ok(await db.AlertPolicies.OrderByDescending(p => p.CreatedAt).ToListAsync(ct)));
-
-app.MapPost("/api/alert-policies", async (AppDbContext db, AlertPolicy input, CancellationToken ct) =>
-{
-    input.Id = input.Id == Guid.Empty ? Guid.NewGuid() : input.Id;
-    input.CreatedAt = DateTimeOffset.UtcNow;
-    input.TriggerCount = 0;
-    if (input.SuppressionMinutes <= 0) input.SuppressionMinutes = 60;
-    db.AlertPolicies.Add(input);
-    await db.SaveChangesAsync(ct);
-    return Results.Ok(input);
-});
-
-app.MapPut("/api/alert-policies/{id:guid}", async (AppDbContext db, Guid id, AlertPolicy input, CancellationToken ct) =>
-{
-    var p = await db.AlertPolicies.FindAsync([id], ct);
-    if (p is null) return Results.NotFound();
-    p.Name = input.Name;
-    p.Enabled = input.Enabled;
-    p.Category = input.Category;
-    p.Condition = input.Condition;
-    p.Metric = input.Metric;
-    p.Threshold = input.Threshold;
-    p.Severity = input.Severity;
-    p.NotifyEmail = input.NotifyEmail;
-    p.SuppressionMinutes = input.SuppressionMinutes <= 0 ? 60 : input.SuppressionMinutes;
-    await db.SaveChangesAsync(ct);
-    return Results.Ok(p);
-});
-
-app.MapDelete("/api/alert-policies/{id:guid}", async (AppDbContext db, Guid id, CancellationToken ct) =>
-{
-    var p = await db.AlertPolicies.FindAsync([id], ct);
-    if (p is null) return Results.NotFound();
-    db.AlertPolicies.Remove(p);
-    await db.SaveChangesAsync(ct);
-    return Results.NoContent();
-});
-
-// Triggered alerts
-app.MapGet("/api/triggered-alerts", async (AppDbContext db, CancellationToken ct) =>
-    Results.Ok(await db.TriggeredAlerts.OrderByDescending(t => t.TriggeredAt).Take(500).ToListAsync(ct)));
-
-app.MapPost("/api/triggered-alerts/{id:guid}/acknowledge", async (AppDbContext db, Guid id, CancellationToken ct) =>
-{
-    var t = await db.TriggeredAlerts.FindAsync([id], ct);
-    if (t is null) return Results.NotFound();
-    t.Status = "acknowledged";
-    t.AcknowledgedAt = DateTimeOffset.UtcNow;
-    t.AcknowledgedBy = "dashboard";
-    await db.SaveChangesAsync(ct);
-    return Results.Ok(t);
-});
-
-app.MapPost("/api/triggered-alerts/{id:guid}/resolve", async (AppDbContext db, Guid id, CancellationToken ct) =>
-{
-    var t = await db.TriggeredAlerts.FindAsync([id], ct);
-    if (t is null) return Results.NotFound();
-    t.Status = "resolved";
-    await db.SaveChangesAsync(ct);
-    return Results.Ok(t);
-});
-
-// Per-alert snooze. Body: { "until": "2026-06-22T18:00:00Z" } or { "durationHours": 4|24|168 }.
-// Until wins if both are supplied; durationHours defaults to 24 if neither is supplied.
-app.MapPost("/api/triggered-alerts/{id:guid}/snooze", async (
-    AppDbContext db, Guid id, SnoozeRequest input, CancellationToken ct) =>
-{
-    var t = await db.TriggeredAlerts.FindAsync([id], ct);
-    if (t is null) return Results.NotFound();
-    if (t.Status is "resolved" or "auto_resolved")
-        return Results.BadRequest(new { error = "Cannot snooze a terminal alert." });
-
-    var until = input.Until
-        ?? (input.DurationHours is { } h ? DateTimeOffset.UtcNow.AddHours(h) : DateTimeOffset.UtcNow.AddHours(24));
-    t.SnoozedUntil = until;
-    t.SnoozedBy = "dashboard";
-    await db.SaveChangesAsync(ct);
-    return Results.Ok(t);
-});
-
-app.MapPost("/api/triggered-alerts/{id:guid}/unsnooze", async (
-    AppDbContext db, Guid id, CancellationToken ct) =>
-{
-    var t = await db.TriggeredAlerts.FindAsync([id], ct);
-    if (t is null) return Results.NotFound();
-    t.SnoozedUntil = null;
-    t.SnoozedBy = null;
-    await db.SaveChangesAsync(ct);
-    return Results.Ok(t);
-});
-
-// Manually run an evaluation pass (used by the dashboard "refresh" + on-demand check)
-app.MapPost("/api/alert-policies/evaluate", async (AlertEvaluator evaluator, CancellationToken ct) =>
-{
-    var fired = await evaluator.EvaluateAsync(ct);
-    return Results.Ok(new { fired });
-});
-
-// Notification settings (single row). Password is write-only — never returned.
-app.MapGet("/api/notification-settings", async (AppDbContext db, SecretProtector protector, CancellationToken ct) =>
-{
-    var s = await db.NotificationSettings.FirstOrDefaultAsync(ct) ?? new NotificationSettings { Id = 1 };
-    return Results.Ok(new
-    {
-        s.TeamsEnabled, TeamsWebhookUrl = protector.Unprotect(s.TeamsWebhookUrl),
-        s.EmailEnabled, s.SmtpHost, s.SmtpPort, s.SmtpUseSsl, s.SmtpUsername,
-        hasSmtpPassword = !string.IsNullOrEmpty(s.SmtpPassword),
-        s.FromAddress, s.DefaultRecipient,
-        s.WebhookEnabled, WebhookUrl = protector.Unprotect(s.WebhookUrl),
-        s.MinSeverity,
-    });
-});
-
-app.MapPut("/api/notification-settings", async (AppDbContext db, SecretProtector protector, NotificationSettings input, CancellationToken ct) =>
-{
-    var s = await db.NotificationSettings.FirstOrDefaultAsync(ct);
-    if (s is null) { s = new NotificationSettings { Id = 1 }; db.NotificationSettings.Add(s); }
-    s.TeamsEnabled = input.TeamsEnabled;
-    s.TeamsWebhookUrl = protector.Protect(input.TeamsWebhookUrl);
-    s.EmailEnabled = input.EmailEnabled;
-    s.SmtpHost = input.SmtpHost;
-    s.SmtpPort = input.SmtpPort <= 0 ? 587 : input.SmtpPort;
-    s.SmtpUseSsl = input.SmtpUseSsl;
-    s.SmtpUsername = input.SmtpUsername;
-    if (!string.IsNullOrEmpty(input.SmtpPassword)) s.SmtpPassword = protector.Protect(input.SmtpPassword); // keep existing if blank
-    s.FromAddress = input.FromAddress;
-    s.DefaultRecipient = input.DefaultRecipient;
-    s.WebhookEnabled = input.WebhookEnabled;
-    s.WebhookUrl = protector.Protect(input.WebhookUrl);
-    s.MinSeverity = string.IsNullOrWhiteSpace(input.MinSeverity) ? "low" : input.MinSeverity;
-    await db.SaveChangesAsync(ct);
-    return Results.Ok(new { ok = true });
-});
-
-// Send a test notification through all enabled channels
-app.MapPost("/api/notification-settings/test", async (AppDbContext db, NotificationSender sender, CancellationToken ct) =>
-{
-    var cfg = await db.NotificationSettings.FirstOrDefaultAsync(ct);
-    if (cfg is null) return Results.Ok(new { ok = false, message = "No settings configured" });
-    var test = new TriggeredAlert
-    {
-        Id = Guid.NewGuid(),
-        PolicyName = "Test Notification",
-        Severity = "high",
-        Category = "test",
-        Condition = "Manual test from Vigil365 settings",
-        MetricValue = 1,
-        Threshold = 1,
-        TriggeredAt = DateTimeOffset.UtcNow,
-        Status = "new",
-    };
-    await sender.DispatchAsync(db, cfg, test, ct);
-    await db.SaveChangesAsync(ct);
-    var logs = await db.NotificationLogs.Where(l => l.TriggeredAlertId == test.Id).ToListAsync(ct);
-    return Results.Ok(new { ok = logs.Any(l => l.Success), results = logs.Select(l => new { l.Channel, l.Success, l.Error }) });
-});
-
-// Notification delivery history
-app.MapGet("/api/notification-log", async (AppDbContext db, CancellationToken ct) =>
-    Results.Ok(await db.NotificationLogs.OrderByDescending(l => l.SentAt).Take(200).ToListAsync(ct)));
-
-app.MapFallbackToFile("index.html");
+}).AllowAnonymous();
 
 app.Run();
 
 /// <summary>Body shape for POST /api/triggered-alerts/{id}/snooze.</summary>
 public sealed record SnoozeRequest(DateTimeOffset? Until, int? DurationHours);
+
+/// <summary>Body shape for PUT /api/admin/users/{email}/role.</summary>
+public sealed record RoleChangeRequest(string Role);
+
+/// <summary>Body shape for POST/PUT /api/suppression-rules.</summary>
+public sealed record SuppressionRuleRequest(
+    Guid? PolicyId, string? EntityPattern, string? Reason,
+    DateTimeOffset? ExpiresAt, bool? Enabled);
+
+/// <summary>Body shape for POST /api/setup/graph (first-run wizard).</summary>
+public sealed record GraphSetupRequest(string TenantId, string ClientId, string? ClientSecret, string? LoginInstance, string? BaseUrl);
+
+/// <summary>Body shape for POST /api/admin/users (pre-provision a user).</summary>
+public sealed record AddUserRequest(string Email, string Role, string? DisplayName, bool SendInvite = false);
+
+/// <summary>Body shape for POST /api/api-tokens.</summary>
+public sealed record ApiTokenCreateRequest(string? Name, string? Scopes, DateTimeOffset? ExpiresAt);
+
+/// <summary>Body shape for the workbench endpoints (assign / disposition).</summary>
+public sealed record WorkbenchRequest(string? AssignedTo, string? Disposition);
+
+/// <summary>Body shape for POST /api/alert-notes/{kind}/{targetId}.</summary>
+public sealed record NoteRequest(string Text);

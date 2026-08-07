@@ -37,6 +37,14 @@ public sealed class TriggeredAlert
     [MaxLength(120)]
     public string? AcknowledgedBy { get; set; }
 
+    /// <summary>When the alert was resolved (manually or by auto-resolve). Enables
+    /// mean-time-to-resolve metrics; null while the alert is open.</summary>
+    public DateTimeOffset? ResolvedAt { get; set; }
+
+    /// <summary>Identity of the actor who resolved this alert; "system" for auto-resolve.</summary>
+    [MaxLength(120)]
+    public string? ResolvedBy { get; set; }
+
     /// <summary>Whether outbound notifications were dispatched for this alert.</summary>
     public bool Notified { get; set; }
 
@@ -52,4 +60,11 @@ public sealed class TriggeredAlert
 
     /// <summary>When the evaluator last inspected this alert (used for diagnostics and the auto-resolve debounce).</summary>
     public DateTimeOffset? LastEvaluatedAt { get; set; }
+
+    /// <summary>JSON serialized list of matching SecurityAlert entity rows at trigger time.</summary>
+    public string? AffectedEntities { get; set; }
+
+    /// <summary>Vigil365 user (email) this alert is assigned to.</summary>
+    [MaxLength(320)]
+    public string? AssignedTo { get; set; }
 }

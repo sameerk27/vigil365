@@ -5,6 +5,19 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <SpaRoot>..\m365-security-dashboard-client\</SpaRoot>
     <UserSecretsId>m365-security-dashboard-api</UserSecretsId>
+    <!-- Release version. Must match the client's package.json "version" — CI
+         fails the build if they drift (scripts/check-version.ps1). Surfaced by
+         /health and by the sidebar chip, so a support report names a real build. -->
+    <Version>1.0.0</Version>
+
+    <!-- Brand icon + identity for the service exe (Task Manager, Services,
+         Explorer). Same navy-shield mark as the installer and the web favicon. -->
+    <ApplicationIcon>vigil365.ico</ApplicationIcon>
+    <AssemblyTitle>Vigil365 API</AssemblyTitle>
+    <Product>Vigil365</Product>
+    <Company>Vigil365</Company>
+    <Description>Vigil365 — self-hosted Microsoft 365 security monitoring service.</Description>
+    <Copyright>Copyright © 2026 Vigil365</Copyright>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Azure.Identity" Version="1.17.2" />
@@ -15,7 +28,20 @@
     </PackageReference>
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.1" />
     <PackageReference Include="Microsoft.Identity.Web" Version="4.10.0" />
+    <PackageReference Include="Serilog.AspNetCore" Version="8.0.3" />
+    <PackageReference Include="Serilog.Formatting.Compact" Version="3.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.9.0" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+  </ItemGroup>
+
+  <!-- Transitive-dependency security overrides. These are pulled in by the
+       packages above at versions with known High-severity advisories; pinning a
+       patched version here is the standard NuGet remediation and is what keeps
+       the CI vulnerability audit green. Revisit when the parent packages are
+       upgraded — they may then satisfy these directly. -->
+  <ItemGroup>
+    <!-- GHSA-g8r8-53c2-pm3f (via Microsoft.Identity.Web) -->
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="8.0.4" />
   </ItemGroup>
 </Project>

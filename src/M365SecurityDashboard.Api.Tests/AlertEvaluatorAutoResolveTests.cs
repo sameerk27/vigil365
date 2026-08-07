@@ -30,7 +30,7 @@ public class AlertEvaluatorAutoResolveTests
         // accidental dispatch attempt writes no NotificationLog rows.
         var sender = new NotificationSender(
             new NullHttpClientFactory(),
-            new SecretProtector(NullLogger<SecretProtector>.Instance),
+            new SecretProtector(new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider(), NullLogger<SecretProtector>.Instance),
             NullLogger<NotificationSender>.Instance);
 
         return new AlertEvaluator(
@@ -339,6 +339,33 @@ public class AlertEvaluatorAutoResolveTests
         Assert.Equal("auto_resolved", alert.Status);
         Assert.Equal(ackAt, alert.AcknowledgedAt);
         Assert.Equal("dashboard", alert.AcknowledgedBy);
+    }
+
+    [Fact]
+    public async Task Evaluate_CapturesAffectedEntities()
+    {
+        using var db = TestAppDbContextFactory.Create();
+        var policy = RiskyUsersPolicy();
+        db.AlertPolicies.Add(policy);
+        await db.SaveChangesAsync();
+
+        // Seed 3 open risky users (threshold is 3, so 3 open risky users triggers it)
+        SeedOpenRiskyUsers(db, count: 3);
+
+        var evaluator = BuildEvaluator(db);
+        await evaluator.EvaluateAsync(CancellationToken.None);
+
+        var triggered = await db.TriggeredAlerts.SingleAsync();
+        Assert.Equal(3, triggered.MetricValue);
+        Assert.NotNull(triggered.AffectedEntities);
+
+        // Verify JSON contents
+        using var doc = System.Text.Json.JsonDocument.Parse(triggered.AffectedEntities);
+        var array = doc.RootElement;
+        Assert.Equal(3, array.GetArrayLength());
+        
+        var first = array[0];
+        Assert.StartsWith("risky-", first.GetProperty("title").GetString()); // camelCase — PascalCase here was the "System / N/A" entity-row bug
     }
 
     /// <summary>No-op <see cref="IHttpClientFactory"/> for tests that never make HTTP calls.</summary>

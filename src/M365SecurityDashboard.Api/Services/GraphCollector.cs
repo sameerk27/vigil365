@@ -14,7 +14,25 @@ public sealed class GraphCollector(
 {
     private readonly GraphOptions _options = options.Value;
 
+    // One collection at a time per process: the manual endpoint and the background
+    // worker would otherwise race the (Service, AlertType, ExternalId) unique index.
+    private static readonly SemaphoreSlim CollectionGate = new(1, 1);
+
     public async Task<CollectionRun> CollectAsync(CancellationToken ct)
+    {
+        if (!await CollectionGate.WaitAsync(TimeSpan.Zero, ct))
+            throw new InvalidOperationException("A collection run is already in progress.");
+        try
+        {
+            return await CollectCoreAsync(ct);
+        }
+        finally
+        {
+            CollectionGate.Release();
+        }
+    }
+
+    private async Task<CollectionRun> CollectCoreAsync(CancellationToken ct)
     {
         var run = new CollectionRun { StartedAt = DateTimeOffset.UtcNow, Status = CollectionStatus.Started };
         db.CollectionRuns.Add(run);
@@ -38,14 +56,35 @@ public sealed class GraphCollector(
                 catch (Exception ex)
                 {
                     run.SourceFailures++;
-                    failures.Add(new { source = source.Name, error = Trim(ex.Message, 300) });
+                    // Store an actionable sentence, not the raw Graph JSON — this
+                    // string is what the Collection Health card and Runs view show.
+                    failures.Add(new { source = source.Name, error = GraphErrorHint.Describe(ex.Message, source.Name) });
                     logger.LogWarning(ex, "Graph source {SourceName} failed", source.Name);
                 }
+            }
+
+            // Tenant audit events feed the activity-based alert policies.
+            // Failures here count as a source failure but never sink the run.
+            try
+            {
+                await CollectAuditEventsAsync(ct);
+            }
+            catch (Exception ex)
+            {
+                run.SourceFailures++;
+                failures.Add(new { source = "Tenant audit events", error = GraphErrorHint.Describe(ex.Message, "Tenant audit events") });
+                logger.LogWarning(ex, "Tenant audit event collection failed");
             }
 
             run.SourceFailureDetails = failures.Count > 0 ? JsonSerializer.Serialize(failures) : null;
             run.Status = run.SourceFailures == sources.Count ? CollectionStatus.Failed : CollectionStatus.Completed;
             run.CompletedAt = DateTimeOffset.UtcNow;
+
+            if (run.Status != CollectionStatus.Failed)
+            {
+                await CaptureTrendSnapshotAsync(ct);
+            }
+
             await db.SaveChangesAsync(ct);
             return run;
         }
@@ -56,6 +95,69 @@ public sealed class GraphCollector(
             run.Error = ex.Message;
             await db.SaveChangesAsync(CancellationToken.None);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Incrementally pull Entra directory-audit records into the AuditEvents
+    /// store — the raw material for activity-based alert policies. Watermarked
+    /// on the newest stored event (with a 10-minute overlap for late arrivals);
+    /// first run looks back 24h. Records are deduped on (Source, ExternalId).
+    /// </summary>
+    private async Task CollectAuditEventsAsync(CancellationToken ct)
+    {
+        var newest = await db.AuditEvents
+            .Where(e => e.Source == "directoryAudit")
+            .MaxAsync(e => (DateTimeOffset?)e.OccurredAt, ct);
+        var since = (newest?.AddMinutes(-10) ?? DateTimeOffset.UtcNow.AddHours(-24))
+            .UtcDateTime.ToString("O");
+
+        var rows = await graph.GetCollectionAsync(
+            WithFilter("/v1.0/auditLogs/directoryAudits?$top=200", $"activityDateTime ge {since}"), ct);
+        if (rows.Count == 0) return;
+
+        var incomingIds = rows.Select(r => Get(r, "id")).Where(id => id != null).Cast<string>().ToList();
+        var known = (await db.AuditEvents
+            .Where(e => e.Source == "directoryAudit" && incomingIds.Contains(e.ExternalId))
+            .Select(e => e.ExternalId)
+            .ToListAsync(ct)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var added = 0;
+        foreach (var r in rows)
+        {
+            var id = Get(r, "id");
+            if (id is null || !known.Add(id)) continue; // dedupe within batch + store
+
+            string? targetName = null;
+            if (r.TryGetProperty("targetResources", out var targets) && targets.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var t in targets.EnumerateArray())
+                {
+                    targetName = Get(t, "displayName") ?? Get(t, "userPrincipalName");
+                    if (targetName != null) break;
+                }
+            }
+
+            db.AuditEvents.Add(new AuditEvent
+            {
+                ExternalId = id,
+                Source = "directoryAudit",
+                Activity = Trim(Get(r, "activityDisplayName") ?? "Unknown activity", 200),
+                Category = TrimOrNull(Get(r, "category"), 80),
+                ActorUpn = TrimOrNull(Get(r, "initiatedBy", "user", "userPrincipalName"), 320),
+                ActorApp = TrimOrNull(Get(r, "initiatedBy", "app", "displayName"), 200),
+                TargetName = TrimOrNull(targetName, 320),
+                Result = TrimOrNull(Get(r, "result"), 20),
+                OccurredAt = GetDate(r, "activityDateTime"),
+                CollectedAt = DateTimeOffset.UtcNow,
+                RawJson = r.GetRawText(),
+            });
+            added++;
+        }
+        if (added > 0)
+        {
+            await db.SaveChangesAsync(ct);
+            logger.LogInformation("Collected {Count} new tenant audit events", added);
         }
     }
 
@@ -77,7 +179,10 @@ public sealed class GraphCollector(
             new("Malware detections", WithFilter("/v1.0/security/alerts_v2?$top=50", "category eq 'Malware'"), MapMalwareDetection),
             new("Quarantined messages", _options.ExchangeQuarantinePath, MapQuarantinedMessage),
             new("Mail flow issues", _options.MailFlowIssuesPath, MapMailFlowIssue),
-            new("Service health issues", WithFilter("/v1.0/admin/serviceAnnouncement/issues?$top=50", "isResolved eq false"), MapServiceHealth)
+            new("Service health issues", WithFilter("/v1.0/admin/serviceAnnouncement/issues?$top=50", "isResolved eq false"), MapServiceHealth),
+            // Single-object endpoint: GetCollectionAsync yields the settings object once.
+            // Requires SharePointTenantSettings.Read.All (counts as a source failure if missing).
+            new("SharePoint sharing posture", "/v1.0/admin/sharepoint/settings", MapSharingPosture)
         ];
     }
 
@@ -156,6 +261,25 @@ public sealed class GraphCollector(
     private static SecurityAlert MapMailFlowIssue(JsonElement e) => Alert(e, M365ServiceArea.ExchangeOnline, "MailFlowIssue",
         Get(e, "id"), AlertSeverity.High, $"Exchange issue: {Get(e, "title") ?? Get(e, "id")}",
         Get(e, "impactDescription"), null, null, GetDate(e, "startDateTime"), Get(e, "details", "url"), GetBool(e, "isResolved"));
+
+    /// <summary>
+    /// One tenant-wide posture alert (fixed ExternalId so it upserts in place):
+    /// open at the worst finding's severity while the sharing posture is risky,
+    /// auto-resolved once the findings clear.
+    /// </summary>
+    private static SecurityAlert MapSharingPosture(JsonElement e)
+    {
+        var findings = SharingPostureAnalyzer.Analyze(SharingPostureAnalyzer.Parse(e));
+        var worst = findings.FirstOrDefault();
+        var clean = worst is null;
+        return Alert(e, M365ServiceArea.SharePoint, "SharingPosture", "tenant-sharing-settings",
+            clean ? AlertSeverity.Informational : SeverityFromString(worst!.Severity),
+            clean ? "SharePoint/OneDrive sharing posture is healthy"
+                  : $"Risky sharing posture: {worst!.Title}",
+            clean ? "No risky external-sharing settings detected."
+                  : string.Join(" | ", findings.Select(f => f.Title)),
+            null, null, DateTimeOffset.UtcNow, null, isResolved: clean);
+    }
 
     private static SecurityAlert MapServiceHealth(JsonElement e) => Alert(e, M365ServiceArea.ServiceHealth, "ServiceHealthIssue",
         Get(e, "id"), SeverityFromClassification(Get(e, "classification")), $"{Get(e, "service")}: {Get(e, "title") ?? Get(e, "id")}",
@@ -237,6 +361,75 @@ public sealed class GraphCollector(
         value?.Equals("closed", StringComparison.OrdinalIgnoreCase) == true;
 
     private static string Trim(string s, int max) => s.Length <= max ? s : s[..max];
+    private static string? TrimOrNull(string? s, int max) => s is null ? null : Trim(s, max);
+
+    private async Task CaptureTrendSnapshotAsync(CancellationToken ct)
+    {
+        var open = db.SecurityAlerts.Where(a => !a.IsResolved);
+        var riskyUsersCount = await open.CountAsync(a => a.AlertType == "RiskyUser", ct);
+        var mfaMissingCount = await open.CountAsync(a => a.AlertType == "MfaStatus", ct);
+        var nonCompliantCount = await open.CountAsync(a => a.AlertType == "NonCompliantDevice", ct);
+        
+        // Track open Critical & High alerts across all services (matching AlertEvaluator and Overview KPIs)
+        var criticalAlertsCount = await open.CountAsync(a => a.Severity == AlertSeverity.Critical, ct);
+        var highAlertsCount = await open.CountAsync(a => a.Severity == AlertSeverity.High, ct);
+        
+        // Microsoft Purview best practice: Track compliance operations findings (Quarantine, Mail flow, DLP)
+        var complianceIssuesCount = await open.CountAsync(a => a.Service == M365ServiceArea.ExchangeOnline, ct);
+
+        // Calculate Secure Score
+        double secureScorePct = 0;
+        if (_options.IsConfigured())
+        {
+            try
+            {
+                // Single page only — GetCollectionAsync would follow @odata.nextLink
+                // through the ENTIRE score history one item at a time.
+                var items = await graph.GetSinglePageAsync("/v1.0/security/secureScores?$top=1", ct);
+                if (items.Count > 0)
+                {
+                    var latest = items[0];
+                    var cs = latest.TryGetProperty("currentScore", out var cVal) && cVal.ValueKind == JsonValueKind.Number ? cVal.GetDouble() : 0;
+                    var ms = latest.TryGetProperty("maxScore", out var mVal) && mVal.ValueKind == JsonValueKind.Number ? mVal.GetDouble() : 100;
+                    if (ms == 0) ms = 100;
+                    secureScorePct = Math.Round(cs / ms * 100, 1);
+                }
+            }
+            catch { /* ignore */ }
+        }
+
+        // Calculate MFA Coverage Pct
+        double mfaCoveragePct = 0;
+        if (_options.IsConfigured())
+        {
+            try
+            {
+                var reg = await graph.GetCollectionAsync("/v1.0/reports/authenticationMethods/userRegistrationDetails", ct);
+                var mfaTotal = reg.Count;
+                if (mfaTotal > 0)
+                {
+                    var mfaRegistered = reg.Count(r => r.TryGetProperty("isMfaRegistered", out var p) && p.ValueKind == JsonValueKind.True);
+                    mfaCoveragePct = Math.Round((double)mfaRegistered / mfaTotal * 100, 1);
+                }
+            }
+            catch { /* ignore */ }
+        }
+
+        var snapshot = new TrendSnapshot
+        {
+            Id = Guid.NewGuid(),
+            CapturedAt = DateTimeOffset.UtcNow,
+            RiskyUsersCount = riskyUsersCount,
+            MfaCoveragePct = mfaCoveragePct,
+            NonCompliantDevicesCount = nonCompliantCount,
+            CriticalAlertsCount = criticalAlertsCount,
+            HighAlertsCount = highAlertsCount,
+            SecureScorePct = secureScorePct,
+            ComplianceIssuesCount = complianceIssuesCount
+        };
+
+        db.TrendSnapshots.Add(snapshot);
+    }
 
     private sealed record GraphSource(string Name, string Path, Func<JsonElement, SecurityAlert> Map);
 }

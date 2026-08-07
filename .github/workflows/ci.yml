@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    # This repository's default branch is master; listing only main meant
+    # push-triggered CI never actually ran.
+    branches: [master, main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: npm
+          cache-dependency-path: src/m365-security-dashboard-client/package-lock.json
+
+      - name: Check API and client versions match
+        shell: pwsh
+        run: ./scripts/check-version.ps1
+
+      - name: Restore frontend dependencies
+        working-directory: src/m365-security-dashboard-client
+        run: npm ci
+
+      - name: Type-check frontend
+        working-directory: src/m365-security-dashboard-client
+        run: npx tsc --noEmit
+
+      - name: Run frontend tests
+        working-directory: src/m365-security-dashboard-client
+        run: npm test
+
+      - name: Build frontend
+        working-directory: src/m365-security-dashboard-client
+        run: npm run build
+
+      # Supply-chain gates. A security product should not ship on top of
+      # known-vulnerable dependencies; fail the build rather than warn.
+      - name: Audit npm dependencies
+        working-directory: src/m365-security-dashboard-client
+        run: npm audit --audit-level=high
+
+      - name: Restore .NET dependencies
+        run: dotnet restore M365SecurityAlertDashboard.sln
+
+      # The installer is WPF and only builds on Windows, so it is compiled in the
+      # separate build-installer job below. Everything shipped to the server —
+      # the API and its tests — builds here.
+      - name: Build .NET projects
+        run: |
+          dotnet build src/M365SecurityDashboard.Api/M365SecurityDashboard.Api.csproj --configuration Release --no-restore
+          dotnet build src/M365SecurityDashboard.Api.Tests/M365SecurityDashboard.Api.Tests.csproj --configuration Release --no-restore
+
+      - name: Audit NuGet dependencies
+        run: |
+          dotnet list M365SecurityAlertDashboard.sln package --vulnerable --include-transitive 2>&1 | tee audit.txt
+          if grep -q "has the following vulnerable packages" audit.txt; then
+            echo "::error::Vulnerable NuGet packages detected"; exit 1
+          fi
+
+      # Point at the test project, not the solution: `dotnet test <sln>` evaluates
+      # every project, and the WPF installer does not resolve on Linux.
+      - name: Run .NET tests
+        run: dotnet test src/M365SecurityDashboard.Api.Tests/M365SecurityDashboard.Api.Tests.csproj --configuration Release --no-build --verbosity normal
+
+  build-installer:
+    name: Build installer (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      # Compiles the WPF installer so a break here fails CI instead of surfacing
+      # only when someone builds the release. Does not produce the shipping
+      # single-file exe (that is scripts/build-installer.ps1, run at release time).
+      - name: Build the installer project
+        run: dotnet build src/M365SecurityDashboard.GuiInstaller/M365SecurityDashboard.GuiInstaller.csproj --configuration Release

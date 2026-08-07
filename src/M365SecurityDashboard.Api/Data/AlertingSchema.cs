@@ -3,9 +3,11 @@ using M365SecurityDashboard.Api.Models;
 namespace M365SecurityDashboard.Api.Data;
 
 /// <summary>
-/// Idempotent DDL + seed data for the server-side alerting tables. Kept separate
-/// so installs created before the alerting feature get the new tables without a
-/// full EF migration (the app uses EnsureCreated, which never alters an existing DB).
+/// LEGACY BRIDGE + seed data. The schema is now owned by EF migrations
+/// (Data/Migrations); this idempotent DDL runs exactly once — when a
+/// pre-migration database is baselined at startup — to bring any older install
+/// up to the model the InitialCreate migration describes. Do not add new
+/// schema changes here; add a migration instead.
 /// </summary>
 public static class AlertingSchema
 {
@@ -41,11 +43,15 @@ public static class AlertingSchema
             [Status] nvarchar(20) NOT NULL,
             [AcknowledgedAt] datetimeoffset NULL,
             [AcknowledgedBy] nvarchar(120) NULL,
-            [Notified] bit NOT NULL
+            [Notified] bit NOT NULL,
+            [AffectedEntities] nvarchar(max) NULL
         );
 
         IF OBJECT_ID(N'[NotificationSettings]', N'U') IS NULL
         CREATE TABLE [NotificationSettings] (
+            -- Deliberately NOT an identity column: this is a singleton row with
+            -- a fixed key of 1, and the model supplies it. Identity here would
+            -- make SQL Server reject the explicit key.
             [Id] int NOT NULL PRIMARY KEY,
             [TeamsEnabled] bit NOT NULL,
             [TeamsWebhookUrl] nvarchar(2048) NULL,
@@ -88,6 +94,70 @@ public static class AlertingSchema
 
         IF COL_LENGTH(N'[TriggeredAlerts]', 'LastEvaluatedAt') IS NULL
         ALTER TABLE [TriggeredAlerts] ADD [LastEvaluatedAt] datetimeoffset NULL;
+
+        IF COL_LENGTH(N'[TriggeredAlerts]', 'AffectedEntities') IS NULL
+        ALTER TABLE [TriggeredAlerts] ADD [AffectedEntities] nvarchar(max) NULL;
+
+        IF OBJECT_ID(N'[TrendSnapshots]', N'U') IS NULL
+        BEGIN
+            CREATE TABLE [TrendSnapshots] (
+                [Id] uniqueidentifier NOT NULL PRIMARY KEY,
+                [CapturedAt] datetimeoffset NOT NULL,
+                [RiskyUsersCount] int NOT NULL,
+                [MfaCoveragePct] float NOT NULL,
+                [NonCompliantDevicesCount] int NOT NULL,
+                [CriticalAlertsCount] int NOT NULL,
+                [HighAlertsCount] int NOT NULL,
+                [SecureScorePct] float NOT NULL,
+                [ComplianceIssuesCount] int NOT NULL
+            );
+            CREATE INDEX [IX_TrendSnapshots_CapturedAt] ON [TrendSnapshots] ([CapturedAt]);
+        END
+
+        IF OBJECT_ID(N'[AppUsers]', N'U') IS NULL
+        CREATE TABLE [AppUsers] (
+            [Email] nvarchar(320) NOT NULL PRIMARY KEY,
+            [DisplayName] nvarchar(200) NULL,
+            [Role] nvarchar(20) NOT NULL,
+            [CreatedAt] datetimeoffset NOT NULL,
+            [LastSeenAt] datetimeoffset NOT NULL
+        );
+
+        IF OBJECT_ID(N'[AuditEntries]', N'U') IS NULL
+        CREATE TABLE [AuditEntries] (
+            [Id] bigint IDENTITY(1,1) NOT NULL PRIMARY KEY,
+            [Timestamp] datetimeoffset NOT NULL,
+            [ActorEmail] nvarchar(320) NOT NULL,
+            [Action] nvarchar(60) NOT NULL,
+            [TargetType] nvarchar(40) NOT NULL,
+            [TargetId] nvarchar(320) NULL,
+            [Details] nvarchar(500) NULL
+        );
+        IF OBJECT_ID(N'[AuditEntries]', N'U') IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_AuditEntries_Timestamp')
+        CREATE INDEX [IX_AuditEntries_Timestamp] ON [AuditEntries]([Timestamp]);
+
+        IF COL_LENGTH(N'[AuditEntries]', 'IpAddress') IS NULL
+        ALTER TABLE [AuditEntries] ADD [IpAddress] nvarchar(45) NULL;
+
+        IF COL_LENGTH(N'[AuditEntries]', 'UserAgent') IS NULL
+        ALTER TABLE [AuditEntries] ADD [UserAgent] nvarchar(300) NULL;
+
+        IF COL_LENGTH(N'[AuditEntries]', 'PrevHash') IS NULL
+        ALTER TABLE [AuditEntries] ADD [PrevHash] nvarchar(64) NULL;
+
+        IF COL_LENGTH(N'[AuditEntries]', 'EntryHash') IS NULL
+        ALTER TABLE [AuditEntries] ADD [EntryHash] nvarchar(64) NULL;
+
+        IF OBJECT_ID(N'[GraphConfig]', N'U') IS NULL
+        CREATE TABLE [GraphConfig] (
+            -- Singleton row with a fixed key; see NotificationSettings above.
+            [Id] int NOT NULL PRIMARY KEY,
+            [TenantId] nvarchar(100) NOT NULL,
+            [ClientId] nvarchar(100) NOT NULL,
+            [ClientSecret] nvarchar(1024) NULL,
+            [UpdatedAt] datetimeoffset NOT NULL
+        );
         """;
 
     private static readonly (string Name, string Category, string Metric, int Threshold, string Severity, string Condition)[] Defaults =
@@ -101,29 +171,116 @@ public static class AlertingSchema
         ("Service Health Advisory",     "identity", "serviceIssueCount",  1, "medium",   "Active M365 service issues ≥ 1"),
     ];
 
+    /// <summary>
+    /// Activity-based starter pack: alerts on WHAT HAPPENED in the tenant
+    /// (directory-audit activities), not on metric counts. Pattern supports *
+    /// as wildcard against Graph activityDisplayName.
+    /// </summary>
+    private static readonly (string Name, string Category, string Pattern, string Severity)[] ActivityDefaults =
+    [
+        ("Privileged role assignment",        "identity",   "Add member to role",                              "critical"),
+        ("Eligible role assignment (PIM)",    "identity",   "Add eligible member to role",                     "high"),
+        ("App consent granted",               "identity",   "Consent to application",                          "high"),
+        ("Application credential added",      "identity",   "*Certificates and secrets management*",           "high"),
+        ("Conditional Access policy changed", "identity",   "*conditional access policy",                      "high"),
+        ("Federation settings changed",       "identity",   "Set federation settings on domain",               "critical"),
+        ("New application registered",        "identity",   "Add application",                                 "medium"),
+        ("Service principal added",           "identity",   "Add service principal",                           "medium"),
+        ("User deleted",                      "identity",   "Delete user",                                     "medium"),
+        ("Admin password reset",              "identity",   "Reset user password",                             "medium"),
+        ("Account disabled",                  "identity",   "Disable account",                                 "medium"),
+    ];
+
     public static void SeedDefaultPolicies(AppDbContext db)
     {
-        if (db.AlertPolicies.Any()) return;
         var now = DateTimeOffset.UtcNow;
-        foreach (var d in Defaults)
+
+        if (!db.AlertPolicies.Any())
         {
-            db.AlertPolicies.Add(new AlertPolicy
+            foreach (var d in Defaults)
             {
-                Id = Guid.NewGuid(),
-                Name = d.Name,
-                Enabled = true,
-                Category = d.Category,
-                Metric = d.Metric,
-                Threshold = d.Threshold,
-                Severity = d.Severity,
-                Condition = d.Condition,
-                SuppressionMinutes = 60,
-                CreatedAt = now,
-                TriggerCount = 0,
-            });
+                db.AlertPolicies.Add(new AlertPolicy
+                {
+                    Id = Guid.NewGuid(),
+                    Name = d.Name,
+                    Enabled = true,
+                    Category = d.Category,
+                    Metric = d.Metric,
+                    Threshold = d.Threshold,
+                    Severity = d.Severity,
+                    Condition = d.Condition,
+                    SuppressionMinutes = 60,
+                    CreatedAt = now,
+                    TriggerCount = 0,
+                });
+            }
         }
+
+        // Seed the activity pack independently so existing installs (which
+        // already have metric policies) still receive it once.
+        if (!db.AlertPolicies.Any(p => p.Kind == "activity"))
+        {
+            foreach (var a in ActivityDefaults)
+            {
+                db.AlertPolicies.Add(new AlertPolicy
+                {
+                    Id = Guid.NewGuid(),
+                    Name = a.Name,
+                    Enabled = true,
+                    Kind = "activity",
+                    Category = a.Category,
+                    Metric = "",
+                    ActivityPattern = a.Pattern,
+                    WindowMinutes = 60,
+                    Threshold = 1,
+                    Severity = a.Severity,
+                    Condition = $"Activity \"{a.Pattern}\" ≥ 1 in 60m",
+                    SuppressionMinutes = 60,
+                    CreatedAt = now,
+                    TriggerCount = 0,
+                });
+            }
+        }
+
+        // Anomaly starter pack: fire on spikes vs the tenant's own 30-day
+        // baseline, not on absolute numbers — catches "3× more risky users
+        // than normal" even in tenants where "normal" isn't zero.
+        if (!db.AlertPolicies.Any(p => p.Kind == "anomaly"))
+        {
+            (string Name, string Metric, int Floor, string Severity)[] anomalies =
+            [
+                ("Risky user spike",           "riskyUsersCount",          3,  "high"),
+                ("High-severity alert spike",  "highAlertCount",           10, "high"),
+                ("Non-compliant device spike", "nonCompliantDevicesCount", 5,  "medium"),
+            ];
+            foreach (var a in anomalies)
+            {
+                db.AlertPolicies.Add(new AlertPolicy
+                {
+                    Id = Guid.NewGuid(),
+                    Name = a.Name,
+                    Enabled = true,
+                    Kind = "anomaly",
+                    Category = "identity",
+                    Metric = a.Metric,
+                    Threshold = a.Floor,
+                    BaselineMultiplier = 3.0,
+                    BaselineDays = 30,
+                    Severity = a.Severity,
+                    Condition = $"{a.Metric} ≥ 3× 30-day baseline (floor {a.Floor})",
+                    SuppressionMinutes = 60,
+                    CreatedAt = now,
+                    TriggerCount = 0,
+                });
+            }
+        }
+
+        // The model defaults Id to 1 and the column is not store-generated, so
+        // no key is set here. This is the first write a fresh install performs;
+        // when the column was an identity it rejected the explicit key and took
+        // the whole service down on startup.
         if (!db.NotificationSettings.Any())
-            db.NotificationSettings.Add(new NotificationSettings { Id = 1 });
+            db.NotificationSettings.Add(new NotificationSettings());
         db.SaveChanges();
     }
 }

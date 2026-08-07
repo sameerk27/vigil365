@@ -1,0 +1,51 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <!-- Lets `dotnet restore` and `dotnet list package` succeed on Linux, so CI
+         can still run the NuGet vulnerability audit across the whole solution.
+         Building WPF itself remains Windows-only, which is why CI compiles this
+         project in a separate Windows job. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+
+    <!-- The brand icon (navy shield + V) shown for Vigil365-Setup.exe in Explorer,
+         the taskbar and the title bar. Same mark as the web favicon and the
+         in-app logo. -->
+    <ApplicationIcon>vigil365.ico</ApplicationIcon>
+
+    <!-- Version and identity metadata — surfaced in the exe's Properties >
+         Details tab. Version tracks the release; keep in step with the API and
+         client via scripts/set-version.ps1. -->
+    <Version>1.0.0</Version>
+    <AssemblyTitle>Vigil365 Setup</AssemblyTitle>
+    <Product>Vigil365</Product>
+    <Company>Vigil365</Company>
+    <Description>Vigil365 setup wizard — installs the self-hosted Microsoft 365 security dashboard.</Description>
+    <Copyright>Copyright © 2026 Vigil365</Copyright>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Used to create the SQL login the Windows service authenticates with.
+         Pinned to the version EF Core 8.0.11 resolves so the installer and the
+         API do not disagree about the driver. -->
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.1.6" />
+    <!-- Transitive security override: Microsoft.Data.SqlClient 5.1.6 pulls
+         System.Formats.Asn1 5.0.0, which has GHSA-447r-wph3-92pm (High). Pin the
+         patched version to keep the CI vulnerability audit green. -->
+    <PackageReference Include="System.Formats.Asn1" Version="8.0.2" />
+  </ItemGroup>
+
+  <!-- The published application, zipped, carried inside the installer. Produced
+       by scripts/build-installer.ps1; absent during ordinary development, which
+       is why this is conditional. An installer built without it still compiles
+       and tells the user at runtime rather than failing the build for everyone
+       working on the wizard. -->
+  <ItemGroup Condition="Exists('payload.zip')">
+    <EmbeddedResource Include="payload.zip" LogicalName="Vigil365.payload.zip" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Vigil365">
+  <defs>
+    <linearGradient id="v" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+  </defs>
+  <!-- White tile so the navy shield stays visible on any background -->
+  <rect width="64" height="64" rx="14" fill="#ffffff"/>
+  <!-- Navy shield -->
+  <path d="M32 9 L51 16 V31 C51 43 43 52.8 32 56 C21 52.8 13 43 13 31 V16 Z"
+        fill="#0d1f3c" stroke="url(#v)" stroke-width="2.5" stroke-linejoin="round"/>
+  <!-- V checkmark -->
+  <path d="M23.5 27 L32 44 L40.5 27" fill="none" stroke="url(#v)" stroke-width="5.5"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

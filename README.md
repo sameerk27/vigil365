@@ -1,6 +1,6 @@
 # M365 Security Alert Dashboard
 
-A self-hosted, real-time Microsoft 365 security monitoring dashboard that aggregates alerts from Defender XDR, Entra ID Protection, Intune, Exchange Online, Compliance, and more — all in one place.
+A self-hosted Microsoft 365 security monitoring dashboard that aggregates alerts from Defender XDR, Entra ID Protection, Intune, Exchange Online, Compliance, and more — all in one place, collected on a schedule (every 15 minutes by default).
 
 > **No third-party SaaS required.** Runs entirely on your own Windows host using Microsoft Graph API.
 
@@ -23,22 +23,24 @@ A self-hosted, real-time Microsoft 365 security monitoring dashboard that aggreg
 | **Service Health** | M365 service advisories and incidents, per-service health status |
 | **M365 Connectivity** | Sign-in health, connectivity issues |
 | **Licenses & Users** | License SKU breakdown, inactive users, expiring licenses |
-| **Conditional Access** | Policy list, state breakdown (Enabled/Report-only/Disabled), per-policy detail |
-| **Audit Log** | Unified audit log with category filter, actor/target detail |
-| **Sign-in Locations** | Geographic sign-in map, success/failure breakdown, country drill-down |
+| **Conditional Access** | Policy list, state breakdown (Enabled/Report-only/Disabled), per-policy detail, gap analysis |
+| **Tenant Activity** | Directory audit events with search, day-range filter, and CSV export — the audit surface behind activity-based alerting |
+| **Sign-in Locations** | Success/failure breakdown and country drill-down (tabular; no map) |
 
 ### Enterprise Features
 
-- **Alert Policy Engine** — define custom policies (MFA drop, risky user spike, device breach) with thresholds; auto-evaluates against live data and tracks triggered alerts in browser localStorage
-- **9 Pre-built Alert Templates** — one-click templates for common security scenarios
-- **Detail Modals** — click any alert, user, device, or policy to see all available fields and a direct "View in M365 Portal →" deep link
-- **Search, Filter, Sort, Export** — every page has full-text search, dropdown filters, sortable columns, and CSV export
-- **Saved Filter Presets** — save and reload custom filter combinations per page (localStorage)
-- **Dark Mode** — full dark/light theme toggle, persisted across sessions
-- **Collapsible Sidebar** — icon-only collapsed mode with hover tooltips
-- **Toast Notifications** — on export, preset save, policy actions
-- **Sticky Filter Bars** — filter controls stay visible while scrolling long lists
-- **Responsive Layout** — collapses to single-column below 900px
+- **Alert Policy Engine** — metric, activity, and anomaly policies (MFA drop, risky-user spike, role assignment, app-consent, PIM changes, and more) with thresholds; auto-evaluates against live data. Triggered alerts are stored server-side in SQL Server with a full acknowledge / snooze / resolve / assign / notes workflow.
+- **Activity & Anomaly Alerting** — alerts on tenant *audit activity* (privileged role changes, app credential adds, CA policy edits) and on statistical spikes, not just static thresholds.
+- **Notifications** — Microsoft Teams, email (SMTP), and generic webhook delivery, with per-channel digest mode and delivery-failure self-alerting.
+- **Reports** — scheduled executive digest (daily/weekly/monthly) over email with a CSV attachment, plus a live preview.
+- **Trends** — historical posture tracking (Secure Score, risky users, compliance) from periodic snapshots.
+- **Recommendations** — a single findings hub folding in Conditional Access gaps and SharePoint/OneDrive sharing posture.
+- **Entity Investigation** — drill into any user or device for a merged timeline of its alerts and audit activity.
+- **RBAC & User Management** — in-app Admin / Analyst / Viewer roles, invitations, and a tamper-evident (SHA-256 hash-chained) audit trail of privileged actions.
+- **Global Search** — Ctrl+K palette across alerts, users, devices, and pages.
+- **Detail Panels** — click any alert, user, device, or policy for all fields and a direct "View in M365 Portal →" deep link.
+- **Search, Filter, Export** — full-text search, dropdown filters, and CSV export on every page (sortable columns on the active-alert queue).
+- **Dark Mode**, **collapsible sidebar**, **toast notifications**, **saved filter presets**, and a **responsive layout**.
 
 ---
 
@@ -48,33 +50,50 @@ A self-hosted, real-time Microsoft 365 security monitoring dashboard that aggreg
 |-------|-----------|
 | Backend | ASP.NET Core 8 Minimal API |
 | Frontend | React 18 + TypeScript + Vite |
-| Auth | Microsoft Graph — Client Credentials (app-only) |
+| Sign-in | Microsoft Entra sign-in (MSAL) + in-app RBAC |
+| Collection | Graph app-only — client secret **or** certificate |
 | Scheduler | .NET BackgroundService — every 15 minutes |
-| Storage | SQL Server Express (alerts + collection runs) |
+| Storage | SQL Server Express (EF Core migrations) |
 | Icons | lucide-react |
 
 ---
 
 ## Prerequisites
 
-1. Windows host (Windows 10/11 or Windows Server 2019+)
-2. [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) or ASP.NET Core 8 Hosting Bundle
+**Docker install (Option 1)** — just [Docker](https://docs.docker.com/get-docker/)
+(Windows, Linux, or macOS). Everything else runs in containers.
+
+**Setup wizard (Option 2)** — `Vigil365-Setup.exe` carries the application and
+the .NET runtime inside it, so the server needs:
+1. Windows 10/11 or Windows Server 2019+, and local administrator rights
+2. Nothing else. SQL Server Express and Azure CLI are installed by the wizard if
+   they are not already there, and an existing SQL instance is detected and reused.
+
+**Building from source (Option 3):**
+1. Windows 10/11 or Windows Server 2019+
+2. [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) (or ASP.NET Core 8 Hosting Bundle)
 3. [SQL Server Express](https://www.microsoft.com/en-us/sql-server/sql-server-downloads) (free)
 4. [Node.js 20+](https://nodejs.org/)
+5. [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) — only if you use `register-app.ps1`
+
+All paths also need a Microsoft 365 tenant where you can create an app registration.
 
 ---
 
 ## Microsoft Entra App Registration
 
+> **Tip:** `register-app.ps1` does all of this for you (permissions, redirect URI,
+> exposed scope, secret, admin consent). Do it manually only if you prefer.
+
 ### Create the app
 
 1. Go to [Entra admin center](https://entra.microsoft.com) → **App registrations** → **New registration**
-2. Name it (e.g. `M365SecurityDashboard`)
+2. Name it (e.g. `Vigil365`)
 3. Select **Accounts in this organizational directory only**
-4. No redirect URI needed
-5. Click **Register**
-6. Note the **Tenant ID** and **Application (client) ID**
-7. Go to **Certificates & secrets** → **New client secret** — note the secret value immediately
+4. Under **Redirect URI**, choose **Single-page application (SPA)** and enter the URL you'll serve the app on (e.g. `http://localhost:8080` for Docker, or `https://vigil365.yourco.local:5001`)
+5. Click **Register**, then note the **Tenant ID** and **Application (client) ID**
+6. **Certificates & secrets** → **New client secret** — copy the value immediately
+7. **Expose an API** → set Application ID URI to `api://<client-id>` → **Add a scope** named `access_as_user` (this is what the browser sign-in requests)
 
 ### Required API permissions (Application, not Delegated)
 
@@ -95,12 +114,103 @@ Grant **admin consent** for all of these:
 | `PrivilegedAccess.Read.AzureAD` | PIM assignments |
 | `ThreatHunting.Read.All` | Advanced hunting / MDI |
 | `UserAuthenticationMethod.Read.All` | MFA method details |
+| `SharePointTenantSettings.Read.All` | SharePoint/OneDrive sharing posture |
+| `AttackSimulation.ReadWrite.All` | Attack-simulation results (read-only in-app; Graph has no read-only variant — optional) |
+
+The in-app **Graph Permissions** reference (below Collection Runs) shows each of
+these with a live granted/missing status inferred from the last collection run.
 
 > Some features (IRM, Attack Simulation, Identity Health) require additional Purview/Defender licensing in your tenant. The dashboard gracefully shows a permission error card for unavailable features.
 
 ---
 
-## Setup
+## Install
+
+You need **one** thing first: an **Entra app registration** (so Vigil365 can read
+your tenant via Graph). You can let the new **Interactive Setup Wizard** create this automatically, or create it manually
+(see [Microsoft Entra App Registration](#microsoft-entra-app-registration)).
+
+### Install (Interactive Setup Wizard)
+
+Download **`Vigil365-Setup.exe`** from the
+[latest release](https://github.com/sameerk27/vigil365/releases/latest) and run
+it **as Administrator**. That is the whole install: it is a single self-contained
+file that carries the application, the web UI and the .NET runtime, so the server
+needs no source tree, no Node.js and no .NET installed.
+
+The wizard will:
+1. Check administrator rights and install Azure CLI if it is missing.
+2. Register the Vigil365 application in Microsoft Entra (reusing an existing
+   registration if you have one).
+3. Install SQL Server Express, or detect and reuse an instance you already have,
+   and create the SQL login the service needs.
+4. Set up HTTPS, including the certificate, for a network install.
+5. Unpack the application and run it as an auto-starting Windows Service.
+
+To build that installer from source instead, see
+[Building the installer](#building-the-installer).
+
+#### Choose who needs to reach it
+
+The wizard's first question decides everything else:
+
+**Just this computer** — the default, for evaluating Vigil365. It binds
+`http://localhost:8080` (loopback only), needs no certificate, and changes no
+firewall rules. Entra permits `http` for loopback redirect URIs, so sign-in works
+as-is. Nothing else on your network can reach it.
+
+**Other people on our network** — asks for a hostname and a certificate. Entra
+refuses plain `http://` redirect URIs for anything but localhost, so once
+Vigil365 is reachable by name, HTTPS is required and the wizard asks where the
+certificate comes from:
+
+| Option | Use when |
+| --- | --- |
+| **A certificate already on this server** | Your organisation issues certificates from an internal CA (most common). The wizard lists what is in `LocalMachine\My` and marks hostname matches with a ✓. |
+| **A `.pfx` file** | You hold a wildcard or externally-issued certificate as a file. |
+| **Create one for me** (default) | You have neither and want to get running now. |
+
+The last option generates a certificate and trusts it **on that server only** —
+that machine stops warning, every other browser still warns. Fine for a pilot,
+not fine to leave in place: on a security product, a warning you tell people to
+click through is training them to ignore the one that matters. Re-run the wizard
+and pick one of the first two options to replace it; re-running reuses the
+existing Entra app registration rather than creating another.
+
+If the server is reachable from the internet, `scripts/request-cert.ps1` gets a
+free, publicly-trusted certificate from Let's Encrypt instead:
+
+```bash
+pwsh -File scripts/request-cert.ps1 -Hostname vigil365.yourcompany.com -Email you@yourcompany.com
+```
+
+Everything else is detected or derived: the first administrator is taken from
+your Azure CLI sign-in, and an existing SQL Server instance is found and reused
+rather than installing a second one.
+
+After the wizard finishes, open the app and finish **Setup** in the browser to
+supply the Graph credentials used for collection.
+
+#### Building the installer
+
+For maintainers shipping a release — customers never run this:
+
+```bash
+pwsh -File scripts/build-installer.ps1
+```
+
+It builds the SPA from the lockfile, publishes the API self-contained for
+`win-x64`, compresses that into a payload embedded in the installer, and emits a
+single `dist/Vigil365-Setup.exe` (~120 MB). The build happens here precisely so
+it does not happen on the customer's server, where the toolchain is not yours and
+the resulting binaries would differ from the ones you tested.
+
+
+
+## Build from source (Option 3)
+
+Only needed if you are not using the setup wizard or Docker — for development,
+or to run Vigil365 on a host you build on yourself.
 
 ### 1. Clone and configure secrets
 
@@ -208,6 +318,52 @@ sc.exe start M365SecurityDashboard
 
 ---
 
+## HTTPS / TLS (required for production)
+
+Outside Development the app enforces HTTPS (HSTS + redirect). Plain HTTP is only
+for local development. Two supported ways to serve TLS:
+
+### Option A — Reverse proxy (recommended)
+
+Terminate TLS at IIS / Nginx / Caddy and proxy to the app on localhost. Example
+Caddy config:
+
+```
+vigil365.yourcompany.com {
+    reverse_proxy localhost:8080
+}
+```
+
+Run the app bound to localhost only (`--urls http://localhost:8080`) so it is
+never directly exposed; the proxy handles certs (e.g. automatic Let's Encrypt).
+
+### Option B — Kestrel with a certificate
+
+Let the app terminate TLS directly by configuring a Kestrel HTTPS endpoint in
+`appsettings.Production.json` (Kestrel reads this automatically — no code change):
+
+```json
+{
+  "Kestrel": {
+    "Endpoints": {
+      "Https": {
+        "Url": "https://0.0.0.0:443",
+        "Certificate": { "Path": "C:\\certs\\vigil365.pfx", "Password": "YOUR_PFX_PASSWORD" }
+      }
+    }
+  }
+}
+```
+
+Set the Azure App Registration **SPA redirect URI** and `Auth:RedirectUri` to the
+HTTPS URL (e.g. `https://vigil365.yourcompany.com`).
+
+> **Credential hygiene:** prefer **certificate auth** for Graph over a client
+> secret, store secrets in a vault or environment variables (never in committed
+> files), and rotate any secret that has ever been exposed.
+
+---
+
 ## API Reference
 
 | Method | Endpoint | Description |
@@ -215,22 +371,28 @@ sc.exe start M365SecurityDashboard
 | `GET` | `/api/dashboard/overview` | Aggregated overview data |
 | `GET` | `/api/dashboard/identity` | Identity & MFA data |
 | `GET` | `/api/dashboard/devices` | Intune device compliance |
-| `GET` | `/api/dashboard/email` | MDO email alerts |
-| `GET` | `/api/dashboard/compliance` | DLP/MCAS/IRM alerts |
-| `GET` | `/api/dashboard/incidents` | Defender XDR incidents |
+| `GET` | `/api/dashboard/email-protection` | MDO email alerts |
+| `GET` | `/api/dashboard/security-incidents` | Defender XDR incidents |
+| `GET` | `/api/dashboard/defender-alerts` | Defender XDR alerts |
 | `GET` | `/api/dashboard/mdi-alerts` | Microsoft Defender for Identity alerts |
 | `GET` | `/api/dashboard/mcas-alerts` | Defender for Cloud Apps alerts |
-| `GET` | `/api/dashboard/insider-risk` | Insider Risk Management alerts |
 | `GET` | `/api/dashboard/risk-detections` | Entra ID risk detections |
-| `GET` | `/api/dashboard/identity-health` | Identity health issues |
 | `GET` | `/api/dashboard/attack-simulation` | Attack simulation results |
-| `GET` | `/api/dashboard/service-health` | M365 service health |
+| `GET` | `/api/dashboard/servicehealth` | M365 service health |
 | `GET` | `/api/dashboard/licenses` | License SKU usage |
 | `GET` | `/api/dashboard/conditional-access` | CA policies |
-| `GET` | `/api/dashboard/audit-log` | Unified audit log |
-| `GET` | `/api/dashboard/sign-ins` | Sign-in locations |
+| `GET` | `/api/dashboard/ca-gaps` | Conditional Access gap analysis |
+| `GET` | `/api/dashboard/sharing-posture` | SharePoint/OneDrive sharing posture |
+| `GET` | `/api/dashboard/signin-locations` | Sign-in locations |
+| `GET` | `/api/audit-events` | Tenant directory audit events |
+| `GET` | `/api/entity/{kind}/{id}` | Entity investigation timeline (user/device) |
+| `GET` | `/api/setup/status` | First-run setup progress |
+| `GET` | `/api/setup/permissions` | Graph permission reference + status |
 | `POST` | `/api/collector/run` | Trigger manual data collection |
 | `GET` | `/api/collector/runs` | Collection run history |
+
+> Unknown `/api/*` paths return `404` JSON. The full surface (alerts workbench,
+> notification settings, report schedules, RBAC) is larger than this excerpt.
 
 ---
 
@@ -240,16 +402,16 @@ sc.exe start M365SecurityDashboard
 
 ### What is in scope by design
 
-- **Read-only, least privilege.** Every Graph permission requested is `*.Read.All`. The app **cannot modify** users, devices, policies, or tenant settings even if the host is compromised.
-- **No remediation automation.** "View in M365 Portal →" links only deep-link you to the correct blade. The app never tells you what to change and never makes changes — remediation stays in Microsoft's tooling where it belongs.
-- **No inbound exposure by default.** The API binds to `localhost`. Remote access requires you to deliberately open a firewall port (and you should front it with TLS + auth if you do).
-- **App-only client-credentials flow** via MSAL (`Azure.Identity`). Standard Microsoft auth, not a homegrown scheme. All Graph traffic is HTTPS/TLS.
+- **Read-only, least privilege.** Nearly every Graph permission requested is `*.Read.All`. The one exception is `AttackSimulation.ReadWrite.All`, which Microsoft Graph offers with no read-only variant — the app only reads with it and never launches simulations. If you don't use the attack-simulation view, don't grant it. The app **cannot modify** users, devices, policies, or tenant settings.
+- **Recommends, never remediates.** The Recommendations view and "Fix in M365 Portal →" links tell you what to change and deep-link you to the right blade, but the app makes **no** changes itself — every remediation happens in Microsoft's tooling, by you.
+- **No inbound exposure by default.** In development the API binds to `localhost`. A production deployment (`deploy.ps1`) runs behind Kestrel with a TLS certificate; anything beyond localhost is a deliberate choice you make.
+- **App-only collection** via MSAL (`Azure.Identity`) using a client secret or certificate; **user sign-in** via Entra with in-app RBAC. Standard Microsoft auth, not a homegrown scheme. All Graph traffic is HTTPS/TLS.
 
 ### How credentials and secrets are handled
 
 - The Graph client secret is **never** committed to source. Use .NET User Secrets (dev) or `appsettings.Production.json` / environment variables (prod, both gitignored).
 - Notification secrets stored in the database (SMTP password, Teams/Slack & generic webhook URLs) are **encrypted at rest with the Windows Data Protection API (DPAPI), machine scope** — a leaked database row cannot be decrypted on another machine. Secrets are decrypted only in memory at send time and the SMTP password is never returned by the API.
-- **Recommended:** use **certificate-based authentication** instead of a client secret for production (planned/optional). A non-exportable certificate in the Windows cert store removes the plaintext shared secret entirely. _(Not yet wired into the app — track this in Issues.)_
+- **Recommended:** use **certificate-based authentication** instead of a client secret for production. A non-exportable certificate in the Windows cert store removes the plaintext shared secret entirely; Vigil365 supports a certificate thumbprint or PFX path, with a secret only as a fallback.
 
 ### Host hardening checklist (your responsibility)
 
@@ -268,6 +430,9 @@ The security of this app is only as good as the box it runs on. Before productio
 
 - Rate limiting is handled automatically (429 `Retry-After` respected).
 - A failed individual Graph source does not stop the whole collection run; each card degrades independently.
+- Logs are newline-delimited JSON on stdout and in `logs/vigil365-.json` beside the app. Files roll daily (and at 10 MB) with the newest 14 files retained. Configure `Logging__File__Path`, `Logging__File__RetainedFileCountLimit`, and `Logging__File__FileSizeLimitBytes` for the host policy. Docker persists them in the `vigil365-logs` volume at `/app/logs`.
+- Log events include request correlation IDs and structured fields. Do not put access tokens, client secrets, or notification credentials in log messages.
+- Follow the [Operations Runbook](docs/OPERATIONS_RUNBOOK.md) for SQL/key-ring backups, restore drills, and upgrades.
 
 > Found a security issue? See [SECURITY.md](SECURITY.md) — please report privately, not in a public issue.
 
