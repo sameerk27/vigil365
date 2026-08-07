@@ -62,21 +62,13 @@ A self-hosted Microsoft 365 security monitoring dashboard that aggregates alerts
 
 ## Prerequisites
 
-**Docker install (Option 1)** — just [Docker](https://docs.docker.com/get-docker/)
-(Windows, Linux, or macOS). Everything else runs in containers.
+## Prerequisites
 
-**Setup wizard (Option 2)** — `Vigil365-Setup.exe` carries the application and
-the .NET runtime inside it, so the server needs:
 1. Windows 10/11 or Windows Server 2019+, and local administrator rights
-2. Nothing else. SQL Server Express and Azure CLI are installed by the wizard if
-   they are not already there, and an existing SQL instance is detected and reused.
+2. [Node.js 20+](https://nodejs.org/) (for building the installer)
+3. [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) (for building the installer)
 
-**Building from source (Option 3):**
-1. Windows 10/11 or Windows Server 2019+
-2. [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) (or ASP.NET Core 8 Hosting Bundle)
-3. [SQL Server Express](https://www.microsoft.com/en-us/sql-server/sql-server-downloads) (free)
-4. [Node.js 20+](https://nodejs.org/)
-5. [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) — only if you use `register-app.ps1`
+Nothing else is required on the server. SQL Server Express and Azure CLI are installed by the setup wizard if they are not already there.
 
 All paths also need a Microsoft 365 tenant where you can create an app registration.
 
@@ -134,11 +126,15 @@ your tenant via Graph). You can let the new **Interactive Setup Wizard** create 
 
 ### Install (Interactive Setup Wizard)
 
-Download **`Vigil365-Setup.exe`** from the
-[latest release](https://github.com/sameerk27/vigil365/releases/latest) and run
-it **as Administrator**. That is the whole install: it is a single self-contained
-file that carries the application, the web UI and the .NET runtime, so the server
-needs no source tree, no Node.js and no .NET installed.
+**1. Build the installer**
+Since there are no pre-built releases yet, you must generate the setup executable yourself. Open PowerShell and run:
+
+```powershell
+pwsh -File scripts/build-installer.ps1
+```
+
+**2. Run the setup**
+Execute the generated **`dist/Vigil365-Setup.exe`** as **Administrator**. That is the whole install: it is a single self-contained file that carries the application, the web UI, and the .NET runtime, so the deployment server needs no source tree, no Node.js, and no .NET installed.
 
 The wizard will:
 1. Check administrator rights and install Azure CLI if it is missing.
@@ -193,70 +189,7 @@ rather than installing a second one.
 After the wizard finishes, open the app and finish **Setup** in the browser to
 supply the Graph credentials used for collection.
 
-#### Building the installer
 
-For maintainers shipping a release — customers never run this:
-
-```bash
-pwsh -File scripts/build-installer.ps1
-```
-
-It builds the SPA from the lockfile, publishes the API self-contained for
-`win-x64`, compresses that into a payload embedded in the installer, and emits a
-single `dist/Vigil365-Setup.exe` (~120 MB). The build happens here precisely so
-it does not happen on the customer's server, where the toolchain is not yours and
-the resulting binaries would differ from the ones you tested.
-
-
-
-## Build from source (Option 3)
-
-Only needed if you are not using the setup wizard or Docker — for development,
-or to run Vigil365 on a host you build on yourself.
-
-### 1. Clone and configure secrets
-
-```powershell
-git clone https://github.com/sameerk27/vigil365.git
-cd vigil365
-
-cd src\M365SecurityDashboard.Api
-dotnet user-secrets init
-dotnet user-secrets set "Graph:TenantId"     "YOUR_TENANT_ID"
-dotnet user-secrets set "Graph:ClientId"     "YOUR_CLIENT_ID"
-dotnet user-secrets set "Graph:ClientSecret" "YOUR_CLIENT_SECRET"
-```
-
-> **Never put real credentials in `appsettings.json`** — use User Secrets for development and environment variables or `appsettings.Production.json` (gitignored) for production.
-
-### 2. Set up the database
-
-```powershell
-# Option A: let the API auto-create on first run (requires db-create rights)
-# Option B: pre-create manually
-sqlcmd -S .\SQLEXPRESS -E -I -i .\database\schema.sql
-```
-
-### 3. Build the frontend
-
-```powershell
-cd src\m365-security-dashboard-client
-npm install
-npm run build
-```
-
-> `npm run build` outputs directly into `..\M365SecurityDashboard.Api\wwwroot`
-> (configured via Vite `outDir`) — no copy step needed.
-
-### 4. Run the API
-
-```powershell
-cd src\M365SecurityDashboard.Api
-$env:ASPNETCORE_ENVIRONMENT = "Development"
-dotnet run
-```
-
-Open **http://localhost:5000**
 
 ---
 
@@ -299,46 +232,7 @@ npx playwright test --ui
 
 ---
 
-## Production Deployment (Windows Service)
 
-```powershell
-# 1. Build frontend (outputs straight into the API's wwwroot)
-cd src\m365-security-dashboard-client
-npm install && npm run build
-
-# 2. Publish API
-cd ..\M365SecurityDashboard.Api
-dotnet publish -c Release -o C:\Apps\M365SecurityDashboard
-
-# 3. Create appsettings.Production.json in publish folder
-# (see template below — this file is gitignored)
-
-# 4. Install as Windows Service
-sc.exe create M365SecurityDashboard `
-  binPath= "C:\Apps\M365SecurityDashboard\M365SecurityDashboard.Api.exe --environment Production --urls http://localhost:8080" `
-  start= auto
-sc.exe start M365SecurityDashboard
-```
-
-**`appsettings.Production.json` template** (create this file manually, never commit it):
-
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Server=.\\SQLEXPRESS;Database=M365SecurityDashboard;Trusted_Connection=True;Encrypt=True;TrustServerCertificate=True"
-  },
-  "Graph": {
-    "TenantId": "YOUR_TENANT_ID",
-    "ClientId": "YOUR_CLIENT_ID",
-    "ClientSecret": "YOUR_CLIENT_SECRET",
-    "CollectionIntervalMinutes": 15,
-    "DevicesNotCheckedInDays": 7,
-    "SignInLookbackHours": 24
-  }
-}
-```
-
----
 
 ## HTTPS / TLS (required for production)
 
