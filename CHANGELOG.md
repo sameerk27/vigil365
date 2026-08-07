@@ -8,11 +8,37 @@ version lives in exactly two places — the API's `<Version>` and the client's
 `package.json` — kept in step by `scripts/set-version.ps1` and enforced in CI by
 `scripts/check-version.ps1`.
 
-## [Unreleased]
+## [1.0.0] — 2026-08-07
 
-Work completed since the alert-first redesign, ordered by the maturity phase it
-belongs to. Vigil365 remains **read-only**: it reports and recommends, and never
-changes anything in the Microsoft 365 tenant.
+First public release of Vigil365: a self-hosted, **read-only** Microsoft 365
+security monitoring dashboard. It collects from Microsoft Graph on a schedule,
+evaluates metric / activity / anomaly alert policies, notifies over
+Teams / email / webhook, and reports through trends, compliance assessment and an
+executive digest — with in-app RBAC over a tamper-evident audit trail. It reports
+and recommends, and never changes anything in the tenant.
+
+Distributed as a single self-contained Windows installer (`Vigil365-Setup.exe`)
+that carries the application, the web UI and the .NET runtime — the target server
+needs no source tree, Node.js or .NET.
+
+### Installation
+
+- **Self-contained setup wizard** — one `Vigil365-Setup.exe` (~120 MB), built at
+  release time by `scripts/build-installer.ps1`. It checks prerequisites,
+  registers the Entra application, prepares the database, sets up HTTPS and
+  installs an auto-starting Windows service. The only external tool is Azure CLI,
+  used solely for the Entra registration, and installed automatically if missing.
+- **Deployment scope choice** — "Just this computer" binds loopback with no
+  certificate (Entra permits `http://localhost` redirect URIs), or "Other people
+  on our network" takes a certificate from the Windows store, a `.pfx`, or a
+  generated self-signed one. `scripts/request-cert.ps1` obtains a real Let's
+  Encrypt certificate for an internet-reachable host.
+- **Automatic Entra provisioning** — the wizard registers the app in the
+  administrator's own tenant (resolved from their email via OpenID discovery,
+  not whatever the CLI happened to be signed into), grants the fourteen required
+  Graph permissions, grants admin consent, and creates the collector's client
+  secret — so collection works on first run with nothing to configure in the
+  portal.
 
 ### Security
 
@@ -37,6 +63,12 @@ changes anything in the Microsoft 365 tenant.
   advisories to zero.
 - CI now fails on vulnerable NuGet or npm packages, and the push trigger was
   corrected — it listed only `main`, so push-triggered CI had never run.
+- Patched four High-severity transitive advisories surfaced once the full
+  solution audit ran — `System.Security.Cryptography.Xml`, `System.Formats.Asn1`,
+  `System.Net.Http` and `System.Text.RegularExpressions` — pinned to fixed
+  versions across the API, tests and installer.
+- CI gained a Windows job that compiles the WPF installer, so a break there fails
+  the build instead of surfacing only at release time.
 
 ### Added
 
@@ -52,6 +84,8 @@ changes anything in the Microsoft 365 tenant.
 - **Policy export/import** as portable JSON packs. Runtime state never travels,
   and notification recipients are stripped by default since packs get shared.
 - **Executive digest as PDF**, alongside the existing HTML email and CSV.
+- Digest entries now carry each alert's **category, status and assignee** in both
+  the HTML and CSV, so a digest can be triaged without opening the app.
 - **SIEM export** — `/api/siem/alerts` and `/api/siem/health`, authenticated by
   scoped API token.
 - **First-run setup checklist** and a live **Graph permissions reference**
@@ -99,9 +133,30 @@ changes anything in the Microsoft 365 tenant.
   Runs, where the per-source error is readable.
 - Error states offered no retry, and relative timestamps froze at render.
 
-## [1.0.0]
+### Fixed — installer and first run
 
-Initial self-hosted release: scheduled Microsoft Graph collection, metric,
-activity and anomaly alert policies, Teams/email/webhook notifications, RBAC
-with a tamper-evident audit trail, compliance assessment, trends, and the
-executive digest.
+Each of these previously produced an install that reported success and did not
+work:
+
+- Registered the app in the wrong tenant (whichever the CLI was signed into)
+  rather than the administrator's own; now resolved and verified.
+- Windows service was never created — `sc` was invoked through `cmd.exe`, which
+  split the quoted binary path; now invoked directly with the exit code checked
+  and startup confirmed to reach RUNNING.
+- The service account had no SQL login (SQL Express grants sysadmin only to local
+  administrators), so it could never connect; the login and database are now
+  created during install.
+- DataProtection keys were written under `Program Files`, unwritable by the
+  service, so the keyring never persisted; moved to `ProgramData` with an ACL.
+- A fresh database crashed on first start — `NotificationSettings` / `GraphConfig`
+  are single-row tables with a fixed key, but the migration made those keys
+  identity columns; corrected with a migration.
+- Re-running the wizard failed to reconfigure an existing app registration
+  (`CannotDeleteOrUpdateEnabledEntitlement`); the exposed scope is now left
+  untouched when it already exists.
+- Certificate-thumbprint auth threw a cryptic error on Linux (the Docker path)
+  instead of a clear message when a certificate store could not be opened.
+- Sign-in dead-ended with `interaction_in_progress` after an abandoned redirect;
+  the stale MSAL state is now cleared and retried.
+- The Setup page threw `EmptyState is not defined` because the component was used
+  without importing it — shipped because the build does not type-check.

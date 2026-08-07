@@ -132,10 +132,11 @@ your tenant via Graph). You can let the new **Interactive Setup Wizard** create 
 
 ### Install (Interactive Setup Wizard)
 
-Download **`Vigil365-Setup.exe`** and run it **as Administrator**. That is the
-whole install: it is a single self-contained file that carries the application,
-the web UI and the .NET runtime, so the server needs no source tree, no Node.js
-and no .NET installed.
+Download **`Vigil365-Setup.exe`** from the
+[latest release](https://github.com/sameerk27/vigil365/releases/latest) and run
+it **as Administrator**. That is the whole install: it is a single self-contained
+file that carries the application, the web UI and the .NET runtime, so the server
+needs no source tree, no Node.js and no .NET installed.
 
 The wizard will:
 1. Check administrator rights and install Azure CLI if it is missing.
