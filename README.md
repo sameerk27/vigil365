@@ -138,6 +138,8 @@ rather than installing a second one.
 After the wizard finishes, open the app and finish **Setup** in the browser to
 supply the Graph credentials used for collection.
 
+For detailed instructions on user roles (RBAC), setting up SMTP notifications, and general configuration, see the [Administration & Configuration Guide](docs/ADMINISTRATION.md).
+
 
 
 ---
