@@ -6,7 +6,8 @@ A self-hosted Microsoft 365 security monitoring dashboard that aggregates alerts
 
 ---
 
-<img width="1360" height="679" alt="dashboard_redacted" src="https://github.com/user-attachments/assets/f1d6675e-34fb-4f60-b48b-95995147e772" />
+<img alt="Vigil365 Overview Dashboard" src="docs/assets/dashboard-overview-v1.png" />
+<img alt="Vigil365 Login Screen" src="docs/assets/dashboard-login-v1.png" />
 
 
 ## Features
