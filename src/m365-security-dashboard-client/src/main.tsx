@@ -4,7 +4,7 @@ import { PublicClientApplication, type AccountInfo, type Configuration } from "@
 import {
   Home, Users, Monitor, Mail, AlertTriangle, Bell, CheckSquare, Activity, Wifi,
   Package, ShieldCheck, BookOpen, MapPin, UserCheck, Settings, ChevronRight, ChevronLeft,
-  Clock, RefreshCw, Sun, Moon, Rows2, Rows3, LogIn, LogOut, ShieldAlert, Shield, UserX, TrendingUp, Lightbulb, Lock,
+  Clock, RefreshCw, Sun, Moon, Rows2, Rows3, LogIn, LogOut, ShieldAlert, UserX, TrendingUp, Lightbulb, Lock,
   Search as SearchIcon, Pause, Play, Globe
 } from "lucide-react";
 import "./styles.css";
@@ -168,9 +168,12 @@ function Sidebar({ page, setPage, alertCounts, collapsed, onToggleCollapse }: {
     <aside className={`sidebar ${collapsed ? "" : "expanded"}`}>
       <div className="sb-logo">
         <div className="sb-mark">
-          <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M11 2L3 5.5V11C3 15.1 6.4 18.9 11 20C15.6 18.9 19 15.1 19 11V5.5L11 2Z" fill="#3b82f6" stroke="#60a5fa" strokeWidth="0.8"/>
-            <path d="M5.5 11.5 L7.5 11.5 L9 9 L11 14 L13 10 L14.5 11.5 L16.5 11.5" stroke="white" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+          {/* Brand mark — navy shield + V checkmark. Identical design to the
+              favicon and the installer icon so the tab, the app and the exe all
+              read as one thing. */}
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 3 L19 5.6 V13 C19 17.4 16 21 12 22.2 C8 21 5 17.4 5 13 V5.6 Z" fill="#0d1f3c" stroke="#2563eb" strokeWidth="1" strokeLinejoin="round"/>
+            <path d="M8.6 10 L12 16.6 L15.4 10" fill="none" stroke="#3b82f6" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </div>
         {!collapsed && (
@@ -821,7 +824,13 @@ function AuthGate() {
         {/* Left panel — branding (deliberately dark; scoped .login-* classes) */}
         <div className="login-brand">
           <div className="login-logo">
-            <div className="login-logo-mark"><Shield size={22} color="#fff" /></div>
+            <div className="login-logo-mark">
+              {/* Same navy shield + V as the tab, sidebar and installer icon. */}
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 3 L19 5.6 V13 C19 17.4 16 21 12 22.2 C8 21 5 17.4 5 13 V5.6 Z" fill="#0d1f3c" stroke="#2563eb" strokeWidth="1" strokeLinejoin="round"/>
+                <path d="M8.6 10 L12 16.6 L15.4 10" fill="none" stroke="#3b82f6" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
             <span className="login-logo-name">Vigil365</span>
           </div>
           <div>

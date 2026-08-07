@@ -11,6 +11,21 @@
          Building WPF itself remains Windows-only, which is why CI compiles this
          project in a separate Windows job. -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
+
+    <!-- The brand icon (navy shield + V) shown for Vigil365-Setup.exe in Explorer,
+         the taskbar and the title bar. Same mark as the web favicon and the
+         in-app logo. -->
+    <ApplicationIcon>vigil365.ico</ApplicationIcon>
+
+    <!-- Version and identity metadata — surfaced in the exe's Properties >
+         Details tab. Version tracks the release; keep in step with the API and
+         client via scripts/set-version.ps1. -->
+    <Version>1.0.0</Version>
+    <AssemblyTitle>Vigil365 Setup</AssemblyTitle>
+    <Product>Vigil365</Product>
+    <Company>Vigil365</Company>
+    <Description>Vigil365 setup wizard — installs the self-hosted Microsoft 365 security dashboard.</Description>
+    <Copyright>Copyright © 2026 Vigil365</Copyright>
   </PropertyGroup>
 
   <ItemGroup>

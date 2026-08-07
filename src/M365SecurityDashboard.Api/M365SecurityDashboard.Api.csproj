@@ -9,6 +9,15 @@
          fails the build if they drift (scripts/check-version.ps1). Surfaced by
          /health and by the sidebar chip, so a support report names a real build. -->
     <Version>1.0.0</Version>
+
+    <!-- Brand icon + identity for the service exe (Task Manager, Services,
+         Explorer). Same navy-shield mark as the installer and the web favicon. -->
+    <ApplicationIcon>vigil365.ico</ApplicationIcon>
+    <AssemblyTitle>Vigil365 API</AssemblyTitle>
+    <Product>Vigil365</Product>
+    <Company>Vigil365</Company>
+    <Description>Vigil365 — self-hosted Microsoft 365 security monitoring service.</Description>
+    <Copyright>Copyright © 2026 Vigil365</Copyright>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Azure.Identity" Version="1.17.2" />

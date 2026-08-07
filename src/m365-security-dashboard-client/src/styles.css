@@ -314,7 +314,7 @@ select, input { font: inherit; }
 
 .sb-mark {
   width: 38px; height: 38px;
-  background: #1d4ed8;
+  background: #ffffff;
   border-radius: 9px;
   display: grid;
   place-items: center;
@@ -1627,7 +1627,7 @@ button.countdown-chip:hover { color: var(--color-text); }
 .login-logo { display: flex; align-items: center; gap: 12px; }
 .login-logo-mark {
   width: 40px; height: 40px; border-radius: 10px;
-  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover));
+  background: #ffffff;
   display: flex; align-items: center; justify-content: center;
   box-shadow: 0 0 20px rgba(37,99,235,.4);
 }
