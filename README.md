@@ -1,10 +1,12 @@
-# Vigil365 (M365 Security Alert Dashboard) - v1.0.0
+# M365 Security Alert Dashboard
 
 A self-hosted Microsoft 365 security monitoring dashboard that aggregates alerts from Defender XDR, Entra ID Protection, Intune, Exchange Online, Compliance, and more — all in one place, collected on a schedule (every 15 minutes by default).
 
 > **No third-party SaaS required.** Runs entirely on your own Windows host using Microsoft Graph API.
 
----<img width="1360" height="679" alt="dashboard_redacted" src="https://github.com/user-attachments/assets/f1d6675e-34fb-4f60-b48b-95995147e772" />
+---
+
+<img width="1360" height="679" alt="dashboard_redacted" src="https://github.com/user-attachments/assets/f1d6675e-34fb-4f60-b48b-95995147e772" />
 
 
 ## Features
