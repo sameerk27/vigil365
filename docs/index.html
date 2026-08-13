@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vigil365 — Self-hosted Microsoft 365 security monitoring</title>
+<meta name="description" content="Vigil365 is a free, self-hosted, read-only Microsoft 365 security dashboard. It watches identity, devices, email and compliance on a schedule — and never has permission to change your tenant.">
+<meta name="theme-color" content="#0a1526">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="apple-touch-icon" href="favicon.svg">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://vigil365.in/">
+<meta property="og:title" content="Vigil365 — Self-hosted Microsoft 365 security monitoring">
+<meta property="og:description" content="Free, self-hosted, read-only Microsoft 365 security dashboard. Identity, devices, email and compliance in one console — it reports and recommends, and never touches your tenant.">
+<meta property="og:image" content="https://vigil365.in/favicon.svg">
+<meta name="twitter:card" content="summary">
+<style>
+  :root{
+    --bg:#0a1526; --surface:#0f1e38; --surface-2:#132849; --line:#1e3a5f; --line-soft:#16294733;
+    --ink:#e8eef7; --muted:#8ba3c7; --faint:#5f7aa3;
+    --accent:#3b82f6; --accent-2:#2563eb; --accent-ink:#bcd4ff;
+    --crit:#ef4444; --high:#f59e0b; --good:#22c55e; --med:#60a5fa;
+    --shadow:0 24px 60px -24px rgba(0,0,0,.7);
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --maxw:1140px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:var(--sans); font-size:16px; line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+    background-image:
+      radial-gradient(1200px 600px at 78% -10%, rgba(37,99,235,.18), transparent 60%),
+      linear-gradient(var(--line-soft) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
+    background-size:auto, 46px 46px, 46px 46px;
+  }
+  a{color:inherit; text-decoration:none}
+  .wrap{max-width:var(--maxw); margin:0 auto; padding:0 24px}
+  .eyebrow{
+    font-family:var(--mono); font-size:12px; letter-spacing:.18em; text-transform:uppercase;
+    color:var(--accent-ink); display:inline-flex; align-items:center; gap:9px;
+  }
+  .eyebrow::before{content:""; width:22px; height:1px; background:var(--accent)}
+  h1,h2,h3{font-family:var(--sans); font-weight:800; letter-spacing:-.025em; text-wrap:balance; margin:0}
+  .btn{
+    display:inline-flex; align-items:center; gap:9px; font-family:var(--sans); font-weight:650;
+    font-size:15px; padding:12px 20px; border-radius:9px; border:1px solid transparent;
+    cursor:pointer; transition:transform .15s ease, box-shadow .2s ease, background .2s ease, border-color .2s;
+  }
+  .btn-primary{background:linear-gradient(180deg,var(--accent),var(--accent-2)); color:#fff; box-shadow:0 8px 24px -8px rgba(59,130,246,.7)}
+  .btn-primary:hover{transform:translateY(-2px); box-shadow:0 14px 30px -8px rgba(59,130,246,.8)}
+  .btn-ghost{background:transparent; color:var(--ink); border-color:var(--line)}
+  .btn-ghost:hover{border-color:var(--accent); background:#0f1e3866}
+  .btn:focus-visible{outline:2px solid var(--accent-ink); outline-offset:3px}
+
+  /* ---- top bar ---- */
+  header{position:sticky; top:0; z-index:50; backdrop-filter:blur(10px);
+    background:linear-gradient(180deg, rgba(10,21,38,.92), rgba(10,21,38,.72)); border-bottom:1px solid var(--line)}
+  .nav{display:flex; align-items:center; gap:18px; height:64px}
+  .brand{display:flex; align-items:center; gap:11px; font-weight:800; letter-spacing:-.02em; font-size:17px}
+  .brand .mark{width:30px; height:30px; border-radius:8px; background:#fff; display:grid; place-items:center; flex:0 0 auto}
+  .nav .links{display:flex; gap:26px; margin-left:auto; font-size:14.5px; color:var(--muted)}
+  .nav .links a:hover{color:var(--ink)}
+  .nav .cta{margin-left:8px}
+  @media(max-width:760px){ .nav .links{display:none} .nav .cta{margin-left:auto} }
+
+  /* ---- hero ---- */
+  .hero{padding:76px 0 40px}
+  .hero-grid{display:grid; grid-template-columns:1.02fr .98fr; gap:52px; align-items:center}
+  @media(max-width:940px){ .hero-grid{grid-template-columns:1fr; gap:40px} .hero{padding:52px 0 20px} }
+  h1{font-size:clamp(38px,5.4vw,60px); line-height:1.02; margin:20px 0 0}
+  h1 .dim{color:var(--faint)}
+  .lede{color:var(--muted); font-size:19px; max-width:33ch; margin:22px 0 30px}
+  .lede b{color:var(--ink); font-weight:650}
+  .hero-cta{display:flex; gap:14px; flex-wrap:wrap}
+  .trust{display:flex; flex-wrap:wrap; gap:8px 22px; margin-top:34px; font-family:var(--mono); font-size:12.5px; color:var(--faint)}
+  .trust span{display:inline-flex; align-items:center; gap:8px}
+  .trust span::before{content:""; width:6px; height:6px; border-radius:50%; background:var(--good); box-shadow:0 0 8px var(--good)}
+
+  /* ---- dashboard mock ---- */
+  .console{position:relative; border:1px solid var(--line); border-radius:14px; background:linear-gradient(180deg,#0f1e38,#0c1a30);
+    box-shadow:var(--shadow); overflow:hidden}
+  .console::after{
+    content:""; position:absolute; left:0; right:0; top:0; height:120px;
+    background:linear-gradient(180deg, rgba(59,130,246,.14), transparent);
+    animation:scan 6.5s linear infinite; pointer-events:none}
+  @keyframes scan{0%{transform:translateY(-120px)} 100%{transform:translateY(560px)}}
+  .c-bar{display:flex; align-items:center; gap:8px; padding:11px 14px; border-bottom:1px solid var(--line); background:#0d1c34}
+  .dot{width:10px; height:10px; border-radius:50%}
+  .c-bar .u{width:auto; margin-left:10px; font-family:var(--mono); font-size:11.5px; color:var(--faint)}
+  .c-body{padding:16px}
+  .c-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:12px}
+  .c-title{font-weight:750; font-size:15px; letter-spacing:-.01em}
+  .c-ok{font-family:var(--mono); font-size:11px; color:var(--good); border:1px solid #22c55e44; background:#22c55e14; padding:3px 9px; border-radius:20px}
+  .kpis{display:grid; grid-template-columns:repeat(4,1fr); gap:9px; margin-bottom:12px}
+  .kpi{background:var(--surface-2); border:1px solid var(--line); border-radius:9px; padding:10px}
+  .kpi .l{font-family:var(--mono); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--faint)}
+  .kpi .v{font-size:20px; font-weight:800; margin-top:5px; font-variant-numeric:tabular-nums}
+  .kpi .s{font-size:10.5px; color:var(--muted); margin-top:1px}
+  .panels{display:grid; grid-template-columns:1fr 1fr; gap:9px}
+  .panel{background:var(--surface-2); border:1px solid var(--line); border-radius:9px; padding:12px}
+  .panel h4{margin:0 0 10px; font-size:12px; font-weight:700; color:var(--muted); display:flex; justify-content:space-between; align-items:center}
+  .panel h4 .tag{font-family:var(--mono); font-size:9.5px; color:var(--crit); border:1px solid #ef444444; background:#ef444414; padding:2px 7px; border-radius:12px}
+  .gauge{display:flex; align-items:center; gap:12px}
+  .gauge svg{flex:0 0 auto}
+  .gauge .g-v{font-size:22px; font-weight:800; font-variant-numeric:tabular-nums}
+  .gauge .g-s{font-size:10.5px; color:var(--muted)}
+  .sev{display:flex; flex-direction:column; gap:7px}
+  .sev-row{display:flex; align-items:center; gap:9px; font-size:12px}
+  .sev-row .n{width:20px; text-align:right; font-family:var(--mono); font-weight:700; font-variant-numeric:tabular-nums}
+  .sev-row .bar{height:6px; border-radius:4px; flex:1}
+  .sev-row .lab{color:var(--muted); width:58px; font-size:11px}
+  .feed{margin-top:9px; display:flex; flex-direction:column; gap:7px}
+  .feed-row{display:flex; align-items:center; gap:9px; font-size:12px; color:var(--muted)}
+  .feed-row .pip{width:7px; height:7px; border-radius:50%; flex:0 0 auto}
+  .feed-row .src{margin-left:auto; font-family:var(--mono); font-size:10px; color:var(--faint); border:1px solid var(--line); padding:1px 7px; border-radius:10px}
+
+  /* ---- section scaffold ---- */
+  section{padding:72px 0}
+  .sec-head{max-width:60ch; margin-bottom:40px}
+  .sec-head h2{font-size:clamp(27px,3.6vw,38px); margin-top:14px}
+  .sec-head p{color:var(--muted); font-size:17px; margin:14px 0 0}
+
+  /* ---- feature grid ---- */
+  .features{display:grid; grid-template-columns:repeat(3,1fr); gap:14px}
+  @media(max-width:860px){ .features{grid-template-columns:1fr 1fr} }
+  @media(max-width:560px){ .features{grid-template-columns:1fr} }
+  .feat{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:22px; transition:border-color .2s, transform .2s, background .2s}
+  .feat:hover{border-color:#2b4a78; transform:translateY(-3px); background:var(--surface-2)}
+  .feat .ic{width:38px; height:38px; border-radius:9px; background:#12213f; border:1px solid var(--line); display:grid; place-items:center; margin-bottom:14px; color:var(--accent-ink)}
+  .feat h3{font-size:16.5px; letter-spacing:-.01em}
+  .feat p{color:var(--muted); font-size:14px; margin:8px 0 0; line-height:1.55}
+
+  /* ---- read-only band ---- */
+  .ro{background:linear-gradient(180deg,#0c1a30,#0a1526); border-top:1px solid var(--line); border-bottom:1px solid var(--line)}
+  .ro-grid{display:grid; grid-template-columns:1fr 1fr; gap:48px; align-items:center}
+  @media(max-width:860px){ .ro-grid{grid-template-columns:1fr; gap:32px} }
+  .ro ul{list-style:none; padding:0; margin:22px 0 0; display:flex; flex-direction:column; gap:14px}
+  .ro li{display:flex; gap:13px; font-size:15px; color:var(--muted)}
+  .ro li b{color:var(--ink); font-weight:650}
+  .ro li .chk{flex:0 0 auto; width:22px; height:22px; border-radius:6px; background:#22c55e18; border:1px solid #22c55e44; display:grid; place-items:center; color:var(--good); margin-top:1px}
+  .flow{background:#0d1c34; border:1px solid var(--line); border-radius:14px; padding:26px; box-shadow:var(--shadow)}
+  .flow-row{display:flex; align-items:center; gap:14px; padding:14px 0}
+  .flow-row + .flow-row{border-top:1px dashed var(--line)}
+  .flow-node{flex:0 0 auto; width:46px; height:46px; border-radius:11px; display:grid; place-items:center; font-family:var(--mono); font-size:11px; font-weight:700}
+  .flow-txt .t{font-weight:700; font-size:14.5px}
+  .flow-txt .d{color:var(--faint); font-size:12.5px; font-family:var(--mono)}
+
+  /* ---- install steps ---- */
+  .steps{display:grid; grid-template-columns:repeat(3,1fr); gap:16px; counter-reset:s}
+  @media(max-width:760px){ .steps{grid-template-columns:1fr} }
+  .step{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:24px; position:relative}
+  .step .num{counter-increment:s; font-family:var(--mono); font-size:13px; color:var(--accent-ink); font-weight:700}
+  .step .num::before{content:"0" counter(s)}
+  .step h3{font-size:16px; margin:12px 0 8px}
+  .step p{color:var(--muted); font-size:14px; margin:0; line-height:1.55}
+  .step code{font-family:var(--mono); font-size:12.5px; background:#12213f; border:1px solid var(--line); padding:2px 7px; border-radius:6px; color:var(--accent-ink)}
+
+  /* ---- final cta ---- */
+  .final{text-align:center; padding:88px 0}
+  .final h2{font-size:clamp(30px,4.4vw,46px)}
+  .final p{color:var(--muted); font-size:18px; margin:16px auto 30px; max-width:46ch}
+  .final .hero-cta{justify-content:center}
+  .final .meta{margin-top:22px; font-family:var(--mono); font-size:12.5px; color:var(--faint)}
+
+  /* ---- footer ---- */
+  footer{border-top:1px solid var(--line); padding:36px 0; color:var(--faint); font-size:13.5px}
+  .foot{display:flex; align-items:center; gap:16px; flex-wrap:wrap}
+  .foot .brand{font-size:15px; color:var(--muted)}
+  .foot .fl{margin-left:auto; display:flex; gap:22px; font-family:var(--mono); font-size:12.5px}
+  .foot .fl a:hover{color:var(--ink)}
+
+  @media(prefers-reduced-motion:reduce){ *{animation:none !important; scroll-behavior:auto} .console::after{display:none} }
+</style>
+</head>
+<body>
+
+<!-- reusable shield mark -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <linearGradient id="vg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3b82f6"/><stop offset="1" stop-color="#1d4ed8"/></linearGradient>
+  <g id="shield">
+    <path d="M12 3 L19 5.6 V13 C19 17.4 16 21 12 22.2 C8 21 5 17.4 5 13 V5.6 Z" fill="#0d1f3c" stroke="url(#vg)" stroke-width="1"/>
+    <path d="M8.6 10 L12 16.6 L15.4 10" fill="none" stroke="#3b82f6" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</defs></svg>
+
+<header>
+  <div class="wrap nav">
+    <a class="brand" href="#top"><span class="mark"><svg width="20" height="20" viewBox="0 0 24 24"><use href="#shield"/></svg></span>Vigil365</a>
+    <nav class="links">
+      <a href="#watches">What it watches</a>
+      <a href="#readonly">Read-only</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/sameerk27/vigil365">GitHub</a>
+    </nav>
+    <a class="btn btn-primary cta" href="https://github.com/sameerk27/vigil365/releases/tag/Vigil365v1.0.0">Download</a>
+  </div>
+</header>
+
+<main id="top">
+  <!-- HERO -->
+  <div class="hero"><div class="wrap hero-grid">
+    <div>
+      <span class="eyebrow">Self-hosted · Microsoft 365 security</span>
+      <h1>See everything.<br><span class="dim">Change nothing.</span></h1>
+      <p class="lede">Vigil365 watches identity, devices, email and compliance across your Microsoft&nbsp;365 tenant — collected on a schedule, in one dashboard you host yourself. It <b>reports and recommends</b>, and never has permission to touch your tenant.</p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="https://github.com/sameerk27/vigil365/releases/tag/Vigil365v1.0.0">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16"/></svg>
+          Download for Windows
+        </a>
+        <a class="btn btn-ghost" href="https://github.com/sameerk27/vigil365">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.5 2 2 6.6 2 12.2c0 4.5 2.9 8.3 6.8 9.6.5.1.7-.2.7-.5v-1.7c-2.8.6-3.4-1.2-3.4-1.2-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.5 2.3 1.1 2.9.8.1-.7.3-1.1.6-1.4-2.2-.3-4.6-1.1-4.6-5 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.7 1a9.3 9.3 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.9-2.3 4.7-4.6 5 .4.3.7 1 .7 2v2.9c0 .3.2.6.7.5A10 10 0 0 0 22 12.2C22 6.6 17.5 2 12 2z"/></svg>
+          View on GitHub
+        </a>
+      </div>
+      <div class="trust">
+        <span>Read-only Graph scopes</span>
+        <span>Collects every 15 min</span>
+        <span>One .exe, no dependencies</span>
+      </div>
+    </div>
+
+    <!-- live dashboard mock (real Overview numbers) -->
+    <div class="console" role="img" aria-label="Vigil365 Overview dashboard preview">
+      <div class="c-bar">
+        <span class="dot" style="background:#ef4444"></span><span class="dot" style="background:#f59e0b"></span><span class="dot" style="background:#22c55e"></span>
+        <span class="u">vigil365 · overview · updated 1m ago</span>
+      </div>
+      <div class="c-body">
+        <div class="c-head"><span class="c-title">Overview</span><span class="c-ok">● all sources OK</span></div>
+        <div class="kpis">
+          <div class="kpi"><div class="l">Secure Score</div><div class="v">38.2%</div><div class="s">137 / 359</div></div>
+          <div class="kpi"><div class="l">MFA Coverage</div><div class="v">67.7%</div><div class="s">21 / 31 users</div></div>
+          <div class="kpi"><div class="l">Posture Risk</div><div class="v">16.7%</div><div class="s">13 high · 78 active</div></div>
+          <div class="kpi"><div class="l">Defender</div><div class="v">33</div><div class="s">0 critical</div></div>
+        </div>
+        <div class="panels">
+          <div class="panel">
+            <h4>Secure Score trend <span style="font-family:var(--mono);font-size:9.5px;color:var(--faint);border:1px solid var(--line);padding:2px 7px;border-radius:12px">90d</span></h4>
+            <div class="gauge">
+              <svg width="66" height="66" viewBox="0 0 66 66">
+                <circle cx="33" cy="33" r="27" fill="none" stroke="#1e3a5f" stroke-width="7"/>
+                <circle cx="33" cy="33" r="27" fill="none" stroke="url(#vg)" stroke-width="7" stroke-linecap="round"
+                  stroke-dasharray="170" stroke-dashoffset="105" transform="rotate(-90 33 33)"/>
+              </svg>
+              <div><div class="g-v">38.2%</div><div class="g-s">137 / 359 pts</div></div>
+            </div>
+          </div>
+          <div class="panel">
+            <h4>Defender alerts <span class="tag">33 active</span></h4>
+            <div class="sev">
+              <div class="sev-row"><span class="lab">Critical</span><span class="bar" style="background:#ef444433;width:100%"><span style="display:block;height:100%;width:4%;background:var(--crit);border-radius:4px"></span></span><span class="n">0</span></div>
+              <div class="sev-row"><span class="lab">High</span><span class="bar" style="background:#f59e0b33;width:100%"><span style="display:block;height:100%;width:4%;background:var(--high);border-radius:4px"></span></span><span class="n">0</span></div>
+              <div class="sev-row"><span class="lab">Medium</span><span class="bar" style="background:#60a5fa33;width:100%"><span style="display:block;height:100%;width:64%;background:var(--med);border-radius:4px"></span></span><span class="n">19</span></div>
+              <div class="sev-row"><span class="lab">Low</span><span class="bar" style="background:#8ba3c733;width:100%"><span style="display:block;height:100%;width:48%;background:#8ba3c7;border-radius:4px"></span></span><span class="n">14</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="feed">
+          <div class="feed-row"><span class="pip" style="background:var(--high)"></span>Anomalous OAuth consent grant<span class="src">Entra ID</span></div>
+          <div class="feed-row"><span class="pip" style="background:var(--med)"></span>Mailbox forwarding rule created<span class="src">Defender</span></div>
+          <div class="feed-row"><span class="pip" style="background:var(--good)"></span>Collection completed · 105 alerts<span class="src">Graph</span></div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+
+  <!-- WHAT IT WATCHES -->
+  <section id="watches"><div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Coverage</span>
+      <h2>One console for the whole tenant</h2>
+      <p>Vigil365 pulls the signals that are scattered across Defender, Entra, Intune, Exchange and Purview into a single scheduled view — no tab-hopping between admin portals.</p>
+    </div>
+    <div class="features">
+      <div class="feat"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></div>
+        <h3>Identity &amp; access</h3><p>Risky users and sign-ins, MFA coverage, privileged roles and PIM, foreign sign-ins — the gaps attackers look for first.</p></div>
+      <div class="feat"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></div>
+        <h3>Devices</h3><p>Intune compliance, non-compliant and stale devices, and Defender for Endpoint alerts — all in one list.</p></div>
+      <div class="feat"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg></div>
+        <h3>Email threats</h3><p>Defender for Office 365 alerts by category — malware, phishing, spam — with the threat breakdown and targeted users.</p></div>
+      <div class="feat"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg></div>
+        <h3>Compliance</h3><p>DLP, insider-risk and Cloud App alerts, Conditional Access gaps, and attack-simulation results, scored against a baseline.</p></div>
+      <div class="feat"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4v16h16"/><path d="M4 14l4-4 4 3 6-7"/></svg></div>
+        <h3>Alert policies</h3><p>Metric, activity and anomaly policies with a full acknowledge, snooze, resolve and assign workflow — stored server-side.</p></div>
+      <div class="feat"><div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5m0 14l5-6 4 3 7-9"/></svg></div>
+        <h3>Trends &amp; digest</h3><p>Posture over time from periodic snapshots, plus a scheduled executive digest by email — HTML, CSV and PDF.</p></div>
+    </div>
+  </div></section>
+
+  <!-- READ-ONLY -->
+  <div class="ro" id="readonly"><section><div class="wrap ro-grid">
+    <div>
+      <span class="eyebrow">Safe by design</span>
+      <h2 style="font-size:clamp(27px,3.6vw,38px);margin-top:14px">It watches. It never touches.</h2>
+      <p style="color:var(--muted);font-size:17px;margin:14px 0 0">Vigil365 authenticates to Microsoft Graph with <b style="color:var(--ink)">app-only, read-only permissions</b>. There is no code path that changes a setting, disables a user, or remediates an alert — so it is safe to run against production from day one.</p>
+      <ul>
+        <li><span class="chk">&#10003;</span><span><b>Read-only Graph scopes</b> — every permission it requests is a <code style="font-family:var(--mono);font-size:12px">.Read.All</code>. No write access is ever granted.</span></li>
+        <li><span class="chk">&#10003;</span><span><b>Self-hosted</b> — runs on a Windows box you control, against your own SQL Server. Your tenant data never leaves your walls.</span></li>
+        <li><span class="chk">&#10003;</span><span><b>Tamper-evident audit trail</b> — every privileged action in-app is recorded in a SHA-256 hash-chained log.</span></li>
+      </ul>
+    </div>
+    <div class="flow">
+      <div class="flow-row">
+        <span class="flow-node" style="background:#12213f;border:1px solid var(--line);color:var(--accent-ink)">M365</span>
+        <div class="flow-txt"><div class="t">Your tenant</div><div class="d">Defender · Entra · Intune · Purview</div></div>
+      </div>
+      <div class="flow-row">
+        <span class="flow-node" style="background:#22c55e14;border:1px solid #22c55e44;color:var(--good)">read</span>
+        <div class="flow-txt"><div class="t">Scheduled collection</div><div class="d">Graph app-only · every 15 min · read-only</div></div>
+      </div>
+      <div class="flow-row">
+        <span class="flow-node" style="background:#fff;padding:0"><svg width="26" height="26" viewBox="0 0 24 24"><use href="#shield"/></svg></span>
+        <div class="flow-txt"><div class="t">Vigil365</div><div class="d">alerts · trends · compliance · digest</div></div>
+      </div>
+      <div class="flow-row">
+        <span class="flow-node" style="background:#12213f;border:1px solid var(--line);color:var(--accent-ink)">you</span>
+        <div class="flow-txt"><div class="t">Your team</div><div class="d">Teams · email · webhook · SIEM</div></div>
+      </div>
+    </div>
+  </div></section></div>
+
+  <!-- INSTALL -->
+  <section id="install"><div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Install</span>
+      <h2>Running in minutes, not a weekend</h2>
+      <p>One self-contained installer carries the app, the web UI and the .NET runtime. The server needs no source tree, no Node.js and no .NET — just Windows and administrator rights.</p>
+    </div>
+    <div class="steps">
+      <div class="step"><div class="num"></div><h3>Download the installer</h3><p>Grab <code>Vigil365-Setup.exe</code> from the latest release and run it as Administrator. ~120&nbsp;MB, nothing else to fetch.</p></div>
+      <div class="step"><div class="num"></div><h3>Run the wizard</h3><p>It registers the Entra app, prepares SQL Server, sets up HTTPS and installs the Windows service — the plumbing is handled for you.</p></div>
+      <div class="step"><div class="num"></div><h3>Sign in and go</h3><p>Open the dashboard, sign in with Microsoft, and the first scheduled collection begins. Real posture data within minutes.</p></div>
+    </div>
+  </div></section>
+
+  <!-- FINAL CTA -->
+  <div class="wrap"><div class="final">
+    <span class="eyebrow" style="justify-content:center">Vigil365 1.0.0 · out now</span>
+    <h2 style="margin-top:16px">Put your Microsoft 365<br>security posture on one screen</h2>
+    <p>Free, open source, and self-hosted. Download it, point it at your tenant, and see what your admin portals have been keeping apart.</p>
+    <div class="hero-cta">
+      <a class="btn btn-primary" href="https://github.com/sameerk27/vigil365/releases/tag/Vigil365v1.0.0">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16"/></svg>
+        Download for Windows
+      </a>
+      <a class="btn btn-ghost" href="https://github.com/sameerk27/vigil365">Read the docs</a>
+    </div>
+    <div class="meta">Windows 10/11 · Server 2019+ · SQL Server Express (free) · a Microsoft 365 tenant</div>
+  </div></div>
+</main>
+
+<footer><div class="wrap foot">
+  <span class="brand" style="display:flex;align-items:center;gap:10px"><span class="mark" style="width:26px;height:26px;border-radius:7px;background:#fff;display:grid;place-items:center"><svg width="17" height="17" viewBox="0 0 24 24"><use href="#shield"/></svg></span>Vigil365 · v1.0.0</span>
+  <span style="color:var(--faint)">Self-hosted · Read-only · Open source</span>
+  <span class="fl">
+    <a href="https://github.com/sameerk27/vigil365">GitHub</a>
+    <a href="https://github.com/sameerk27/vigil365/releases/tag/Vigil365v1.0.0">Download</a>
+    <a href="https://github.com/sameerk27/vigil365/blob/master/CHANGELOG.md">Changelog</a>
+  </span>
+</div></footer>
+
+</body>
+</html>
