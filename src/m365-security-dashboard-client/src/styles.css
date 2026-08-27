@@ -84,7 +84,7 @@
   /* ── Border & Shadow ── */
   --color-border:   var(--border);
   --color-border-subtle: var(--border-soft);  /* internal row separators */
-  --shadow-card:    0 1px 3px rgba(0,0,0,.07), 0 1px 2px rgba(0,0,0,.04);
+  --shadow-card:    0 1px 3px rgba(0,0,0,.06);
   --shadow-modal:   0 8px 32px rgba(0,0,0,.14);
   --shadow-raised:  0 4px 14px rgba(0,0,0,.08);
   --backdrop-blur:  blur(12px);
@@ -178,7 +178,7 @@ body {
   font-family: Inter, "Segoe UI", system-ui, sans-serif;
   background: var(--color-bg);
   color: var(--color-text);
-  font-size: var(--fs-md);
+  font-size: var(--fs-base); /* 13px base per design tokens */
   line-height: 1.5;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
@@ -1724,19 +1724,22 @@ button.countdown-chip:hover { color: var(--color-text); }
 /* Section tab bar (multi-page sections) — sticks just below the header so the
    tabs travel with it instead of scrolling away. */
 .section-tabs {
-  padding: 10px 24px; margin-bottom: 0; flex-wrap: wrap;
+  padding: 0 24px; margin-bottom: 0; gap: 20px; flex-wrap: wrap;
   position: sticky; top: 61px; z-index: 15;
   background: var(--color-bg);
   border-bottom: 1px solid var(--color-border-subtle);
 }
 
+/* Section sub-tabs — underline row (design README "App shell"): sits a level
+   below the header, distinct from the pill-style inner SegmentedTabs. */
 .ac-tab {
-  padding: 7px 18px; border-radius: var(--radius-ctl); border: 1px solid var(--color-border);
-  background: var(--color-card); color: var(--color-muted);
-  font-size: var(--fs-base); font-weight: 500; cursor: pointer; transition: all .15s;
+  padding: 12px 2px; margin-bottom: -1px;
+  border: none; border-bottom: 2px solid transparent; border-radius: 0;
+  background: none; color: var(--text-muted);
+  font-size: var(--fs-base); font-weight: 500; cursor: pointer; transition: color .15s, border-color .15s;
 }
-.ac-tab:hover { background: var(--color-raised); }
-.ac-tab.active { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
+.ac-tab:hover { color: var(--text); }
+.ac-tab.active { color: var(--text); font-weight: 600; border-bottom-color: var(--accent); }
 
 .template-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 .template-card { background: var(--color-raised); border: 1px solid var(--color-border); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
