@@ -320,6 +320,7 @@ select, input { font: inherit; }
 .sidebar:not(.expanded) .sb-name,
 .sidebar:not(.expanded) .sb-sub,
 .sidebar:not(.expanded) .nav-label,
+.sidebar:not(.expanded) .nav-dot,
 .sidebar:not(.expanded) .nav-group-label,
 .sidebar:not(.expanded) .nav-badge { display: none; }
 .sidebar:not(.expanded) .nav-item { justify-content: center; padding: 10px; }

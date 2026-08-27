@@ -211,9 +211,10 @@ function Sidebar({ page, setPage, alertCounts, collapsed, onToggleCollapse }: {
               aria-current={activeSection===s.id ? "page" : undefined}
               title={collapsed ? s.label : undefined}
             >
-              {/* Leading dot mark — the redesign replaces per-section icons with
-                  a single tone-neutral dot that lights up on the active row. */}
+              {/* Leading dot mark that lights up on the active row, kept
+                  alongside the per-section icon. */}
               <span className="nav-dot" aria-hidden="true" />
+              {s.icon}
               {!collapsed && <span className="nav-label">{s.label}</span>}
               {!collapsed && count>0 && (
                 <span className={`nav-badge tone-${SECTION_BADGE_TONE[s.id] ?? "neutral"}`}>
