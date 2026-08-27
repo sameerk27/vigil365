@@ -694,44 +694,39 @@ tr.clickable:focus-visible,
 /* ── KPI Row ─────────────────────────────────────────────────────────────── */
 .kpi-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
 
+/* KPI card — icon-less, tone-bordered, tone-colored value (design "KPI card"). */
 .kpi-tile {
   background: var(--color-card);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  padding: 14px 14px;
-  display: flex; align-items: flex-start; gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-tile);
+  padding: var(--pad-kpi);
+  display: flex; flex-direction: column;
   box-shadow: var(--shadow-card);
-  transition: box-shadow .15s, transform .15s;
+  transition: box-shadow .15s, transform .15s, border-color .15s;
+  text-align: left; width: 100%;
 }
 .kpi-tile:hover { box-shadow: var(--shadow-raised); transform: translateY(-1px); }
 .kpi-clickable { cursor: pointer; }
-.kpi-clickable:hover { border-color: var(--color-primary); }
-.kpi-clickable:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
-.kpi-active { border-color: var(--color-primary); box-shadow: 0 0 0 1px var(--color-primary) inset, 0 0 12px var(--color-primary-subtle); }
+.kpi-clickable:hover { border-color: var(--accent); }
+.kpi-clickable:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.kpi-active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 .copy-btn:hover { color: var(--color-primary) !important; }
 
-.kpi-icon {
-  width: 36px; height: 36px;
-  border-radius: var(--radius-ctl);
-  display: grid; place-items: center;
-  flex-shrink: 0;
-}
-
-/* KPI icon backgrounds — use severity/status tokens */
-.kpi-good    .kpi-icon { background: var(--status-good-bg);  color: var(--status-good-icon); }
-.kpi-warning .kpi-icon { background: var(--status-warn-bg);  color: var(--status-warn-icon); }
-.kpi-error   .kpi-icon { background: var(--status-error-bg); color: var(--status-error-icon); }
-.kpi-neutral .kpi-icon { background: var(--color-raised);    color: var(--color-faint); }
-.kpi-info    .kpi-icon { background: var(--color-primary-subtle); color: var(--color-primary); }
+/* Tone-colored borders */
+.kpi-good    { border-color: var(--pill-good-bd); }
+.kpi-warning { border-color: var(--pill-warn-bd); }
+.kpi-error   { border-color: var(--pill-err-bd); }
+.kpi-neutral { border-color: var(--border); }
 
 .kpi-body  { min-width: 0; }
-.kpi-label { font-size: var(--fs-2xs); font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--color-faint); }
-.kpi-value { font-size: var(--fs-3xl); font-weight: 700; color: var(--color-text); margin-top: 2px; line-height: 1.15; letter-spacing: -.01em; }
-.kpi-sub   { font-size: var(--fs-2xs); color: var(--color-muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kpi-label { font-size: var(--fs-label); font-weight: 600; text-transform: uppercase; letter-spacing: var(--ls-label); color: var(--text-muted); }
+.kpi-value { font-size: var(--fs-kpi); font-weight: 700; color: var(--text); margin-top: 9px; line-height: 1.15; letter-spacing: -.01em; }
+.kpi-sub   { font-size: var(--fs-meta); color: var(--text-faint); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Tinted KPI values for status tiles */
-.kpi-good  .kpi-value  { color: var(--status-good-text); }
-.kpi-error .kpi-value  { color: var(--status-error-text); }
+/* Tone-colored KPI values */
+.kpi-good    .kpi-value { color: var(--meter-good); }
+.kpi-warning .kpi-value { color: var(--sev-medium); }
+.kpi-error   .kpi-value { color: var(--sev-critical); }
 
 /* ── KPI row variants ────────────────────────────────────────────────────── */
 .kpi-row-4 { grid-template-columns: repeat(4, 1fr) !important; }

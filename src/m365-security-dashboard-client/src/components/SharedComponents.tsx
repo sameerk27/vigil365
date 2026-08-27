@@ -309,19 +309,19 @@ export function Card({ title, badge, action, children, className="", id, updated
 }
 
 export function KpiTile({ icon, label, value, sub, tone="neutral", needsPerm, onClick, active, help }:
-  { icon: React.ReactNode; label: string; value: React.ReactNode; sub?: string; tone?: Tone; needsPerm?: boolean; onClick?: () => void; active?: boolean; help?: string }) {
+  // `icon` is accepted for call-site compatibility but no longer rendered \u2014
+  // the redesign's KPI cards are icon-less (label + tone value + sub).
+  { icon?: React.ReactNode; label: string; value: React.ReactNode; sub?: string; tone?: Tone; needsPerm?: boolean; onClick?: () => void; active?: boolean; help?: string }) {
+  void icon;
   const displayValue = typeof value === "number" && value < 0 ? 0 : value;
   const inner = (
-    <>
-      <div className="kpi-icon">{icon}</div>
-      <div className="kpi-body">
-        <div className="kpi-label">{label}</div>
-        <div className="kpi-value">{displayValue}</div>
-        {needsPerm
-          ? <div className="kpi-perm"><Lock size={9}/> Needs permission</div>
-          : <div className="kpi-sub" title={sub ?? ""}>{sub || "\u00A0"}</div>}
-      </div>
-    </>
+    <div className="kpi-body">
+      <div className="kpi-label">{label}</div>
+      <div className="kpi-value">{displayValue}</div>
+      {needsPerm
+        ? <div className="kpi-perm"><Lock size={9}/> Needs permission</div>
+        : <div className="kpi-sub" title={sub ?? ""}>{sub || "\u00A0"}</div>}
+    </div>
   );
   if (onClick) {
     return (
