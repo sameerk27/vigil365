@@ -1,10 +1,10 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
-import { X, Bell, Activity, CheckCircle, Search, ExternalLink, ArrowRight, ShieldCheck, AlertTriangle, PlusCircle, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
+import { X, Bell, Activity, CheckCircle, Search, ExternalLink, ArrowRight, AlertTriangle, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { AlertPolicy, TriggeredAlert, NotificationSettings, NotificationLogEntry, Tone, AlertCoverageScorecard, AlertBaselineRule } from "../services/types";
 import { acApi, recApi, wbApi, useAuth, crossNavigate, consumeNavTab } from "../services/api";
 import { showToast } from "../services/toast";
 import { confirmAction } from "../services/confirm";
-import { DetailField, Card, Badge, EmptyState, MiniBarChart, ExportDropdown, ProgressBar, CopyButton, LoadingSkeleton, TriageSection, rowActivation, SeverityFilter} from "../components/SharedComponents";
+import { DetailField, Card, Badge, EmptyState, ExportDropdown, ProgressBar, CopyButton, LoadingSkeleton, TriageSection, rowActivation, SeverityFilter} from "../components/SharedComponents";
 import { CollectionStatusBanner } from "../components/CollectionStatusBanner";
 import { CollectionRunHistory } from "../components/CollectionRunHistory";
 import { AlertMetricsTab } from "../components/AlertMetricsTab";

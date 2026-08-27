@@ -2359,7 +2359,10 @@ button.countdown-chip:hover { color: var(--color-text); }
 .ui-segtabs {
   display: flex; gap: 4px; padding: 3px;
   background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 10px;
-  width: fit-content; max-width: 100%; overflow: hidden;
+  width: fit-content; max-width: 100%;
+  /* Scroll rather than clip when the pills exceed the width (e.g. 8 tabs on a
+     phone) so trailing tabs stay reachable. */
+  overflow-x: auto; scrollbar-width: thin;
 }
 .ui-segtab {
   display: inline-flex; align-items: center; gap: 6px;
