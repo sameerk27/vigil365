@@ -2195,3 +2195,188 @@ body.demo-mode .redactable {
 body.demo-mode .redactable:hover {
   filter: blur(5px);
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   UI pattern components (src/components/ui/) — restyle Step 3
+   Thin CSS behind the presentational wrappers. Geometry per design README
+   "Reusable patterns". Colors/radii/shadows come from tokens only.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Dot mark ─────────────────────────────────────────────────────────────── */
+.ui-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--accent); }
+.ui-dot-square { width: 8px; height: 8px; border-radius: 2px; }
+.ui-dot.tone-accent   { background: var(--accent); }
+.ui-dot.tone-critical { background: var(--sev-critical); }
+.ui-dot.tone-high     { background: var(--sev-high); }
+.ui-dot.tone-medium   { background: var(--sev-medium); }
+.ui-dot.tone-low      { background: var(--sev-low); }
+.ui-dot.tone-info     { background: var(--accent-light); }
+.ui-dot.tone-good     { background: var(--meter-good); }
+.ui-dot.tone-muted    { background: var(--text-faint); }
+
+/* ── Pill ─────────────────────────────────────────────────────────────────── */
+.ui-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: var(--fs-label); font-weight: 600; line-height: 1.4;
+  padding: 2px 6px; border-radius: var(--r-pill);
+  border: 1px solid transparent; flex: none; white-space: nowrap;
+}
+.ui-pill.tone-neutral { color: var(--pill-neutral-fg); background: var(--pill-neutral-bg); border-color: var(--pill-neutral-bd); }
+.ui-pill.tone-good    { color: var(--pill-good-fg);    background: var(--pill-good-bg);    border-color: var(--pill-good-bd); }
+.ui-pill.tone-warn    { color: var(--pill-warn-fg);    background: var(--pill-warn-bg);    border-color: var(--pill-warn-bd); }
+.ui-pill.tone-err     { color: var(--pill-err-fg);     background: var(--pill-err-bg);     border-color: var(--pill-err-bd); }
+.ui-pill.tone-info    { color: var(--pill-info-fg);    background: var(--pill-info-bg);    border-color: var(--pill-info-bd); }
+
+/* ── Button ───────────────────────────────────────────────────────────────── */
+.ui-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border-radius: var(--r-control); cursor: pointer;
+  font-family: var(--font-body); font-weight: 600; line-height: 1;
+  transition: background .15s, border-color .15s, color .15s, opacity .15s;
+}
+.ui-btn:disabled { opacity: .55; cursor: not-allowed; }
+.ui-btn-primary {
+  padding: 0 14px; height: 34px; border: none;
+  background: var(--accent); color: var(--text-on-dark); font-size: var(--fs-body);
+}
+.ui-btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+.ui-btn-secondary {
+  padding: 5px 10px; border: 1px solid var(--border);
+  background: var(--bg-card); color: var(--text-muted); font-size: var(--fs-body-sm);
+}
+.ui-btn-secondary:hover:not(:disabled) { border-color: #cbd5e1; }
+.ui-btn-tertiary {
+  padding: 5px 6px; border: none; background: none;
+  color: var(--accent); font-size: var(--fs-body);
+}
+.ui-btn-tertiary:hover:not(:disabled) { color: var(--accent-hover); }
+
+/* ── Card ─────────────────────────────────────────────────────────────────── */
+.ui-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--r-card); padding: var(--pad-card);
+  box-shadow: var(--shadow-card);
+}
+.ui-card-hdr { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.ui-card-title { font-size: var(--fs-card-title); font-weight: 600; color: var(--text); }
+.ui-card-chip, .ui-card-right {
+  margin-left: auto; font-size: 10px; font-weight: 600; color: var(--text-muted);
+  background: var(--bg-subtle); border: 1px solid var(--border);
+  padding: 2px 7px; border-radius: 6px;
+}
+.ui-card-right { background: none; border: none; padding: 0; }
+
+/* ── Table card ───────────────────────────────────────────────────────────── */
+.ui-tablecard { padding: 0; overflow: hidden; }
+.ui-tablecard-hdr { display: flex; align-items: center; gap: 8px; padding: 14px 18px 12px; }
+.ui-tablecard-desc {
+  padding: 0 18px 13px; font-size: var(--fs-body-sm); color: var(--text-faint);
+  line-height: 1.6; max-width: 820px;
+}
+.ui-thead {
+  display: grid; align-items: center; gap: 10px;
+  padding: var(--pad-th); background: var(--bg-subtle);
+  border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+}
+.ui-th {
+  font-size: var(--fs-label); font-weight: 600; text-transform: uppercase;
+  letter-spacing: var(--ls-label); color: var(--text-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ui-trow {
+  display: grid; align-items: center; gap: 10px;
+  padding: var(--pad-td); border-bottom: 1px solid var(--border-soft);
+  font-size: var(--fs-body); color: var(--text);
+}
+.ui-trow:last-child { border-bottom: none; }
+.ui-td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-trow-empty { padding: 22px 18px; font-size: var(--fs-body); color: var(--text-muted); }
+.align-start  { text-align: left; justify-self: start; }
+.align-end    { text-align: right; justify-self: end; font-variant-numeric: tabular-nums; }
+.align-center { text-align: center; justify-self: center; }
+
+/* ── KPI card ─────────────────────────────────────────────────────────────── */
+.ui-kpi { border: 1px solid var(--border); border-radius: var(--r-tile); padding: var(--pad-kpi); background: var(--bg-card); }
+.ui-kpi.tone-good    { border-color: var(--pill-good-bd); }
+.ui-kpi.tone-warn    { border-color: var(--pill-warn-bd); }
+.ui-kpi.tone-err     { border-color: var(--pill-err-bd); }
+.ui-kpi.tone-neutral { border-color: var(--border); }
+.ui-kpi-label { font-size: var(--fs-label); font-weight: 600; text-transform: uppercase; letter-spacing: var(--ls-label); color: var(--text-muted); }
+.ui-kpi-value { font-size: var(--fs-kpi); font-weight: 700; margin-top: 9px; color: var(--text); }
+.ui-kpi.tone-good    .ui-kpi-value { color: var(--meter-good); }
+.ui-kpi.tone-warn    .ui-kpi-value { color: var(--sev-medium); }
+.ui-kpi.tone-err     .ui-kpi-value { color: var(--sev-critical); }
+.ui-kpi-sub { font-size: var(--fs-meta); color: var(--text-faint); margin-top: 3px; }
+
+/* ── Stat card ────────────────────────────────────────────────────────────── */
+.ui-stat { border: 1px solid var(--border); border-radius: var(--r-tile); padding: var(--pad-stat); background: var(--bg-card); }
+.ui-stat-label { font-size: var(--fs-label); font-weight: 600; text-transform: uppercase; letter-spacing: var(--ls-label); color: var(--text-muted); }
+.ui-stat-value { font-size: var(--fs-stat); font-weight: 700; color: var(--text); margin-top: 6px; }
+.ui-stat-sub { font-size: var(--fs-meta); color: var(--text-faint); margin-top: 3px; }
+
+/* ── Toggle ───────────────────────────────────────────────────────────────── */
+.ui-toggle-wrap { display: inline-flex; align-items: center; gap: 7px; border: none; background: none; padding: 0; cursor: pointer; }
+.ui-toggle-wrap:disabled { opacity: .5; cursor: not-allowed; }
+.ui-toggle-track { position: relative; width: 26px; height: 15px; border-radius: 8px; background: #cbd5e1; transition: background .15s; flex: none; }
+.ui-toggle-track.on { background: var(--meter-good); }
+.ui-toggle-knob { position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: 50%; background: #fff; transition: left .15s; }
+.ui-toggle-track.on .ui-toggle-knob { left: 13px; }
+.ui-toggle-label { font-size: var(--fs-meta); font-weight: 600; color: var(--text-faint); }
+.ui-toggle-label.on { color: var(--pill-good-fg); }
+
+/* ── Meter row ────────────────────────────────────────────────────────────── */
+.ui-meter { display: flex; align-items: center; gap: 10px; }
+.ui-meter-label { font-size: var(--fs-body-sm); color: var(--text-muted); flex: none; }
+.ui-meter-track { position: relative; flex: 1; height: 8px; border-radius: 4px; background: var(--border-soft); overflow: hidden; }
+.ui-meter-fill { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--accent); }
+.ui-meter-fill.tone-good { background: var(--meter-good); }
+.ui-meter-fill.tone-high { background: var(--meter-high); }
+.ui-meter-fill.tone-med  { background: var(--meter-med); }
+.ui-meter-fill.tone-bad  { background: var(--meter-bad); }
+.ui-meter-value { font-family: var(--font-mono); font-size: var(--fs-meta); color: var(--text-muted); text-align: right; flex: none; }
+
+/* ── Sparkline ────────────────────────────────────────────────────────────── */
+.ui-spark-wrap { width: 100%; }
+.ui-spark { display: block; width: 100%; }
+.ui-spark-axis { display: flex; justify-content: space-between; margin-top: 6px; font-size: 10px; color: var(--text-faint); }
+
+/* ── Dark feature card ────────────────────────────────────────────────────── */
+.ui-darkcard { background: var(--sidebar); border-radius: var(--r-card); padding: var(--pad-card); color: var(--text-on-dark); }
+.ui-darkcard-eyebrow { font-size: var(--fs-label); font-weight: 600; text-transform: uppercase; letter-spacing: var(--ls-label); color: var(--accent-paler); }
+.ui-darkcard-title { font-size: var(--fs-card-title); font-weight: 700; margin-top: 6px; }
+.ui-darkcard .ui-btn-primary { background: var(--bg-card); color: var(--sidebar); }
+.ui-darkcard .ui-btn-primary:hover:not(:disabled) { background: #e2e8f0; }
+.ui-darkcard .ui-btn-secondary { background: none; border-color: rgba(255,255,255,.22); color: var(--text-on-dark-mid); }
+.ui-darkcard .ui-btn-secondary:hover:not(:disabled) { border-color: rgba(255,255,255,.4); }
+
+/* ── Empty state ──────────────────────────────────────────────────────────── */
+.ui-empty { border: 1px dashed var(--border); border-radius: var(--r-inset); padding: 26px 18px; text-align: center; }
+.ui-empty-dot { width: 11px; height: 11px; display: block; margin: 0 auto 13px; }
+.ui-empty-copy { font-size: var(--fs-body); color: var(--text-muted); line-height: 1.6; }
+
+/* ── Inline code / endpoint ───────────────────────────────────────────────── */
+.ui-code {
+  display: inline-block; max-width: 100%;
+  font-family: var(--font-mono); font-size: var(--fs-meta); color: var(--text-muted);
+  background: var(--bg-subtle); border: 1px solid var(--border); border-radius: var(--r-control);
+  padding: 8px 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle;
+}
+
+/* ── Segmented tabs ───────────────────────────────────────────────────────── */
+.ui-segtabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); overflow-x: auto; }
+.ui-segtab {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: none; background: none; cursor: pointer;
+  padding: 9px 12px; margin-bottom: -1px;
+  font-size: var(--fs-body); font-weight: 500; color: var(--text-muted);
+  border-bottom: 2px solid transparent; white-space: nowrap;
+  transition: color .15s, border-color .15s;
+}
+.ui-segtab:hover { color: var(--text); }
+.ui-segtab.active { color: var(--accent); font-weight: 600; border-bottom-color: var(--accent); }
+.ui-segtab-count {
+  font-family: var(--font-mono); font-size: var(--fs-label); font-weight: 600;
+  background: var(--bg-subtle); color: var(--text-muted);
+  border: 1px solid var(--border); border-radius: var(--r-pill); padding: 1px 5px;
+}
+.ui-segtab.active .ui-segtab-count { background: var(--accent-pale); color: var(--text-on-dark); border-color: transparent; }
