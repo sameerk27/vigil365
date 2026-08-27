@@ -194,79 +194,94 @@ select, input { font: inherit; }
 .sidebar {
   width: 52px;
   flex-shrink: 0;
-  background: #0d1f3c;
+  background: var(--sidebar);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  color: #fff;
+  color: var(--text-on-dark);
   transition: width .2s ease;
   position: relative;
+  padding: 14px 0;
 }
-.sidebar.expanded { width: 220px; }
+.sidebar.expanded { width: var(--sidebar-w); }
 
 .sb-logo {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 20px 14px 16px;
-  border-bottom: 1px solid rgba(255,255,255,0.07);
+  padding: 0 16px 18px;
   white-space: nowrap;
   overflow: hidden;
   flex-shrink: 0;
 }
 
 .sb-mark {
-  width: 38px; height: 38px;
-  background: #ffffff;
-  border-radius: 9px;
+  width: 28px; height: 28px;
+  background: var(--bg-card);
+  border-radius: 8px;
   display: grid;
   place-items: center;
   flex-shrink: 0;
 }
+.sb-mark svg { width: 20px; height: 20px; }
 
-.sb-name { font-size: var(--fs-base); font-weight: 700; }
-.sb-sub  { font-size: var(--fs-2xs); color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: .07em; }
+.sb-name { font-size: var(--fs-card-title); font-weight: 700; color: var(--text-on-dark); letter-spacing: var(--ls-tight); line-height: 1.1; }
+.sb-sub  { font-size: 7.6px; font-weight: 600; color: var(--accent-pale); text-transform: uppercase; letter-spacing: .04em; margin-top: 2px; white-space: nowrap; }
 
-.sb-nav { padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; overflow-y: auto; min-height: 0; }
+.sb-nav { padding: 0 12px; display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; overflow-y: auto; min-height: 0; }
 
 .nav-item {
-  display: flex; align-items: center; gap: 9px;
-  padding: 9px 11px;
-  border-radius: 8px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px;
+  border-radius: var(--r-control);
   border: none; background: none;
-  color: rgba(255,255,255,.55);
-  font-size: var(--fs-base);
+  color: var(--text-on-dark-mid);
+  font-size: var(--fs-body); font-weight: 400;
   text-align: left; width: 100%;
+  cursor: pointer;
   transition: background .15s, color .15s;
   position: relative;
 }
-.nav-item:hover { background: rgba(255,255,255,.08); color: rgba(255,255,255,.9); }
+.nav-item:hover { background: rgba(255,255,255,.06); color: var(--text-on-dark); }
 .nav-active {
-  background: rgba(255,255,255,.1) !important;
-  color: #fff !important;
-  border-left: 3px solid var(--color-primary);
-  padding-left: 8px;
-  box-shadow: inset 0 0 0 1px rgba(59,130,246,.15);
+  background: var(--sidebar-item-active) !important;
+  color: var(--text-on-dark) !important;
+  font-weight: 600;
 }
-.nav-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ── Nav badge ───────────────────────────────────────────────────────────── */
+/* Leading dot mark — lights up on the active row. */
+.nav-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  flex-shrink: 0; margin: 0 2px;
+  background: #64748b;
+  transition: background .15s;
+}
+.nav-active .nav-dot { background: var(--accent-pale); }
+
+/* ── Nav badge (trailing count, tone-colored per section) ───────────────── */
 .nav-badge {
   margin-left: auto;
-  background: #ef4444;
-  color: #fff;
-  font-size: var(--fs-2xs); font-weight: 700;
-  padding: 1px 5px; border-radius: 99px;
+  background: #334155;
+  color: var(--text-on-dark);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label); font-weight: 600;
+  padding: 2px 5px; border-radius: var(--r-pill);
   min-width: 16px; text-align: center;
-  line-height: 1.6;
+  line-height: 1.3;
 }
+.nav-badge.tone-critical { background: var(--sev-critical); }
+.nav-badge.tone-high     { background: var(--sev-high); }
+.nav-badge.tone-medium   { background: var(--sev-medium); }
+.nav-badge.tone-neutral  { background: #334155; }
 
 /* ── Sidebar collapse toggle ─────────────────────────────────────────────── */
 .sb-version {
   flex-shrink: 0;
-  padding: 8px 16px 0;
-  font-size: var(--fs-2xs); letter-spacing: .3px;
-  color: #4a6080; user-select: none;
+  margin-top: auto;
+  padding: 12px 18px 0;
+  font-size: var(--fs-label); letter-spacing: .3px;
+  color: var(--text-on-dark-faint); user-select: none;
 }
 
 .sb-collapse-btn {
@@ -304,11 +319,11 @@ select, input { font: inherit; }
 .sidebar:not(.expanded) .nav-item:hover .nav-tooltip { display: block; }
 .sidebar:not(.expanded) .sb-name,
 .sidebar:not(.expanded) .sb-sub,
-.sidebar:not(.expanded) .nav-item span:not(.nav-tooltip),
+.sidebar:not(.expanded) .nav-label,
 .sidebar:not(.expanded) .nav-group-label,
 .sidebar:not(.expanded) .nav-badge { display: none; }
 .sidebar:not(.expanded) .nav-item { justify-content: center; padding: 10px; }
-.sidebar:not(.expanded) .sb-logo  { padding: 14px 8px; justify-content: center; }
+.sidebar:not(.expanded) .sb-logo  { padding: 0 8px 14px; justify-content: center; }
 
 /* ── Main Area ───────────────────────────────────────────────────────────── */
 .main-area { flex: 1; overflow-y: auto; display: flex; flex-direction: column; min-width: 0; }
@@ -329,8 +344,8 @@ select, input { font: inherit; }
   -webkit-backdrop-filter: var(--backdrop-blur);
 }
 
-.hdr-title { font-size: var(--fs-xl); font-weight: 700; color: var(--color-text); }
-.hdr-sub   { font-size: var(--fs-xs); color: var(--color-muted); margin-top: 1px;
+.hdr-title { font-size: var(--fs-page-title); font-weight: 700; color: var(--text); letter-spacing: var(--ls-tight); }
+.hdr-sub   { font-size: var(--fs-meta); color: var(--text-muted); margin-top: 2px;
               display: flex; align-items: center; gap: 6px;
               /* never wrap — a two-line subtitle changes the sticky header height
                  and breaks every offset pinned below it */
@@ -1376,7 +1391,7 @@ tr.clickable:focus-visible,
 /* ── Global search (Ctrl+K palette) ───────────────────────────────────────── */
 .hdr-search {
   display: flex; align-items: center; gap: 7px;
-  padding: 6px 12px; min-width: 180px;
+  padding: 6px 12px; min-width: 206px;
   border: 1px solid var(--color-border); border-radius: var(--radius-ctl);
   background: var(--color-raised); color: var(--color-muted);
   font-size: var(--fs-sm); cursor: pointer;

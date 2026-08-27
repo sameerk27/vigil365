@@ -154,6 +154,16 @@ function parseHash(): { page: NavPage | null; alertId: number | null; triggeredI
   };
 }
 
+// Trailing count-badge tone per section (presentational only — routes unchanged).
+// Sections not listed fall back to the neutral tone.
+const SECTION_BADGE_TONE: Record<string, string> = {
+  alerts: "critical",
+  identity: "high",
+  email: "medium",
+  posture: "medium",
+  licenses: "medium",
+};
+
 function Sidebar({ page, setPage, alertCounts, collapsed, onToggleCollapse }: {
   page:NavPage; setPage:(p:NavPage)=>void; alertCounts: Record<string,number>;
   collapsed: boolean; onToggleCollapse: () => void;
@@ -201,9 +211,15 @@ function Sidebar({ page, setPage, alertCounts, collapsed, onToggleCollapse }: {
               aria-current={activeSection===s.id ? "page" : undefined}
               title={collapsed ? s.label : undefined}
             >
-              {s.icon}
-              {!collapsed && <span>{s.label}</span>}
-              {!collapsed && count>0 && <span className="nav-badge">{count > 99 ? "99+" : count}</span>}
+              {/* Leading dot mark — the redesign replaces per-section icons with
+                  a single tone-neutral dot that lights up on the active row. */}
+              <span className="nav-dot" aria-hidden="true" />
+              {!collapsed && <span className="nav-label">{s.label}</span>}
+              {!collapsed && count>0 && (
+                <span className={`nav-badge tone-${SECTION_BADGE_TONE[s.id] ?? "neutral"}`}>
+                  {count > 99 ? "99+" : count}
+                </span>
+              )}
               {collapsed && <span className="nav-tooltip">{s.label}{count>0?` (${count})`:"" }</span>}
             </button>
           );
