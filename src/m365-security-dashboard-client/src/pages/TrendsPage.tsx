@@ -172,7 +172,7 @@ export function TrendsPage() {
     const periodImproving = metric.lowerIsBetter ? periodDelta.diff <= 0 : periodDelta.diff >= 0;
     const Icon = metric.icon;
     const ArrowIcon = diff > 0 ? TrendingUp : diff < 0 ? TrendingDown : Minus;
-    const dirColor = diff === 0 ? "var(--color-muted)" : improving ? "#10b981" : "#ef4444";
+    const dirColor = diff === 0 ? "var(--color-muted)" : improving ? "var(--pill-good-fg)" : "var(--pill-err-fg)";
 
     return (
       <div className="trends-kpi-card" title={metric.description}>
@@ -198,7 +198,7 @@ export function TrendsPage() {
           </span>
         </div>
         <div style={{ marginTop: 4, fontSize: 11, color: "var(--color-muted)" }}>
-          <span style={{ color: periodImproving ? "#10b981" : periodDelta.diff === 0 ? "var(--color-muted)" : "#ef4444", fontWeight: 600 }}>
+          <span style={{ color: periodImproving ? "var(--pill-good-fg)" : periodDelta.diff === 0 ? "var(--color-muted)" : "var(--pill-err-fg)", fontWeight: 600 }}>
             {periodDelta.diff === 0 ? "Flat" : `${periodDelta.diff > 0 ? "+" : ""}${periodDelta.pctChange.toFixed(1)}%`}
           </span> over {timeRange}d
         </div>
@@ -208,17 +208,17 @@ export function TrendsPage() {
 
   const InsightRow = ({ insight }: { insight: { type: string; text: string } }) => {
     const iconMap: Record<string, React.ReactNode> = {
-      good: <CheckCircle size={14} color="#10b981" />,
-      warning: <AlertTriangle size={14} color="#f59e0b" />,
-      critical: <ShieldAlert size={14} color="#ef4444" />,
-      info: <Info size={14} color="#3b82f6" />,
+      good: <CheckCircle size={14} color="var(--pill-good-fg)" />,
+      warning: <AlertTriangle size={14} color="var(--sev-medium)" />,
+      critical: <ShieldAlert size={14} color="var(--sev-critical)" />,
+      info: <Info size={14} color="var(--accent-light)" />,
     };
     const bgMap: Record<string, string> = {
-      good: "rgba(16,185,129,0.08)", warning: "rgba(245,158,11,0.08)",
-      critical: "rgba(239,68,68,0.08)", info: "rgba(59,130,246,0.06)",
+      good: "var(--pill-good-bg)", warning: "var(--pill-warn-bg)",
+      critical: "var(--pill-err-bg)", info: "var(--pill-info-bg)",
     };
     const borderMap: Record<string, string> = {
-      good: "#10b981", warning: "#f59e0b", critical: "#ef4444", info: "#3b82f6",
+      good: "var(--pill-good-fg)", warning: "var(--sev-medium)", critical: "var(--sev-critical)", info: "var(--accent-light)",
     };
     return (
       <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 14px", background: bgMap[insight.type], borderLeft: `3px solid ${borderMap[insight.type]}`, borderRadius: "0 6px 6px 0", fontSize: 13, color: "var(--color-text)", lineHeight: 1.5 }}>
@@ -256,7 +256,7 @@ export function TrendsPage() {
                 style={{
                   padding: "6px 14px", borderRadius: 6, border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer",
                   background: timeRange === days ? "var(--color-primary)" : "transparent",
-                  color: timeRange === days ? "#fff" : "var(--color-text)",
+                  color: timeRange === days ? "var(--text-on-dark)" : "var(--color-text)",
                   transition: "all 0.2s"
                 }}>
                 {days}D
@@ -363,7 +363,7 @@ export function TrendsPage() {
                       <td key={m.key} style={tdStyle}>
                         <span style={{ fontWeight: 600 }}>{m.isPct ? val.toFixed(1) : val}{m.unit}</span>
                         {diff !== 0 && (
-                          <span style={{ marginLeft: 6, fontSize: 10, color: improving ? "#10b981" : "#ef4444", fontWeight: 600 }}>
+                          <span style={{ marginLeft: 6, fontSize: 10, color: improving ? "var(--pill-good-fg)" : "var(--pill-err-fg)", fontWeight: 600 }}>
                             {diff > 0 ? "▲" : "▼"}{m.isPct ? Math.abs(diff).toFixed(1) : Math.abs(diff)}
                           </span>
                         )}
@@ -389,7 +389,7 @@ export function TrendsPage() {
           </thead>
           <tbody>
             {reversedSnapshots.slice(0, 30).map((s, i) => (
-              <tr key={s.id} style={{ background: i % 2 === 0 ? "transparent" : "#f8f9fa" }}>
+              <tr key={s.id} style={{ background: i % 2 === 0 ? "transparent" : "var(--bg-subtle)" }}>
                 <td style={{ ...tdStyle, fontSize: 10, padding: "3px 6px" }}>{fmtDate(s.capturedAt)}</td>
                 {METRICS.map(m => (
                   <td key={m.key} style={{ ...tdStyle, fontSize: 10, padding: "3px 6px" }}>

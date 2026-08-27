@@ -67,7 +67,7 @@ export function LicensesPage({ licenses, inactive, passwords }: {
                   <div className="ub-bar"><ProgressBar pct={utilPct} color={utilPct>95?"var(--status-error-icon)":utilPct>80?"var(--status-good-icon)":"var(--color-primary)"}/></div>
                   <div className="ub-pct">{utilPct}%</div>
                 </div>
-                <MiniBarChart items={filteredSkus.slice(0,8).map(s=>({ label:s.name.replace(/_/g," ").slice(0,22), value:s.consumed, color:s.available<=5?"#dc2626":"#3b82f6" }))}/>
+                <MiniBarChart items={filteredSkus.slice(0,8).map(s=>({ label:s.name.replace(/_/g," ").slice(0,22), value:s.consumed, color:s.available<=5?"var(--sev-critical)":"var(--accent-light)" }))}/>
                 <div className="tbl-wrap" data-inline-style="inline-f2fecb34dc">
                   <table className="data-tbl">
                     <thead><tr><th scope="col">SKU</th><th scope="col">Purchased</th><th scope="col">Consumed</th><th scope="col" style={{textAlign: 'right'}}>Available (Waste)</th></tr></thead>

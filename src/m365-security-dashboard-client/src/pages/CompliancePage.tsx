@@ -352,7 +352,7 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
                 <div className="mini-list">
                   {purview!.labels.map((l,i)=>(
                     <div key={l.id??i} className="mini-row">
-                      <span className="status-dot" style={{background:l.color||"#94a3b8"}}/>
+                      <span className="status-dot" style={{background:l.color||"var(--text-faint)"}}/>
                       <span className="mr-user">{l.name}</span>
                       {l.description&&<span className="al-desc" data-inline-style="inline-126244f135">{l.description}</span>}
                       {l.isActive&&<Badge label="Active" tone="good"/>}

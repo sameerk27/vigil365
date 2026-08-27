@@ -70,7 +70,7 @@ export function SignInLocationsPage({ data }: { data: SignInLocationsData|null }
               ? <EmptyState icon={<Globe size={28}/>} message="No location data available"/>
               : <>
                   <MiniBarChart items={data.byCountry.slice(0,8).map(c=>({
-                    label:c.country??"Unknown", value:c.count, color:c.failures>2?"#dc2626":"#3b82f6"
+                    label:c.country??"Unknown", value:c.count, color:c.failures>2?"var(--sev-critical)":"var(--accent-light)"
                   }))}/>
                   <div className="tbl-wrap" data-inline-style="inline-f2fecb34dc">
                     <table className="data-tbl">

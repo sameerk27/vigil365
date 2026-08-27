@@ -128,8 +128,8 @@ export function SetupPage() {
           </div>
           {result && (
             <div style={{ display:"flex", alignItems:"center", gap:8, fontSize:13, padding:"10px 14px", borderRadius:8,
-              background: result.ok ? "rgba(34,197,94,0.1)" : "rgba(220,38,38,0.1)",
-              color: result.ok ? "var(--color-good, #16a34a)" : "var(--color-error, #dc2626)" }}>
+              background: result.ok ? "var(--pill-good-bg)" : "var(--pill-err-bg)",
+              color: result.ok ? "var(--pill-good-fg)" : "var(--pill-err-fg)" }}>
               {result.ok ? <CheckCircle size={15}/> : <AlertTriangle size={15}/>}
               {result.msg}
             </div>
