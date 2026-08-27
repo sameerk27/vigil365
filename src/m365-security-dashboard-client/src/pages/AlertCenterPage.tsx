@@ -882,7 +882,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                                   <tr key={e.id || idx} style={{ borderBottom: idx < entities.length - 1 ? "1px solid var(--color-border-subtle)" : "none" }}>
                                     <td style={{ padding: "8px 12px" }}>
                                       <div style={{ fontWeight: 500, color: "var(--color-text)", display: "flex", alignItems: "center", gap: 4 }}>
-                                        <span title={name} style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
+                                        <span className="redactable" title={name} style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
                                         {isCopyable && <CopyButton value={name} label={typeLabel} size={11}/>}
                                       </div>
                                       <div data-inline-style="inline-405b98fd97">

@@ -5,7 +5,7 @@ import {
   Home, Users, Monitor, Mail, AlertTriangle, Bell, CheckSquare, Activity, Wifi,
   Package, ShieldCheck, BookOpen, MapPin, UserCheck, Settings, ChevronRight, ChevronLeft,
   Clock, RefreshCw, Sun, Moon, Rows2, Rows3, LogIn, LogOut, ShieldAlert, UserX, TrendingUp, Lightbulb, Lock,
-  Search as SearchIcon, Pause, Play, Globe
+  Search as SearchIcon, Pause, Play, Globe, Eye, EyeOff
 } from "lucide-react";
 import "./styles.css";
 
@@ -255,6 +255,13 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
   }, []);
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem("m365-theme") === "dark");
   const [compact, setCompact] = useState(() => localStorage.getItem("m365-density") === "compact");
+  const [demoMode, setDemoMode] = useState(() => localStorage.getItem("m365-demo") === "true");
+
+  useEffect(() => {
+    if (demoMode) document.body.classList.add("demo-mode");
+    else document.body.classList.remove("demo-mode");
+    localStorage.setItem("m365-demo", String(demoMode));
+  }, [demoMode]);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false); // false = expanded
 
@@ -612,6 +619,9 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
             <button className="theme-toggle" onClick={() => setDarkMode(d => !d)} aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"} title={darkMode ? "Light mode" : "Dark mode"}>
               {darkMode ? <Sun size={15}/> : <Moon size={15}/>}
             </button>
+            <button className="theme-toggle" onClick={() => setDemoMode(d => !d)} aria-label={demoMode ? "Disable Privacy Mode" : "Enable Privacy Mode"} title={demoMode ? "Disable Privacy Mode (Reveal data)" : "Enable Privacy Mode (Hide sensitive data)"}>
+              {demoMode ? <EyeOff size={15} color="#e11d48"/> : <Eye size={15}/>}
+            </button>
             {account && (
               <div className="user-menu-wrap"
                 onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setUserMenuOpen(false); }}
@@ -623,13 +633,13 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
                   aria-haspopup="menu" aria-expanded={userMenuOpen}
                 >
                   <span className="user-avatar">{(account.name ?? account.username).charAt(0).toUpperCase()}</span>
-                  <span className="user-menu-name">{account.name ?? account.username}</span>
+                  <span className="user-menu-name redactable">{account.name ?? account.username}</span>
                 </button>
                 {userMenuOpen && (
                   <div className="user-menu" role="menu">
                     <div className="user-menu-hdr">
-                      <div className="um-name">{account.name}</div>
-                      <div className="um-mail">{account.username}</div>
+                      <div className="um-name redactable">{account.name}</div>
+                      <div className="um-mail redactable">{account.username}</div>
                       <div className="user-menu-role">
                         <Badge label={auth.role} tone={auth.isAdmin ? "info" : auth.canMutate ? "good" : "neutral"}/>
                       </div>

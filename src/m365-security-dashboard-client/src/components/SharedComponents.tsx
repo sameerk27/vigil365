@@ -750,10 +750,10 @@ export function AlertDetailModal({ alert, allAlerts, onSelectAlert, onClose }: {
       <DetailField label="Status" value={alert.isResolved ? "Resolved" : "Active"}/>
       {/* The entity investigation profile was previously reachable only from the
           Ctrl+K palette — surface it where an analyst actually is: on the alert. */}
-      <DetailField label="User" value={alert.userPrincipalName} copy={!!alert.userPrincipalName} title={alert.userPrincipalName}
+      <DetailField label="User" value={<span className="redactable">{alert.userPrincipalName}</span>} copyValue={alert.userPrincipalName} copy={!!alert.userPrincipalName} title={alert.userPrincipalName}
         onNavigate={alert.userPrincipalName ? () => { onClose(); openEntity("user", alert.userPrincipalName!, alert.id); } : undefined}
         navLabel="Investigate →"/>
-      <DetailField label="Device" value={alert.deviceName} copy={!!alert.deviceName} title={alert.deviceName}
+      <DetailField label="Device" value={<span className="redactable">{alert.deviceName}</span>} copyValue={alert.deviceName} copy={!!alert.deviceName} title={alert.deviceName}
         onNavigate={alert.deviceName ? () => { onClose(); openEntity("device", alert.deviceName!, alert.id); } : undefined}
         navLabel="Investigate →"/>
       <DetailField label="External ID" value={alert.externalId} copy={!!alert.externalId}/>

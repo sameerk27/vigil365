@@ -405,7 +405,7 @@ export function IncidentsPage({ alerts, alertsTotal, serviceHealth, defenderAler
                       <div className="al-title trunc" title={a.title}>{a.title}</div>
                       {a.description&&<div className="al-desc">{a.description}</div>}
                     </td>
-                    <td className="trunc" data-inline-style="inline-08aec67817" title={a.userPrincipalName||a.deviceName||undefined}>{a.userPrincipalName||a.deviceName||"—"}</td>
+                    <td className="trunc redactable" data-inline-style="inline-08aec67817" title={a.userPrincipalName||a.deviceName||undefined}>{a.userPrincipalName||a.deviceName||"—"}</td>
                     <td className="al-date" title={fmtDate(a.detectedAt)}>{relTime(a.detectedAt) || fmtDate(a.detectedAt)}</td>
                     <td><Eye size={13} className="tbl-eye"/></td>
                   </tr>
