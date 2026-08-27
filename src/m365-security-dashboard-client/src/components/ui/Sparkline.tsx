@@ -37,21 +37,28 @@ export function Sparkline({ points, stroke = "accent", height = 120, fill = true
 
   return (
     <div className="ui-spark-wrap">
-      <svg className="ui-spark" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ height }} role="img">
-        {fill && (
-          <defs>
-            <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor={strokeColor} stopOpacity="0.2" />
-              <stop offset="1" stopColor={strokeColor} stopOpacity="0" />
-            </linearGradient>
-          </defs>
-        )}
-        {fill && <path d={area} fill={`url(#${gradId})`} stroke="none" />}
-        <path d={line} fill="none" stroke={strokeColor} strokeWidth="2" vectorEffect="non-scaling-stroke"
-          strokeLinejoin="round" strokeLinecap="round" />
-        <circle cx={lastX} cy={lastY} r="3.5" fill="#ffffff" stroke={strokeColor} strokeWidth="2"
-          vectorEffect="non-scaling-stroke" />
-      </svg>
+      <div className="ui-spark-plot" style={{ height }}>
+        <svg className="ui-spark" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ height }} role="img">
+          {fill && (
+            <defs>
+              <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor={strokeColor} stopOpacity="0.2" />
+                <stop offset="1" stopColor={strokeColor} stopOpacity="0" />
+              </linearGradient>
+            </defs>
+          )}
+          {fill && <path d={area} fill={`url(#${gradId})`} stroke="none" />}
+          <path d={line} fill="none" stroke={strokeColor} strokeWidth="2" vectorEffect="non-scaling-stroke"
+            strokeLinejoin="round" strokeLinecap="round" />
+        </svg>
+        {/* End marker as a fixed-size DOM overlay so it stays a true circle
+            regardless of the non-uniform SVG stretch. Position (left/top) is
+            genuinely dynamic, so it stays inline. */}
+        <span
+          className={`ui-spark-dot tone-${stroke}`}
+          style={{ left: `${lastX}%`, top: `${(lastY / H) * 100}%` }}
+        />
+      </div>
       {axis && (
         <div className="ui-spark-axis">
           <span>{axis[0]}</span>

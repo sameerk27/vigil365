@@ -2337,7 +2337,17 @@ body.demo-mode .redactable:hover {
 
 /* ── Sparkline ────────────────────────────────────────────────────────────── */
 .ui-spark-wrap { width: 100%; }
+.ui-spark-plot { position: relative; width: 100%; }
 .ui-spark { display: block; width: 100%; }
+/* Fixed-size end marker overlay — stays a true circle despite the non-uniform
+   SVG stretch. left/top set inline from the last data point. */
+.ui-spark-dot {
+  position: absolute; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--bg-card); border: 2px solid var(--accent);
+  transform: translate(-50%, -50%); pointer-events: none;
+}
+.ui-spark-dot.tone-accent { border-color: var(--accent); }
+.ui-spark-dot.tone-good   { border-color: var(--meter-good); }
 .ui-spark-axis { display: flex; justify-content: space-between; margin-top: 6px; font-size: 10px; color: var(--text-faint); }
 
 /* ── Dark feature card ────────────────────────────────────────────────────── */
