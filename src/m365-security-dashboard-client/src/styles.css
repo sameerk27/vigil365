@@ -1,5 +1,45 @@
 /* ── Design Tokens ───────────────────────────────────────────────────────── */
 :root {
+  /* ═══ Vigil365 design tokens — canonical, from the design handoff ══════════
+     Restyle only: no behavioral change. New components (Step 3+) use these
+     names; the legacy --color-* tokens below are aliased to them during the
+     migration and removed in the Step 6 sweep. */
+  /* Surfaces */
+  --bg-app: #f1f5f9;   --bg-card: #ffffff;   --bg-subtle: #f8fafc;
+  --border: #e2e8f0;   --border-soft: #f1f5f9;
+  --sidebar: #0d1f3c;  --sidebar-item-active: rgba(59, 130, 246, .16);
+  /* Text */
+  --text: #0f172a;   --text-mid: #475569;   --text-muted: #64748b;   --text-faint: #94a3b8;
+  --text-on-dark: #ffffff;   --text-on-dark-mid: #cbd5e1;   --text-on-dark-faint: #475569;
+  /* Brand */
+  --accent: #2563eb;   --accent-hover: #1d4ed8;   --accent-light: #3b82f6;
+  --accent-pale: #60a5fa;   --accent-paler: #93c5fd;
+  /* Severity ramp (single-value marks) */
+  --sev-critical: #e11d48;   --sev-high: #ea580c;   --sev-medium: #d97706;
+  --sev-low: #2563eb;   --sev-info: #94a3b8;
+  /* Status pills */
+  --pill-neutral-fg:#475569; --pill-neutral-bg:#f8fafc; --pill-neutral-bd:#e2e8f0;
+  --pill-good-fg:#15803d;    --pill-good-bg:#f0fdf4;    --pill-good-bd:#bbf7d0;
+  --pill-warn-fg:#b45309;    --pill-warn-bg:#fffbeb;    --pill-warn-bd:#fde68a;
+  --pill-err-fg:#be123c;     --pill-err-bg:#fff1f2;     --pill-err-bd:#fecdd3;
+  --pill-info-fg:#1d4ed8;    --pill-info-bg:#eff6ff;    --pill-info-bd:#bfdbfe;
+  /* Meter fills */
+  --meter-good:#16a34a; --meter-high:#ea580c; --meter-med:#d97706; --meter-bad:#e11d48;
+  /* Type (design) */
+  --font-body: Inter, "Segoe UI", system-ui, sans-serif;
+  --fs-page-title:18px; --fs-card-title:14px; --fs-kpi:23px; --fs-stat:21px;
+  --fs-body:12.5px; --fs-body-sm:11.5px; --fs-meta:11px; --fs-label:9.5px;
+  --ls-label:.07em; --ls-tight:-.02em;
+  /* Spacing (design) */
+  --gap-card:14px; --gap-tile:11px;
+  --pad-card:16px 18px; --pad-stat:13px 15px; --pad-kpi:14px 15px;
+  --pad-th:9px 18px; --pad-td:10px 18px; --pad-content:16px 20px 26px;
+  --sidebar-w:206px;
+  /* Radii (design) */
+  --r-card:16px; --r-tile:14px; --r-inset:12px; --r-control:8px; --r-pill:5px;
+  /* Elevation — the only levels in the system */
+  --shadow-tab-active: 0 1px 2px rgba(0,0,0,.06);
+
   /* ── Type scale ──────────────────────────────────────────────────────────
      One ladder for the whole app. Before this there were 18 distinct sizes
      including near-duplicates (11/11.5, 12/12.5, 13/13.5) that read as drift
@@ -27,22 +67,23 @@
   --card-pad:  24px;
   --card-gap:  16px;
 
-  /* ── Accent ── */
-  --color-primary:       #2563eb;
-  --color-primary-hover: #1d4ed8;
+  /* ── Legacy --color-* names → aliased to the canonical tokens above
+     (identical values; removed in the Step 6 sweep as components migrate) ── */
+  --color-primary:       var(--accent);
+  --color-primary-hover: var(--accent-hover);
   --color-primary-subtle:#eff6ff;
   --color-primary-border:#bfdbfe;
 
   /* ── Surface (light mode elevation) ── */
-  --color-sidebar:  #0d1f3c;
-  --color-bg:       #f1f5f9;
-  --color-card:     #ffffff;
-  --color-raised:   #f8fafc;      /* inset / stat boxes / sub-panels */
-  --color-overlay:  #f1f5f9;      /* sticky bars, alternating rows */
+  --color-sidebar:  var(--sidebar);
+  --color-bg:       var(--bg-app);
+  --color-card:     var(--bg-card);
+  --color-raised:   var(--bg-subtle);   /* inset / stat boxes / sub-panels */
+  --color-overlay:  var(--bg-app);      /* sticky bars, alternating rows */
 
   /* ── Border & Shadow ── */
-  --color-border:   #e2e8f0;
-  --color-border-subtle: #f1f5f9;  /* internal row separators */
+  --color-border:   var(--border);
+  --color-border-subtle: var(--border-soft);  /* internal row separators */
   --shadow-card:    0 1px 3px rgba(0,0,0,.07), 0 1px 2px rgba(0,0,0,.04);
   --shadow-modal:   0 8px 32px rgba(0,0,0,.14);
   --shadow-raised:  0 4px 14px rgba(0,0,0,.08);
@@ -53,11 +94,11 @@
   --color-bg-alt:   var(--color-raised);
   --font-mono:      "Consolas", ui-monospace, "Cascadia Mono", monospace;
 
-  /* ── Text scale ── */
-  --color-text:     #0f172a;
+  /* ── Text scale (legacy names → canonical) ── */
+  --color-text:     var(--text);
   --color-text-secondary: #1e293b;
-  --color-muted:    #64748b;
-  --color-faint:    #94a3b8;
+  --color-muted:    var(--text-muted);
+  --color-faint:    var(--text-faint);
   --color-hint:     #cbd5e1;
 
   /* ── Severity / semantic palette ──
@@ -113,10 +154,10 @@
   /* ── Row / interactive ── */
   --row-hover:    #f0f7ff;
 
-  /* ── Radius ── */
-  --radius-card: 16px;
-  --radius-ctl:   8px;
-  --radius-pill:  6px;
+  /* ── Radius (legacy names → canonical) ── */
+  --radius-card: var(--r-card);
+  --radius-ctl:  var(--r-control);
+  --radius-pill: 6px;   /* legacy; design uses --r-pill:5px on new components */
 }
 
 /* Compact density — spacing only, never type size. Set on <html> so it applies
@@ -129,144 +170,6 @@
   --card-gap:  8px;
 }
 
-/* ── Dark Theme Overrides ────────────────────────────────────────────────── */
-.dark {
-  /* ── Surfaces (layered slate/navy) ── */
-  --color-bg:     #0f172a;    /* app background */
-  --color-card:   #1e293b;    /* card layer */
-  --color-raised: #273548;    /* stat boxes, inner panels */
-  --color-overlay:#162032;    /* sticky bars */
-
-  /* ── Border & Shadow ── */
-  --color-border:        #334155;
-  --color-border-subtle: #1e293b;
-  --shadow-card:    0 1px 4px rgba(0,0,0,.35);
-  --shadow-modal:   0 8px 40px rgba(0,0,0,.55);
-  --shadow-raised:  0 4px 14px rgba(0,0,0,.4);
-
-  /* ── Text scale ── */
-  --color-text:           #f1f5f9;
-  --color-text-secondary: #e2e8f0;
-  --color-muted:          #94a3b8;
-  --color-faint:          #64748b;
-  --color-hint:           #475569;
-
-  /* ── Severity — brightened for legibility on dark surfaces ── */
-  --sev-critical-bg:    #3b0f18;
-  --sev-critical-border:#7f1d1d;
-  --sev-critical-text:  #fca5a5;
-  --sev-critical-icon:  #f87171;
-  --sev-high-bg:        #3b1505;
-  --sev-high-border:    #7c2d12;
-  --sev-high-text:      #fdba74;
-  --sev-high-icon:      #fb923c;
-  --sev-medium-bg:      #3b2000;
-  --sev-medium-border:  #78350f;
-  --sev-medium-text:    #fcd34d;
-  --sev-medium-icon:    #fbbf24;
-  --sev-low-bg:         #0f2545;
-  --sev-low-border:     #1d4ed8;
-  --sev-low-text:       #93c5fd;
-  --sev-low-icon:       #60a5fa;
-  --sev-info-bg:        #1e293b;
-  --sev-info-border:    #334155;
-  --sev-info-text:      #94a3b8;
-  --sev-info-icon:      #64748b;
-
-  /* ── Status — dark variants ── */
-  --status-good-bg:     #0f2e1a;
-  --status-good-border: #166534;
-  --status-good-text:   #4ade80;
-  --status-good-icon:   #22c55e;
-  --status-warn-bg:     #3b2000;
-  --status-warn-border: #78350f;
-  --status-warn-text:   #fcd34d;
-  --status-warn-icon:   #fbbf24;
-  --status-error-bg:    #3b0f18;
-  --status-error-border:#7f1d1d;
-  --status-error-text:  #fca5a5;
-  --status-error-icon:  #f87171;
-
-  /* ── Severity dots — brighter in dark ── */
-  --dot-critical: #f87171;
-  --dot-high:     #fb923c;
-  --dot-medium:   #fbbf24;
-  --dot-low:      #60a5fa;
-  --dot-info:     #64748b;
-
-  /* ── Primary accent ── */
-  --color-primary:        #3b82f6;
-  --color-primary-hover:  #2563eb;
-  --color-primary-subtle: #0f2545;
-  --color-primary-border: #1d4ed8;
-
-  --row-hover: #1a2e4a;
-}
-
-/* ── Neon Dark Mode Theme Overrides ────────────────────────────────────────── */
-html.dark {
-  --color-primary:       #3b82f6;
-  --color-primary-hover: #60a5fa;
-  --color-primary-subtle:rgba(59, 130, 246, 0.15);
-  --color-primary-border:rgba(59, 130, 246, 0.3);
-
-  --color-sidebar:  #000000;
-  --color-bg:       #09090b;
-  --color-card:     rgba(24, 24, 27, 0.7);
-  --color-raised:   rgba(39, 39, 42, 0.7);
-  --color-overlay:  #18181b;
-
-  --color-border:   #27272a;
-  --color-border-subtle: #3f3f46;
-  --shadow-card:    0 4px 20px rgba(0, 0, 0, 0.5);
-  --shadow-modal:   0 8px 32px rgba(0, 0, 0, 0.7);
-  --shadow-raised:  0 4px 14px rgba(0, 0, 0, 0.5);
-
-  --color-text:     #f8fafc;
-  --color-text-secondary: #e2e8f0;
-  --color-muted:    #94a3b8;
-  --color-faint:    #64748b;
-  --color-hint:     #475569;
-
-  /* Semantic Neon Tints */
-  --sev-critical-bg:   rgba(225, 29, 72, 0.1);
-  --sev-critical-border:rgba(225, 29, 72, 0.3);
-  --sev-critical-text: #f43f5e;
-  --sev-critical-icon: #f43f5e;
-
-  --sev-high-bg:       rgba(234, 88, 12, 0.1);
-  --sev-high-border:   rgba(234, 88, 12, 0.3);
-  --sev-high-text:     #fb923c;
-  --sev-high-icon:     #fb923c;
-
-  --sev-medium-bg:     rgba(217, 119, 6, 0.1);
-  --sev-medium-border: rgba(217, 119, 6, 0.3);
-  --sev-medium-text:   #fbbf24;
-  --sev-medium-icon:   #fbbf24;
-
-  --sev-low-bg:        rgba(37, 99, 235, 0.1);
-  --sev-low-border:    rgba(37, 99, 235, 0.3);
-  --sev-low-text:      #60a5fa;
-  --sev-low-icon:      #60a5fa;
-
-  --sev-info-bg:       rgba(100, 116, 139, 0.1);
-  --sev-info-border:   rgba(100, 116, 139, 0.3);
-  --sev-info-text:     #94a3b8;
-  --sev-info-icon:     #94a3b8;
-
-  --status-good-bg:    rgba(22, 163, 74, 0.1);
-  --status-good-border:rgba(22, 163, 74, 0.3);
-  --status-good-text:  #4ade80;
-  --status-good-icon:  #4ade80;
-  --status-warn-bg:    rgba(217, 119, 6, 0.1);
-  --status-warn-border:rgba(217, 119, 6, 0.3);
-  --status-warn-text:  #fbbf24;
-  --status-warn-icon:  #fbbf24;
-  --status-error-bg:   rgba(225, 29, 72, 0.1);
-  --status-error-border:rgba(225, 29, 72, 0.3);
-  --status-error-text: #f43f5e;
-  --status-error-icon: #f43f5e;
-}
 
 /* ── Reset & Base ────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -789,7 +692,6 @@ tr.clickable:focus-visible,
 .kpi-clickable:hover { border-color: var(--color-primary); }
 .kpi-clickable:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 .kpi-active { border-color: var(--color-primary); box-shadow: 0 0 0 1px var(--color-primary) inset, 0 0 12px var(--color-primary-subtle); }
-html.dark .kpi-active { box-shadow: 0 0 0 1px var(--color-primary) inset, 0 0 20px var(--color-primary-border); }
 .copy-btn:hover { color: var(--color-primary) !important; }
 
 .kpi-icon {

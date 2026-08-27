@@ -4,7 +4,7 @@ import { PublicClientApplication, type AccountInfo, type Configuration } from "@
 import {
   Home, Users, Monitor, Mail, AlertTriangle, Bell, CheckSquare, Activity, Wifi,
   Package, ShieldCheck, BookOpen, MapPin, UserCheck, Settings, ChevronRight, ChevronLeft,
-  Clock, RefreshCw, Sun, Moon, Rows2, Rows3, LogIn, LogOut, ShieldAlert, UserX, TrendingUp, Lightbulb, Lock,
+  Clock, RefreshCw, Rows2, Rows3, LogIn, LogOut, ShieldAlert, UserX, TrendingUp, Lightbulb, Lock,
   Search as SearchIcon, Pause, Play, Globe, Eye, EyeOff
 } from "lucide-react";
 import "./styles.css";
@@ -253,7 +253,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
     return () => { window.removeEventListener("popstate", sync); window.removeEventListener("hashchange", sync); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const [darkMode, setDarkMode] = useState(() => localStorage.getItem("m365-theme") === "dark");
+  // TODO(design): dark mode removed in the light-only restyle — re-add when a dark theme is specced.
   const [compact, setCompact] = useState(() => localStorage.getItem("m365-density") === "compact");
   const [demoMode, setDemoMode] = useState(() => localStorage.getItem("m365-demo") === "true");
 
@@ -278,12 +278,6 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
   const [seenCounts, setSeenCounts] = useState<Record<string,number>>(() => {
     try { return JSON.parse(localStorage.getItem('m365-seen') ?? '{}'); } catch { return {}; }
   });
-
-  // Apply dark mode to document root
-  useEffect(() => {
-    document.documentElement.classList.toggle("dark", darkMode);
-    localStorage.setItem("m365-theme", darkMode ? "dark" : "light");
-  }, [darkMode]);
 
   // Row density. Analysts scanning queues for hours want more rows per screen;
   // spacing tightens but type size never does.
@@ -561,7 +555,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
   const isInitialLoad = loading && overview === null;
 
   return (
-    <div className={`app-shell${darkMode ? " dark" : ""}`}>
+    <div className="app-shell">
       {/* First tab stop: lets keyboard users jump the 8-section sidebar instead
           of tabbing through it on every page. */}
       <a className="skip-link" href="#main-content">Skip to main content</a>
@@ -616,9 +610,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
               title={isUtcMode() ? "UTC time" : "Local time"}>
               {isUtcMode() ? <Globe size={15}/> : <Clock size={15}/>}
             </button>
-            <button className="theme-toggle" onClick={() => setDarkMode(d => !d)} aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"} title={darkMode ? "Light mode" : "Dark mode"}>
-              {darkMode ? <Sun size={15}/> : <Moon size={15}/>}
-            </button>
+            {/* TODO(design): dark-mode toggle removed for the light-only restyle. */}
             <button className="theme-toggle" onClick={() => setDemoMode(d => !d)} aria-label={demoMode ? "Disable Privacy Mode" : "Enable Privacy Mode"} title={demoMode ? "Disable Privacy Mode (Reveal data)" : "Enable Privacy Mode (Hide sensitive data)"}>
               {demoMode ? <EyeOff size={15} color="#e11d48"/> : <Eye size={15}/>}
             </button>
