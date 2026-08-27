@@ -2185,17 +2185,6 @@ button.countdown-chip:hover { color: var(--color-text); }
 /* Dynamic inline-style replacements: static declarations retained. */
 .banner-link { background: none; border: none; cursor: pointer; font-size: 12px; text-decoration: none; font-weight: 500; } .banner-link:hover { text-decoration: underline; }
 
-/* Privacy / Demo Mode */
-body.demo-mode .redactable {
-  filter: blur(5px);
-  opacity: 0.8;
-  user-select: none;
-  pointer-events: none;
-}
-body.demo-mode .redactable:hover {
-  filter: blur(5px);
-}
-
 /* ══════════════════════════════════════════════════════════════════════════
    UI pattern components (src/components/ui/) — restyle Step 3
    Thin CSS behind the presentational wrappers. Geometry per design README

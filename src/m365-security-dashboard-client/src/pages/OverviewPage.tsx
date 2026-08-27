@@ -242,7 +242,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
                     {riskyUsers.slice(0,4).map((a,i)=>(
                       <div key={i} className="mini-row al-clickable" {...rowActivation(()=>onAlertClick(a))} data-inline-style="inline-7c0f86ab54">
                         <span className={`sev-dot sev-${a.severity.toLowerCase()}`}/>
-                        <span className="mr-user redactable">{a.userPrincipalName??a.title}</span>
+                        <span className="mr-user">{a.userPrincipalName??a.title}</span>
                         <Badge label={a.severity} tone={a.severity==="High"||a.severity==="Critical"?"error":"warning"}/>
                       </div>
                     ))}
@@ -288,7 +288,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
                 <div key={i} className="mini-row al-clickable" {...rowActivation(() => crossNavigate({ page: "devices", search: d.deviceName ?? "" }))} data-inline-style="inline-7c0f86ab54">
                   <Monitor size={11} color="var(--color-muted)"/>
                   <span className="mr-user">{d.deviceName??"Unknown device"}</span>
-                  <span className="mr-date redactable">{d.userPrincipalName?.split("@")[0]}</span>
+                  <span className="mr-date">{d.userPrincipalName?.split("@")[0]}</span>
                 </div>
               ))}
             </div>

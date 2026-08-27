@@ -136,9 +136,9 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
           portalUrl="https://entra.microsoft.com/#view/Microsoft_AAD_IAM/IdentityProtectionMenuBlade/~/RiskDetections"
           portalLabel="View in Entra ID Protection"
         >
-          <DetailField label="User Display Name" value={<span className="redactable">{selectedDetection.userDisplayName}</span>}/>
-          <DetailField label="User Principal Name" value={<span className="redactable">{selectedDetection.userPrincipalName}</span>} copyValue={selectedDetection.userPrincipalName} copy={!!selectedDetection.userPrincipalName} onNavigate={selectedDetection.userPrincipalName ? () => { setSelectedDetection(null); setSearch(selectedDetection.userPrincipalName!); } : undefined} navLabel="Filter user"/>
-          <DetailField label="Detection ID" value={<span className="redactable">{selectedDetection.id}</span>} copyValue={selectedDetection.id} copy={!!selectedDetection.id}/>
+          <DetailField label="User Display Name" value={selectedDetection.userDisplayName}/>
+          <DetailField label="User Principal Name" value={selectedDetection.userPrincipalName} copy={!!selectedDetection.userPrincipalName} onNavigate={selectedDetection.userPrincipalName ? () => { setSelectedDetection(null); setSearch(selectedDetection.userPrincipalName!); } : undefined} navLabel="Filter user"/>
+          <DetailField label="Detection ID" value={selectedDetection.id} copy={!!selectedDetection.id}/>
           <DetailField label="Risk Event Type" value={selectedDetection.riskEventType?.replace(/([A-Z])/g," $1").trim()}/>
           <DetailField label="Risk Level" value={selectedDetection.riskLevel}/>
           <DetailField label="Risk State" value={selectedDetection.riskState}/>
@@ -222,7 +222,7 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
               {mfaMissing.slice(0,8).map((a,i)=>(
                 <div key={i} className="mini-row al-clickable" {...rowActivation(()=>onAlertClick(a))}>
                   <UserX size={12} color="var(--status-error-icon)"/>
-                  <span className="mr-user redactable">{a.userPrincipalName}</span>
+                  <span className="mr-user">{a.userPrincipalName}</span>
                   <Badge label="No MFA" tone="error"/>
                 </div>
               ))}
@@ -246,7 +246,7 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
                   <div key={i} className="al-item" onClick={()=>onAlertClick(a)}>
                     <span className="sev-dot" style={{background:sevColor(a.severity)}}/>
                     <div className="al-body">
-                      <div className="al-title redactable">{a.userPrincipalName??a.title}</div>
+                      <div className="al-title">{a.userPrincipalName??a.title}</div>
                       <div className="al-desc">{a.description}</div>
                     </div>
                     <Badge label={a.severity} tone={a.severity==="High"||a.severity==="Critical"?"error":"warning"}/>
@@ -274,7 +274,7 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
                 <div key={i} className="al-item" onClick={()=>onAlertClick(a)}>
                   <span className="sev-dot" style={{background:sevColor(a.severity)}}/>
                   <div className="al-body">
-                    <div className="al-title redactable">{a.userPrincipalName??a.title}</div>
+                    <div className="al-title">{a.userPrincipalName??a.title}</div>
                     <div className="al-desc">{a.description}</div>
                   </div>
                   <span className="al-date">{fmtDate(a.detectedAt)}</span>
@@ -289,8 +289,8 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
                 <div key={i} className="al-item al-item-noclick" data-inline-style="inline-8de77ed0af">
                   <Globe size={14} data-inline-style="inline-1a7d3c199c" />
                   <div className="al-body">
-                    <div className="al-title redactable">{s.userPrincipalName ?? s.title}</div>
-                    <div className="al-desc redactable">{s.title !== s.userPrincipalName ? s.title : "Foreign sign-in detected"}</div>
+                    <div className="al-title">{s.userPrincipalName ?? s.title}</div>
+                    <div className="al-desc">{s.title !== s.userPrincipalName ? s.title : "Foreign sign-in detected"}</div>
                   </div>
                   <span className="al-date">{fmtFullTime(s.detectedAt)}</span>
                 </div>
@@ -329,7 +329,7 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
                       <div key={d.id??i} className="al-item" onClick={()=>setSelectedDetection(d)}>
                         <span className={`sev-dot sev-${d.riskLevel.toLowerCase()}`}/>
                         <div className="al-body">
-                          <div className="al-title redactable">{d.userPrincipalName?.split("@")[0]??d.userDisplayName??"Unknown"}</div>
+                          <div className="al-title">{d.userPrincipalName?.split("@")[0]??d.userDisplayName??"Unknown"}</div>
                           <div className="row-meta">
                             <span className="row-meta-item">{d.riskEventType?.replace(/([A-Z])/g," $1").trim()}</span>
                             {d.city&&<span className="row-meta-item">{[d.city,d.country].filter(Boolean).join(", ")}</span>}
@@ -399,7 +399,7 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
                         <Key size={12}/>
                       </div>
                       <div className="act-body">
-                        <span className="act-who redactable">{a.principalDisplayName??a.principalUpn?.split("@")[0]??"Unknown"}</span>
+                        <span className="act-who">{a.principalDisplayName??a.principalUpn?.split("@")[0]??"Unknown"}</span>
                         <span className="act-what"> {a.roleName} · {a.action}</span>
                       </div>
                       <span className="act-date">{fmtDate(a.createdDateTime)}</span>
@@ -432,7 +432,7 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
                         {r.members.slice(0,5).map((m,j)=>(
                           <div key={j} className="mini-row" data-inline-style="inline-d3b4d121d3">
                             <User size={11}/>
-                            <span className="mr-user redactable">{m.userPrincipalName??m.displayName??"Unknown"}</span>
+                            <span className="mr-user">{m.userPrincipalName??m.displayName??"Unknown"}</span>
                           </div>
                         ))}
                         {r.members.length>5&&<div className="more-link">+{r.members.length-5} more</div>}

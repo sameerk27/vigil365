@@ -89,7 +89,7 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
                     <Archive size={13} color="var(--status-warn-icon)"/>
                     <div className="al-body">
                       <div className="al-title">{a.title}</div>
-                      <div className="al-desc"><span className="redactable">{a.userPrincipalName}</span> · {a.description}</div>
+                      <div className="al-desc">{a.userPrincipalName} · {a.description}</div>
                     </div>
                     <span className="al-date">{fmtFullTime(a.detectedAt)}</span>
                   </div>
@@ -129,7 +129,7 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
                 <ShieldAlert size={14} color="var(--status-error-icon)" />
                 <div className="al-body">
                   <div className="al-title">{a.title}</div>
-                  <div className="al-desc">{a.userPrincipalName ? <><span className="redactable">{a.userPrincipalName}</span>{" · "}</> : ""}{a.description}</div>
+                  <div className="al-desc">{a.userPrincipalName ? `${a.userPrincipalName} · ` : ""}{a.description}</div>
                 </div>
                 <span className="al-date">{fmtFullTime(a.detectedAt)}</span>
               </div>
@@ -175,7 +175,7 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
                   <tbody>
                     {emailProtection.topTargetedUsers.map((u, i) => (
                       <tr key={i} className="tbl-row-click" onClick={() => setSearch(u.user)}>
-                        <td><div className="trunc redactable" title={u.user} style={{maxWidth: '200px'}}>{u.user}</div></td>
+                        <td><div className="trunc" title={u.user} style={{maxWidth: '200px'}}>{u.user}</div></td>
                         <td style={{textAlign: 'right'}}><Badge label={u.count.toString()} tone="warning" /></td>
                       </tr>
                     ))}

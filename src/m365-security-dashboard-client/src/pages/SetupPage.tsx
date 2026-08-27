@@ -88,7 +88,7 @@ export function SetupPage() {
         {label}
         {copyable && value.trim() && <CopyButton value={value.trim()} label={label} size={12}/>}
       </span>
-      <input className={`policy-input redactable ${error ? 'err-input' : ''}`} type={type} value={value} placeholder={placeholder} onChange={e => { set(e.target.value); setErrors(prev => ({ ...prev, [label.includes('tenant') ? 'tenantId' : label.includes('client)') ? 'clientId' : 'clientSecret']: undefined })); }} />
+      <input className={`policy-input ${error ? 'err-input' : ''}`} type={type} value={value} placeholder={placeholder} onChange={e => { set(e.target.value); setErrors(prev => ({ ...prev, [label.includes('tenant') ? 'tenantId' : label.includes('client)') ? 'clientId' : 'clientSecret']: undefined })); }} />
       {error && <div className="field-err" style={{ color: "var(--status-error-text)", fontSize: 12, marginTop: 4 }}>{error}</div>}
     </div>
   );

@@ -191,8 +191,8 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
                   <div key={i} className="al-item" onClick={()=>onAlertClick(a)}>
                     <Laptop size={14} color="var(--status-error-icon)"/>
                     <div className="al-body">
-                      <div className="al-title redactable">{a.deviceName??a.title}</div>
-                      <div className="al-desc"><span className="redactable">{a.userPrincipalName}</span> · {a.description}</div>
+                      <div className="al-title">{a.deviceName??a.title}</div>
+                      <div className="al-desc">{a.userPrincipalName} · {a.description}</div>
                     </div>
                     <div data-inline-style="inline-882e0924c7">
                       <Badge label={a.severity} tone={a.severity==="High"||a.severity==="Critical"?"error":"warning"}/>
@@ -231,8 +231,8 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
                   <tbody>
                     {notCheckedIn.map((a,i)=>(
                       <tr key={i} className="tbl-row-click" {...rowActivation(()=>onAlertClick(a), `Open alert ${a.title}`)}>
-                        <td><div className="al-title trunc redactable" data-inline-style="inline-7ef9446763" title={a.deviceName??a.title}>{a.deviceName??a.title}</div></td>
-                        <td><div className="trunc redactable" data-inline-style="inline-4aca1e0d5c" title={a.userPrincipalName??undefined}>{a.userPrincipalName??"—"}</div></td>
+                        <td><div className="al-title trunc" data-inline-style="inline-7ef9446763" title={a.deviceName??a.title}>{a.deviceName??a.title}</div></td>
+                        <td><div className="trunc" data-inline-style="inline-4aca1e0d5c" title={a.userPrincipalName??undefined}>{a.userPrincipalName??"—"}</div></td>
                         <td className="al-date" title={fmtDate(a.detectedAt)}>{relTime(a.detectedAt)}</td>
                         <td><Badge label="Stale" tone="warning"/></td>
                         <td><Eye size={13} className="tbl-eye"/></td>
