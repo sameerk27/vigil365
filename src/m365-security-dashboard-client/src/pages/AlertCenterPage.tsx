@@ -1,11 +1,10 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
-import { X, Bell, AlertCircle, Clock, ShieldAlert, Activity, CheckCircle, Search, ExternalLink, ArrowRight, ShieldCheck, AlertTriangle, PlusCircle, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
+import { X, Bell, Activity, CheckCircle, Search, ExternalLink, ArrowRight, ShieldCheck, AlertTriangle, PlusCircle, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { AlertPolicy, TriggeredAlert, NotificationSettings, NotificationLogEntry, Tone, AlertCoverageScorecard, AlertBaselineRule } from "../services/types";
 import { acApi, recApi, wbApi, useAuth, crossNavigate, consumeNavTab } from "../services/api";
 import { showToast } from "../services/toast";
 import { confirmAction } from "../services/confirm";
-import { DetailField, KpiTile, Card, Badge, EmptyState, MiniBarChart, ExportDropdown, ProgressBar, CopyButton, LoadingSkeleton, TriageSection, rowActivation, SeverityFilter} from "../components/SharedComponents";
-import { CollectionHealthCard } from "../components/CollectionHealthCard";
+import { DetailField, Card, Badge, EmptyState, MiniBarChart, ExportDropdown, ProgressBar, CopyButton, LoadingSkeleton, TriageSection, rowActivation, SeverityFilter} from "../components/SharedComponents";
 import { CollectionStatusBanner } from "../components/CollectionStatusBanner";
 import { CollectionRunHistory } from "../components/CollectionRunHistory";
 import { AlertMetricsTab } from "../components/AlertMetricsTab";
@@ -13,7 +12,8 @@ import { SuppressionRulesTab } from "../components/SuppressionRulesTab";
 import { PolicyDryRun } from "../components/PolicyDryRun";
 import { PolicyPackControls } from "../components/PolicyPackControls";
 import { FilterPresets } from "../components/FilterPresets";
-import { relTime, fmtDate, fmtShort, sevTone } from "../services/utils";
+import { SegmentedTabs } from "../components/ui";
+import { relTime, fmtDate, sevTone } from "../services/utils";
 
 /** Human-readable status labels — raw enums like "auto_resolved" never reach the UI. */
 const STATUS_LABELS: Record<string, string> = {
@@ -22,7 +22,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 export const fmtStatus = (s: string) => STATUS_LABELS[s] ?? s.replace(/_/g, " ");
 
-type AcTab = "dashboard" | "alerts" | "policies" | "templates" | "coverage" | "notifications" | "metrics" | "suppression" | "runs";
+type AcTab = "alerts" | "policies" | "templates" | "coverage" | "notifications" | "metrics" | "suppression" | "runs";
 
 export const POLICY_TEMPLATES_CATALOG = [
   { name: "Critical Alerts Monitor",   desc: "Triggers when any critical security alert is detected",              metric: "criticalAlertCount", threshold: 1, severity: "Critical" as const, category: "identity"   as const },
@@ -536,7 +536,6 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
   const { canMutate } = useAuth();
 
   // The product is alert-first: land an analyst in the open, worst-first queue.
-  // The dashboard remains available when they need the aggregate view.
   // A cross-navigation may request a specific tab (e.g. "show me the collection
   // runs"); honour it on mount instead of dropping them on the default.
   const [tab, setTab] = useState<AcTab>(() => (consumeNavTab("alertcenter") as AcTab) ?? "alerts");
@@ -588,35 +587,9 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
 
   const refresh = () => { onChanged(); };
 
-  // ── KPI ──────────────────────────────────────────────────────────────────
-  const enabledCount = policies.filter(p => p.enabled).length;
-  const activeAlertsCount = triggeredAlerts.filter(a => a.status === "new").length;
-  const today = new Date().toDateString();
-  const triggeredToday = triggeredAlerts.filter(a => new Date(a.triggeredAt).toDateString() === today).length;
-  const criticalCount = triggeredAlerts.filter(a => a.severity === "critical" && a.status === "new").length;
-
-  // ── Bar chart: last 7 days ────────────────────────────────────────────────
-  const last7 = useMemo(() => {
-    const days: { date: string; count: number }[] = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(); d.setDate(d.getDate() - i);
-      const label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-      const ds = d.toDateString();
-      days.push({ date: label, count: triggeredAlerts.filter(a => new Date(a.triggeredAt).toDateString() === ds).length });
-    }
-    return days;
-  }, [triggeredAlerts]);
-
-  const barMax = Math.max(...last7.map(d => d.count), 1);
-
-  // ── Donut: by category ────────────────────────────────────────────────────
-  const catCounts = useMemo(() => {
-    const cats: Record<string, number> = {};
-    triggeredAlerts.forEach(a => { cats[a.category] = (cats[a.category] ?? 0) + 1; });
-    return Object.entries(cats).sort((a, b) => b[1] - a[1]);
-  }, [triggeredAlerts]);
-
-  const catColors: Record<string, string> = { identity: "#3b82f6", devices: "#8b5cf6", email: "#f59e0b", compliance: "#10b981", licenses: "#ec4899" };
+  // The Dashboard tab's KPI tiles, 7-day bar chart and category donut were
+  // removed in the redesign — the Overview page already carries those. Their
+  // derived values (enabledCount, last7, catCounts, …) went with them.
   const assignees = useMemo(() => [...new Set(triggeredAlerts.map(a => a.assignedTo).filter((email): email is string => !!email))].sort(), [triggeredAlerts]);
 
   // ── Active alerts: filter → sort → paginate ──────────────────────────────
@@ -942,14 +915,22 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
         </div>
       )}
 
-      {/* Tabs — underline style so they read as a level below the section tabs */}
-      <div className="ac-tabs ac-tabs-underline" role="tablist" aria-label="Alert Center views">
-        {(["dashboard","alerts","policies","templates","coverage","notifications","metrics","suppression","runs"] as AcTab[]).map(t => (
-          <button key={t} className={`ac-tab${tab===t?" active":""}`} onClick={() => { setTab(t); if (t === "alerts" || t === "dashboard") refresh(); }}>
-            {t === "dashboard" ? "Dashboard" : t === "alerts" ? "Active Alerts" : t === "policies" ? "Policies" : t === "templates" ? "Templates" : t === "coverage" ? "Coverage Scorecard" : t === "notifications" ? "Notifications" : t === "metrics" ? "Metrics" : t === "suppression" ? "Suppression" : "Collection Runs"}
-          </button>
-        ))}
-      </div>
+      {/* Inner tabs — segmented pill control (design README §"eight inner tabs"). */}
+      <SegmentedTabs<AcTab>
+        ariaLabel="Alert Center views"
+        active={tab}
+        onChange={t => { setTab(t); if (t === "alerts") refresh(); }}
+        tabs={[
+          { id: "alerts", label: "Active Alerts" },
+          { id: "policies", label: "Policies" },
+          { id: "templates", label: "Templates" },
+          { id: "coverage", label: "Coverage Scorecard" },
+          { id: "suppression", label: "Suppressions" },
+          { id: "notifications", label: "Notifications" },
+          { id: "runs", label: "Collection Runs" },
+          { id: "metrics", label: "Metrics" },
+        ]}
+      />
 
       {/* ── TAB: Coverage Scorecard ── */}
       {tab === "coverage" && <CoverageScorecardTab onChanged={onChanged}/>}
@@ -965,107 +946,6 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
 
       {/* ── TAB: Collection Runs ── */}
       {tab === "runs" && <CollectionRunHistory/>}
-
-      {/* ── TAB: Dashboard ── */}
-      {tab === "dashboard" && (
-        <>
-          <div className="kpi-row">
-            <KpiTile icon={<Bell size={18}/>}         label="ACTIVE POLICIES"   value={enabledCount}      sub={`${policies.length} total policies`}        tone={enabledCount>0?"good":"neutral"} onClick={() => setTab("policies")}/>
-            <KpiTile icon={<AlertCircle size={18}/>}  label="ACTIVE ALERTS"     value={activeAlertsCount} sub="Unacknowledged"                              tone={activeAlertsCount>0?"error":"good"} onClick={() => { setSevFilter(""); setDateFilter(""); setStatusFilter("new"); setTab("alerts"); }}/>
-            <KpiTile icon={<Clock size={18}/>}        label="TRIGGERED TODAY"   value={triggeredToday}    sub={fmtShort(new Date().toISOString())}          tone={triggeredToday>0?"warning":"good"} onClick={() => { setSevFilter(""); setStatusFilter(""); setDateFilter(new Date().toLocaleDateString("en-CA")); setTab("alerts"); }}/>
-            <KpiTile icon={<ShieldAlert size={18}/>}  label="CRITICAL ALERTS"   value={criticalCount}     sub="Severity: critical"                          tone={criticalCount>0?"error":"good"} onClick={() => { setDateFilter(""); setSevFilter("critical"); setStatusFilter("new"); setTab("alerts"); }}/>
-          </div>
-
-          <div className="ac-collection-health">
-            <CollectionHealthCard refreshKey={triggeredAlerts.length}/>
-          </div>
-
-          <div className="mid-row">
-            <Card title="Alerts Triggered (Last 7 Days)" className="card-score">
-              {triggeredAlerts.length === 0 ? (
-                <EmptyState icon={<Bell size={28}/>} message="No alerts triggered yet. Policies are monitoring the environment."/>
-              ) : (
-                <svg viewBox={`0 0 420 110`} data-inline-style="inline-10f1c87ffb">
-                  {last7.map((d, i) => {
-                    const barH = barMax > 0 ? Math.max(4, (d.count / barMax) * 80) : 4;
-                    const x = 10 + i * 58;
-                    return (
-                      <g key={d.date}>
-                        <rect x={x} y={90 - barH} width={42} height={barH} rx={4} fill="#3b82f6" opacity="0.8"/>
-                        {d.count > 0 && <text x={x+21} y={85-barH} textAnchor="middle" fontSize="10" fill="#3b82f6" fontWeight="600">{d.count}</text>}
-                        <text x={x+21} y={106} textAnchor="middle" fontSize="9" fill="#94a3b8">{d.date}</text>
-                      </g>
-                    );
-                  })}
-                </svg>
-              )}
-            </Card>
-
-            <Card title="Alerts by Category">
-              {catCounts.length === 0 ? (
-                <EmptyState icon={<Activity size={28}/>} message="No triggered alerts yet"/>
-              ) : (
-                <div data-inline-style="inline-c44bd08c16">
-                  <svg viewBox="0 0 100 100" width={100} height={100} data-inline-style="inline-69271fc98e">
-                    {(() => {
-                      const total = catCounts.reduce((s,[,v]) => s+v, 0);
-                      let offset = 0;
-                      return catCounts.map(([cat, count]) => {
-                        const pct = count / total;
-                        const circ = 2 * Math.PI * 38;
-                        const dash = pct * circ;
-                        const el = (
-                          <circle key={cat} cx="50" cy="50" r="38" fill="none"
-                            stroke={catColors[cat] ?? "#94a3b8"} strokeWidth="18"
-                            strokeDasharray={`${dash} ${circ}`}
-                            strokeDashoffset={-offset * circ}
-                            transform="rotate(-90 50 50)"/>
-                        );
-                        offset += pct;
-                        return el;
-                      });
-                    })()}
-                    <circle cx="50" cy="50" r="29" data-inline-style="inline-5c9713dbd5"/>
-                    <text x="50" y="54" textAnchor="middle" fontSize="12" fontWeight="700" data-inline-style="inline-15ed414312">{catCounts.reduce((s,[,v])=>s+v,0)}</text>
-                  </svg>
-                  <div data-inline-style="inline-126244f135">
-                    {catCounts.map(([cat, count]) => (
-                      <div key={cat} style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
-                        <span style={{ width:10, height:10, borderRadius:"50%", background: catColors[cat]??"#94a3b8", flexShrink:0 }}/>
-                        <span style={{ fontSize:12, flex:1, textTransform:"capitalize" }}>{cat}</span>
-                        <span style={{ fontSize:12, fontWeight:600 }}>{count}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </Card>
-
-            <Card title="Recent Alerts" action={<button className="btn-export" onClick={() => setTab("alerts")}>View All</button>}>
-              {triggeredAlerts.length === 0 ? (
-                <EmptyState icon={<CheckCircle size={24} color="var(--status-good-icon)"/>} message="No alerts triggered yet"/>
-              ) : (
-                <div className="mini-list">
-                  {[...triggeredAlerts].sort((a,b) => new Date(b.triggeredAt).getTime()-new Date(a.triggeredAt).getTime()).slice(0,10).map((a,i) => (
-                    <div key={i} className="mini-row" data-inline-style="inline-7c0f86ab54" onClick={() => setSelectedTriggered(a)}>
-                      <span className={`sev-dot sev-${a.severity}`}/>
-                      <span className="mr-user" data-inline-style="inline-126244f135">{a.policyName}</span>
-                      <Badge label={fmtStatus(a.status)} tone={statusTone(a.status)}/>
-                      {a.snoozedUntil && new Date(a.snoozedUntil) > new Date() && (
-                        <span data-inline-style="inline-405b98fd97">snoozed until {relTime(a.snoozedUntil)}</span>
-                      )}
-                      <span className="mr-date">{relTime(a.triggeredAt)}</span>
-                      {canMutate && a.status === "new" && (
-                        <button className="btn-ack" onClick={e => { e.stopPropagation(); acknowledge(a.id); }}>Ack</button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-          </div>
-        </>
-      )}
 
       {/* ── TAB: Active Alerts ── */}
       {tab === "alerts" && (

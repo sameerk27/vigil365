@@ -2361,21 +2361,24 @@ button.countdown-chip:hover { color: var(--color-text); }
   padding: 8px 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle;
 }
 
-/* ── Segmented tabs ───────────────────────────────────────────────────────── */
-.ui-segtabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); overflow-x: auto; }
+/* ── Segmented tabs — pill-in-container (design README §"eight inner tabs") ── */
+.ui-segtabs {
+  display: flex; gap: 4px; padding: 3px;
+  background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 10px;
+  width: fit-content; max-width: 100%; overflow: hidden;
+}
 .ui-segtab {
   display: inline-flex; align-items: center; gap: 6px;
   border: none; background: none; cursor: pointer;
-  padding: 9px 12px; margin-bottom: -1px;
-  font-size: var(--fs-body); font-weight: 500; color: var(--text-muted);
-  border-bottom: 2px solid transparent; white-space: nowrap;
-  transition: color .15s, border-color .15s;
+  padding: 6px 11px; border-radius: var(--r-control);
+  font-size: 12px; font-weight: 400; color: var(--text-muted);
+  white-space: nowrap; transition: background .15s, color .15s, box-shadow .15s;
 }
 .ui-segtab:hover { color: var(--text); }
-.ui-segtab.active { color: var(--accent); font-weight: 600; border-bottom-color: var(--accent); }
+.ui-segtab.active { background: var(--bg-card); font-weight: 600; color: var(--text); box-shadow: var(--shadow-tab-active); }
 .ui-segtab-count {
   font-family: var(--font-mono); font-size: var(--fs-label); font-weight: 600;
-  background: var(--bg-subtle); color: var(--text-muted);
+  background: var(--bg-card); color: var(--text-muted);
   border: 1px solid var(--border); border-radius: var(--r-pill); padding: 1px 5px;
 }
 .ui-segtab.active .ui-segtab-count { background: var(--accent-pale); color: var(--text-on-dark); border-color: transparent; }
