@@ -170,16 +170,15 @@ export function TrendsPage() {
     const periodDelta = getPeriodDelta(cur, periodOld);
     const improving = metric.lowerIsBetter ? diff <= 0 : diff >= 0;
     const periodImproving = metric.lowerIsBetter ? periodDelta.diff <= 0 : periodDelta.diff >= 0;
-    const Icon = metric.icon;
     const ArrowIcon = diff > 0 ? TrendingUp : diff < 0 ? TrendingDown : Minus;
     const dirColor = diff === 0 ? "var(--color-muted)" : improving ? "var(--pill-good-fg)" : "var(--pill-err-fg)";
 
     return (
       <div className="trends-kpi-card" title={metric.description}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: `${metric.color}18`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <Icon size={16} color={metric.color} />
-          </div>
+          {/* Design signature: a dot mark carries the metric's colour instead
+              of an icon tile. metric.color is the per-metric chart hue. */}
+          <span className="trends-kpi-dot" style={{ background: metric.color }} aria-hidden="true" />
           <span data-inline-style="inline-7b438bee7b">{metric.label}</span>
         </div>
         <div data-inline-style="inline-228481f666">
@@ -406,4 +405,5 @@ export function TrendsPage() {
 }
 
 const thStyle: React.CSSProperties = { textAlign: "left", padding: "8px 12px", borderBottom: "1px solid var(--color-border)", fontSize: 11, fontWeight: 600, color: "var(--color-muted)", whiteSpace: "nowrap" };
-const tdStyle: React.CSSProperties = { padding: "6px 12px", borderBottom: "1px solid var(--color-border)", whiteSpace: "nowrap", color: "var(--color-text)" };
+// All-mono history table per the design — numeric columns read as a data grid.
+const tdStyle: React.CSSProperties = { padding: "6px 12px", borderBottom: "1px solid var(--color-border)", whiteSpace: "nowrap", color: "var(--color-text)", fontFamily: "var(--font-mono)", fontSize: 11.5 };
