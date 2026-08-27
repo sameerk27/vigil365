@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Download, ChevronRight, Copy, ClipboardCheck, ExternalLink, AlertTriangle, Activity, X, Lock, UserCheck, MessageSquare } from "lucide-react";
+import { Download, ChevronRight, Copy, ClipboardCheck, ExternalLink, AlertTriangle, X, Lock, UserCheck, MessageSquare } from "lucide-react";
 import { Tone, SecurityAlert, AlertNote } from "../services/types";
 import { fmtService, fmtDate, fmtShort, relTime, fmtUtc, downloadCsv, copyToClipboard } from "../services/utils";
 import { showToast } from "../services/toast";
@@ -397,10 +397,14 @@ export function rowActivation(onActivate: () => void, label?: string) {
 }
 
 export function StateMessage({ type = "empty", title, message, icon, onAction, actionLabel }: { type?: "empty"|"error"|"permission", title?: string, message: React.ReactNode, icon?: React.ReactNode, onAction?: ()=>void, actionLabel?: string }) {
-  const defaultIcon = type === "empty" ? <Activity size={28}/> : type === "error" ? <AlertTriangle size={28}/> : <Lock size={28}/>;
+  const defaultIcon = type === "error" ? <AlertTriangle size={28}/> : <Lock size={28}/>;
   return (
     <div className={`state-message state-${type}`}>
-      <div className="sm-icon">{icon ?? defaultIcon}</div>
+      {/* Empty states use the design's accent dot, not an icon placeholder
+          (design README "Empty state"). Error/permission keep their glyph. */}
+      {type === "empty"
+        ? <span className="sm-dot" aria-hidden="true"/>
+        : <div className="sm-icon">{icon ?? defaultIcon}</div>}
       {title && <div className="sm-title">{title}</div>}
       <div className="sm-body">{message}</div>
       {onAction && actionLabel && (

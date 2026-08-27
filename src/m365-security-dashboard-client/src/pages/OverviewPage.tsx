@@ -121,7 +121,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
           tone={devNonCompliant===0?"good":devNonCompliant<=3?"warning":"error"}
           onClick={() => crossNavigate({ page: "devices" })}/>
         <KpiTile icon={<Activity size={18}/>} label="POSTURE RISK" help="Share of open security alerts that are high or critical severity — a quick read on how serious the current queue is. Click for Trends."
-          value={<span style={{color: posturePct>10?"#b91c1c":undefined}}>{posturePct}%</span>}
+          value={<span className={posturePct>10?"txt-critical":undefined}>{posturePct}%</span>}
           sub={`${overview?.highPriority??0} high / ${overview?.totalActive??0} active`}
           tone={posturePct===0?"neutral":posturePct<=10?"good":posturePct<=25?"warning":"error"}
           onClick={() => crossNavigate({ page: "trends" })}/>

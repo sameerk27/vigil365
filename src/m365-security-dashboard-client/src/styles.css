@@ -1841,8 +1841,14 @@ button.countdown-chip:hover { color: var(--color-text); }
 .state-message {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   padding: 40px 20px; text-align: center;
-  border: 1px dashed var(--color-border); border-radius: 8px;
+  border: 1px dashed var(--border); border-radius: var(--r-inset);
   background: var(--color-surface);
+}
+.state-message.state-empty { padding: 26px 18px; }
+/* Accent dot marking an empty state (design README "Empty state"). */
+.state-message .sm-dot {
+  width: 11px; height: 11px; border-radius: 50%;
+  background: var(--accent); margin: 0 auto 13px;
 }
 .state-message .sm-icon { margin-bottom: 12px; }
 .state-message.state-empty .sm-icon { color: var(--color-faint); }
@@ -2382,3 +2388,6 @@ button.countdown-chip:hover { color: var(--color-text); }
   border: 1px solid var(--border); border-radius: var(--r-pill); padding: 1px 5px;
 }
 .ui-segtab.active .ui-segtab-count { background: var(--accent-pale); color: var(--text-on-dark); border-color: transparent; }
+
+/* Token-driven text-color utilities. */
+.txt-critical { color: var(--sev-critical); }
