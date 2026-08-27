@@ -739,7 +739,6 @@ tr.clickable:focus-visible,
 
 /* ── Mid Row ─────────────────────────────────────────────────────────────── */
 .mid-row { display: grid; grid-template-columns: 2fr 1fr 1.6fr; gap: 16px; }
-.ac-collection-health { margin-top: 16px; }
 
 /* Secure Score */
 .score-hero { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
@@ -1731,20 +1730,6 @@ button.countdown-chip:hover { color: var(--color-text); }
   border-bottom: 1px solid var(--color-border-subtle);
 }
 
-/* Underline variant for IN-PAGE tabs (Alert Center) so they read as a
-   different level than the pill-style section tabs above them. */
-.ac-tabs-underline { gap: 14px; border-bottom: 1px solid var(--color-border); margin-bottom: 16px; }
-.ac-tabs-underline .ac-tab {
-  border: none; background: none; border-radius: 0;
-  padding: 8px 2px 9px; margin-bottom: -1px;
-  color: var(--color-muted); font-weight: 500;
-  border-bottom: 2px solid transparent;
-}
-.ac-tabs-underline .ac-tab:hover { background: none; color: var(--color-text); }
-.ac-tabs-underline .ac-tab.active {
-  background: none; color: var(--color-primary); font-weight: 600;
-  border-bottom-color: var(--color-primary);
-}
 .ac-tab {
   padding: 7px 18px; border-radius: var(--radius-ctl); border: 1px solid var(--color-border);
   background: var(--color-card); color: var(--color-muted);

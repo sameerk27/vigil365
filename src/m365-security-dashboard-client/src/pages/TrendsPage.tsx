@@ -292,7 +292,7 @@ export function TrendsPage() {
           </div>
         </div>
         <div data-inline-style="inline-b6edae67dd">
-          <LineChart data={toChartData("secureScorePct")} color="#3b82f6" />
+          <LineChart data={toChartData("secureScorePct")} color="var(--accent-light)" />
         </div>
       </Card>
 

@@ -115,7 +115,7 @@ export function CircleGauge({ pct, size = 72, color }: { pct: number; size?: num
   );
 }
 
-export function LineChart({ data, color = "#3b82f6", onClick }: { data: { date: string; value: number }[]; color?: string, onClick?: (date: string) => void }) {
+export function LineChart({ data, color = "var(--accent-light)", onClick }: { data: { date: string; value: number }[]; color?: string, onClick?: (date: string) => void }) {
   const chartId = React.useId().replace(/:/g, "");
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
@@ -243,7 +243,7 @@ export function MiniBarChart({ items }: { items: { label: string; value: number;
         <div key={item.label} className="mbc-row">
           <span className="mbc-label">{item.label}</span>
           <div className="mbc-track">
-            <div className="mbc-fill" style={{ width: `${(item.value/max)*100}%`, background: item.color ?? "#3b82f6" }} />
+            <div className="mbc-fill" style={{ width: `${(item.value/max)*100}%`, background: item.color ?? "var(--accent-light)" }} />
           </div>
           <span className="mbc-val">{item.value}</span>
         </div>
