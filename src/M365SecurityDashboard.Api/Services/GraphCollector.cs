@@ -87,6 +87,7 @@ public sealed class GraphCollector(
             var (endReq, endThrottle) = graphMetrics.Snapshot();
             run.GraphRequestCount = (int)(endReq - startReq);
             run.GraphThrottleCount = (int)(endThrottle - startThrottle);
+            await AccumulateCountersAsync(run.GraphRequestCount, run.GraphThrottleCount, ct);
 
             if (run.Status != CollectionStatus.Failed)
             {
@@ -104,9 +105,23 @@ public sealed class GraphCollector(
             var (endReq, endThrottle) = graphMetrics.Snapshot();
             run.GraphRequestCount = (int)(endReq - startReq);
             run.GraphThrottleCount = (int)(endThrottle - startThrottle);
+            await AccumulateCountersAsync(run.GraphRequestCount, run.GraphThrottleCount, CancellationToken.None);
             await db.SaveChangesAsync(CancellationToken.None);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Fold this run's real Graph delta into the durable cumulative counters
+    /// (persisted, so the "_total" metrics survive a service restart). The
+    /// modified singleton is saved by the caller's SaveChangesAsync.
+    /// </summary>
+    private async Task AccumulateCountersAsync(int graphRequests, int graphThrottled, CancellationToken ct)
+    {
+        var counters = await db.MetricsCounters.FirstOrDefaultAsync(c => c.Id == 1, ct);
+        if (counters is null) { counters = new MetricsCounters { Id = 1 }; db.MetricsCounters.Add(counters); }
+        counters.GraphRequestsTotal += graphRequests;
+        counters.GraphThrottledTotal += graphThrottled;
     }
 
     /// <summary>

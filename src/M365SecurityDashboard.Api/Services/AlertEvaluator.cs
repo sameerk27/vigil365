@@ -170,6 +170,12 @@ public sealed class AlertEvaluator(
             alert.LastEvaluatedAt = now;
         }
 
+        // Durable cumulative evaluation count — survives restarts (the in-process
+        // MetricsState only tracks recent-window p95). Persisted with this cycle's save.
+        var counters = await db.MetricsCounters.FirstOrDefaultAsync(c => c.Id == 1, ct);
+        if (counters is null) { counters = new MetricsCounters { Id = 1 }; db.MetricsCounters.Add(counters); }
+        counters.EvaluationsTotal += 1;
+
         // Always save — in-place updates to open alerts happen even when nothing fired.
         await db.SaveChangesAsync(ct);
         if (fired > 0)

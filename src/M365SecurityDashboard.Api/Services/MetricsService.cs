@@ -32,7 +32,6 @@ public sealed record SystemMetrics(
 /// </summary>
 public sealed class MetricsService(
     AppDbContext db,
-    GraphMetrics graphMetrics,
     MetricsState metricsState,
     IOptions<RetentionOptions> retention,
     ILogger<MetricsService> logger)
@@ -65,8 +64,11 @@ public sealed class MetricsService(
             .CountAsync(a => a.Status != "resolved" && a.Status != "auto_resolved", ct);
         int policiesEnabled = await db.AlertPolicies.AsNoTracking().CountAsync(p => p.Enabled, ct);
 
-        long graphReq = graphMetrics.Requests;
-        long graphThrottled = graphMetrics.Throttled;
+        // Durable cumulative totals (persisted, survive a service restart).
+        var counters = await db.MetricsCounters.AsNoTracking().FirstOrDefaultAsync(c => c.Id == 1, ct);
+        long graphReq = counters?.GraphRequestsTotal ?? 0;
+        long graphThrottled = counters?.GraphThrottledTotal ?? 0;
+        long evalTotal = counters?.EvaluationsTotal ?? 0;
         int? evalP95 = metricsState.EvaluationP95();
         int? evalLast = metricsState.LastEvaluationMs;
         long? dbBytes = await QueryDatabaseSizeBytesAsync(ct);
@@ -76,8 +78,9 @@ public sealed class MetricsService(
             new("vigil365_collection_runs_total", runsTotal.ToString(), "Collection runs recorded"),
             new("vigil365_collection_failures_total", failuresTotal.ToString(), "Runs that ended failed"),
             new("vigil365_collection_duration_seconds", lastDurationMs is { } ms ? (ms / 1000.0).ToString("0.0") : "—", "Duration of the last run"),
-            new("vigil365_graph_requests_total", graphReq.ToString(), "Graph API calls since service start"),
-            new("vigil365_graph_throttled_total", graphThrottled.ToString(), "Graph 429 responses since service start"),
+            new("vigil365_graph_requests_total", graphReq.ToString(), "Graph API calls, all-time"),
+            new("vigil365_graph_throttled_total", graphThrottled.ToString(), "Graph 429 responses, all-time"),
+            new("vigil365_evaluations_total", evalTotal.ToString(), "Policy evaluations run, all-time"),
             new("vigil365_alerts_active", activeAlerts.ToString(), "Triggered alerts currently unresolved"),
             new("vigil365_policies_enabled", policiesEnabled.ToString(), "Alert policies enabled"),
             new("vigil365_eval_latency_ms", evalLast?.ToString() ?? "—", "Last policy-evaluation duration"),

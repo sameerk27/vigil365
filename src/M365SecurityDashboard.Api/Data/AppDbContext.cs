@@ -21,6 +21,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<ReportSchedule> ReportSchedules => Set<ReportSchedule>();
     public DbSet<ApiToken> ApiTokens => Set<ApiToken>();
     public DbSet<TenantBaseline> TenantBaselines => Set<TenantBaseline>();
+    public DbSet<MetricsCounters> MetricsCounters => Set<MetricsCounters>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -135,6 +136,13 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             // GraphConfig above — left as an identity column the explicit 1 in
             // the first capture INSERT would be rejected by SQL Server.
             entity.Property(b => b.Id).ValueGeneratedNever();
+        });
+
+        modelBuilder.Entity<MetricsCounters>(entity =>
+        {
+            entity.HasKey(c => c.Id);
+            // Singleton row with a fixed key of 1 — see the note above.
+            entity.Property(c => c.Id).ValueGeneratedNever();
         });
     }
 }

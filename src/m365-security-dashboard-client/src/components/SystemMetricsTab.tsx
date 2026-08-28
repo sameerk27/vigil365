@@ -33,7 +33,7 @@ export function SystemMetricsTab() {
         <StatCard label="Collector uptime" value={`${data.collectorUptimePct}%`}
           sub={data.runsWindow > 0 ? `${data.runsWindow} runs, 30-day window` : "no runs in 30 days"}/>
         <StatCard label="Graph calls / last run" value={data.graphCallsLastRun ?? "—"}
-          sub={`${data.graphCallsTotal.toLocaleString()} since start`}/>
+          sub={`${data.graphCallsTotal.toLocaleString()} all-time`}/>
         <StatCard label="Eval latency p95" value={data.evalP95Ms != null ? `${data.evalP95Ms} ms` : "—"}
           sub={data.evalSamples > 0 ? `${data.evalSamples} evaluations` : "no evaluations yet"}/>
         <StatCard label="DB size" value={fmtBytes(data.dbSizeBytes)}
