@@ -3,6 +3,7 @@ import { BellOff, Plus, Trash2, AlertTriangle } from "lucide-react";
 import { AlertPolicy, SuppressionRule } from "../services/types";
 import { suppressionApi, useAuth } from "../services/api";
 import { Card, Badge, EmptyState } from "./SharedComponents";
+import { StatCard } from "./ui";
 import { showToast } from "../services/toast";
 import { confirmAction } from "../services/confirm";
 import { fmtDate, relTime } from "../services/utils";
@@ -73,7 +74,21 @@ export function SuppressionRulesTab({ policies }: { policies: AlertPolicy[] }) {
     return parts.join(" · ");
   };
 
+  const active = rules?.filter(r => r.enabled && !r.expired).length ?? 0;
+  const expired = rules?.filter(r => r.expired).length ?? 0;
+  const permanent = rules?.filter(r => r.enabled && !r.expired && !r.expiresAt).length ?? 0;
+  const suppressedEvents = rules?.reduce((s, r) => s + (r.suppressedCount ?? 0), 0) ?? 0;
+
   return (
+    <>
+    {rules && rules.length > 0 && (
+      <div className="stat-row-4">
+        <StatCard label="Active" value={active} sub="rules silencing alerts"/>
+        <StatCard label="Expired" value={expired} sub="released automatically"/>
+        <StatCard label="Permanent" value={permanent} sub="no expiry set"/>
+        <StatCard label="Suppressed events" value={suppressedEvents} sub="still recorded in history"/>
+      </div>
+    )}
     <Card title="Suppression Rules"
       badge={rules ? <Badge label={`${rules.filter(r => r.enabled && !r.expired).length} active`} tone={rules.some(r => r.enabled && !r.expired) ? "warning" : "neutral"}/> : undefined}
       action={auth.isAdmin && !adding ? (
@@ -164,5 +179,6 @@ export function SuppressionRulesTab({ policies }: { policies: AlertPolicy[] }) {
         </div>
       )}
     </Card>
+    </>
   );
 }

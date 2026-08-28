@@ -12,7 +12,7 @@ import { SuppressionRulesTab } from "../components/SuppressionRulesTab";
 import { PolicyDryRun } from "../components/PolicyDryRun";
 import { PolicyPackControls } from "../components/PolicyPackControls";
 import { FilterPresets } from "../components/FilterPresets";
-import { SegmentedTabs } from "../components/ui";
+import { SegmentedTabs, StatCard } from "../components/ui";
 import { BaselineTab } from "../components/BaselineTab";
 import { relTime, fmtDate, sevTone } from "../services/utils";
 
@@ -980,7 +980,27 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
       )}
 
       {/* ── TAB: Policies ── */}
-      {tab === "policies" && (
+      {tab === "policies" && (() => {
+        const enabled = policies.filter(p => p.enabled).length;
+        const catCount = new Set(policies.map(p => p.category)).size;
+        const weekAgo = Date.now() - 7 * 864e5;
+        const fired7 = triggeredAlerts.filter(a => new Date(a.triggeredAt).getTime() >= weekAgo);
+        const distinctFired = new Set(fired7.map(a => a.policyName)).size;
+        const noisiest = (() => {
+          const m = new Map<string, number>();
+          for (const a of fired7) m.set(a.policyName, (m.get(a.policyName) ?? 0) + 1);
+          let top: [string, number] = ["—", 0];
+          for (const [k, v] of m) if (v > top[1]) top = [k, v];
+          return top;
+        })();
+        return (
+        <>
+        <div className="stat-row-4">
+          <StatCard label="Total policies" value={policies.length} sub={`across ${catCount} categor${catCount === 1 ? "y" : "ies"}`}/>
+          <StatCard label="Enabled" value={enabled} sub={policies.length - enabled > 0 ? `${policies.length - enabled} disabled` : "all active"}/>
+          <StatCard label="Fired (7 days)" value={fired7.length} sub={`${distinctFired} distinct polic${distinctFired === 1 ? "y" : "ies"}`}/>
+          <StatCard label="Noisiest" value={noisiest[1] > 0 ? noisiest[0] : "—"} sub={noisiest[1] > 0 ? `${noisiest[1]} of the ${fired7.length} alerts` : "no alerts in 7 days"}/>
+        </div>
         <Card title="Alert Policies" badge={<Badge label={`${policies.length} policies`} tone="neutral"/>}
           action={
             <div data-inline-style="inline-f8df590e45">
@@ -1024,7 +1044,9 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
             </div>
           )}
         </Card>
-      )}
+        </>
+        );
+      })()}
 
       {/* ── TAB: Templates ── */}
       {tab === "templates" && (

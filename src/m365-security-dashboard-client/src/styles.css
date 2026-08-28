@@ -2390,3 +2390,6 @@ button.countdown-chip:hover { color: var(--color-text); }
 .baseline-actions { display: flex; gap: 8px; margin-top: 14px; }
 .baseline-note { color: var(--text-muted); }
 @media (max-width: 860px) { .baseline-top { grid-template-columns: 1fr; } }
+
+.stat-row-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--gap-card); margin-bottom: var(--gap-card); }
+@media (max-width: 900px) { .stat-row-4 { grid-template-columns: repeat(2, 1fr); } }
