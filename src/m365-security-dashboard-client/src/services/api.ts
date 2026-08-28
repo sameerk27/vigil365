@@ -209,6 +209,19 @@ export const entityApi = {
   },
 };
 
+// ─── Tenant baseline & drift ─────────────────────────────────────────────────
+export type BaselineDriftRow = { metric: string; baseline: string; current: string; drift: string; tone: "good" | "neutral" | "warn" };
+export type BaselineResponse = { captured: { at: string; by: string } | null; canCapture: boolean; driftedCount?: number; drift: BaselineDriftRow[] };
+export const baselineApi = {
+  async get(): Promise<BaselineResponse | null> {
+    try { const r = await apiFetch(`${apiBase}/api/baseline`); return r.ok ? await r.json() : null; } catch { return null; }
+  },
+  /** Capture the newest snapshot as the baseline (admin-only server-side). */
+  async capture(): Promise<boolean> {
+    try { const r = await apiFetch(`${apiBase}/api/baseline/capture`, { method: "POST" }); return r.ok; } catch { return false; }
+  },
+};
+
 // ─── In-app cross-navigation ────────────────────────────────────────────────────
 // Lets one page deep-link into another with a search/filter seed (e.g. Alert Center
 // "view user in Identity"). App registers the page-setter; pages read & consume the

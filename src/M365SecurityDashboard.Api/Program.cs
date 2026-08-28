@@ -350,6 +350,7 @@ app.MapDashboardEndpoints();
 app.MapAdminEndpoints();
 app.MapAlertsEndpoints();
 app.MapNotificationsEndpoints();
+app.MapBaselineEndpoints();
 app.MapReportsEndpoints();
 app.MapIntegrationsEndpoints();
 app.MapPlatformEndpoints();

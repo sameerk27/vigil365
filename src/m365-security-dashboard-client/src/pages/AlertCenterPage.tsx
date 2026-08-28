@@ -13,6 +13,7 @@ import { PolicyDryRun } from "../components/PolicyDryRun";
 import { PolicyPackControls } from "../components/PolicyPackControls";
 import { FilterPresets } from "../components/FilterPresets";
 import { SegmentedTabs } from "../components/ui";
+import { BaselineTab } from "../components/BaselineTab";
 import { relTime, fmtDate, sevTone } from "../services/utils";
 
 /** Human-readable status labels — raw enums like "auto_resolved" never reach the UI. */
@@ -22,7 +23,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 export const fmtStatus = (s: string) => STATUS_LABELS[s] ?? s.replace(/_/g, " ");
 
-type AcTab = "alerts" | "policies" | "templates" | "coverage" | "notifications" | "metrics" | "suppression" | "runs";
+type AcTab = "alerts" | "policies" | "templates" | "baseline" | "notifications" | "metrics" | "suppression" | "runs";
 
 export const POLICY_TEMPLATES_CATALOG = [
   { name: "Critical Alerts Monitor",   desc: "Triggers when any critical security alert is detected",              metric: "criticalAlertCount", threshold: 1, severity: "Critical" as const, category: "identity"   as const },
@@ -420,111 +421,6 @@ function NotificationSettingsTab() {
   );
 }
 
-function CoverageScorecardTab({ onChanged }: { onChanged: () => void | Promise<void> }) {
-  const [data, setData] = useState<AlertCoverageScorecard | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [enablingId, setEnablingId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<"all" | "missing" | "active">("all");
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await recApi.getAlertCoverage();
-      setData(res);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  const handleEnable = async (rule: AlertBaselineRule) => {
-    setEnablingId(rule.id);
-    try {
-      const updated = await recApi.enableCoverageRule(rule.id);
-      if (updated) {
-        setData(updated);
-        showToast(`Enabled rule: ${rule.title}`);
-        onChanged();
-      } else {
-        showToast("Failed to enable rule via API", "error");
-      }
-    } finally {
-      setEnablingId(null);
-    }
-  };
-
-  if (loading) return <LoadingSkeleton type="table"/>;
-  if (!data) return <EmptyState icon={<AlertTriangle size={28}/>} message="Could not load the alert coverage baseline — the API request failed. Refresh to retry."/>;
-
-  const rules = data.rules.filter(r => filter === "all" ? true : filter === "missing" ? !r.isActive : r.isActive);
-  const missingCount = data.totalRules - data.activeRules;
-
-  return (
-    <div data-inline-style="inline-31cc15eda3">
-      <Card title="Alerting Baseline Scorecard"
-        badge={<Badge label={missingCount > 0 ? `${missingCount} blind spot${missingCount > 1 ? "s" : ""}` : "Full coverage"} tone={missingCount > 0 ? "warning" : "good"}/>}
-        action={
-          <div data-inline-style="inline-3633e433a1">
-            {(["all", "missing", "active"] as const).map(f => (
-              <button key={f} onClick={() => setFilter(f)}
-                className={filter === f ? "btn-apply" : "btn-export"}
-                data-inline-style="inline-02dfbae3d8">
-                {f === "all" ? `All (${data.totalRules})` : f === "missing" ? `Missing (${missingCount})` : `Active (${data.activeRules})`}
-              </button>
-            ))}
-          </div>
-        }>
-        <div data-inline-style="inline-c44bd08c16">
-          <div data-inline-style="inline-1940209700">{data.coveragePercentage}%</div>
-          <div data-inline-style="inline-126244f135">
-            <ProgressBar pct={data.coveragePercentage}/>
-            <div data-inline-style="inline-cc755f9542">
-              <strong>{data.activeRules} of {data.totalRules}</strong> Microsoft best-practice alerting rules are actively monitored.
-              {missingCount > 0 ? ` The ${missingCount} unmonitored rule${missingCount > 1 ? "s are" : " is"} listed below.` : " Full baseline coverage achieved."}
-            </div>
-          </div>
-        </div>
-      </Card>
-
-      <Card title="Baseline Alerting Rules Catalog">
-        <div className="tbl-wrap">
-          <table className="data-tbl">
-            <thead>
-              <tr><th scope="col">Status</th><th scope="col">Rule name</th><th scope="col">Engine</th><th scope="col">Severity</th><th scope="col">Description</th><th scope="col" data-inline-style="inline-37dd0c2a64">Action</th></tr>
-            </thead>
-            <tbody>
-              {rules.map(r => (
-                <tr key={r.id}>
-                  <td><Badge label={r.isActive ? "Monitored" : "Blind spot"} tone={r.isActive ? "good" : "error"}/></td>
-                  <td data-inline-style="inline-3d9df89ef8">{r.title}</td>
-                  <td><Badge label={r.ruleType === "Vigil365" ? "Vigil365 Alerts" : "Native M365"} tone={r.ruleType === "Vigil365" ? "info" : "neutral"}/></td>
-                  <td><Badge label={r.severity} tone={sevToneAC(r.severity)}/></td>
-                  <td data-inline-style="inline-4656125047">{r.description}</td>
-                  <td data-inline-style="inline-37dd0c2a64">
-                    {r.isActive ? (
-                      <span data-inline-style="inline-af7da65b76">Active monitoring</span>
-                    ) : r.ruleType === "Vigil365" ? (
-                      <button className="btn-apply" data-inline-style="inline-02dfbae3d8"
-                        onClick={() => handleEnable(r)} disabled={enablingId === r.id}>
-                        {enablingId === r.id ? "Enabling…" : "Enable in Vigil365"}
-                      </button>
-                    ) : (
-                      <a className="btn-export" data-inline-style="inline-0ab1bd7012"
-                        href={r.nativePortalDeepLink} target="_blank" rel="noopener noreferrer">
-                        Configure in Defender <ExternalLink size={13}/>
-                      </a>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-    </div>
-  );
-}
 
 export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLinkAlertId, onDeepLinkConsumed }: {
   policies: AlertPolicy[];
@@ -921,19 +817,19 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
         active={tab}
         onChange={t => { setTab(t); if (t === "alerts") refresh(); }}
         tabs={[
-          { id: "alerts", label: "Active Alerts" },
+          { id: "alerts", label: "Alerts" },
           { id: "policies", label: "Policies" },
           { id: "templates", label: "Templates" },
-          { id: "coverage", label: "Coverage Scorecard" },
+          { id: "baseline", label: "Baseline" },
           { id: "suppression", label: "Suppressions" },
           { id: "notifications", label: "Notifications" },
-          { id: "runs", label: "Collection Runs" },
+          { id: "runs", label: "Collection runs" },
           { id: "metrics", label: "Metrics" },
         ]}
       />
 
-      {/* ── TAB: Coverage Scorecard ── */}
-      {tab === "coverage" && <CoverageScorecardTab onChanged={onChanged}/>}
+      {/* ── TAB: Baseline (drift against a captured baseline) ── */}
+      {tab === "baseline" && <BaselineTab/>}
 
       {/* ── TAB: Notifications ── */}
       {tab === "notifications" && <NotificationSettingsTab/>}

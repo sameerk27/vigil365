@@ -20,6 +20,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<ReportSchedule> ReportSchedules => Set<ReportSchedule>();
     public DbSet<ApiToken> ApiTokens => Set<ApiToken>();
+    public DbSet<TenantBaseline> TenantBaselines => Set<TenantBaseline>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -125,6 +126,15 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.HasIndex(t => t.TokenHash).IsUnique();
             entity.HasIndex(t => t.Prefix);
             entity.HasIndex(t => t.RevokedAt);
+        });
+
+        modelBuilder.Entity<TenantBaseline>(entity =>
+        {
+            entity.HasKey(b => b.Id);
+            // Singleton row with a fixed key of 1, as for NotificationSettings /
+            // GraphConfig above — left as an identity column the explicit 1 in
+            // the first capture INSERT would be rejected by SQL Server.
+            entity.Property(b => b.Id).ValueGeneratedNever();
         });
     }
 }

@@ -2378,3 +2378,15 @@ button.countdown-chip:hover { color: var(--color-text); }
 
 /* Trends metric-tile dot mark (replaces the per-metric icon tile). */
 .trends-kpi-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+
+/* ── Baseline tab (Rules & Notifications) ─────────────────────────────────── */
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.baseline-tab { display: flex; flex-direction: column; gap: var(--gap-card); }
+.baseline-top { display: grid; grid-template-columns: 1fr 300px; gap: var(--gap-card); align-items: stretch; }
+.baseline-explainer { font-size: var(--fs-body); color: var(--text-mid); line-height: 1.6; margin: 0; }
+.baseline-code { font-family: var(--font-mono); font-size: var(--fs-meta); background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; color: var(--text); }
+.baseline-date { font-size: var(--fs-stat); font-weight: 700; color: var(--text-on-dark); margin-top: 6px; }
+.baseline-meta { font-size: var(--fs-body-sm); color: var(--text-on-dark-mid); margin-top: 4px; line-height: 1.5; }
+.baseline-actions { display: flex; gap: 8px; margin-top: 14px; }
+.baseline-note { color: var(--text-muted); }
+@media (max-width: 860px) { .baseline-top { grid-template-columns: 1fr; } }
