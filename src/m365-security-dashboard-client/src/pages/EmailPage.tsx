@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { Inbox, AlertTriangle, ShieldAlert, CheckCircle, Archive, Send, XCircle, Filter, ShieldCheck, Search, Flag } from "lucide-react";
-import { SecurityAlert, EmailProtectionData, EmailProtectionAlert, Tone } from "../services/types";
+import { Inbox, ShieldAlert, Archive, Send, XCircle, ShieldCheck, Search, Flag } from "lucide-react";
+import { SecurityAlert, EmailProtectionData, EmailProtectionAlert } from "../services/types";
 import { fmtDate, relTime, fmtFullTime } from "../services/utils";
 import { consumeNavSeed } from "../services/api";
 import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, ExportDropdown, SectHdr , SeverityFilter, LineChart } from "../components/SharedComponents";
@@ -64,18 +64,20 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
         </DetailModal>
       )}
       <div className="kpi-row kpi-row-4">
-        <KpiTile icon={<Inbox size={18}/>} label="QUARANTINED" value={quarantined.length}
-          sub="Messages held in quarantine" tone={quarantined.length===0?"good":quarantined.length<=5?"warning":"error"}
-          onClick={() => document.getElementById("email-quarantine-card")?.scrollIntoView({ behavior: "smooth" })}/>
-        <KpiTile icon={<AlertTriangle size={18}/>} label="MAIL FLOW ISSUES" value={mailFlow.length}
-          sub="Active delivery problems" tone={mailFlow.length===0?"good":"error"}
-          onClick={() => document.getElementById("email-mailflow-card")?.scrollIntoView({ behavior: "smooth" })}/>
-        <KpiTile icon={<ShieldAlert size={18}/>} label="MALWARE DETECTED" value={malware.length}
-          sub="Email-borne threats" tone={malware.length===0?"good":"error"}
+        <KpiTile label="Malware Detections" value={malware.length}
+          sub="Email-borne malware caught by Defender" tone={malware.length===0?"good":"error"}
           onClick={() => document.getElementById("email-malware-card")?.scrollIntoView({ behavior: "smooth" })}/>
-        <KpiTile icon={<CheckCircle size={18}/>} label="EMAIL THREATS" value={quarantined.length + malware.length}
-          sub="Quarantined + malware combined" tone={quarantined.length + malware.length === 0 ? "good" : "warning"}
-          onClick={() => setSearch("")}/>
+        <KpiTile label="Quarantined Messages" value={quarantined.length}
+          sub="Held for review by Exchange protection" tone={quarantined.length===0?"good":quarantined.length<=5?"warning":"error"}
+          onClick={() => document.getElementById("email-quarantine-card")?.scrollIntoView({ behavior: "smooth" })}/>
+        <KpiTile label="Mail Flow Issues" value={mailFlow.length}
+          sub="Active delivery disruptions" tone={mailFlow.length===0?"good":"error"}
+          onClick={() => document.getElementById("email-mailflow-card")?.scrollIntoView({ behavior: "smooth" })}/>
+        <KpiTile label="MDO Alerts" value={(emailProtection?.configured&&!emailProtection.error)?emailProtection.total:"—"}
+          sub={emailProtection?.error?"Needs SecurityAlert.Read.All":"Defender for Office 365 detections"}
+          tone={(emailProtection?.total??0)>0?"warning":"good"}
+          needsPerm={!!emailProtection?.error}
+          onClick={() => document.getElementById("email-mdo-card")?.scrollIntoView({ behavior: "smooth" })}/>
       </div>
 
       <div className="two-col" id="email-quarantine-card">
@@ -138,26 +140,6 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
         </Card>
       )}
 
-      <Card title="Email Threat Summary">
-        <div className="threat-grid">
-          {[
-            { icon:<ShieldAlert size={18}/>, label:"Malware Detections", value:malware.length, tone:"error" as Tone, desc:"Email-borne malware caught by Defender" },
-            { icon:<Filter size={18}/>, label:"Quarantined Messages", value:quarantined.length, tone:"warning" as Tone, desc:"Held for review by Exchange protection" },
-            { icon:<AlertTriangle size={18}/>, label:"Mail Flow Issues", value:mailFlow.length, tone:"error" as Tone, desc:"Active delivery disruptions" },
-            { icon:<ShieldCheck size={18}/>, label:"MDO Alerts", value:(emailProtection?.configured&&!emailProtection.error)?emailProtection.total:"—", tone:((emailProtection?.total??0)>0?"warning":"good") as Tone, desc:emailProtection?.error?"Needs SecurityAlert.Read.All":"Defender for Office 365 detections" },
-          ].map((t,i)=>(
-            <div key={i} className="threat-card">
-              <div className={`threat-icon tone-bg-${t.tone}`}>{t.icon}</div>
-              <div className="threat-body">
-                <div className="threat-label">{t.label}</div>
-                <div className={`threat-value tone-${t.tone}`}>{t.value}</div>
-                <div className="threat-desc">{t.desc}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
-
       {emailProtection?.configured && !emailProtection?.error && (emailProtection.topTargetedUsers || emailProtection.trend) && (
         <div className="two-col">
           <Card title="Threat Trend (7d)" badge={<Badge label="MDO" tone="neutral"/>}>
@@ -189,7 +171,7 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
         </div>
       )}
 
-      <Card title="MDO Protection Alerts"
+      <Card title="MDO Protection Alerts" id="email-mdo-card"
         badge={<Badge label={`${filteredMdo.length} / ${emailProtection?.total??0} alerts`} tone={(emailProtection?.total??0)>0?"warning":"good"}/>}
         action={(emailProtection?.configured && !emailProtection?.error && (emailProtection?.total??0)>0) ? (
           <div data-inline-style="inline-8da89a75a7">
