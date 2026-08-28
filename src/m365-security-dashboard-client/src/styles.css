@@ -64,8 +64,8 @@
   --row-py:    10px;  /* table cell vertical padding */
   --row-px:    10px;  /* table cell horizontal padding */
   --head-py:    9px;  /* table header vertical padding */
-  --card-pad:  24px;
-  --card-gap:  16px;
+  --card-pad:  16px 18px; /* design card padding */
+  --card-gap:  14px;
 
   /* ── Legacy --color-* names → aliased to the canonical tokens above
      (identical values; removed in the Step 6 sweep as components migrate) ── */
@@ -413,8 +413,6 @@ select, input { font: inherit; }
   min-width: 0;
   box-shadow: var(--shadow-card);
   overflow: hidden;
-  backdrop-filter: var(--backdrop-blur);
-  -webkit-backdrop-filter: var(--backdrop-blur);
 }
 
 .card-head {
@@ -422,7 +420,7 @@ select, input { font: inherit; }
   margin-bottom: 14px;
 }
 /* h2 for semantics (screen-reader landmarks), styled like the original span */
-.card-title { font-size: var(--fs-base); font-weight: 600; color: var(--color-text); margin: 0; line-height: 1.4; }
+.card-title { font-size: var(--fs-card-title); font-weight: 600; color: var(--color-text); margin: 0; line-height: 1.4; }
 .card-head-right { display: flex; align-items: center; gap: 6px; }
 
 /* ── Policy pack import summary ───────────────────────────────────────────── */
