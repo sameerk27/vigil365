@@ -51,38 +51,64 @@ namespace M365SecurityDashboard.GuiInstaller
             EXEC sp_executesql @sql;
             """;
 
-        public static void GrantServiceAccess(string connectionString, string account, Action<string> log)
+        /// <param name="connectionString">The connection string the service will use.</param>
+        /// <param name="serviceAccount">The Windows service account (LOCAL SERVICE) — only
+        /// relevant when the service authenticates to SQL with Windows/Trusted auth.</param>
+        public static void GrantServiceAccess(string connectionString, string serviceAccount, Action<string> log)
         {
             var builder = new SqlConnectionStringBuilder(connectionString);
             var database = builder.InitialCatalog;
             if (string.IsNullOrWhiteSpace(database))
                 throw new InvalidOperationException("The connection string does not name a database.");
 
-            // Connect to master: the application database may not exist yet, and
-            // creating logins is a server-level operation regardless.
-            var adminConnection = new SqlConnectionStringBuilder(connectionString)
+            // How does the SERVICE authenticate to SQL at runtime? If the operator
+            // supplied a SQL login (User ID + Password), the service connects with
+            // those credentials — typical for a remote SQL Server — and there is no
+            // Windows "LOCAL SERVICE" login to create. Only local Trusted_Connection
+            // installs need the Windows login. Getting this wrong is what broke every
+            // remote-SQL install: the old code forced IntegratedSecurity=true here,
+            // throwing away the operator's SQL credentials and then failing to create
+            // a local-service Windows login on a machine that isn't the SQL host.
+            bool sqlAuth = !builder.IntegratedSecurity && !string.IsNullOrWhiteSpace(builder.UserID);
+
+            // Admin connection to master — the application database may not exist yet,
+            // and login/database creation are server-level. CRUCIALLY, preserve the
+            // operator's own authentication (SQL creds or Trusted) rather than forcing
+            // one, so a remote SQL Server is reached with the credentials given.
+            var adminBuilder = new SqlConnectionStringBuilder(connectionString)
             {
                 InitialCatalog = "master",
-                IntegratedSecurity = true,
                 TrustServerCertificate = true,
-                ConnectTimeout = 15
-            }.ConnectionString;
+                ConnectTimeout = 15,
+            };
+            var adminConnection = adminBuilder.ConnectionString;
 
             using var conn = new SqlConnection(adminConnection);
             conn.Open();
 
-            // QUOTENAME rather than raw concatenation, and sp_executesql rather
-            // than EXEC(): EXEC() accepts only string literals and variables
-            // concatenated together, so a function call inside it is a syntax
-            // error ("Incorrect syntax near 'QUOTENAME'"). Building the statement
-            // into a variable first is what makes the two combine.
-            Execute(conn, SqlCreateLogin, account);
-            log($"SQL login for {account} is present.");
+            // The account that must end up owning the database:
+            //  - SQL auth  → the operator's SQL login (it already exists as a login).
+            //  - Trusted   → the Windows service account, whose login we must create.
+            string dbAccount = sqlAuth ? builder.UserID! : serviceAccount;
+
+            if (!sqlAuth)
+            {
+                // QUOTENAME rather than raw concatenation, and sp_executesql rather
+                // than EXEC(): EXEC() accepts only string literals and variables
+                // concatenated together, so a function call inside it is a syntax
+                // error. Building the statement into a variable first combines them.
+                Execute(conn, SqlCreateLogin, serviceAccount);
+                log($"SQL login for {serviceAccount} is present.");
+            }
+            else
+            {
+                log($"Using the SQL login '{builder.UserID}' from the connection string — no Windows login needed.");
+            }
 
             // EF applies migrations on startup, which needs the database to exist.
             // Creating it here rather than granting the service dbcreator keeps the
             // service account's rights scoped to this one database.
-            Execute(conn, SqlCreateDatabase, account, database);
+            Execute(conn, SqlCreateDatabase, dbAccount, database);
             log($"Database {database} is present.");
 
             var dbConnection = new SqlConnectionStringBuilder(adminConnection) { InitialCatalog = database }.ConnectionString;
@@ -91,9 +117,11 @@ namespace M365SecurityDashboard.GuiInstaller
 
             // db_owner because migrations create and alter tables. Narrower roles
             // cannot apply a schema change, and this install owns the database
-            // outright.
-            Execute(dbConn, SqlGrantDbOwner, account);
-            log($"{account} can now read and write {database}.");
+            // outright. SqlGrantDbOwner creates the database USER for the login if
+            // absent, so it works whether the login is the Windows service account
+            // or the operator's SQL login.
+            Execute(dbConn, SqlGrantDbOwner, dbAccount);
+            log($"{dbAccount} can now read and write {database}.");
         }
 
         private static void Execute(SqlConnection conn, string sql, string account, string? database = null)
