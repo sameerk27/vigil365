@@ -8,6 +8,47 @@ version lives in exactly two places — the API's `<Version>` and the client's
 `package.json` — kept in step by `scripts/set-version.ps1` and enforced in CI by
 `scripts/check-version.ps1`.
 
+## [1.1.0] — 2026-08-28
+
+A design refresh, two new real-data features, and an important installer fix.
+Everything shown is measured or collected — no fabricated values.
+
+### Added
+
+- **Baseline & drift** (Rules & Notifications → Baseline). Capture the tenant's
+  posture at a point in time from a real collection snapshot, then track drift of
+  the latest snapshot against it (Secure Score, MFA coverage, risky users,
+  non-compliant devices, alert counts, compliance issues). Admin-only capture,
+  audited. Replaces the former Coverage Scorecard tab.
+- **Real system metrics** (Rules & Notifications → Metrics). Collector uptime,
+  Graph calls per run, evaluation-latency p95, and live database size, with a
+  Prometheus-style metrics table and a Graph-throttling trend. All values are
+  measured: Graph requests and 429s are counted in the Graph client and persisted
+  per run; evaluation timing is measured per cycle. Cumulative `_total` counters
+  are persisted and survive a service restart. New `GET /api/metrics`.
+
+### Changed
+
+- **UI restyle** to the Vigil365 design system across every page — icon-less,
+  tone-bordered KPI cards; tightened card frame and typography; underline section
+  sub-tabs; a segmented pill control for the Rules & Notifications inner tabs, now
+  with stat-card summaries on the Policies, Suppressions and Collection-runs tabs
+  and applied-status on Templates. No behavioural change.
+
+### Fixed
+
+- **Remote SQL Server configuration.** The installer forced Windows authentication
+  when preparing the database, discarding any SQL username/password entered for a
+  remote server and failing to create a local-service login on a host that wasn't
+  the SQL server — so remote-SQL installs always failed. Database preparation is
+  now authentication-aware: SQL-authentication connection strings are honoured, the
+  service connects with those credentials, and the Windows login is created only
+  for local Trusted_Connection installs.
+
+### Removed
+
+- The Privacy / Demo Mode blur toggle.
+
 ## [1.0.0] — 2026-08-07
 
 First public release of Vigil365: a self-hosted, **read-only** Microsoft 365
