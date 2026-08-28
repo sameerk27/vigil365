@@ -1051,20 +1051,33 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
       {/* ── TAB: Templates ── */}
       {tab === "templates" && (
         <Card title="Policy Templates" badge={<Badge label={`${POLICY_TEMPLATES_CATALOG.length} templates`} tone="neutral"/>}>
+          <p className="template-intro">
+            Templates are pre-tuned policies you can apply in one click. Applying one creates its rule as an
+            editable copy — the threshold stays yours after the first edit, and re-applying never overwrites it.
+          </p>
           <div className="template-grid">
-            {POLICY_TEMPLATES_CATALOG.map((t, i) => (
+            {POLICY_TEMPLATES_CATALOG.map((t, i) => {
+              const applied = policies.some(p => p.name === t.name);
+              return (
               <div key={i} className="template-card">
-                <div className="template-card-title">{t.name}</div>
+                <div className="template-card-head">
+                  <span className={`tmpl-dot sev-dot sev-${t.severity.toLowerCase()}`}/>
+                  <div className="template-card-title">{t.name}</div>
+                  <Badge label={applied ? "Applied" : "Not applied"} tone={applied ? "good" : "neutral"}/>
+                </div>
                 <div className="template-card-desc">{t.desc}</div>
                 <div className="template-card-footer">
                   <div data-inline-style="inline-95e7b1fc4c">
                     <Badge label={t.severity} tone={sevToneAC(t.severity)}/>
                     <Badge label={t.category} tone="neutral"/>
                   </div>
-                  <button className="btn-run" data-inline-style="inline-ead46142c8" onClick={() => useTemplate(t)}>Use Template</button>
+                  <button className="btn-run" data-inline-style="inline-ead46142c8" onClick={() => useTemplate(t)}>
+                    {applied ? "Re-apply" : "Use Template"}
+                  </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </Card>
       )}

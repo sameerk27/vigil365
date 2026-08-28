@@ -2393,3 +2393,10 @@ button.countdown-chip:hover { color: var(--color-text); }
 
 .stat-row-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--gap-card); margin-bottom: var(--gap-card); }
 @media (max-width: 900px) { .stat-row-4 { grid-template-columns: repeat(2, 1fr); } }
+
+/* Templates tab — prototype card head + intro */
+.template-intro { font-size: var(--fs-body); color: var(--text-mid); line-height: 1.6; margin: 0 0 14px; max-width: 900px; }
+.template-card-head { display: flex; align-items: center; gap: 8px; }
+.template-card-head .template-card-title { flex: 1; min-width: 0; }
+.template-card-head .badge { margin-left: auto; }
+.tmpl-dot { flex: none; }

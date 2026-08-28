@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Database, RefreshCw } from "lucide-react";
 import { apiBase, apiFetch } from "../services/api";
 import { Badge, Card, CopyButton, EmptyState } from "./SharedComponents";
+import { StatCard } from "./ui";
 import { PermissionsReference } from "./PermissionsReference";
 import { fmtDate, relTime } from "../services/utils";
 
@@ -47,8 +48,34 @@ export function CollectionRunHistory() {
   useEffect(() => { reload(); }, [reload]);
   const filtered = useMemo(() => (runs ?? []).filter(run => status === "all" || run.status === status), [runs, status]);
 
+  const stats = useMemo(() => {
+    const all = runs ?? [];
+    const evaluated = all.filter(r => r.status === "Completed" || r.status === "Failed");
+    const completed = all.filter(r => r.status === "Completed").length;
+    const latest = [...all].sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())[0];
+    const latestDur = latest?.completedAt
+      ? `${((new Date(latest.completedAt).getTime() - new Date(latest.startedAt).getTime()) / 1000).toFixed(1)}s`
+      : null;
+    return {
+      total: all.length,
+      successPct: evaluated.length > 0 ? Math.round((completed / evaluated.length) * 100) : 0,
+      evaluated: evaluated.length,
+      completed,
+      latest, latestDur,
+    };
+  }, [runs]);
+
   return (
     <>
+    {runs && runs.length > 0 && (
+      <div className="stat-row-4">
+        <StatCard label="Last run" value={stats.latest ? relTime(stats.latest.startedAt) : "—"}
+          sub={stats.latest?.completedAt ? `completed in ${stats.latestDur}` : "in progress"}/>
+        <StatCard label="Success rate" value={`${stats.successPct}%`} sub={`${stats.completed} of ${stats.evaluated} runs`}/>
+        <StatCard label="Records collected" value={stats.latest?.alertsUpserted ?? "—"} sub="last run"/>
+        <StatCard label="Runs recorded" value={stats.total} sub="in history"/>
+      </div>
+    )}
     <Card title="Collection Runs" badge={<Badge label={`${filtered.length} shown`} tone="neutral"/>}
       action={<div data-inline-style="inline-f8df590e45">
         <select className="filter-sel" value={status} onChange={e => setStatus(e.target.value as typeof status)} aria-label="Filter collection runs by status">
