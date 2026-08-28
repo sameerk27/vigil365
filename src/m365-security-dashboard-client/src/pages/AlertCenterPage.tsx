@@ -14,6 +14,7 @@ import { PolicyPackControls } from "../components/PolicyPackControls";
 import { FilterPresets } from "../components/FilterPresets";
 import { SegmentedTabs, StatCard } from "../components/ui";
 import { BaselineTab } from "../components/BaselineTab";
+import { SystemMetricsTab } from "../components/SystemMetricsTab";
 import { relTime, fmtDate, sevTone } from "../services/utils";
 
 /** Human-readable status labels — raw enums like "auto_resolved" never reach the UI. */
@@ -837,8 +838,8 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
       {/* ── TAB: Suppression ── */}
       {tab === "suppression" && <SuppressionRulesTab policies={policies}/>}
 
-      {/* ── TAB: Metrics ── */}
-      {tab === "metrics" && <AlertMetricsTab/>}
+      {/* ── TAB: Metrics — real system metrics, then alert-ops metrics ── */}
+      {tab === "metrics" && <><SystemMetricsTab/><AlertMetricsTab/></>}
 
       {/* ── TAB: Collection Runs ── */}
       {tab === "runs" && <CollectionRunHistory/>}

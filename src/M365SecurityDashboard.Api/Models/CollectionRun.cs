@@ -10,6 +10,11 @@ public sealed class CollectionRun
     public int SourceFailures { get; set; }
     public string? Error { get; set; }
 
+    /// <summary>Real Graph API requests made during this run (delta of the in-process counter).</summary>
+    public int GraphRequestCount { get; set; }
+    /// <summary>Graph 429 (throttle) responses received during this run.</summary>
+    public int GraphThrottleCount { get; set; }
+
     /// <summary>JSON array of { source, error } for each source that failed this run.</summary>
     public string? SourceFailureDetails { get; set; }
 }

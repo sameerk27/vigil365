@@ -13,12 +13,14 @@ public sealed class GraphApiClient
     private readonly HttpClient _http;
     private readonly GraphOptions _options;
     private readonly TokenCredential _credential;
+    private readonly GraphMetrics _metrics;
 
-    public GraphApiClient(HttpClient http, IOptions<GraphOptions> options)
+    public GraphApiClient(HttpClient http, IOptions<GraphOptions> options, GraphMetrics metrics)
     {
         _http = http;
         _options = options.Value;
         _credential = BuildCredential(_options);
+        _metrics = metrics;
     }
 
     /// <summary>
@@ -104,9 +106,11 @@ public sealed class GraphApiClient
                 var token = await _credential.GetTokenAsync(new TokenRequestContext(new[] { $"{_options.BaseUrl.TrimEnd('/')}/.default" }), ct);
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
 
+                _metrics.RecordRequest();
                 using var response = await _http.SendAsync(request, ct);
                 if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
                 {
+                    _metrics.RecordThrottle();
                     if (++throttleRetries > maxThrottleRetries)
                     {
                         if (!isFirstPage) break; // keep the pages we already have
@@ -164,7 +168,9 @@ public sealed class GraphApiClient
         var token = await _credential.GetTokenAsync(new TokenRequestContext(new[] { $"{_options.BaseUrl.TrimEnd('/')}/.default" }), ct);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
 
+        _metrics.RecordRequest();
         using var response = await _http.SendAsync(request, ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests) _metrics.RecordThrottle();
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync(ct);

@@ -16,9 +16,25 @@ public sealed class AlertEvaluator(
     AppDbContext db,
     NotificationSender sender,
     IOptions<AlertingOptions> options,
+    MetricsState metricsState,
     ILogger<AlertEvaluator> logger)
 {
     public async Task<int> EvaluateAsync(CancellationToken ct)
+    {
+        // Time the whole evaluation for the real Metrics tab (eval latency / p95).
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            return await EvaluateCoreAsync(ct);
+        }
+        finally
+        {
+            sw.Stop();
+            metricsState.RecordEvaluation((int)sw.ElapsedMilliseconds);
+        }
+    }
+
+    private async Task<int> EvaluateCoreAsync(CancellationToken ct)
     {
         var policies = await db.AlertPolicies.Where(p => p.Enabled).ToListAsync(ct);
         if (policies.Count == 0) return 0;

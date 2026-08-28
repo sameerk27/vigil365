@@ -10,6 +10,7 @@ public sealed class GraphCollector(
     AppDbContext db,
     GraphApiClient graph,
     IOptions<GraphOptions> options,
+    GraphMetrics graphMetrics,
     ILogger<GraphCollector> logger)
 {
     private readonly GraphOptions _options = options.Value;
@@ -37,6 +38,10 @@ public sealed class GraphCollector(
         var run = new CollectionRun { StartedAt = DateTimeOffset.UtcNow, Status = CollectionStatus.Started };
         db.CollectionRuns.Add(run);
         await db.SaveChangesAsync(ct);
+
+        // Real per-run Graph traffic = the delta of the in-process counters across
+        // this run. Snapshotted here and settled on the run at completion below.
+        var (startReq, startThrottle) = graphMetrics.Snapshot();
 
         try
         {
@@ -79,6 +84,9 @@ public sealed class GraphCollector(
             run.SourceFailureDetails = failures.Count > 0 ? JsonSerializer.Serialize(failures) : null;
             run.Status = run.SourceFailures == sources.Count ? CollectionStatus.Failed : CollectionStatus.Completed;
             run.CompletedAt = DateTimeOffset.UtcNow;
+            var (endReq, endThrottle) = graphMetrics.Snapshot();
+            run.GraphRequestCount = (int)(endReq - startReq);
+            run.GraphThrottleCount = (int)(endThrottle - startThrottle);
 
             if (run.Status != CollectionStatus.Failed)
             {
@@ -93,6 +101,9 @@ public sealed class GraphCollector(
             run.Status = CollectionStatus.Failed;
             run.CompletedAt = DateTimeOffset.UtcNow;
             run.Error = ex.Message;
+            var (endReq, endThrottle) = graphMetrics.Snapshot();
+            run.GraphRequestCount = (int)(endReq - startReq);
+            run.GraphThrottleCount = (int)(endThrottle - startThrottle);
             await db.SaveChangesAsync(CancellationToken.None);
             throw;
         }

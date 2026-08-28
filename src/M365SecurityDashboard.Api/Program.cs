@@ -82,6 +82,11 @@ builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(keyPath))
     .SetApplicationName("Vigil365");
 builder.Services.AddSingleton<SecretProtector>();
+// Real system-metrics counters — singletons so counts accumulate across the
+// process, injected into the Graph client, evaluator, and metrics service.
+builder.Services.AddSingleton<GraphMetrics>();
+builder.Services.AddSingleton<MetricsState>();
+builder.Services.AddScoped<MetricsService>();
 builder.Services.AddScoped<GraphCollector>();
 builder.Services.AddScoped<NotificationSender>();
 builder.Services.AddScoped<DigestBuilder>();
@@ -351,6 +356,7 @@ app.MapAdminEndpoints();
 app.MapAlertsEndpoints();
 app.MapNotificationsEndpoints();
 app.MapBaselineEndpoints();
+app.MapMetricsEndpoints();
 app.MapReportsEndpoints();
 app.MapIntegrationsEndpoints();
 app.MapPlatformEndpoints();

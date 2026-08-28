@@ -37,6 +37,7 @@ public class AlertEvaluatorAutoResolveTests
             db,
             sender,
             options,
+            new MetricsState(),
             NullLogger<AlertEvaluator>.Instance);
     }
 

@@ -25,7 +25,7 @@ public class ActivityPolicyTests
             new NullHttpClientFactory(),
             new SecretProtector(new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider(), NullLogger<SecretProtector>.Instance),
             NullLogger<NotificationSender>.Instance);
-        return new AlertEvaluator(db, sender, options, NullLogger<AlertEvaluator>.Instance);
+        return new AlertEvaluator(db, sender, options, new MetricsState(), NullLogger<AlertEvaluator>.Instance);
     }
 
     private static AlertPolicy ActivityPolicy(string pattern, int threshold = 1, int windowMinutes = 60) => new()

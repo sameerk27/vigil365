@@ -222,6 +222,22 @@ export const baselineApi = {
   },
 };
 
+// ─── System / operational metrics (real, measured) ──────────────────────────
+export type PromRow = { metric: string; value: string; meaning: string };
+export type SystemMetrics = {
+  collectorUptimePct: number; runsWindow: number;
+  graphCallsLastRun: number | null; graphCallsTotal: number; graphThrottledTotal: number;
+  evalP95Ms: number | null; evalLastMs: number | null; evalSamples: number;
+  dbSizeBytes: number | null; activeAlerts: number; policiesEnabled: number;
+  retentionDays: number; lastRunDurationMs: number | null;
+  throttleTrend: number[]; prometheus: PromRow[];
+};
+export const metricsApi = {
+  async get(): Promise<SystemMetrics | null> {
+    try { const r = await apiFetch(`${apiBase}/api/metrics`); return r.ok ? await r.json() : null; } catch { return null; }
+  },
+};
+
 // ─── In-app cross-navigation ────────────────────────────────────────────────────
 // Lets one page deep-link into another with a search/filter seed (e.g. Alert Center
 // "view user in Identity"). App registers the page-setter; pages read & consume the
