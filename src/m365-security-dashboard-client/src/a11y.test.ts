@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, beforeAll } from "vitest";
 import { JSDOM } from "jsdom";
 import axe from "axe-core";
