@@ -56,6 +56,39 @@ public sealed class TenantRollupService(AppDbContext db, TenantGraphCredentials 
         }).OrderByDescending(r => Rank(r)).ThenByDescending(r => r.OpenAlerts.Critical).ThenByDescending(r => r.OpenAlerts.High).ThenBy(r => r.Name).ToList();
     }
 
+    /// <summary>One open alert in the cross-client queue (MSP_V12_PLAN.md U6).</summary>
+    public sealed record QueueItem(
+        Guid Id, Guid TenantId, string TenantName, string PolicyName, string Severity, string Category,
+        string Condition, int MetricValue, DateTimeOffset TriggeredAt, string Status, string? AssignedTo, DateTimeOffset? SnoozedUntil);
+
+    /// <summary>
+    /// Open (new/acknowledged) triggered alerts across the given clients, most
+    /// severe first, then newest. The MSP's single triage list — deliberately
+    /// cross-tenant, and only ever over tenants the caller is permitted to see.
+    /// </summary>
+    public async Task<IReadOnlyList<QueueItem>> OpenAlertsAcrossAsync(IReadOnlyList<ClientTenant> tenants, int limit, CancellationToken ct)
+    {
+        var names = tenants.ToDictionary(t => t.Id, t => t.Name);
+        if (names.Count == 0) return [];
+        var ids = names.Keys.ToList();
+        var rows = await db.CrossTenant<TriggeredAlert>().AsNoTracking()
+            .Where(t => ids.Contains(t.TenantId) && (t.Status == "new" || t.Status == "acknowledged"))
+            .OrderByDescending(t => t.TriggeredAt)
+            .Take(Math.Clamp(limit, 1, 2000) * 2) // severity sort happens in memory; over-fetch a little
+            .ToListAsync(ct);
+        return rows
+            .OrderByDescending(t => SeverityRank(t.Severity)).ThenByDescending(t => t.TriggeredAt)
+            .Take(Math.Clamp(limit, 1, 2000))
+            .Select(t => new QueueItem(t.Id, t.TenantId, names[t.TenantId], t.PolicyName, t.Severity, t.Category,
+                t.Condition, t.MetricValue, t.TriggeredAt, t.Status, t.AssignedTo, t.SnoozedUntil))
+            .ToList();
+    }
+
+    private static int SeverityRank(string? s) => (s ?? "").ToLowerInvariant() switch
+    {
+        "critical" => 4, "high" => 3, "medium" => 2, "low" => 1, _ => 0,
+    };
+
     public static string HealthOf(bool configured, ClientTenant t, Open o) =>
         !configured ? "neutral"
         : t.LastCollectionStatus == "Failed" ? "error"

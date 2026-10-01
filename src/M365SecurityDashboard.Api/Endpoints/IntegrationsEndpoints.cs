@@ -16,7 +16,7 @@ public static class IntegrationsEndpoints
         app.MapGet("/api/api-tokens", async (AppDbContext db, CancellationToken ct) =>
             Results.Ok(await db.ApiTokens.AsNoTracking()
                 .OrderByDescending(t => t.CreatedAt)
-                .Select(t => new { t.Id, t.Name, t.Prefix, t.Scopes, t.CreatedAt, t.CreatedBy, t.ExpiresAt, t.LastUsedAt, t.RevokedAt })
+                .Select(t => new { t.Id, t.Name, t.Prefix, t.Scopes, t.CreatedAt, t.CreatedBy, t.ExpiresAt, t.LastUsedAt, t.RevokedAt, t.TenantId })
                 .ToListAsync(ct)))
             .RequireAuthorization("RequireAdmin");
 

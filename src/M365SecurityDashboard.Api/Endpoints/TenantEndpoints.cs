@@ -110,6 +110,15 @@ public static class TenantEndpoints
             }));
         });
 
+        // Cross-client open-alert queue over the clients this user may see (U6).
+        // Acting on an item uses the ordinary alert endpoints with that item's
+        // client in X-Vigil-Tenant, so the usual permission check applies.
+        app.MapGet("/api/tenants/alerts", async (System.Security.Claims.ClaimsPrincipal user, TenantAccess access, TenantRollupService rollup, int? limit, CancellationToken ct) =>
+        {
+            var permitted = await access.PermittedTenantsAsync(user, ct);
+            return Results.Ok(await rollup.OpenAlertsAcrossAsync(permitted, limit ?? 500, ct));
+        });
+
         // ── Admin ─────────────────────────────────────────────────────────────
         var group = app.MapGroup("/api/tenants").RequireAuthorization("RequireAdmin");
 

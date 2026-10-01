@@ -122,9 +122,22 @@ public static class AdminEndpoints
         }).RequireAuthorization("RequireAdmin");
 
         // Audit trail of security-relevant actions (Admin only).
-        app.MapGet("/api/admin/audit-log", async (AppDbContext db, CancellationToken ct) =>
-            Results.Ok(await db.AuditEntries.AsNoTracking().OrderByDescending(a => a.Timestamp).Take(200).ToListAsync(ct)))
-            .RequireAuthorization("RequireAdmin");
+        // MSP mode: an Admin sees one log across every client, each entry labelled
+        // with its client (MSP_V12_PLAN.md U9, decision Q4). Single mode: unchanged.
+        app.MapGet("/api/admin/audit-log", async (AppDbContext db, Microsoft.Extensions.Options.IOptions<EditionOptions> edition, CancellationToken ct) =>
+        {
+            var source = edition.Value.IsMsp ? db.CrossTenant<AuditEntry>() : db.AuditEntries;
+            var rows = await source.AsNoTracking().OrderByDescending(a => a.Timestamp).Take(200).ToListAsync(ct);
+            var names = edition.Value.IsMsp
+                ? await db.ClientTenants.AsNoTracking().ToDictionaryAsync(t => t.Id, t => t.Name, ct)
+                : new Dictionary<Guid, string>();
+            return Results.Ok(rows.Select(a => new
+            {
+                a.Id, a.Timestamp, a.ActorEmail, a.Action, a.TargetType, a.TargetId, a.Details, a.IpAddress, a.UserAgent, a.EntryHash,
+                a.TenantId,
+                tenantName = a.TenantId is Guid t && names.TryGetValue(t, out var n) ? n : null,
+            }));
+        }).RequireAuthorization("RequireAdmin");
 
         // Full audit trail as CSV (Admin only). The export itself is audited.
         app.MapGet("/api/admin/audit-log/export", async (AppDbContext db, AuditLogger audit, CancellationToken ct) =>
