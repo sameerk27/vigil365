@@ -26,19 +26,21 @@ public sealed class ReportScheduleWorker(
         {
             try
             {
-                using var scope = services.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                var now = DateTimeOffset.UtcNow;
-                var due = (await db.ReportSchedules.ToListAsync(stoppingToken)).Where(s => s.IsDue(now)).ToList();
-                foreach (var schedule in due)
+                await Data.Tenancy.TenantIterator.ForEachActiveTenantAsync(services, logger, "Scheduled reports", async (sp, tenant, ct) =>
                 {
-                    var (ok, status) = await DispatchAsync(scope.ServiceProvider, db, schedule, stoppingToken);
-                    schedule.LastRunAt = now;
-                    schedule.LastRunStatus = status;
-                    logger.Log(ok ? LogLevel.Information : LogLevel.Warning,
-                        "Report '{Name}' dispatch: {Status}", schedule.Name, status);
-                }
-                if (due.Count > 0) await db.SaveChangesAsync(stoppingToken);
+                    var db = sp.GetRequiredService<AppDbContext>();
+                    var now = DateTimeOffset.UtcNow;
+                    var due = (await db.ReportSchedules.ToListAsync(ct)).Where(s => s.IsDue(now)).ToList();
+                    foreach (var schedule in due)
+                    {
+                        var (ok, status) = await DispatchAsync(sp, db, schedule, ct);
+                        schedule.LastRunAt = now;
+                        schedule.LastRunStatus = status;
+                        logger.Log(ok ? LogLevel.Information : LogLevel.Warning,
+                            "Report '{Name}' dispatch: {Status}", schedule.Name, status);
+                    }
+                    if (due.Count > 0) await db.SaveChangesAsync(ct);
+                }, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception ex)
@@ -58,8 +60,8 @@ public sealed class ReportScheduleWorker(
     public static async Task<(bool ok, string status)> DispatchAsync(
         IServiceProvider sp, AppDbContext db, ReportSchedule schedule, CancellationToken ct)
     {
-        var cfg = await db.NotificationSettings.FirstOrDefaultAsync(ct);
-        if (cfg == null || !cfg.EmailEnabled || string.IsNullOrWhiteSpace(cfg.SmtpHost))
+        var cfg = await db.EffectiveNotificationSettingsAsync(ct);
+        if (!cfg.EmailEnabled || string.IsNullOrWhiteSpace(cfg.SmtpHost))
             return (false, "failed: SMTP email is not configured");
 
         var recipients = SplitRecipients(schedule.Recipients);
@@ -72,14 +74,14 @@ public sealed class ReportScheduleWorker(
         var attachments = new List<NotificationSender.ReportAttachment>();
         if (schedule.IncludeCsv && !string.IsNullOrEmpty(digest.Csv))
             attachments.Add(new NotificationSender.ReportAttachment(
-                $"vigil365-digest-{digest.GeneratedAt:yyyyMMdd}.csv",
+                $"{Slug(digest.Brand)}-digest-{digest.GeneratedAt:yyyyMMdd}.csv",
                 "text/csv",
                 System.Text.Encoding.UTF8.GetBytes(digest.Csv)));
         if (schedule.IncludePdf)
         {
             var pdf = sp.GetRequiredService<DigestPdfRenderer>().Render(digest);
             attachments.Add(new NotificationSender.ReportAttachment(
-                $"vigil365-exec-digest-{digest.GeneratedAt:yyyyMMdd}.pdf",
+                $"{Slug(digest.Brand)}-exec-digest-{digest.GeneratedAt:yyyyMMdd}.pdf",
                 "application/pdf",
                 pdf));
         }
@@ -92,6 +94,12 @@ public sealed class ReportScheduleWorker(
         return ok
             ? (true, $"sent to {recipients.Count} recipient{(recipients.Count == 1 ? "" : "s")}")
             : (false, $"failed: {error}");
+    }
+
+    private static string Slug(string brand)
+    {
+        var s = new string(brand.ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray()).Trim('-');
+        return string.IsNullOrEmpty(s) ? "vigil365" : s;
     }
 
     public static List<string> SplitRecipients(string? raw) =>
