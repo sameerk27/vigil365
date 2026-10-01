@@ -72,6 +72,16 @@ jobs:
           dotnet build src/M365SecurityDashboard.Api/M365SecurityDashboard.Api.csproj --configuration Release --no-restore
           dotnet build src/M365SecurityDashboard.Api.Tests/M365SecurityDashboard.Api.Tests.csproj --configuration Release --no-restore
 
+      # Vigil365 runs on SQL Server and Postgres, and EF cannot share a migration
+      # set between them. A model change with a migration for only one engine
+      # breaks the other engine's upgrade; this makes that a CI failure. Needs no
+      # database — it compares the compiled model against each snapshot.
+      - name: Check migrations match the model on every engine
+        shell: pwsh
+        run: |
+          dotnet tool restore
+          ./scripts/check-migrations.ps1 -Configuration Release
+
       - name: Audit NuGet dependencies
         run: |
           dotnet list M365SecurityAlertDashboard.sln package --vulnerable --include-transitive 2>&1 | tee audit.txt
@@ -81,7 +91,13 @@ jobs:
 
       # Point at the test project, not the solution: `dotnet test <sln>` evaluates
       # every project, and the WPF installer does not resolve on Linux.
+      # The Relational/ parity suite starts real SQL Server and Postgres in
+      # Docker (present on ubuntu-latest). REQUIRE turns a Docker failure into a
+      # test failure instead of a silent skip — these are the only tests that
+      # touch a real database, so skipping them must never look like passing.
       - name: Run .NET tests
+        env:
+          VIGIL365_REQUIRE_DB_TESTS: "1"
         run: dotnet test src/M365SecurityDashboard.Api.Tests/M365SecurityDashboard.Api.Tests.csproj --configuration Release --no-build --verbosity normal
 
   build-installer:

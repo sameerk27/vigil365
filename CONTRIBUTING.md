@@ -20,6 +20,29 @@ Thank you for your interest in contributing! This project is built and maintaine
 3. Make sure the app builds without errors (`npm run build` in the client folder)
 4. Open a Pull Request — describe what you changed and why
 
+### Run the Tests
+
+```bash
+dotnet test src/M365SecurityDashboard.Api.Tests
+```
+
+Most tests use EF's in-memory provider and run anywhere in seconds. The
+`Relational/` parity suite additionally starts a real SQL Server and a real
+PostgreSQL in Docker and runs the same assertions on both — this is the only
+place engine-specific behaviour (index filters, identity columns, column types,
+the size query, and later tenant-isolation filters) is actually verified.
+Without Docker those tests **skip** with a reason; CI sets
+`VIGIL365_REQUIRE_DB_TESTS=1` so a missing Docker fails the build instead.
+
+Any change to the EF model needs a migration for **both** engines:
+
+```bash
+dotnet ef migrations add <Name> --project src/M365SecurityDashboard.Api --context AppDbContext --output-dir Data/Migrations
+dotnet ef migrations add <Name> --project src/M365SecurityDashboard.Api --context PostgresAppDbContext --output-dir Data/Migrations/Postgres
+```
+
+`scripts/check-migrations.ps1` (run in CI) fails if either set is missing.
+
 ## Rules
 
 - **No credentials** — never commit real Tenant IDs, Client IDs, or secrets
