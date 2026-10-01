@@ -55,6 +55,24 @@ jobs:
         working-directory: src/m365-security-dashboard-client
         run: npm run build
 
+      # The e2e build bypasses Microsoft sign-in (VITE_E2E_FAKE_AUTH=1). That
+      # branch must never reach a shipped bundle — fail if its marker is there.
+      - name: Assert release bundle has no e2e auth bypass
+        run: |
+          if grep -rlE 'vigil365-e2e-fake-auth|VITE_E2E_FAKE_AUTH' src/M365SecurityDashboard.Api/wwwroot; then
+            echo "::error::Release bundle contains the e2e fake-auth bypass"; exit 1
+          fi
+
+      # Signed-in journeys (e2e/signed-in) run against a dev server built with the
+      # bypass and fully stubbed APIs — no backend or Microsoft account needed.
+      - name: Install Playwright browser
+        working-directory: src/m365-security-dashboard-client
+        run: npx playwright install --with-deps chromium
+
+      - name: Run e2e tests
+        working-directory: src/m365-security-dashboard-client
+        run: npx playwright test
+
       # Supply-chain gates. A security product should not ship on top of
       # known-vulnerable dependencies; fail the build rather than warn.
       - name: Audit npm dependencies

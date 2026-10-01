@@ -1,6 +1,8 @@
 # Vigil365 v1.2 — MSP Mode & UI Completion Plan
 
-**Status:** plan, not started. Combines and replaces `MSP_MODE_PLAN.md` and
+**Status:** Stage 0 ✅ (draft PR #8, CI green incl. first PostgreSQL run — which caught and
+fixed an audit-hash bug on Postgres). Stage 1 ✅ (M1 mode flag + sign-in pin, T1 component
+harness, T2 signed-in e2e in CI). Next: Stage 2. Combines and replaces `MSP_MODE_PLAN.md` and
 `MSP_UI_PLAN.md`. Builds on `MSP_EDITION_PLAN.md` (backend Phases 1–8 + one-go
 onboarding — implemented, uncommitted on `feat/msp-phase1-db-providers`).
 

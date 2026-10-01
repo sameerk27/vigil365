@@ -761,6 +761,18 @@ function AuthGate() {
         if (!res.ok) { setAuthReady(true); return; }
         const cfg: { clientId: string; tenantId: string; redirectUri: string; instance?: string; mode?: string } = await res.json();
         setEditionMode(cfg.mode); // before first render of any page: gates the MSP surface
+
+        // E2E only: a build with VITE_E2E_FAKE_AUTH=1 skips MSAL and treats a fixed
+        // test user as signed in; the (mocked) /api/auth/me then supplies the role.
+        // In every other build this constant is undefined, Vite folds the condition
+        // to false and the branch is removed — CI asserts the marker below is absent
+        // from the release bundle.
+        if (import.meta.env.VITE_E2E_FAKE_AUTH === "1") {
+          console.warn("vigil365-e2e-fake-auth: MSAL bypassed (test build)");
+          setAccount({ homeAccountId: "e2e", environment: "e2e", tenantId: cfg.tenantId || "e2e", username: "e2e@vigil365.test", localAccountId: "e2e", name: "E2E User" } as AccountInfo);
+          setAuthReady(true);
+          return;
+        }
         if (!cfg.clientId || !cfg.tenantId) { setAuthReady(true); return; }
 
         setAuthEnabled(true);
