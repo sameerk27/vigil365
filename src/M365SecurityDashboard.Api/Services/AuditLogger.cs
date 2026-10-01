@@ -42,7 +42,11 @@ public sealed class AuditLogger(
             {
                 // Tenant-scoped actions record their tenant; MSP-level ones null.
                 TenantId = tenant.Current,
-                Timestamp = DateTimeOffset.UtcNow,
+                // Whole microseconds: PostgreSQL timestamptz stores microseconds, so a
+                // 100-ns tick here would be rounded on save and the recomputed hash would
+                // no longer match — every entry would read as tampered on Postgres.
+                // ComputeHash itself is unchanged, so existing chains still verify.
+                Timestamp = TruncateToMicroseconds(DateTimeOffset.UtcNow),
                 ActorEmail = string.IsNullOrEmpty(actor) ? "system" : actor,
                 Action = action,
                 TargetType = targetType,
@@ -84,6 +88,10 @@ public sealed class AuditLogger(
     /// Canonical hash of an entry's content + its predecessor's hash. Must stay
     /// stable across releases — changing the format invalidates existing chains.
     /// </summary>
+    /// <summary>Drops sub-microsecond ticks so the stored value round-trips exactly on every engine.</summary>
+    public static DateTimeOffset TruncateToMicroseconds(DateTimeOffset t)
+        => new(t.Ticks - t.Ticks % 10, t.Offset);
+
     public static string ComputeHash(AuditEntry e)
     {
         // Unit-separator delimiter so shifted field boundaries always change the hash.

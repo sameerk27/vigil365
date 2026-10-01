@@ -56,4 +56,19 @@ public class AuditLoggerHashChainTests
         Assert.Equal("system", entry.ActorEmail);
         Assert.Null(entry.IpAddress);
     }
+
+    [Fact]
+    public void Timestamps_are_truncated_to_microseconds_so_the_hash_survives_a_postgres_round_trip()
+    {
+        var withTicks = new DateTimeOffset(2026, 10, 2, 9, 30, 15, TimeSpan.Zero).AddTicks(1234567);
+        var stored = AuditLogger.TruncateToMicroseconds(withTicks);
+        Assert.Equal(0, stored.Ticks % 10);
+        Assert.Equal(withTicks.Ticks - 7, stored.Ticks);
+
+        // What Postgres hands back is exactly what was stored, so the hash matches.
+        var entry = new AuditEntry { Timestamp = stored, ActorEmail = "a", Action = "x", TargetType = "y" };
+        var hash = AuditLogger.ComputeHash(entry);
+        var readBack = new AuditEntry { Timestamp = new DateTimeOffset(stored.Ticks - stored.Ticks % 10, TimeSpan.Zero), ActorEmail = "a", Action = "x", TargetType = "y" };
+        Assert.Equal(hash, AuditLogger.ComputeHash(readBack));
+    }
 }
