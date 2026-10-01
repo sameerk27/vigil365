@@ -19,7 +19,7 @@ public class NotificationSenderTests : IDisposable
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
-        _db = new AppDbContext(options);
+        _db = new AppDbContext(options, TestTenancy.For(TestTenancy.Default));
         _protector = new SecretProtector(new EphemeralDataProtectionProvider(), NullLogger<SecretProtector>.Instance);
     }
 

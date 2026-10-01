@@ -7,8 +7,11 @@ namespace M365SecurityDashboard.Api.Models;
 /// what, to what, and when. Provides the admin/action audit trail expected by
 /// SOC 2 / ISO 27001 logging controls. Append-only: rows are never updated.
 /// </summary>
-public sealed class AuditEntry
+public sealed class AuditEntry : ITenantOptional
 {
+    /// <summary>Null = the MSP-wide default; a value = this tenant's override. See ITenantOptional.</summary>
+    public Guid? TenantId { get; set; }
+
     public long Id { get; set; }
 
     public DateTimeOffset Timestamp { get; set; }

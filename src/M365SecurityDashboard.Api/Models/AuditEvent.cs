@@ -8,8 +8,11 @@ namespace M365SecurityDashboard.Api.Models;
 /// alert policies ("user added to privileged role", "app consent granted") —
 /// alerting on WHAT HAPPENED rather than on metric counts.
 /// </summary>
-public sealed class AuditEvent
+public sealed class AuditEvent : ITenantScoped
 {
+    /// <summary>Owning tenant. Stamped from the tenant context on insert; see ITenantScoped.</summary>
+    public Guid TenantId { get; set; }
+
     public long Id { get; set; }
 
     /// <summary>Graph record id — dedupe key for incremental collection.</summary>

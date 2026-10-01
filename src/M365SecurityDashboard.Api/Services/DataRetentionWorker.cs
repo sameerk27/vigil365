@@ -28,20 +28,22 @@ public sealed class DataRetentionWorker(
         {
             try
             {
-                using var scope = services.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                var summary = await PruneAsync(db, options.Value, stoppingToken);
-                if (summary.TotalDeleted > 0)
+                await Data.Tenancy.TenantIterator.ForEachActiveTenantAsync(services, logger, "Retention prune", async (sp, tenant, ct) =>
                 {
-                    logger.LogInformation("Retention prune removed {Total} rows: {Summary}",
-                        summary.TotalDeleted, summary.Describe());
-                    var audit = scope.ServiceProvider.GetRequiredService<AuditLogger>();
-                    await audit.WriteAsync("retention.prune", "database", null, summary.Describe(), stoppingToken);
-                }
-                else
-                {
-                    logger.LogDebug("Retention prune: nothing to remove.");
-                }
+                    var db = sp.GetRequiredService<AppDbContext>();
+                    var summary = await PruneAsync(db, options.Value, ct);
+                    if (summary.TotalDeleted > 0)
+                    {
+                        logger.LogInformation("Retention prune removed {Total} rows: {Summary}",
+                            summary.TotalDeleted, summary.Describe());
+                        var audit = sp.GetRequiredService<AuditLogger>();
+                        await audit.WriteAsync("retention.prune", "database", null, summary.Describe(), ct);
+                    }
+                    else
+                    {
+                        logger.LogDebug("Retention prune: nothing to remove.");
+                    }
+                }, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception ex)

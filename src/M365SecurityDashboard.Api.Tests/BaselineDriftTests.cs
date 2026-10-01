@@ -8,7 +8,7 @@ public class BaselineDriftTests
 {
     private static TenantBaseline Base() => new()
     {
-        Id = 1,
+
         CapturedAt = DateTimeOffset.UtcNow.AddDays(-14),
         CapturedBy = "s.kumar@contoso.com",
         SecureScorePct = 40.3, MfaCoveragePct = 71.0,
@@ -68,7 +68,7 @@ public class BaselineDriftTests
     [Fact]
     public void CaptureFrom_copies_the_snapshot_values()
     {
-        var target = new TenantBaseline { Id = 1 };
+        var target = new TenantBaseline();
         var snap = Snap(secure: 38.2, mfa: 67.7, risky: 3);
         var now = DateTimeOffset.UtcNow;
         BaselineDrift.CaptureFrom(target, snap, "admin@contoso.com", now);

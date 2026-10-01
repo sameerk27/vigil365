@@ -8,8 +8,11 @@ namespace M365SecurityDashboard.Api.Models;
 /// restarts. Singleton row (Id = 1). Every value is a measured accumulation,
 /// never fabricated.
 /// </summary>
-public sealed class MetricsCounters
+public sealed class MetricsCounters : ITenantOptional
 {
+    /// <summary>Null = the MSP-wide default; a value = this tenant's override. See ITenantOptional.</summary>
+    public Guid? TenantId { get; set; }
+
     public int Id { get; set; } = 1;
 
     /// <summary>Total Graph API requests across all collection runs, all-time.</summary>

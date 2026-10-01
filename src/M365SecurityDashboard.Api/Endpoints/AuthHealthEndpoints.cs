@@ -15,10 +15,12 @@ public static class AuthHealthEndpoints
         // uptime monitors). Reports DB connectivity, Graph configuration, and freshness of
         // the last collection run. No Graph call is made — probes fire frequently and must
         // stay cheap. 200 = healthy/degraded (app can serve traffic), 503 = DB unreachable.
-        app.MapGet("/health", async (AppDbContext db, IOptions<GraphOptions> options, CancellationToken ct) =>
+        app.MapGet("/health", async (AppDbContext db, IOptions<GraphOptions> options, IOptions<DatabaseOptions> dbOptions, CancellationToken ct) =>
         {
             var dbOk = false;
             string? dbError = null;
+            long? dbSize = null;
+            var sizeWarning = false;
             object? lastCollection = null;
             var collectionFresh = (bool?)null;
 
@@ -27,7 +29,12 @@ public static class AuthHealthEndpoints
                 dbOk = await db.Database.CanConnectAsync(ct);
                 if (dbOk)
                 {
-                    var lastRun = await db.CollectionRuns.AsNoTracking()
+                    dbSize = await Data.DatabaseProviderSetup.QueryDatabaseSizeBytesAsync(db, ct);
+                    var limit = dbOptions.Value.SizeWarningBytes;
+                    sizeWarning = limit > 0 && dbSize is long size && size >= limit;
+                    // Anonymous probe, no tenant context: install-level freshness is
+                    // "has ANY tenant collected recently", hence the cross-tenant read.
+                    var lastRun = await db.CrossTenant<CollectionRun>().AsNoTracking()
                         .OrderByDescending(r => r.StartedAt).FirstOrDefaultAsync(ct);
                     if (lastRun is not null)
                     {
@@ -47,7 +54,7 @@ public static class AuthHealthEndpoints
 
             var graphConfigured = options.Value.IsConfigured();
             var status = !dbOk ? "unhealthy"
-                : !graphConfigured || collectionFresh == false ? "degraded"
+                : !graphConfigured || collectionFresh == false || sizeWarning ? "degraded"
                 : "healthy";
 
             var body = new
@@ -56,7 +63,7 @@ public static class AuthHealthEndpoints
                 version = typeof(Program).Assembly.GetName().Version?.ToString(3),
                 checks = new
                 {
-                    database = new { ok = dbOk, error = dbError },
+                    database = new { ok = dbOk, error = dbError, sizeBytes = dbSize, sizeWarning, sizeWarningBytes = dbOptions.Value.SizeWarningBytes },
                     graph = new { configured = graphConfigured },
                     collection = lastCollection
                 },

@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using M365SecurityDashboard.Api.Data;
+using M365SecurityDashboard.Api.Data.Tenancy;
 using M365SecurityDashboard.Api.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -17,6 +18,7 @@ namespace M365SecurityDashboard.Api.Services;
 /// </summary>
 public sealed class AuditLogger(
     AppDbContext db,
+    ITenantContext tenant,
     IHttpContextAccessor httpContext,
     ILogger<AuditLogger> logger)
 {
@@ -38,6 +40,8 @@ public sealed class AuditLogger(
 
             var entry = new AuditEntry
             {
+                // Tenant-scoped actions record their tenant; MSP-level ones null.
+                TenantId = tenant.Current,
                 Timestamp = DateTimeOffset.UtcNow,
                 ActorEmail = string.IsNullOrEmpty(actor) ? "system" : actor,
                 Action = action,
@@ -51,7 +55,11 @@ public sealed class AuditLogger(
             await ChainLock.WaitAsync(ct);
             try
             {
-                var prevHash = await db.AuditEntries.AsNoTracking()
+                // The chain is one global sequence across every tenant, so the
+                // predecessor is the newest entry of any tenant — deliberately
+                // cross-tenant. A per-tenant chain would break the moment a
+                // suspended tenant's rows were pruned.
+                var prevHash = await db.CrossTenant<AuditEntry>().AsNoTracking()
                     .OrderByDescending(a => a.Id)
                     .Select(a => a.EntryHash)
                     .FirstOrDefaultAsync(ct);

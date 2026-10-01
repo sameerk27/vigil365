@@ -10,7 +10,7 @@ namespace M365SecurityDashboard.Api.Tests;
 public class AuditLoggerHashChainTests
 {
     private static AuditLogger CreateLogger(Data.AppDbContext db) =>
-        new(db, new HttpContextAccessor(), NullLogger<AuditLogger>.Instance);
+        new(db, TestTenancy.For(TestTenancy.Default), new HttpContextAccessor(), NullLogger<AuditLogger>.Instance);
 
     [Fact]
     public async Task WriteAsync_ChainsEntriesByPrevHash()

@@ -47,7 +47,7 @@ public static class AdminEndpoints
             string? inviteError = null;
             if (input.SendInvite)
             {
-                var cfg = await db.NotificationSettings.FirstOrDefaultAsync(ct) ?? new NotificationSettings { Id = 1 };
+                var cfg = await db.InstallSettingsAsync(ct) ?? new NotificationSettings { Id = 1 };
                 var url = config["Auth:RedirectUri"] ?? "http://localhost:5000";
                 var (ok, error) = await sender.SendInviteEmailAsync(cfg, email, user.Role, url, ct);
                 if (!ok) inviteError = error;
@@ -63,7 +63,7 @@ public static class AdminEndpoints
             var user = await db.AppUsers.FirstOrDefaultAsync(u => u.Email == email, ct);
             if (user is null) return Results.NotFound();
 
-            var cfg = await db.NotificationSettings.FirstOrDefaultAsync(ct) ?? new NotificationSettings { Id = 1 };
+            var cfg = await db.InstallSettingsAsync(ct) ?? new NotificationSettings { Id = 1 };
             var url = config["Auth:RedirectUri"] ?? "http://localhost:5000";
             var (ok, error) = await sender.SendInviteEmailAsync(cfg, email, user.Role, url, ct);
             if (ok) await audit.WriteAsync("user.invite", "user", email, "invite email sent", ct);
@@ -129,7 +129,7 @@ public static class AdminEndpoints
         // Full audit trail as CSV (Admin only). The export itself is audited.
         app.MapGet("/api/admin/audit-log/export", async (AppDbContext db, AuditLogger audit, CancellationToken ct) =>
         {
-            var entries = await db.AuditEntries.AsNoTracking()
+            var entries = await db.CrossTenant<AuditEntry>().AsNoTracking() /* whole chain, every tenant */
                 .OrderBy(a => a.Id)
                 .Take(100_000)
                 .ToListAsync(ct);
@@ -160,7 +160,7 @@ public static class AdminEndpoints
         // verification starts from the first hashed entry.
         app.MapGet("/api/admin/audit-log/verify", async (AppDbContext db, CancellationToken ct) =>
         {
-            var entries = await db.AuditEntries.AsNoTracking().OrderBy(a => a.Id).ToListAsync(ct);
+            var entries = await db.CrossTenant<AuditEntry>().AsNoTracking() /* whole chain, every tenant */.OrderBy(a => a.Id).ToListAsync(ct);
 
             var legacy = 0; var checked_ = 0;
             long? firstBrokenId = null;

@@ -1,7 +1,10 @@
 namespace M365SecurityDashboard.Api.Models;
 
-public sealed class CollectionRun
+public sealed class CollectionRun : ITenantScoped
 {
+    /// <summary>Owning tenant. Stamped from the tenant context on insert; see ITenantScoped.</summary>
+    public Guid TenantId { get; set; }
+
     public long Id { get; set; }
     public DateTimeOffset StartedAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
