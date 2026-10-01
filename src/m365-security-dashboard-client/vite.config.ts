@@ -36,6 +36,9 @@ export default defineConfig({
     }
   },
   test: {
-    exclude: ['node_modules', 'dist', 'e2e/**']
+    exclude: ['node_modules', 'dist', 'e2e/**'],
+    // Component tests (*.test.tsx) opt into jsdom per file; this adds the
+    // jest-dom matchers and cleans the DOM between them.
+    setupFiles: ['./src/test/setup.ts']
   }
 });
