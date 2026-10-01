@@ -3,7 +3,7 @@ import { Download, ChevronRight, Copy, ClipboardCheck, ExternalLink, AlertTriang
 import { Tone, SecurityAlert, AlertNote } from "../services/types";
 import { fmtService, fmtDate, fmtShort, relTime, fmtUtc, downloadCsv, copyToClipboard } from "../services/utils";
 import { showToast } from "../services/toast";
-import { useAuth, acApi, wbApi, openEntity, requestRefresh } from "../services/api";
+import { useAuth, acApi, wbApi, openEntity, requestRefresh, clientFileName } from "../services/api";
 
 // ─── Export dropdown ──────────────────────────────────────────────────────────
 /**
@@ -13,9 +13,11 @@ import { useAuth, acApi, wbApi, openEntity, requestRefresh } from "../services/a
  * a subset — a CSV that looks complete and is not is worse than no export.
  * Supplying it makes the menu and the confirmation toast state the real scope.
  */
-export function ExportDropdown({ rows, filename, scopeTotal }: {
+export function ExportDropdown({ rows, filename: baseName, scopeTotal }: {
   rows: Record<string, unknown>[]; filename: string; scopeTotal?: number;
 }) {
+  // MSP mode: exports carry the client in their filename (U5).
+  const filename = clientFileName(baseName);
   const partial = typeof scopeTotal === "number" && scopeTotal > rows.length;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);

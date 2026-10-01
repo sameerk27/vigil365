@@ -6,12 +6,14 @@ import userEvent from "@testing-library/user-event";
 import { TenantSwitcher } from "./TenantSwitcher";
 import { setEditionMode, getSelectedTenantId, setSelectedTenantId } from "../services/api";
 import { mockApi } from "../test/apiMock";
+import { resetMyTenantsCache } from "../services/tenants";
 
 const A = { id: "aaaa", name: "Contoso", isActive: true, configured: true, lastCollectionStatus: "Completed" };
 const B = { id: "bbbb", name: "Fabrikam", isActive: true, configured: false, lastCollectionStatus: null };
 
 const reload = vi.fn();
 beforeEach(() => {
+  resetMyTenantsCache();
   reload.mockReset();
   Object.defineProperty(window, "location", { configurable: true, value: { ...window.location, reload } });
 });

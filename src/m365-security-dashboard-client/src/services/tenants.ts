@@ -60,6 +60,15 @@ async function call<T = unknown>(url: string, init?: RequestInit): Promise<Resul
 const json = (method: string, body: unknown): RequestInit =>
   ({ method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
+// The signed-in user's permitted clients, fetched once per page load and shared by
+// ClientGate, the switcher and the header badge (they all need the same answer).
+let _mine: Promise<Result<MyTenants>> | null = null;
+export function loadMyTenants(): Promise<Result<MyTenants>> {
+  return (_mine ??= call<MyTenants>("/api/tenants/me"));
+}
+/** Tests only. */
+export function resetMyTenantsCache(): void { _mine = null; }
+
 export const tenantApi = {
   me: () => call<MyTenants>("/api/tenants/me"),
   list: () => call<ClientTenant[]>("/api/tenants"),

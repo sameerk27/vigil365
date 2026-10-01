@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Building2 } from "lucide-react";
 import { getSelectedTenantId, setSelectedTenantId, isMspMode } from "../services/api";
-import { tenantApi, type MyTenants } from "../services/tenants";
+import { loadMyTenants, type MyTenants } from "../services/tenants";
 
 /**
  * Header control that picks which client tenant every API call is scoped to.
@@ -15,7 +15,7 @@ export function TenantSwitcher() {
   useEffect(() => {
     let cancelled = false;
     if (!isMspMode()) return; // single-organisation install: nothing to switch
-    tenantApi.me().then(r => {
+    loadMyTenants().then(r => {
       if (cancelled || !r.ok) return;
       setMine(r.value);
       // A stale local selection (tenant removed, or access revoked) must not

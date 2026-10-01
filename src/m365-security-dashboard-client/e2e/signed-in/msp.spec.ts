@@ -21,8 +21,8 @@ test('a single-organisation install cannot be deep-linked into the Clients page'
   await expect(page.getByText('Client roster')).toHaveCount(0);
 });
 
-test('MSP admin sees Clients, the switcher, rollup and roster', async ({ page }) => {
-  await signIn(page, {
+test('MSP admin with several clients and none chosen lands on Choose a client, with no failing calls (U1)', async ({ page }) => {
+  const { calls } = await signIn(page, {
     mode: 'Msp', role: 'Admin',
     api: {
       'GET /api/tenants/me': { current: null, tenants: [tenantA, tenantB] },
@@ -30,41 +30,38 @@ test('MSP admin sees Clients, the switcher, rollup and roster', async ({ page })
       'GET /api/tenants': [rosterRow(tenantA), rosterRow(tenantB)],
     },
   });
-  await page.goto('/#/clients');
-
-  const switcher = page.getByLabel('Client tenant');
-  await expect(switcher).toBeVisible();
-  await expect(switcher.locator('option')).toContainText(['Contoso Ltd', 'Fabrikam Inc (not connected)']);
-
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Choose a client' })).toBeVisible();
   await expect(page.getByText('Client roster')).toBeVisible();
   await expect(page.getByRole('button', { name: /Add client/ })).toBeVisible();
   // Worst posture first: Contoso (2 critical) before Fabrikam (not connected).
-  const cards = page.locator('.rollup-card .rollup-name');
-  await expect(cards).toHaveText(['Contoso Ltd', 'Fabrikam Inc']);
+  await expect(page.locator('.rollup-card .rollup-name')).toHaveText(['Contoso Ltd', 'Fabrikam Inc']);
+  // Nothing tenant-scoped was requested — those would all fail closed with 400.
+  expect(calls.filter(c => !c.includes('/api/auth/') && !c.includes('/api/tenants'))).toEqual([]);
 });
 
-test('choosing a client in the switcher scopes every API call to it', async ({ page }) => {
-  const { calls } = await signIn(page, {
+test('picking a client opens its dashboard, names it, and scopes every call to it (U1, U5)', async ({ page }) => {
+  const meReply = () => ({ current: null, tenants: [tenantA, tenantB] });
+  await signIn(page, {
     mode: 'Msp', role: 'Admin',
     api: {
-      'GET /api/tenants/me': { current: null, tenants: [tenantA, tenantB] },
+      'GET /api/tenants/me': meReply,
       'GET /api/tenants/rollup': [rollupRow(tenantA), rollupRow(tenantB)],
       'GET /api/tenants': [rosterRow(tenantA), rosterRow(tenantB)],
     },
   });
-  await page.goto('/#/clients');
-  await page.getByLabel('Client tenant').selectOption(tenantB.id);
-  await page.waitForLoadState('load'); // switching reloads the app
-
-  // Count only requests made after the switch; earlier ones correctly carry no
-  // client (the no-client-selected state is MSP_V12_PLAN.md U1).
+  await page.goto('/');
   const sent: (string | undefined)[] = [];
   page.on('request', r => { if (r.url().includes('/api/dashboard')) sent.push(r.headers()['x-vigil-tenant']); });
-  await page.goto('/#/overview');
-  await page.reload(); // a fresh boot with the stored selection
+
+  await page.locator('.rollup-card', { hasText: 'Fabrikam Inc' }).click(); // stores choice + reloads
+  await expect(page.locator('.hdr-client')).toHaveText('Fabrikam Inc');
+  const switcher = page.getByLabel('Client tenant');
+  await expect(switcher).toHaveValue(tenantB.id);
+  await expect(switcher.locator('option')).toContainText(['Contoso Ltd', 'Fabrikam Inc (not connected)']);
+
   await expect.poll(() => sent.length).toBeGreaterThan(0);
   expect(new Set(sent)).toEqual(new Set([tenantB.id]));
-  expect(calls.length).toBeGreaterThan(0);
 });
 
 test('a Viewer with one assigned client gets no switcher and no roster', async ({ page }) => {

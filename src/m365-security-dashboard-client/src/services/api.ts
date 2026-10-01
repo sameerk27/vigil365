@@ -38,6 +38,19 @@ let _mspMode = false;
 export function setEditionMode(mode?: string | null): void { _mspMode = mode === "Msp"; }
 export function isMspMode(): boolean { return _mspMode; }
 
+// Name of the client the whole UI is scoped to (MSP mode), set by ClientGate.
+// Shown in the header, prefixed to toasts and export filenames, so nobody acts
+// on — or sends — the wrong client's data.
+let _activeClientName: string | null = null;
+export function setActiveClientName(name: string | null): void { _activeClientName = name; }
+export function getActiveClientName(): string | null { return _mspMode ? _activeClientName : null; }
+export function clientFileName(filename: string): string {
+  const client = getActiveClientName();
+  if (!client) return filename;
+  const slug = client.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return slug ? `${slug}-${filename}` : filename;
+}
+
 export function getSelectedTenantId(): string | null {
   if (!_mspMode) return null;
   try { return localStorage.getItem(TENANT_KEY); } catch { return null; }

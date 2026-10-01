@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Building2, Plus, Plug, Link as LinkIcon, PlayCircle, Power, Trash2, ShieldCheck, AlertTriangle, Info } from "lucide-react";
 import { useAuth, getSelectedTenantId, setSelectedTenantId } from "../services/api";
 import { showToast } from "../services/toast";
@@ -279,6 +279,16 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
     await onChanged();
   };
 
+  // The consent poll must die with the dialog: closing it (or navigating away)
+  // mid-sign-in otherwise left it calling the API every 2.5 s for 5 minutes and
+  // setting state on an unmounted component (MSP_V12_PLAN.md U4).
+  const pollRef = useRef<number | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => () => {
+    mounted.current = false;
+    if (pollRef.current !== null) { window.clearInterval(pollRef.current); pollRef.current = null; }
+  }, []);
+
   // Register the shared multi-tenant MSP app (Azure CLI, server-side) so per-client
   // credentials become optional. Fills nothing in the form — it configures the
   // install-wide app the consent flow uses.
@@ -310,12 +320,15 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
 
     const deadline = Date.now() + 5 * 60 * 1000;
     const poll = window.setInterval(async () => {
+      if (!mounted.current) { window.clearInterval(poll); return; }
       const g = await tenantApi.get(saved.id);
+      if (!mounted.current) return;
       const granted = g.ok && !!g.value.consentGrantedAt;
       const timedOut = Date.now() > deadline;
       if (!granted && !popup.closed && !timedOut) return;
 
       window.clearInterval(poll);
+      pollRef.current = null;
       try { if (!popup.closed) popup.close(); } catch { /* cross-origin close race */ }
       if (granted) {
         if (g.ok) setSaved(g.value);
@@ -326,6 +339,7 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
         // popup closed without consenting: leave the step ready to retry, no error noise
       }
     }, 2500);
+    pollRef.current = poll;
   };
 
   const runTest = async () => {

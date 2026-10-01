@@ -19,7 +19,7 @@ import {
   RiskDetectionsData, IdentityHealthData, AttackSimulationData, AlertPolicy, TriggeredAlert,
   PurviewData
 } from "./services/types";
-import { apiBase, apiFetch, AuthContext, initMsal, acApi, AUTO_REFRESH_SEC, useAuth, registerNavHandler, registerRefreshHandler, setEditionMode, isMspMode } from "./services/api";
+import { apiBase, apiFetch, AuthContext, initMsal, acApi, AUTO_REFRESH_SEC, useAuth, registerNavHandler, registerRefreshHandler, setEditionMode, isMspMode, getActiveClientName } from "./services/api";
 import { showToast } from "./services/toast";
 import { ToastContainer } from "./components/ToastContainer";
 import { ConfirmDialog } from "./components/ConfirmDialog";
@@ -51,6 +51,7 @@ import { EntityPage } from "./pages/EntityPage";
 import { ActivityFeedPage } from "./pages/ActivityFeedPage";
 import { ClientsPage } from "./pages/ClientsPage";
 import { TenantSwitcher } from "./components/TenantSwitcher";
+import { ClientGate } from "./components/ClientGate";
 
 // App version — surfaced in the sidebar so the running build is always
 // identifiable. Injected by Vite from package.json rather than hardcoded, so it
@@ -580,6 +581,9 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
           <div>
             <div className="hdr-title-row">
               <h1 className="hdr-title">{pageLabel(page)}</h1>
+              {getActiveClientName() && (
+                <span className="hdr-client" title="Every number on this page is for this client">{getActiveClientName()}</span>
+              )}
               <PageHelp page={page}/>
             </div>
             <p className="hdr-sub">
@@ -942,7 +946,9 @@ function AuthGate() {
 
   return (
     <AuthContext.Provider value={auth}>
-      <App account={account} onSignOut={handleSignOut} />
+      <ClientGate>
+        <App account={account} onSignOut={handleSignOut} />
+      </ClientGate>
     </AuthContext.Provider>
   );
 }
