@@ -56,7 +56,8 @@ A self-hosted Microsoft 365 security monitoring dashboard that aggregates alerts
 | Sign-in | Microsoft Entra sign-in (MSAL) + in-app RBAC |
 | Collection | Graph app-only — client secret **or** certificate |
 | Scheduler | .NET BackgroundService — every 15 minutes |
-| Storage | SQL Server Express (EF Core migrations) |
+| Storage | SQL Server (Express/Standard/Azure SQL) **or** PostgreSQL 14+ — EF Core migrations per engine |
+| MSP edition | Multi-tenant: per-client isolation (tested on both engines), credentials, routing, staff scoping, rollup — see `docs/MSP_EDITION_PLAN.md` |
 | Icons | lucide-react |
 
 ---

@@ -21,6 +21,104 @@ To ensure accountability, every privileged action taken within Vigil365 (e.g., i
 
 ---
 
+## Database Engine
+
+Vigil365 stores everything in one relational database, on either **SQL Server**
+(Express, Standard, or Azure SQL) or **PostgreSQL 14+**. The engine is chosen by
+`Database:Provider`; the connection string lives in
+`ConnectionStrings:DefaultConnection` as before.
+
+```json
+"Database": { "Provider": "SqlServer" },
+"ConnectionStrings": {
+  "DefaultConnection": "Server=.\\SQLEXPRESS;Database=M365SecurityDashboard;Trusted_Connection=True;Encrypt=True;TrustServerCertificate=True"
+}
+```
+
+```json
+"Database": { "Provider": "Postgres" },
+"ConnectionStrings": {
+  "DefaultConnection": "Host=localhost;Database=vigil365;Username=vigil365;Password=..."
+}
+```
+
+`Provider` defaults to `SqlServer`, so an install that predates this setting keeps
+working untouched. In Docker, set `Database__Provider` and the connection string as
+environment variables; `docker-compose.postgres.yml` is a ready-made Postgres stack.
+
+The schema is created and upgraded automatically at startup on both engines. Each
+engine has its own migration history, so a database can never receive the other
+engine's DDL. **Switching engines on a live install is not a config change** — it is
+a data migration (export, re-import), and the same is true of moving between SQL
+Server editions only in the sense that a backup/restore is required.
+
+**Which engine?** For a single-tenant install, SQL Server Express is ample — the
+database stays well under 1 GB. Choose Postgres or a licensed SQL Server edition
+when you expect to exceed Express's 10 GB / 1.4 GB-memory limits, which in
+practice means the MSP multi-tenant edition (see `docs/MSP_EDITION_PLAN.md`).
+The Metrics tab shows the live database size on either engine.
+
+## Tenants
+
+Vigil365 keeps every alert, run, snapshot, note and audit event tagged with the
+tenant it belongs to. A single-organisation install has one tenant — created for
+you on upgrade as "Default" — and never needs to think about this. The MSP edition
+adds more (see `docs/MSP_EDITION_PLAN.md`); until its tenant switcher ships, an
+Admin can address a specific tenant by sending the `X-Vigil-Tenant: <tenant id>`
+header. With several tenants and no header, requests for tenant data return
+**400** rather than mixing tenants' data.
+
+### Onboarding a client tenant (MSP)
+
+All endpoints are Admin-only and audited.
+
+1. `POST /api/tenants` `{ "name": "Contoso", "microsoftTenantId": "<entra tenant guid>" }`
+2. Register (once) a **multi-tenant** app registration in your own Entra tenant with
+   the same application permissions as the single-tenant install, then
+   `PUT /api/tenants/{id}/credentials` `{ "clientId": "...", "clientSecret": "..." }`.
+   The secret is encrypted at rest and never returned.
+3. `GET /api/tenants/{id}/consent-url?redirectUri=https://your-host/consented` — send
+   the URL to the client's Global Administrator. They sign in and grant admin consent.
+4. `POST /api/tenants/{id}/test` — Vigil365 calls Graph as that tenant, confirms the
+   Entra tenant id matches, and records the consent time. Collection starts on the
+   next cycle; `GET /api/tenants` shows each client's last collection status and error.
+
+Or do all of the above from the UI: **Clients → Add client** walks through the same
+four steps. Non-Admin staff see only the clients assigned to them (**User Management →
+Clients** column); Admins see every client. The header switcher scopes the dashboard
+to one client at a time.
+
+**Where a client's alerts go.** By default every client's alerts go to the MSP's own
+channels and default recipient (Settings → Notifications). Per client, an Admin can
+also — or instead — send them to the client's own address, Teams or webhook, and
+set a per-client minimum severity: `PUT /api/notification-routing` with the client
+selected (`X-Vigil-Tenant`). Install-wide alert policies apply to every client; an
+Admin can switch one off or change its threshold for a single client
+(`PUT /api/alert-policies/{id}/tenant-override`), or create a client-only policy by
+ticking **This client only** when drafting it. Enable the daily **MSP digest** in
+notification settings (`mspDigestEnabled`, `mspDigestHourUtc`) to receive one email
+summarising every client, worst first.
+
+**Certificates, backoff and branding.** A client's credentials may be a certificate
+(thumbprint in the server's store, or a PFX path and password) instead of a secret;
+the certificate wins when both are set. A client whose collection keeps failing is
+retried with exponential backoff (interval × 2ⁿ, capped by `Graph:MaxBackoffMinutes`);
+storing new credentials, re-activating the client, or one successful run resets it.
+`Graph:TenantParallelism` and `Graph:TenantStaggerSeconds` control how many clients
+collect at once. A **brand name** and accent colour on the client replace "Vigil365"
+on that client's digest emails, CSVs and PDFs. `/health` reports the database size
+and flags `sizeWarning` above `Database:SizeWarningBytes` (default 8 GiB). For DPA
+reviews, see `docs/MSP_DATA_PROCESSING.md`.
+
+**SIEM tokens.** Create an API token with a `tenantId` to restrict it to one client.
+An unrestricted token in a multi-tenant install must send `X-Vigil-Tenant`.
+
+A tenant with no credentials of its own falls back to the install-wide Graph
+credentials **only if** it has no Entra id recorded or its Entra id matches them;
+otherwise it is reported as not connected and never collected. `DELETE
+/api/tenants/{id}` deactivates (data kept); `?purge=true` deletes the tenant and
+every row it owned.
+
 ## Initial Setup & Configuration
 
 When you launch Vigil365 for the first time, you will be guided through a setup checklist to ensure the dashboard can successfully collect data from your tenant.

@@ -8,6 +8,80 @@ version lives in exactly two places — the API's `<Version>` and the client's
 `package.json` — kept in step by `scripts/set-version.ps1` and enforced in CI by
 `scripts/check-version.ps1`.
 
+## [Unreleased]
+
+### Added
+- **PostgreSQL support.** Vigil365 now runs on SQL Server *or* PostgreSQL 14+,
+  selected by a new `Database:Provider` setting (`SqlServer`, the default, or
+  `Postgres`). The connection string stays in `ConnectionStrings:DefaultConnection`.
+  Existing installs need no config change. `docker-compose.postgres.yml` is the
+  Postgres flavour of the one-command deployment. This is the foundation for the
+  MSP edition, where SQL Express's 10 GB ceiling is reached within a few dozen
+  client tenants — see `docs/MSP_EDITION_PLAN.md`.
+- `scripts/check-migrations.ps1`, run in CI: fails the build if either engine's
+  migration set has drifted from the model, since every model change now needs a
+  migration per engine.
+- Model-level provider tests (`DatabaseProviderTests`) covering provider
+  selection, per-engine column/index spellings, `DateTimeOffset` →
+  `timestamptz` mapping, and migration attribution — none need a live database.
+- Real-database parity suite (`Relational/`): Testcontainers starts SQL Server
+  and PostgreSQL and runs the same assertions on both — migrations from empty,
+  identity keys, fixed-key singleton rows, the filtered unique index, unbounded
+  text, `DateTimeOffset` precision, retention pruning, the size query, and seed
+  idempotency. Skips without Docker; CI requires it.
+
+- **Tenant isolation (MSP foundation).** Every row now belongs to a tenant
+  (`ClientTenants` table; `TenantId` on tenant-scoped tables). Reads are confined
+  to the current tenant by an EF global query filter and writes are stamped and
+  guarded in `SaveChanges`; with no tenant selected, scoped data access fails
+  closed. Single-tenant installs are migrated into a seeded default tenant
+  automatically and behave exactly as before. Admins can pre-select a tenant with
+  the `X-Vigil-Tenant` header. Background workers run once per active tenant with
+  per-tenant failure isolation. Verified by an isolation suite on real SQL Server
+  and PostgreSQL, and by source guards (every entity classified; no
+  `IgnoreQueryFilters` outside the one seam; no `Find` on tenant data).
+  Uniqueness of Graph alert/audit ids is now per tenant.
+- **Per-tenant Graph credentials and onboarding API** (MSP). Each tenant may hold
+  its own app-registration credentials (`PUT /api/tenants/{id}/credentials`, secret
+  protected at rest, never returned). `GET …/consent-url` produces the admin-consent
+  link for a client's Global Administrator; `POST …/test` verifies the connection,
+  records the client's Entra tenant id and consent time, and rejects credentials
+  that belong to another organisation. Install-wide credentials keep working for
+  the tenant they belong to, so single-tenant installs are unaffected. The
+  collector runs per tenant and records each tenant's last collection status.
+- **MSP staff scoping and client UI.** Non-Admin users see only the client tenants
+  assigned to them (User Management → Clients column). A header tenant switcher
+  scopes the whole dashboard to one client; the new **Clients** section shows a
+  worst-first rollup of every permitted client's open alerts and collection health,
+  and gives Admins the roster plus a guided onboarding dialog (add client → store
+  credentials → generate the admin-consent link → test the connection).
+- **Per-client alerting (MSP).** Route each client's alerts to the MSP, the client, or
+  both (`/api/notification-routing`), switch an install-wide policy off or change its
+  threshold for one client (`…/tenant-override`), create client-only policies
+  ("This client only" when drafting), and get a daily MSP digest email of every
+  client's open alerts and collection health, worst first. SIEM API tokens can be
+  restricted to one client or select one with `X-Vigil-Tenant`.
+- **One-go client onboarding (MSP).** Add a client, then click *Sign in as global
+  admin & consent* — a popup opens Microsoft admin consent, the client's Global
+  Administrator approves once (which provisions the app in their tenant), and Vigil365
+  catches the callback on a new anonymous `/consented` landing page, records the Entra
+  tenant id + consent time, and auto-runs the connection test. The consent `state` is
+  signed and time-boxed (`ConsentState`). The shared multi-tenant MSP app can be
+  created from the app itself (*Register the shared MSP app*, via `register-app.ps1
+  -MultiTenant -Json` over Azure CLI); per-client credentials are now optional. A
+  copy-link fallback remains for admins who can't sign in in the popup.
+- **MSP hardening.** Certificate authentication per client; parallel, staggered
+  collection with per-client exponential backoff; `/health` database-size headroom
+  warning (SQL Express ceiling); white-label brand name and colour on each client's
+  reports; per-client routing and policy-override forms in the UI; and
+  `docs/MSP_DATA_PROCESSING.md` for DPA reviews.
+
+### Changed
+- The pre-migration legacy-schema rescue in startup now runs only on SQL Server,
+  which is the only engine that can have such a database.
+- The Metrics tab's database-size figure is queried per engine
+  (`sys.database_files` / `pg_database_size`).
+
 ## [1.1.0] — 2026-08-28
 
 A design refresh, two new real-data features, and an important installer fix.
