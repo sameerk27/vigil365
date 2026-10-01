@@ -69,6 +69,19 @@ export function loadMyTenants(): Promise<Result<MyTenants>> {
 /** Tests only. */
 export function resetMyTenantsCache(): void { _mine = null; }
 
+/** One open alert in the cross-client queue (U6). */
+export interface QueueItem {
+  id: string; tenantId: string; tenantName: string; policyName: string; severity: string; category: string;
+  condition: string; metricValue: number; triggeredAt: string; status: string; assignedTo: string | null; snoozedUntil: string | null;
+}
+
+export const queueApi = {
+  list: () => call<QueueItem[]>("/api/tenants/alerts"),
+  /** Acts in the alert's own client (explicit header), not the selected one. */
+  act: (item: Pick<QueueItem, "id" | "tenantId">, action: "acknowledge" | "resolve") =>
+    call(`/api/triggered-alerts/${item.id}/${action}`, { method: "POST", headers: { "X-Vigil-Tenant": item.tenantId } }),
+};
+
 export const tenantApi = {
   me: () => call<MyTenants>("/api/tenants/me"),
   list: () => call<ClientTenant[]>("/api/tenants"),

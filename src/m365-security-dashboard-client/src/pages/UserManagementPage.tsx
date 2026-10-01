@@ -7,6 +7,7 @@ import { confirmAction } from "../services/confirm";
 import { Card, Badge, EmptyState, LoadingSkeleton } from "../components/SharedComponents";
 import { relTime, fmtDate } from "../services/utils";
 import { TenantAssignmentPicker } from "../components/TenantAssignmentPicker";
+import { ApiTokensCard } from "../components/ApiTokensCard";
 import { tenantApi, type ClientTenant } from "../services/tenants";
 
 export interface ManagedUser {
@@ -28,6 +29,8 @@ export interface AuditRow {
   ipAddress?: string;
   userAgent?: string;
   entryHash?: string;
+  /** MSP mode: the client the action concerned; null = MSP-level. */
+  tenantName?: string | null;
 }
 
 interface VerifyResult {
@@ -268,6 +271,8 @@ export function UserManagementPage() {
           )}
       </Card>
 
+      <ApiTokensCard />
+
       <Card title="Activity Log"
         badge={verify
           ? <Badge label={verify.valid ? "Chain verified" : "TAMPERED"} tone={verify.valid ? "good" : "error"}/>
@@ -305,12 +310,13 @@ export function UserManagementPage() {
             <div className="tbl-wrap">
               <table className="data-tbl">
                 <thead>
-                  <tr><th scope="col">When</th><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Target</th><th scope="col">Details</th><th scope="col">IP</th></tr>
+                  <tr><th scope="col">When</th>{isMspMode() && <th scope="col">Client</th>}<th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Target</th><th scope="col">Details</th><th scope="col">IP</th></tr>
                 </thead>
                 <tbody>
                   {audit.map(a => (
                     <tr key={a.id}>
                       <td className="al-date" title={fmtDate(a.timestamp)}>{relTime(a.timestamp) || fmtDate(a.timestamp)}</td>
+                      {isMspMode() && <td className="al-date">{a.tenantName ?? "MSP"}</td>}
                       <td className="al-date">{a.actorEmail}</td>
                       <td><Badge label={a.action} tone="neutral"/></td>
                       <td className="al-date">{a.targetId || a.targetType}</td>

@@ -255,6 +255,8 @@ export interface ApiTokenInfo {
   id: string; name: string; prefix: string; scopes: string;
   createdAt: string; createdBy?: string | null; expiresAt?: string | null;
   lastUsedAt?: string | null; revokedAt?: string | null;
+  /** MSP: the one client this token may read; null = install-wide. */
+  tenantId?: string | null;
 }
 
 export interface ApiTokenCreated extends ApiTokenInfo {

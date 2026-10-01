@@ -2465,3 +2465,7 @@ button.countdown-chip:hover { color: var(--color-text); }
 .client-gate-hdr { margin-bottom: 12px; }
 
 .ob-appstatus { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin: 4px 0 8px; font-size:.85rem; }
+
+.token-created { background:#ecfdf5; border:1px solid #6ee7b7; border-radius:8px; padding:10px 12px; margin-bottom:12px; display:flex; flex-direction:column; gap:6px; }
+.token-form { margin-bottom: 14px; }
+.db-size-banner { display:flex; gap:8px; align-items:flex-start; background:#fef3c7; border:1px solid #f59e0b; border-radius:8px; padding:10px 14px; margin: 0 0 12px; font-size:.9rem; }

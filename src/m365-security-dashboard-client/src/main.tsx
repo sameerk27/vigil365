@@ -52,6 +52,7 @@ import { ActivityFeedPage } from "./pages/ActivityFeedPage";
 import { ClientsPage } from "./pages/ClientsPage";
 import { TenantSwitcher } from "./components/TenantSwitcher";
 import { ClientGate } from "./components/ClientGate";
+import { DbSizeBanner } from "./components/DbSizeBanner";
 
 // App version — surfaced in the sidebar so the running build is always
 // identifiable. Injected by Vite from package.json rather than hardcoded, so it
@@ -661,6 +662,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
             )}
           </div>
         </header>
+        {auth.isAdmin && <DbSizeBanner/>}
         {visibleTabs.length > 1 && (
           <div className="ac-tabs section-tabs" role="tablist" aria-label={`${activeSectionDef.label} sections`}>
             {visibleTabs.map(t => (
@@ -715,8 +717,6 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
       {selectedAlert&&<AlertDetailModal alert={selectedAlert} allAlerts={allAlerts} onSelectAlert={setSelectedAlert} onClose={()=>setSelectedAlert(null)}/>}
       <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} alerts={allAlerts}
         pages={searchPages} onOpenAlert={a => setSelectedAlert(a)} onNavigatePage={setPage}/>
-      <ToastContainer/>
-      <ConfirmDialog/>
     </div>
   );
 }
@@ -946,6 +946,10 @@ function AuthGate() {
 
   return (
     <AuthContext.Provider value={auth}>
+      {/* Above the gate, so toasts and confirms also work on the "Choose a
+          client" screen, which renders without the app shell. */}
+      <ToastContainer/>
+      <ConfirmDialog/>
       <ClientGate>
         <App account={account} onSignOut={handleSignOut} />
       </ClientGate>

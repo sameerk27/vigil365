@@ -64,8 +64,10 @@ export async function apiFetch(url: string, init?: RequestInit): Promise<Respons
   const token = await getAccessToken();
   const headers = new Headers(init?.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
+  // An explicit header wins: the cross-client queue acts on an alert in ITS
+  // client, which may not be the one selected (the server checks permission).
   const tenant = getSelectedTenantId();
-  if (tenant) headers.set("X-Vigil-Tenant", tenant);
+  if (tenant && !headers.has("X-Vigil-Tenant")) headers.set("X-Vigil-Tenant", tenant);
   return fetch(url, { ...init, headers });
 }
 
@@ -220,7 +222,7 @@ export const apiTokenApi = {
   async list(): Promise<import("./types").ApiTokenInfo[]> {
     try { const r = await apiFetch(`${apiBase}/api/api-tokens`); return r.ok ? await r.json() : []; } catch { return []; }
   },
-  async create(input: { name: string; scopes: string; expiresAt?: string | null }): Promise<import("./types").ApiTokenCreated | null> {
+  async create(input: { name: string; scopes: string; expiresAt?: string | null; tenantId?: string | null }): Promise<import("./types").ApiTokenCreated | null> {
     try {
       const r = await apiFetch(`${apiBase}/api/api-tokens`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),

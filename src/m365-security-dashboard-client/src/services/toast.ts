@@ -7,9 +7,11 @@ let _addToast: ((t: Omit<ToastEntry, "id">) => void) | null = null;
 
 /** Show a toast. Pass an action for undo-able operations —
  *  showToast("Alert resolved", "success", { label: "Undo", onAction: () => reopen(id) }). */
-export function showToast(message: string, type: ToastEntry["type"] = "success", action?: ToastAction): void {
+export function showToast(message: string, type: ToastEntry["type"] = "success", action?: ToastAction, opts?: { client?: string | null }): void {
   // In MSP mode every toast names the client it is about (MSP_V12_PLAN.md U5).
-  const client = getActiveClientName();
+  // A caller acting on another client's data (the cross-client queue) names that
+  // client explicitly instead of the selected one.
+  const client = opts && "client" in opts ? opts.client ?? null : getActiveClientName();
   if (client && !message.startsWith(`${client}:`)) message = `${client}: ${message}`;
   if (_addToast) {
     _addToast({ message, type, action });

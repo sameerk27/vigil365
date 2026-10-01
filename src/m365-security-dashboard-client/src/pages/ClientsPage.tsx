@@ -5,6 +5,7 @@ import { showToast } from "../services/toast";
 import { confirmAction } from "../services/confirm";
 import { Card, Badge, EmptyState, LoadingSkeleton, StatBox, CopyButton } from "../components/SharedComponents";
 import { fmtDate, relTime } from "../services/utils";
+import { ClientAlertQueue } from "../components/ClientAlertQueue";
 import { tenantApi, setupApi, collectionTone, type ClientTenant, type TenantRollupRow, type MspAppStatus } from "../services/tenants";
 import type { Tone } from "../services/types";
 
@@ -116,6 +117,7 @@ export function ClientsPage() {
           <div className="rollup-grid">
             {sorted.map(r => <RollupCard key={r.id} row={r} selected={getSelectedTenantId() === r.id} onFocus={() => focus(r.id)} />)}
           </div>
+          <ClientAlertQueue />
         </>
       )}
 
