@@ -25,10 +25,26 @@ export async function getAccessToken(): Promise<string | null> {
   }
 }
 
+// ─── Client tenant selection (MSP) ─────────────────────────────────────────────
+// Which client tenant every API call is scoped to. Sent as X-Vigil-Tenant; the
+// server validates the user may see it and otherwise falls back to the install's
+// sole tenant, so a single-tenant install never needs this set.
+const TENANT_KEY = "vigil365-tenant";
+
+export function getSelectedTenantId(): string | null {
+  try { return localStorage.getItem(TENANT_KEY); } catch { return null; }
+}
+
+export function setSelectedTenantId(id: string | null): void {
+  try { if (id) localStorage.setItem(TENANT_KEY, id); else localStorage.removeItem(TENANT_KEY); } catch { /* storage blocked */ }
+}
+
 export async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
   const token = await getAccessToken();
   const headers = new Headers(init?.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
+  const tenant = getSelectedTenantId();
+  if (tenant) headers.set("X-Vigil-Tenant", tenant);
   return fetch(url, { ...init, headers });
 }
 
@@ -68,8 +84,15 @@ export const acApi = {
   async getPolicies(): Promise<AlertPolicy[]> {
     try { const r = await apiFetch(`${apiBase}/api/alert-policies`); return r.ok ? await r.json() : []; } catch { return []; }
   },
-  async createPolicy(p: Partial<AlertPolicy>): Promise<AlertPolicy | null> {
-    try { const r = await apiFetch(`${apiBase}/api/alert-policies`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p) }); return r.ok ? await r.json() : null; } catch { return null; }
+  /** scope "tenant" (MSP) makes the policy belong to the currently selected client only. */
+  async createPolicy(p: Partial<AlertPolicy>, scope: "default" | "tenant" = "default"): Promise<AlertPolicy | null> {
+    try { const r = await apiFetch(`${apiBase}/api/alert-policies${scope === "tenant" ? "?scope=tenant" : ""}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p) }); return r.ok ? await r.json() : null; } catch { return null; }
+  },
+  async getTenantOverrides(): Promise<{ policyId: string; enabled: boolean | null; threshold: number | null; notifyEmail: string | null }[]> {
+    try { const r = await apiFetch(`${apiBase}/api/alert-policies/tenant-overrides`); return r.ok ? await r.json() : []; } catch { return []; }
+  },
+  async setTenantOverride(policyId: string, o: { enabled?: boolean | null; threshold?: number | null; notifyEmail?: string | null }): Promise<boolean> {
+    try { const r = await apiFetch(`${apiBase}/api/alert-policies/${policyId}/tenant-override`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(o) }); return r.ok; } catch { return false; }
   },
   async updatePolicy(p: AlertPolicy): Promise<boolean> {
     try { const r = await apiFetch(`${apiBase}/api/alert-policies/${p.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p) }); return r.ok; } catch { return false; }

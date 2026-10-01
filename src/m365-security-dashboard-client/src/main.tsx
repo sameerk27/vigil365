@@ -5,7 +5,7 @@ import {
   Home, Users, Monitor, Mail, AlertTriangle, Bell, CheckSquare, Activity, Wifi,
   Package, ShieldCheck, BookOpen, MapPin, UserCheck, Settings, ChevronRight, ChevronLeft,
   Clock, RefreshCw, Rows2, Rows3, LogIn, LogOut, ShieldAlert, UserX, TrendingUp, Lightbulb, Lock,
-  Search as SearchIcon, Pause, Play, Globe
+  Search as SearchIcon, Pause, Play, Globe, Building2
 } from "lucide-react";
 import "./styles.css";
 
@@ -49,6 +49,8 @@ import { TrendsPage } from "./pages/TrendsPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { EntityPage } from "./pages/EntityPage";
 import { ActivityFeedPage } from "./pages/ActivityFeedPage";
+import { ClientsPage } from "./pages/ClientsPage";
+import { TenantSwitcher } from "./components/TenantSwitcher";
 
 // App version — surfaced in the sidebar so the running build is always
 // identifiable. Injected by Vite from package.json rather than hardcoded, so it
@@ -97,6 +99,7 @@ type SectionDef = {
 };
 const SECTIONS: SectionDef[] = [
   { id:"overview", label:"Overview",       icon:<Home size={17}/>,          pages:[{ id:"overview", label:"Overview" }] },
+  { id:"clients",  label:"Clients",        icon:<Building2 size={17}/>,     pages:[{ id:"clients", label:"Clients" }] },
   { id:"alerts",   label:"Alerts",         icon:<AlertTriangle size={17}/>, pages:[
       { id:"incidents",    label:"Alert Queue" },
       { id:"alertcenter",  label:"Rules & Notifications" },
@@ -594,6 +597,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
             </p>
           </div>
           <div className="hdr-actions">
+            <TenantSwitcher/>
             <button className="hdr-search" onClick={() => setSearchOpen(true)} aria-label="Search (Ctrl+K)">
               <SearchIcon size={13}/><span>Search</span><kbd>Ctrl K</kbd>
             </button>
@@ -698,6 +702,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
             {page==="conditionalaccess"&&<ConditionalAccessPage data={conditionalAccess}/>}
             {page==="signinmap"&&<SignInLocationsPage data={signInLocations}/>}
             {page==="users"&&<UserManagementPage/>}
+            {page==="clients"&&<ClientsPage/>}
             {page==="setup"&&<SetupPage/>}
           </>
         )}

@@ -6,6 +6,8 @@ import { showToast } from "../services/toast";
 import { confirmAction } from "../services/confirm";
 import { Card, Badge, EmptyState, LoadingSkeleton } from "../components/SharedComponents";
 import { relTime, fmtDate } from "../services/utils";
+import { TenantAssignmentPicker } from "../components/TenantAssignmentPicker";
+import { tenantApi, type ClientTenant } from "../services/tenants";
 
 export interface ManagedUser {
   email: string;
@@ -47,8 +49,14 @@ export function UserManagementPage() {
   const [addName, setAddName] = useState("");
   const [addInvite, setAddInvite] = useState(false);
   const [adding, setAdding] = useState(false);
+  // MSP: which clients each non-Admin may see. Column only appears with >1 tenant.
+  const [tenants, setTenants] = useState<ClientTenant[]>([]);
+  const [assignments, setAssignments] = useState<Record<string, string[]>>({});
 
   const load = useCallback(async () => {
+    const [t, a] = await Promise.all([tenantApi.list(), tenantApi.assignments()]);
+    setTenants(t.ok ? t.value : []);
+    setAssignments(a.ok ? a.value : {});
     try {
       const r = await apiFetch(`${apiBase}/api/admin/users`);
       if (r.ok) setUsers(await r.json()); else setUsers([]);
@@ -213,7 +221,7 @@ export function UserManagementPage() {
             <div className="tbl-wrap">
               <table className="data-tbl">
                 <thead>
-                  <tr><th scope="col">User</th><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Last seen</th><th scope="col">Actions</th></tr>
+                  <tr><th scope="col">User</th><th scope="col">Email</th><th scope="col">Role</th>{tenants.length > 1 && <th scope="col">Clients</th>}<th scope="col">Last seen</th><th scope="col">Actions</th></tr>
                 </thead>
                 <tbody>
                   {users.map(u => (
@@ -224,6 +232,13 @@ export function UserManagementPage() {
                       </td>
                       <td className="al-date">{u.email}</td>
                       <td><Badge label={u.role} tone={roleTone(u.role)}/></td>
+                      {tenants.length > 1 && (
+                        <td>
+                          <TenantAssignmentPicker email={u.email} role={u.role} tenants={tenants}
+                            assigned={assignments[u.email] ?? []}
+                            onChanged={(email, ids) => setAssignments(a => ({ ...a, [email]: ids }))} />
+                        </td>
+                      )}
                       <td className="al-date" title={new Date(u.lastSeenAt).getFullYear() <= 1 ? "Never signed in" : fmtDate(u.lastSeenAt)}>{new Date(u.lastSeenAt).getFullYear() <= 1 ? "Never" : (relTime(u.lastSeenAt) || fmtDate(u.lastSeenAt))}</td>
                       <td data-inline-style="inline-a0c5370730">
                         <select
