@@ -56,9 +56,9 @@ public static class DashboardEndpoints
 
         // Secure Score trend (direct Graph call)
         app.MapGet("/api/dashboard/securescore", async (
-            IServiceProvider services, IOptions<GraphOptions> options, ILogger<Program> logger, CancellationToken ct) =>
+            IServiceProvider services, TenantGraphCredentials graphCreds, ILogger<Program> logger, CancellationToken ct) =>
         {
-            if (!options.Value.IsConfigured())
+            if (!await graphCreds.IsConfiguredAsync(ct))
                 return Results.Ok(new { configured = false, currentScore = 0.0, maxScore = 100.0, percentage = 0.0, trend = Array.Empty<object>() });
             try
             {
@@ -115,7 +115,7 @@ public static class DashboardEndpoints
 
         // Identity summary: MFA from DB + guests & admin activity from Graph
         app.MapGet("/api/dashboard/identity", async (
-            AppDbContext db, IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
+            AppDbContext db, IServiceProvider services, TenantGraphCredentials graphCreds, CancellationToken ct) =>
         {
             // MFA stats from already-collected alerts
             var mfaAlerts = await db.SecurityAlerts.AsNoTracking()
@@ -151,7 +151,7 @@ public static class DashboardEndpoints
             var staleAccountsList = new List<object>();
 
             object[] recentActivity = [];
-            if (options.Value.IsConfigured())
+            if (await graphCreds.IsConfiguredAsync(ct))
             {
                 var graph = services.GetRequiredService<GraphApiClient>();
                 using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -331,7 +331,7 @@ public static class DashboardEndpoints
 
         // Device compliance summary from DB
         app.MapGet("/api/dashboard/devices", async (
-            AppDbContext db, IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
+            AppDbContext db, IServiceProvider services, TenantGraphCredentials graphCreds, CancellationToken ct) =>
         {
             var deviceAlerts = await db.SecurityAlerts.AsNoTracking()
                 .Where(a => a.Service == M365ServiceArea.Intune && !a.IsResolved).ToListAsync(ct);
@@ -342,7 +342,7 @@ public static class DashboardEndpoints
             // Try to get total device count from Graph
             int totalDevices = 120;
             var osBuckets = new List<object>();
-            if (options.Value.IsConfigured())
+            if (await graphCreds.IsConfiguredAsync(ct))
             {
                 try
                 {
@@ -410,9 +410,9 @@ public static class DashboardEndpoints
 
         // License usage (subscribedSkus)
         app.MapGet("/api/dashboard/licenses", async (
-            IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
+            IServiceProvider services, TenantGraphCredentials graphCreds, CancellationToken ct) =>
         {
-            if (!options.Value.IsConfigured())
+            if (!await graphCreds.IsConfiguredAsync(ct))
                 return Results.Ok(new { configured = false, skus = Array.Empty<object>(), totalPurchased = 0, totalConsumed = 0 });
             try
             {
@@ -433,9 +433,9 @@ public static class DashboardEndpoints
 
         // Inactive users (last sign-in > 90 days)
         app.MapGet("/api/dashboard/inactive-users", async (
-            IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
+            IServiceProvider services, TenantGraphCredentials graphCreds, CancellationToken ct) =>
         {
-            if (!options.Value.IsConfigured())
+            if (!await graphCreds.IsConfiguredAsync(ct))
                 return Results.Ok(new { configured = false, inactive90Count = 0, neverSignedInCount = 0, totalUsers = 0, inactive90 = Array.Empty<object>(), neverSignedIn = Array.Empty<object>() });
             try
             {
@@ -466,9 +466,9 @@ public static class DashboardEndpoints
 
         // Password expiry
         app.MapGet("/api/dashboard/password-expiry", async (
-            IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
+            IServiceProvider services, TenantGraphCredentials graphCreds, CancellationToken ct) =>
         {
-            if (!options.Value.IsConfigured())
+            if (!await graphCreds.IsConfiguredAsync(ct))
                 return Results.Ok(new { configured = false, expiringSoonCount = 0, expiredCount = 0, neverExpiresCount = 0, totalUsers = 0, expiringSoon = Array.Empty<object>(), expired = Array.Empty<object>(), neverExpire = Array.Empty<object>() });
             try
             {
@@ -501,9 +501,9 @@ public static class DashboardEndpoints
 
         // Conditional Access policies
         app.MapGet("/api/dashboard/conditional-access", async (
-            IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
+            IServiceProvider services, TenantGraphCredentials graphCreds, CancellationToken ct) =>
         {
-            if (!options.Value.IsConfigured())
+            if (!await graphCreds.IsConfiguredAsync(ct))
                 return Results.Ok(new { configured = false, enabled = 0, disabled = 0, reportOnly = 0, policies = Array.Empty<object>() });
             try
             {
@@ -541,9 +541,9 @@ public static class DashboardEndpoints
 
         // Conditional Access gap analysis — coverage holes across the CA policy set.
         app.MapGet("/api/dashboard/ca-gaps", async (
-            IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
+            IServiceProvider services, TenantGraphCredentials graphCreds, CancellationToken ct) =>
         {
-            if (!options.Value.IsConfigured())
+            if (!await graphCreds.IsConfiguredAsync(ct))
                 return Results.Ok(new { configured = false, policyCount = 0, findings = Array.Empty<object>() });
             try
             {
@@ -568,9 +568,9 @@ public static class DashboardEndpoints
 
         // SharePoint/OneDrive external-sharing posture (tenant settings analysis).
         app.MapGet("/api/dashboard/sharing-posture", async (
-            IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
+            IServiceProvider services, TenantGraphCredentials graphCreds, CancellationToken ct) =>
         {
-            if (!options.Value.IsConfigured())
+            if (!await graphCreds.IsConfiguredAsync(ct))
                 return Results.Ok(new { configured = false, findings = Array.Empty<object>() });
             try
             {
@@ -600,9 +600,9 @@ public static class DashboardEndpoints
 
         // Sign-in locations
         app.MapGet("/api/dashboard/signin-locations", async (
-            IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
+            IServiceProvider services, TenantGraphCredentials graphCreds, CancellationToken ct) =>
         {
-            if (!options.Value.IsConfigured())
+            if (!await graphCreds.IsConfiguredAsync(ct))
                 return Results.Ok(new { configured = false, total = 0, countries = 0, failures = 0, byCountry = Array.Empty<object>(), recent = Array.Empty<object>() });
             try
             {
@@ -637,9 +637,9 @@ public static class DashboardEndpoints
 
         // Unified Defender alerts (alerts_v2 — all products)
         app.MapGet("/api/dashboard/defender-alerts", async (
-            IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
+            IServiceProvider services, TenantGraphCredentials graphCreds, CancellationToken ct) =>
         {
-            if (!options.Value.IsConfigured())
+            if (!await graphCreds.IsConfiguredAsync(ct))
                 return Results.Ok(new { configured = false, total = 0, bySeverity = new Dictionary<string, int>(), bySource = new Dictionary<string, int>(), alerts = Array.Empty<object>() });
             try
             {
@@ -680,9 +680,9 @@ public static class DashboardEndpoints
 
         // Security incidents (grouped correlated alerts)
         app.MapGet("/api/dashboard/security-incidents", async (
-            IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
+            IServiceProvider services, TenantGraphCredentials graphCreds, CancellationToken ct) =>
         {
-            if (!options.Value.IsConfigured())
+            if (!await graphCreds.IsConfiguredAsync(ct))
                 return Results.Ok(new { configured = false, total = 0, bySeverity = new Dictionary<string, int>(), incidents = Array.Empty<object>() });
             try
             {
@@ -750,9 +750,9 @@ public static class DashboardEndpoints
 
         // Privileged roles
         app.MapGet("/api/dashboard/privileged-roles", async (
-            IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
+            IServiceProvider services, TenantGraphCredentials graphCreds, CancellationToken ct) =>
         {
-            if (!options.Value.IsConfigured())
+            if (!await graphCreds.IsConfiguredAsync(ct))
                 return Results.Ok(new { configured = false, roles = Array.Empty<object>(), totalPrivilegedUsers = 0 });
             try
             {
@@ -795,9 +795,9 @@ public static class DashboardEndpoints
 
         // DLP alerts
         app.MapGet("/api/dashboard/dlp-alerts", async (
-            IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
+            IServiceProvider services, TenantGraphCredentials graphCreds, CancellationToken ct) =>
         {
-            if (!options.Value.IsConfigured())
+            if (!await graphCreds.IsConfiguredAsync(ct))
                 return Results.Ok(new { configured = false, total = 0, alerts = Array.Empty<object>() });
             try
             {
@@ -825,9 +825,9 @@ public static class DashboardEndpoints
 
         // MDE vulnerabilities / endpoint alerts
         app.MapGet("/api/dashboard/mde-vulnerabilities", async (
-            IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
+            IServiceProvider services, TenantGraphCredentials graphCreds, CancellationToken ct) =>
         {
-            if (!options.Value.IsConfigured())
+            if (!await graphCreds.IsConfiguredAsync(ct))
                 return Results.Ok(new { configured = false, total = 0, alerts = Array.Empty<object>() });
             try
             {
@@ -857,9 +857,9 @@ public static class DashboardEndpoints
 
         // PIM role activations
         app.MapGet("/api/dashboard/pim", async (
-            IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
+            IServiceProvider services, TenantGraphCredentials graphCreds, CancellationToken ct) =>
         {
-            if (!options.Value.IsConfigured())
+            if (!await graphCreds.IsConfiguredAsync(ct))
                 return Results.Ok(new { configured = false, total = 0, activations = Array.Empty<object>() });
             try
             {
@@ -895,9 +895,9 @@ public static class DashboardEndpoints
 
         // Email protection (Defender for Office 365)
         app.MapGet("/api/dashboard/email-protection", async (
-            IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
+            IServiceProvider services, TenantGraphCredentials graphCreds, CancellationToken ct) =>
         {
-            if (!options.Value.IsConfigured())
+            if (!await graphCreds.IsConfiguredAsync(ct))
                 return Results.Ok(new { configured = false, total = 0, alerts = Array.Empty<object>() });
             try
             {
@@ -968,9 +968,9 @@ public static class DashboardEndpoints
 
         // Purview sensitivity labels
         app.MapGet("/api/dashboard/purview", async (
-            IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
+            IServiceProvider services, TenantGraphCredentials graphCreds, CancellationToken ct) =>
         {
-            if (!options.Value.IsConfigured())
+            if (!await graphCreds.IsConfiguredAsync(ct))
                 return Results.Ok(new { configured = false, labelCount = 0, labels = Array.Empty<object>() });
             try
             {
@@ -992,9 +992,9 @@ public static class DashboardEndpoints
 
         // MDI alerts (Defender for Identity — on-prem AD lateral movement, credential theft)
         app.MapGet("/api/dashboard/mdi-alerts", async (
-            IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
+            IServiceProvider services, TenantGraphCredentials graphCreds, CancellationToken ct) =>
         {
-            if (!options.Value.IsConfigured())
+            if (!await graphCreds.IsConfiguredAsync(ct))
                 return Results.Ok(new { configured = false, total = 0, alerts = Array.Empty<object>() });
             try
             {
@@ -1024,9 +1024,9 @@ public static class DashboardEndpoints
 
         // MCAS alerts (Defender for Cloud Apps — SaaS anomalies, impossible travel, mass download)
         app.MapGet("/api/dashboard/mcas-alerts", async (
-            IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
+            IServiceProvider services, TenantGraphCredentials graphCreds, CancellationToken ct) =>
         {
-            if (!options.Value.IsConfigured())
+            if (!await graphCreds.IsConfiguredAsync(ct))
                 return Results.Ok(new { configured = false, total = 0, alerts = Array.Empty<object>() });
             try
             {
@@ -1053,9 +1053,9 @@ public static class DashboardEndpoints
 
         // Insider Risk Management (Purview IRM — data exfiltration, departing employees)
         app.MapGet("/api/dashboard/insider-risk", async (
-            IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
+            IServiceProvider services, TenantGraphCredentials graphCreds, CancellationToken ct) =>
         {
-            if (!options.Value.IsConfigured())
+            if (!await graphCreds.IsConfiguredAsync(ct))
                 return Results.Ok(new { configured = false, total = 0, alerts = Array.Empty<object>() });
             try
             {
@@ -1081,9 +1081,9 @@ public static class DashboardEndpoints
 
         // Entra ID Risk Detections (25+ specific detection types: leaked creds, password spray, nation-state IPs)
         app.MapGet("/api/dashboard/risk-detections", async (
-            IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
+            IServiceProvider services, TenantGraphCredentials graphCreds, CancellationToken ct) =>
         {
-            if (!options.Value.IsConfigured())
+            if (!await graphCreds.IsConfiguredAsync(ct))
                 return Results.Ok(new { configured = false, total = 0, detections = Array.Empty<object>() });
             try
             {
@@ -1121,9 +1121,9 @@ public static class DashboardEndpoints
 
         // MDI Identity Sensor Health Issues (requires IdentityBaseline.Read.All)
         app.MapGet("/api/dashboard/identity-health", async (
-            IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
+            IServiceProvider services, TenantGraphCredentials graphCreds, CancellationToken ct) =>
         {
-            if (!options.Value.IsConfigured())
+            if (!await graphCreds.IsConfiguredAsync(ct))
                 return Results.Ok(new { configured = false, total = 0, issues = Array.Empty<object>() });
             try
             {
@@ -1154,9 +1154,9 @@ public static class DashboardEndpoints
 
         // Attack Simulation & Training (requires AttackSimulation.ReadWrite.All)
         app.MapGet("/api/dashboard/attack-simulation", async (
-            IServiceProvider services, IOptions<GraphOptions> options, CancellationToken ct) =>
+            IServiceProvider services, TenantGraphCredentials graphCreds, CancellationToken ct) =>
         {
-            if (!options.Value.IsConfigured())
+            if (!await graphCreds.IsConfiguredAsync(ct))
                 return Results.Ok(new { configured = false, total = 0, simulations = Array.Empty<object>() });
             try
             {

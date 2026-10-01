@@ -1,4 +1,5 @@
 using M365SecurityDashboard.Api.Data;
+using M365SecurityDashboard.Api.Data.Tenancy;
 using M365SecurityDashboard.Api.Endpoints;
 using M365SecurityDashboard.Api.Models;
 using M365SecurityDashboard.Api.Services;
@@ -68,8 +69,16 @@ builder.Services.AddAuthorization(options =>
         .RequireAuthenticatedUser()
         .Build();
 });
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+// Engine is chosen by Database:Provider (SqlServer default, or Postgres); the
+// connection string stays in ConnectionStrings:DefaultConnection either way.
+builder.Services.AddVigilDatabase(builder.Configuration);
+// The ambient tenant every AppDbContext in a scope reads. Set by the request
+// middleware, by TenantIterator in workers, and by startup for the sole tenant.
+builder.Services.AddScoped<TenantContext>();
+builder.Services.AddScoped<TenantAccess>();
+builder.Services.AddScoped<TenantRollupService>();
+builder.Services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<TenantContext>());
+builder.Services.AddScoped<TenantGraphCredentials>();
 builder.Services.AddHttpClient<GraphApiClient>();
 builder.Services.AddHttpClient();
 
@@ -152,7 +161,12 @@ using (var scope = app.Services.CreateScope())
     {
         try
         {
-            if (db.Database.CanConnect() && !db.Database.GetAppliedMigrations().Any())
+            // The legacy-baseline rescue is SQL Server only, by construction:
+            // it exists for installs that predate migrations, and every one of
+            // those is a SQL Server database. A Postgres database is always a
+            // fresh install whose schema comes from migrations alone, so the
+            // T-SQL below must never run there.
+            if (db.Database.IsSqlServer() && db.Database.CanConnect() && !db.Database.GetAppliedMigrations().Any())
             {
                 var isLegacyDb = db.Database
                     .SqlQueryRaw<int>("SELECT CASE WHEN OBJECT_ID(N'[SecurityAlerts]', N'U') IS NOT NULL THEN 1 ELSE 0 END AS [Value]")
@@ -186,6 +200,12 @@ using (var scope = app.Services.CreateScope())
         }
     }
 
+    // Tenancy: make sure a tenant exists, and if this is a single-tenant install
+    // run the rest of startup inside it. An MSP install (several tenants) gets no
+    // startup tenant; the single-tenant conveniences below are skipped.
+    var startupTenant = scope.ServiceProvider.GetRequiredService<TenantContext>();
+    if (TenantBootstrap.EnsureTenant(db, dbLog) is Guid soleTenant) startupTenant.Set(soleTenant);
+
     AlertingSchema.SeedDefaultPolicies(db);
 
     // Apply Graph credentials saved via the setup wizard over the GraphOptions
@@ -204,7 +224,7 @@ using (var scope = app.Services.CreateScope())
         if (!string.IsNullOrWhiteSpace(secret)) graphOpts.ClientSecret = secret;
     }
 
-    if (graphOpts.IsConfigured())
+    if (graphOpts.IsConfigured() && startupTenant.Current is not null)
     {
         // One-time cleanup: purge demo/sample alerts (identified by the seed
         // ExternalId prefixes) so they never commingle with real tenant data.
@@ -221,7 +241,7 @@ using (var scope = app.Services.CreateScope())
         if (purged > 0)
             dbLog.LogInformation("Purged {Count} demo/sample alerts now that Graph is configured.", purged);
     }
-    else if (builder.Configuration.GetValue("Seed:DemoData", false) && !db.SecurityAlerts.Any())
+    else if (startupTenant.Current is not null && builder.Configuration.GetValue("Seed:DemoData", false) && !db.SecurityAlerts.Any())
     {
         db.CollectionRuns.Add(new CollectionRun
         {
@@ -338,6 +358,9 @@ app.UseCors();
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
+// Resolves the request's tenant (header, or the sole tenant) after auth so
+// role claims exist; maps "no tenant selected" to a 400 instead of a 500.
+app.UseMiddleware<TenantResolutionMiddleware>();
 
 if (app.Environment.IsDevelopment())
 {
@@ -360,6 +383,7 @@ app.MapMetricsEndpoints();
 app.MapReportsEndpoints();
 app.MapIntegrationsEndpoints();
 app.MapPlatformEndpoints();
+app.MapTenantEndpoints();
 
 app.Map("/api/{**rest}", (HttpContext ctx) =>
 {
@@ -394,11 +418,14 @@ public sealed record SuppressionRuleRequest(
 /// <summary>Body shape for POST /api/setup/graph (first-run wizard).</summary>
 public sealed record GraphSetupRequest(string TenantId, string ClientId, string? ClientSecret, string? LoginInstance, string? BaseUrl);
 
+/// <summary>Body for POST /api/setup/register-msp-app (auto-create the multi-tenant MSP app).</summary>
+public sealed record MspAppRegisterRequest(string? DisplayName, string? RedirectUri);
+
 /// <summary>Body shape for POST /api/admin/users (pre-provision a user).</summary>
 public sealed record AddUserRequest(string Email, string Role, string? DisplayName, bool SendInvite = false);
 
 /// <summary>Body shape for POST /api/api-tokens.</summary>
-public sealed record ApiTokenCreateRequest(string? Name, string? Scopes, DateTimeOffset? ExpiresAt);
+public sealed record ApiTokenCreateRequest(string? Name, string? Scopes, DateTimeOffset? ExpiresAt, Guid? TenantId = null);
 
 /// <summary>Body shape for the workbench endpoints (assign / disposition).</summary>
 public sealed record WorkbenchRequest(string? AssignedTo, string? Disposition);

@@ -25,7 +25,15 @@
 param(
     [string]$DisplayName = "Vigil365",
     [string]$RedirectUri = "https://localhost:5001",
-    [int]$SecretYears    = 1
+    [int]$SecretYears    = 1,
+    # Multi-tenant (MSP) mode: the app is registered as AzureADMultipleOrgs so each
+    # client's Global Administrator can grant admin consent in their own tenant, and
+    # a Web redirect to {RedirectUri}/consented is added so Vigil365's consent
+    # landing page receives the admin-consent callback.
+    [switch]$MultiTenant,
+    # Emit a single machine-readable JSON line ({tenantId,clientId,clientSecret,...})
+    # as the last output, so the in-app "register the MSP app" flow can parse it.
+    [switch]$Json
 )
 
 $ErrorActionPreference = "Stop"
@@ -75,14 +83,17 @@ foreach ($p in $Permissions) {
 Write-Host "      Mapped $($resourceAccess.Count) permissions." -ForegroundColor Green
 
 # 2. Create the app registration.
-Write-Host "[2/6] Creating app registration '$DisplayName'..." -ForegroundColor Yellow
-$app = az ad app create --display-name $DisplayName --sign-in-audience AzureADMyOrg | ConvertFrom-Json
+$audience = if ($MultiTenant) { "AzureADMultipleOrgs" } else { "AzureADMyOrg" }
+Write-Host "[2/6] Creating app registration '$DisplayName' ($audience)..." -ForegroundColor Yellow
+$app = az ad app create --display-name $DisplayName --sign-in-audience $audience | ConvertFrom-Json
 $appId    = $app.appId
 $objectId = $app.id
 Write-Host "      App (client) ID: $appId" -ForegroundColor Green
 
 # 3. Patch app: SPA redirect URI, Application ID URI, access_as_user scope, Graph permissions.
-Write-Host "[3/6] Configuring SPA redirect, exposed API scope, and permissions..." -ForegroundColor Yellow
+# In multi-tenant mode also register a Web redirect to Vigil365's /consented landing
+# page so the client admin-consent callback is accepted.
+Write-Host "[3/6] Configuring redirects, exposed API scope, and permissions..." -ForegroundColor Yellow
 $scopeId = [guid]::NewGuid().ToString()
 $patch = @{
     spa = @{ redirectUris = @($RedirectUri) }
@@ -103,6 +114,9 @@ $patch = @{
         resourceAppId  = $GraphAppId
         resourceAccess = $resourceAccess
     })
+}
+if ($MultiTenant) {
+    $patch.web = @{ redirectUris = @(("{0}/consented" -f $RedirectUri.TrimEnd('/'))) }
 }
 $patchJson = $patch | ConvertTo-Json -Depth 10 -Compress
 $tmp = New-TemporaryFile
@@ -142,3 +156,17 @@ Write-Host "RedirectUri  : $RedirectUri"
 Write-Host "`nNext — deploy with:" -ForegroundColor White
 Write-Host "  .\deploy.ps1 -TenantId $tenantId -ClientId $appId -AdminEmail you@yourdomain.com -Url $RedirectUri" -ForegroundColor Gray
 Write-Host "`nThen enter the client secret in the in-app Setup wizard after signing in.`n" -ForegroundColor White
+
+# Machine-readable line last, for the in-app "register the MSP app" flow. Everything
+# above went to the host stream; this single line is the only stdout, so the caller
+# can parse it without the human text getting in the way.
+if ($Json) {
+    $out = [ordered]@{
+        tenantId     = $tenantId
+        clientId     = $appId
+        clientSecret = $clientSecret
+        redirectUri  = $RedirectUri
+        multiTenant  = [bool]$MultiTenant
+    }
+    Write-Output ($out | ConvertTo-Json -Compress)
+}

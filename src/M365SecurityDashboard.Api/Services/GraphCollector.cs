@@ -10,26 +10,31 @@ public sealed class GraphCollector(
     AppDbContext db,
     GraphApiClient graph,
     IOptions<GraphOptions> options,
+    TenantGraphCredentials credentials,
     GraphMetrics graphMetrics,
     ILogger<GraphCollector> logger)
 {
+    // Install-wide, non-credential settings (feed paths, lookbacks). Whether Graph
+    // is reachable for the *current tenant* is a per-tenant question: `credentials`.
     private readonly GraphOptions _options = options.Value;
 
-    // One collection at a time per process: the manual endpoint and the background
-    // worker would otherwise race the (Service, AlertType, ExternalId) unique index.
-    private static readonly SemaphoreSlim CollectionGate = new(1, 1);
+    // One collection at a time PER TENANT: the manual endpoint and the background
+    // worker would otherwise race the (TenantId, Service, AlertType, ExternalId)
+    // unique index. Different tenants may collect concurrently (TenantIterator).
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, SemaphoreSlim> Gates = new();
 
     public async Task<CollectionRun> CollectAsync(CancellationToken ct)
     {
-        if (!await CollectionGate.WaitAsync(TimeSpan.Zero, ct))
-            throw new InvalidOperationException("A collection run is already in progress.");
+        var gate = Gates.GetOrAdd(db.CurrentTenantIdOrNull ?? Guid.Empty, _ => new SemaphoreSlim(1, 1));
+        if (!await gate.WaitAsync(TimeSpan.Zero, ct))
+            throw new InvalidOperationException("A collection run is already in progress for this tenant.");
         try
         {
             return await CollectCoreAsync(ct);
         }
         finally
         {
-            CollectionGate.Release();
+            gate.Release();
         }
     }
 
@@ -405,7 +410,8 @@ public sealed class GraphCollector(
 
         // Calculate Secure Score
         double secureScorePct = 0;
-        if (_options.IsConfigured())
+        var graphConfigured = await credentials.IsConfiguredAsync(ct);
+        if (graphConfigured)
         {
             try
             {
@@ -426,7 +432,7 @@ public sealed class GraphCollector(
 
         // Calculate MFA Coverage Pct
         double mfaCoveragePct = 0;
-        if (_options.IsConfigured())
+        if (graphConfigured)
         {
             try
             {

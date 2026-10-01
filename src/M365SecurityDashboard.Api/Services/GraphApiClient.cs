@@ -4,23 +4,41 @@ using System.Text.Json;
 using Azure.Core;
 using Azure.Identity;
 using M365SecurityDashboard.Api.Models;
-using Microsoft.Extensions.Options;
 
 namespace M365SecurityDashboard.Api.Services;
 
+/// <summary>
+/// Calls Graph as the current tenant. Credentials come from
+/// <see cref="TenantGraphCredentials"/> and are resolved on first use, so the
+/// same client type serves a single-tenant install (install-wide credentials)
+/// and an MSP install (per-client credentials) with no caller changes.
+/// </summary>
 public sealed class GraphApiClient
 {
     private readonly HttpClient _http;
-    private readonly GraphOptions _options;
-    private readonly TokenCredential _credential;
+    private readonly TenantGraphCredentials _credentials;
     private readonly GraphMetrics _metrics;
+    private GraphOptions? _options;
+    private TokenCredential? _credential;
 
-    public GraphApiClient(HttpClient http, IOptions<GraphOptions> options, GraphMetrics metrics)
+    public GraphApiClient(HttpClient http, TenantGraphCredentials credentials, GraphMetrics metrics)
     {
         _http = http;
-        _options = options.Value;
-        _credential = BuildCredential(_options);
+        _credentials = credentials;
         _metrics = metrics;
+    }
+
+    private async Task<(GraphOptions Options, TokenCredential Credential)> EnsureAsync(CancellationToken ct)
+    {
+        if (_options is null || _credential is null)
+        {
+            var o = await _credentials.ResolveAsync(ct);
+            if (!o.IsConfigured())
+                throw new InvalidOperationException("Graph credentials are not configured for this tenant.");
+            _credential = BuildCredential(o);
+            _options = o;
+        }
+        return (_options, _credential);
     }
 
     /// <summary>
@@ -88,10 +106,11 @@ public sealed class GraphApiClient
 
     public async Task<IReadOnlyList<JsonElement>> GetCollectionAsync(string path, CancellationToken ct)
     {
+        var (options, credential) = await EnsureAsync(ct);
         var items = new List<JsonElement>();
         var next = path.StartsWith("http", StringComparison.OrdinalIgnoreCase)
             ? path
-            : $"{_options.BaseUrl.TrimEnd('/')}/{path.TrimStart('/')}";
+            : $"{options.BaseUrl.TrimEnd('/')}/{path.TrimStart('/')}";
 
         var isFirstPage = true;
         var throttleRetries = 0;
@@ -103,7 +122,7 @@ public sealed class GraphApiClient
             {
                 using var request = new HttpRequestMessage(HttpMethod.Get, next);
                 request.Headers.TryAddWithoutValidation("User-Agent", "M365SecurityDashboard/1.0");
-                var token = await _credential.GetTokenAsync(new TokenRequestContext(new[] { $"{_options.BaseUrl.TrimEnd('/')}/.default" }), ct);
+                var token = await credential.GetTokenAsync(new TokenRequestContext(new[] { $"{options.BaseUrl.TrimEnd('/')}/.default" }), ct);
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
 
                 _metrics.RecordRequest();
@@ -159,13 +178,14 @@ public sealed class GraphApiClient
 
     public async Task<IReadOnlyList<JsonElement>> GetSinglePageAsync(string path, CancellationToken ct)
     {
+        var (options, credential) = await EnsureAsync(ct);
         var url = path.StartsWith("http", StringComparison.OrdinalIgnoreCase)
             ? path
-            : $"{_options.BaseUrl.TrimEnd('/')}/{path.TrimStart('/')}";
+            : $"{options.BaseUrl.TrimEnd('/')}/{path.TrimStart('/')}";
 
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.TryAddWithoutValidation("User-Agent", "M365SecurityDashboard/1.0");
-        var token = await _credential.GetTokenAsync(new TokenRequestContext(new[] { $"{_options.BaseUrl.TrimEnd('/')}/.default" }), ct);
+        var token = await credential.GetTokenAsync(new TokenRequestContext(new[] { $"{options.BaseUrl.TrimEnd('/')}/.default" }), ct);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
 
         _metrics.RecordRequest();
