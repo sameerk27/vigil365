@@ -81,6 +81,7 @@ Write-Host "`n=== Done ===`n" -ForegroundColor Cyan
 Write-Host "Next steps:" -ForegroundColor White
 Write-Host "  1. Make sure you have an Entra app registration (run register-app.ps1, or see README)."
 Write-Host "  2. Set ConnectionStrings + AzureAd in appsettings.Production.json (DB + login)."
+Write-Host "     For an MSP install also set Edition:Mode=Msp, and Database:Provider=Postgres if using PostgreSQL."
 if (-not $InstallService) {
     Write-Host "  3. Start the app from the publish folder (the working directory must be" -ForegroundColor White
     Write-Host "     the publish folder so config + wwwroot resolve; the Windows service" -ForegroundColor White

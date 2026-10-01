@@ -33,6 +33,9 @@ services:
       - "8080:8080"
     environment:
       Database__Provider: "Postgres"
+      # The Postgres stack is the MSP route (no SQL Express ceiling). Set to "Single"
+      # for a one-organisation install on PostgreSQL.
+      Edition__Mode: "Msp"
       ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=vigil365;Username=vigil365;Password=${POSTGRES_PASSWORD}"
       AzureAd__Instance: "https://login.microsoftonline.com/"
       AzureAd__TenantId: "${TENANT_ID}"

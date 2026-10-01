@@ -2,13 +2,14 @@
 # Installs Vigil365 as a managed Linux production service behind a TLS proxy.
 set -euo pipefail
 
-usage() { echo "Usage: sudo $0 [--tenant-id ID --client-id ID --admin-email EMAIL --sql-connection STRING --public-url https://host]"; }
-tenant_id= client_id= admin_email= sql_connection= public_url= install_dir=/opt/vigil365 port=8080
+usage() { echo "Usage: sudo $0 [--tenant-id ID --client-id ID --admin-email EMAIL --sql-connection STRING --public-url https://host] [--mode Single|Msp] [--db-provider SqlServer|Postgres]"; }
+tenant_id= client_id= admin_email= sql_connection= public_url= install_dir=/opt/vigil365 port=8080 mode=Single db_provider=SqlServer
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --tenant-id) tenant_id="$2"; shift 2;; --client-id) client_id="$2"; shift 2;;
     --admin-email) admin_email="$2"; shift 2;; --sql-connection) sql_connection="$2"; shift 2;;
     --public-url) public_url="$2"; shift 2;; --install-dir) install_dir="$2"; shift 2;; --port) port="$2"; shift 2;;
+    --mode) mode="$2"; shift 2;; --db-provider) db_provider="$2"; shift 2;;
     -h|--help) usage; exit 0;; *) usage; exit 2;;
   esac
 done
@@ -18,7 +19,12 @@ echo "Vigil365 enterprise installer"
 tenant_id="$(ask 'Entra Tenant ID' "$tenant_id")"
 client_id="$(ask 'Entra Application (client) ID' "$client_id")"
 admin_email="$(ask 'First administrator email' "$admin_email")"
-sql_connection="$(ask 'SQL Server connection string' "$sql_connection")"
+[[ $mode == Single || $mode == Msp ]] || { echo "--mode must be Single or Msp." >&2; exit 2; }
+[[ $db_provider == SqlServer || $db_provider == Postgres ]] || { echo "--db-provider must be SqlServer or Postgres." >&2; exit 2; }
+sql_connection="$(ask "$db_provider connection string" "$sql_connection")"
+if [[ $mode == Msp && $db_provider == SqlServer && $sql_connection == *SQLEXPRESS* ]]; then
+  echo "MSP mode needs SQL Server Standard/Enterprise/Azure SQL or PostgreSQL - SQL Server Express stops accepting writes at 10 GB." >&2; exit 2
+fi
 public_url="$(ask 'Public HTTPS URL (for example https://vigil365.contoso.com)' "$public_url")"
 [[ $public_url =~ ^https:// ]] || { echo "The public URL must start with https://" >&2; exit 2; }
 command -v dotnet >/dev/null || { echo ".NET 8 SDK is required." >&2; exit 1; }
@@ -36,7 +42,7 @@ chown -R root:vigil365 "$install_dir"
 chmod -R go-rwx "$install_dir"
 install -d -m 0750 -o vigil365 -g vigil365 "$install_dir/keys"
 cat > "$install_dir/appsettings.Production.json" <<EOF
-{"ConnectionStrings":{"DefaultConnection":"$sql_connection"},"AzureAd":{"Instance":"https://login.microsoftonline.com/","TenantId":"$tenant_id","ClientId":"$client_id","Audience":"api://$client_id"},"Auth":{"RedirectUri":"$public_url","BootstrapAdminEmail":"$admin_email"},"Cors":{"AllowedOrigins":["${public_url%/}"]},"Security":{"RequireHttps":false},"DataProtection":{"KeyPath":"$install_dir/keys"}}
+{"Edition":{"Mode":"$mode"},"Database":{"Provider":"$db_provider"},"ConnectionStrings":{"DefaultConnection":"$sql_connection"},"AzureAd":{"Instance":"https://login.microsoftonline.com/","TenantId":"$tenant_id","ClientId":"$client_id","Audience":"api://$client_id"},"Auth":{"RedirectUri":"$public_url","BootstrapAdminEmail":"$admin_email"},"Cors":{"AllowedOrigins":["${public_url%/}"]},"Security":{"RequireHttps":false},"DataProtection":{"KeyPath":"$install_dir/keys"}}
 EOF
 chown root:vigil365 "$install_dir/appsettings.Production.json"
 chmod 0640 "$install_dir/appsettings.Production.json"

@@ -4,7 +4,9 @@
 fixed an audit-hash bug on Postgres). Stage 1 ✅ (M1 mode flag + sign-in pin, T1 component
 harness, T2 signed-in e2e in CI). Stage 2 ✅ (U1 Choose-a-client gate,
 U4 consent-poll cleanup, U5 client named in header/toasts/exports, M2 web register path
-removed + MSP app readiness card + one `graph-permissions.json`). Next: Stage 3 (installer). Combines and replaces `MSP_MODE_PLAN.md` and
+removed + MSP app readiness card + one `graph-permissions.json`). Stage 3 ✅ (M3 installer MSP mode + PostgreSQL + Express block, M4 convert-to-MSP by
+re-running Setup, M5 -Mode/-DatabaseProvider in deploy/enterprise scripts, Postgres compose = MSP).
+Stage 3 is built and unit-tested but **not yet run on a real machine** — that is R1. Next: Stage 4. Combines and replaces `MSP_MODE_PLAN.md` and
 `MSP_UI_PLAN.md`. Builds on `MSP_EDITION_PLAN.md` (backend Phases 1–8 + one-go
 onboarding — implemented, uncommitted on `feat/msp-phase1-db-providers`).
 

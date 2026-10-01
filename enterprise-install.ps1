@@ -14,6 +14,9 @@ param(
     [string]$ClientId,
     [string]$AdminEmail,
     [string]$SqlConnectionString,
+    # "Single" (default) or "Msp"; and the database engine the connection string is for.
+    [ValidateSet("Single", "Msp")] [string]$Mode = "Single",
+    [ValidateSet("SqlServer", "Postgres")] [string]$DatabaseProvider = "SqlServer",
     [string]$PublicUrl,
     [string]$InstallPath = "C:\Program Files\Vigil365",
     [string]$ServiceName = "Vigil365",
@@ -39,7 +42,11 @@ Write-Host "`nVigil365 enterprise installer" -ForegroundColor Cyan
 $TenantId = Read-Required "Entra Tenant ID" $TenantId
 $ClientId = Read-Required "Entra Application (client) ID" $ClientId
 $AdminEmail = Read-Required "First administrator email" $AdminEmail
-$SqlConnectionString = Read-Required "SQL Server connection string" $SqlConnectionString
+$SqlConnectionString = Read-Required "$DatabaseProvider connection string" $SqlConnectionString
+$ConnectionStringToUse = $SqlConnectionString
+if ($Mode -eq "Msp" -and $DatabaseProvider -eq "SqlServer" -and $ConnectionStringToUse -match "SQLEXPRESS") {
+    throw "MSP mode needs SQL Server Standard/Enterprise/Azure SQL or PostgreSQL - SQL Server Express stops accepting writes at 10 GB. See docs/MSP_V12_PLAN.md."
+}
 $PublicUrl = Read-Required "Public HTTPS URL (for example https://vigil365.contoso.com)" $PublicUrl
 if ($PublicUrl -notmatch '^https://') { throw "The public URL must start with https://" }
 if (Get-Service $ServiceName -ErrorAction SilentlyContinue) {
@@ -53,6 +60,8 @@ New-Item -ItemType Directory -Force -Path $InstallPath | Out-Null
 dotnet publish $api -c Release -o $InstallPath | Out-Host
 
 $config = [ordered]@{
+    Edition = [ordered]@{ Mode = $Mode }
+    Database = [ordered]@{ Provider = $DatabaseProvider }
     ConnectionStrings = [ordered]@{ DefaultConnection = $SqlConnectionString }
     AzureAd = [ordered]@{ Instance = "https://login.microsoftonline.com/"; TenantId = $TenantId; ClientId = $ClientId; Audience = "api://$ClientId" }
     Auth = [ordered]@{ RedirectUri = $PublicUrl; BootstrapAdminEmail = $AdminEmail }
