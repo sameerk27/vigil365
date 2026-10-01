@@ -36,12 +36,29 @@ public sealed class AlertEvaluator(
 
     private async Task<int> EvaluateCoreAsync(CancellationToken ct)
     {
-        var policies = await db.AlertPolicies.Where(p => p.Enabled).ToListAsync(ct);
+        // Defaults (TenantId null) plus this tenant's own policies, via the filter.
+        var tracked = await db.AlertPolicies.Where(p => p.Enabled).ToListAsync(ct);
+        // This tenant's adjustments to the shared defaults: off, or a different
+        // threshold / address. Applied to detached copies so nothing leaks into the
+        // shared row; trigger statistics still go to the tracked original below.
+        var overrides = await db.AlertPolicyTenantOverrides.AsNoTracking().ToDictionaryAsync(o => o.PolicyId, ct);
+        var originalById = tracked.ToDictionary(p => p.Id);
+        var policies = tracked
+            .Where(p => !(overrides.TryGetValue(p.Id, out var off) && off.Enabled == false))
+            .Select(p =>
+            {
+                if (!overrides.TryGetValue(p.Id, out var o) || (o.Threshold is null && o.NotifyEmail is null)) return p;
+                var copy = p.CloneForEvaluation();
+                if (o.Threshold is int t) copy.Threshold = t;
+                if (!string.IsNullOrWhiteSpace(o.NotifyEmail)) copy.NotifyEmail = o.NotifyEmail;
+                return copy;
+            })
+            .ToList();
         if (policies.Count == 0) return 0;
 
         var metrics = await ComputeMetricsAsync(ct);
-        var cfg = await db.NotificationSettings.FirstOrDefaultAsync(ct)
-                  ?? new NotificationSettings { Id = 1 };
+        // The MSP's settings with this tenant's routing layered on (detached copy).
+        var cfg = await db.EffectiveNotificationSettingsAsync(ct);
 
         var now = DateTimeOffset.UtcNow;
         var fired = 0;
@@ -125,8 +142,9 @@ public sealed class AlertEvaluator(
             };
             db.TriggeredAlerts.Add(alert);
 
-            policy.LastTriggered = now;
-            policy.TriggerCount++;
+            var stats = originalById[policy.Id]; // the tracked row, not the evaluation copy
+            stats.LastTriggered = now;
+            stats.TriggerCount++;
             fired++;
 
             try

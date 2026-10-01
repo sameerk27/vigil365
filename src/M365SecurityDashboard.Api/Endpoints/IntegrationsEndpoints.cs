@@ -29,10 +29,16 @@ public static class IntegrationsEndpoints
                 input.Scopes ?? "alerts:read,health:read",
                 AuthHelpers.GetEmail(user),
                 input.ExpiresAt);
+            if (input.TenantId is Guid restrictTo)
+            {
+                if (!await db.ClientTenants.AnyAsync(t => t.Id == restrictTo, ct))
+                    return Results.BadRequest(new { error = "Unknown tenant id." });
+                row.TenantId = restrictTo; // this token may only ever read that client's data
+            }
             db.ApiTokens.Add(row);
             await db.SaveChangesAsync(ct);
             await audit.WriteAsync("api_token.create", "api_token", row.Id.ToString(), row.Name, ct);
-            return Results.Ok(new { row.Id, row.Name, row.Prefix, row.Scopes, row.CreatedAt, row.ExpiresAt, token = rawToken });
+            return Results.Ok(new { row.Id, row.Name, row.Prefix, row.Scopes, row.CreatedAt, row.ExpiresAt, row.TenantId, token = rawToken });
         }).RequireAuthorization("RequireAdmin");
 
         app.MapPost("/api/api-tokens/{id:guid}/revoke", async (AppDbContext db, AuditLogger audit, Guid id, CancellationToken ct) =>

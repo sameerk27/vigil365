@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { X, Bell, Activity, CheckCircle, Search, ExternalLink, ArrowRight, AlertTriangle, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { AlertPolicy, TriggeredAlert, NotificationSettings, NotificationLogEntry, Tone, AlertCoverageScorecard, AlertBaselineRule } from "../services/types";
-import { acApi, recApi, wbApi, useAuth, crossNavigate, consumeNavTab } from "../services/api";
+import { acApi, recApi, wbApi, useAuth, crossNavigate, consumeNavTab, getSelectedTenantId } from "../services/api";
 import { showToast } from "../services/toast";
+import { routingApi, type TenantRouting } from "../services/tenants";
 import { confirmAction } from "../services/confirm";
 import { DetailField, Card, Badge, EmptyState, ExportDropdown, ProgressBar, CopyButton, LoadingSkeleton, TriageSection, rowActivation, SeverityFilter} from "../components/SharedComponents";
 import { CollectionStatusBanner } from "../components/CollectionStatusBanner";
@@ -149,6 +150,7 @@ function PolicyModal({ policy, onSave, onClose }: {
       threshold,
       severity: form.severity ?? "Medium",
       notifyEmail: form.notifyEmail ?? "",
+      tenantId: form.tenantId ?? null,
       createdAt: form.createdAt ?? new Date().toISOString(),
       lastTriggered: form.lastTriggered,
       triggerCount: form.triggerCount ?? 0,
@@ -172,6 +174,11 @@ function PolicyModal({ policy, onSave, onClose }: {
       <div className="detail-modal policy-modal" onClick={e => e.stopPropagation()}>
         <div className="detail-modal-hdr">
           <div className="dm-title">{form.id ? "Edit Policy" : "New Policy"}</div>
+          {!form.id && getSelectedTenantId() && (
+            <label className="toggle-label" title="Only the currently selected client evaluates this policy. Leave off for an install-wide default every client inherits.">
+              <input type="checkbox" checked={!!form.tenantId} onChange={e => set("tenantId", e.target.checked ? getSelectedTenantId() : null)} /> This client only
+            </label>
+          )}
           <button className="modal-close" onClick={onClose}><X size={16}/></button>
         </div>
         <div className="detail-modal-body">
@@ -391,9 +398,19 @@ function NotificationSettingsTab() {
             <span className="policy-label">Alert after N consecutive channel failures</span>
             <input className="policy-input" type="number" min={1} value={cfg.failureAlertThreshold ?? 3} onChange={e=>set("failureAlertThreshold", Number(e.target.value))}/>
           </div>
+          <div className="policy-field">
+            <span className="policy-label">MSP digest (one email a day, every client, worst first)</span>
+            <label className="toggle-label"><input type="checkbox" checked={!!cfg.mspDigestEnabled} onChange={e=>set("mspDigestEnabled", e.target.checked)}/> Enabled — sent to the default recipient when two or more clients are active</label>
+          </div>
+          <div className="policy-field">
+            <span className="policy-label">MSP digest hour (UTC)</span>
+            <input className="policy-input" type="number" min={0} max={23} value={cfg.mspDigestHourUtc ?? 7} onChange={e=>set("mspDigestHourUtc", Number(e.target.value))}/>
+          </div>
         </div>
         <p className="hdr-sub">Digest channels batch their alerts into one rollup message. If a channel fails to deliver this many times in a row, Vigil365 raises a high-severity delivery-failure alert on the still-working channels.</p>
       </Card>
+
+      {getSelectedTenantId() && <ClientRoutingCard />}
 
       <Card title="Notification History" badge={<Badge label={`${log.length} sent`} tone="neutral"/>}>
         {log.length === 0 ? (
@@ -457,6 +474,15 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
   const [assignedFilter, setAssignedFilter] = useState("");
   const [ageFilter, setAgeFilter] = useState("");
   const [editPolicy, setEditPolicy] = useState<Partial<AlertPolicy> | null>(null);
+  // MSP: per-client overrides of install-wide policies, keyed by policy id.
+  const clientSelected = !!getSelectedTenantId();
+  const [overrides, setOverrides] = useState<Record<string, { enabled: boolean | null; threshold: number | null }>>({});
+  const loadOverrides = useCallback(async () => {
+    if (!clientSelected) return;
+    const rows = await acApi.getTenantOverrides();
+    setOverrides(Object.fromEntries(rows.map(o => [o.policyId, { enabled: o.enabled, threshold: o.threshold }])));
+  }, [clientSelected]);
+  useEffect(() => { loadOverrides(); }, [loadOverrides]);
   const [showModal, setShowModal] = useState(false);
   const [selectedTriggered, setSelectedTriggered] = useState<TriggeredAlert | null>(null);
   const [noteVersion, setNoteVersion] = useState(0);
@@ -632,7 +658,8 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
 
   const handleSavePolicy = async (p: AlertPolicy) => {
     const exists = policies.some(x => x.id === p.id);
-    const ok = exists ? await acApi.updatePolicy(p) : !!(await acApi.createPolicy(p));
+    // MSP: a policy drafted as "this client only" is created in the selected tenant's scope.
+    const ok = exists ? await acApi.updatePolicy(p) : !!(await acApi.createPolicy(p, p.tenantId ? "tenant" : "default"));
     setShowModal(false);
     if (ok) { showToast("Policy saved"); await onChanged(); }
     else showToast("Failed to save policy", "error");
@@ -1015,12 +1042,12 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
             <div className="tbl-wrap">
               <table className="data-tbl">
                 <thead>
-                  <tr><th scope="col">Name</th><th scope="col">Category</th><th scope="col">Condition</th><th scope="col">Severity</th><th scope="col">Status</th><th scope="col">Last Triggered</th><th scope="col">Count</th><th scope="col">Actions</th></tr>
+                  <tr><th scope="col">Name</th><th scope="col">Category</th><th scope="col">Condition</th><th scope="col">Severity</th><th scope="col">Status</th>{clientSelected && <th scope="col">This client</th>}<th scope="col">Last Triggered</th><th scope="col">Count</th><th scope="col">Actions</th></tr>
                 </thead>
                 <tbody>
                   {policies.map(p => (
                     <tr key={p.id}>
-                      <td data-inline-style="inline-7ba9bad628">{p.name}</td>
+                      <td data-inline-style="inline-7ba9bad628">{p.name}{p.tenantId && <> <Badge label="This client" tone="info"/></>}</td>
                       <td data-inline-style="inline-b7b96646ae">{p.category}</td>
                       <td data-inline-style="inline-e1acedac9b">{p.condition}</td>
                       <td><Badge label={p.severity} tone={sevToneAC(p.severity)}/></td>
@@ -1032,6 +1059,10 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                           {p.enabled ? "Enabled" : "Disabled"}
                         </button>
                       </td>
+                      {clientSelected && (
+                        <td>{p.tenantId ? <span className="al-date">Client policy</span>
+                          : <PolicyOverrideControl policy={p} override={overrides[p.id]} onChanged={loadOverrides}/>}</td>
+                      )}
                       <td className="al-date">{p.lastTriggered ? relTime(p.lastTriggered) : "Never"}</td>
                       <td data-inline-style="inline-3d9df89ef8">{p.triggerCount}</td>
                       <td data-inline-style="inline-95e7b1fc4c">
@@ -1083,5 +1114,78 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
         </Card>
       )}
     </div>
+  );
+}
+
+
+// ─── MSP: per-client routing (shown only with a client selected) ───────────────
+function ClientRoutingCard() {
+  const { isAdmin } = useAuth();
+  const [r, setR] = useState<TenantRouting | null>(null);
+  const [webhookUrl, setWebhookUrl] = useState<string>("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { routingApi.get().then(res => { if (res.ok) setR(res.value); }); }, []);
+  if (!r) return null;
+  const set = <K extends keyof TenantRouting>(k: K, v: TenantRouting[K]) => setR(x => x ? { ...x, [k]: v } : x);
+
+  const save = async () => {
+    if (!r.notifyMsp && !r.notifyClient) { showToast("Alerts must go somewhere: the MSP, the client, or both", "error"); return; }
+    setSaving(true);
+    const res = await routingApi.save({
+      notifyMsp: r.notifyMsp, notifyClient: r.notifyClient, recipientEmail: r.recipientEmail, teamsWebhookUrl: r.teamsWebhookUrl,
+      webhookUrl: webhookUrl === "" ? null : webhookUrl, minSeverity: r.minSeverity,
+    });
+    setSaving(false);
+    showToast(res.ok ? "Client routing saved" : res.error, res.ok ? "success" : "error");
+  };
+
+  return (
+    <Card title="This client's routing"
+      badge={<Badge label={r.notifyMsp && r.notifyClient ? "MSP + client" : r.notifyClient ? "Client only" : "MSP only"} tone="info"/>}
+      action={isAdmin ? <button className="btn-run" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save routing"}</button> : undefined}>
+      <p className="hdr-sub">Where alerts for the selected client go. The MSP's channels above are the default; the client's own destinations are used when enabled here.</p>
+      <div className="settings-grid">
+        <div className="policy-field"><span className="policy-label">Notify the MSP</span><label className="toggle-label"><input type="checkbox" disabled={!isAdmin} checked={r.notifyMsp} onChange={e=>set("notifyMsp", e.target.checked)}/> MSP default recipient and channels</label></div>
+        <div className="policy-field"><span className="policy-label">Notify the client</span><label className="toggle-label"><input type="checkbox" disabled={!isAdmin} checked={r.notifyClient} onChange={e=>set("notifyClient", e.target.checked)}/> Client's own destinations below</label></div>
+        <div className="policy-field"><span className="policy-label">Client recipient email(s)</span><input className="policy-input" disabled={!isAdmin} placeholder="it@client.example, soc@client.example" value={r.recipientEmail ?? ""} onChange={e=>set("recipientEmail", e.target.value)}/></div>
+        <div className="policy-field"><span className="policy-label">Client Teams webhook (optional)</span><input className="policy-input" disabled={!isAdmin} placeholder="https://…webhook.office.com/…" value={r.teamsWebhookUrl ?? ""} onChange={e=>set("teamsWebhookUrl", e.target.value)}/></div>
+        <div className="policy-field"><span className="policy-label">Client webhook URL (optional)</span><input className="policy-input" disabled={!isAdmin} placeholder={r.hasWebhookUrl ? "•••••• (unchanged; type to replace)" : "https://…"} value={webhookUrl} onChange={e=>setWebhookUrl(e.target.value)}/></div>
+        <div className="policy-field">
+          <span className="policy-label">Minimum severity for this client</span>
+          <select className="policy-input" disabled={!isAdmin} value={r.minSeverity ?? ""} onChange={e=>set("minSeverity", e.target.value || null)}>
+            <option value="">Inherit the MSP setting</option>
+            <option value="low">Low and above</option>
+            <option value="medium">Medium and above</option>
+            <option value="high">High and above</option>
+            <option value="critical">Critical only</option>
+          </select>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// ─── MSP: per-client override of an install-wide policy ──────────────────────
+function PolicyOverrideControl({ policy, override, onChanged }: {
+  policy: AlertPolicy;
+  override: { enabled: boolean | null; threshold: number | null } | undefined;
+  onChanged: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const off = override?.enabled === false;
+  const threshold = override?.threshold ?? null;
+  const apply = async (next: { enabled?: boolean | null; threshold?: number | null }) => {
+    setBusy(true);
+    const ok = await acApi.setTenantOverride(policy.id, { enabled: next.enabled === undefined ? (off ? false : null) : next.enabled, threshold: next.threshold === undefined ? threshold : next.threshold });
+    setBusy(false);
+    if (ok) await onChanged(); else showToast("Could not save the client override", "error");
+  };
+  return (
+    <span className="override-ctl" title="Applies to the selected client only; the install-wide policy is unchanged">
+      <label className="toggle-label"><input type="checkbox" disabled={busy} checked={off} onChange={e => apply({ enabled: e.target.checked ? false : null })}/> Off for this client</label>
+      <input className="policy-input override-threshold" type="number" min={1} disabled={busy || off} placeholder={String(policy.threshold)}
+        value={threshold ?? ""} onChange={e => apply({ threshold: e.target.value === "" ? null : Math.max(1, Number(e.target.value)) })}/>
+    </span>
   );
 }

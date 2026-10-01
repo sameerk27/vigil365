@@ -9,12 +9,14 @@ namespace M365SecurityDashboard.Api.Endpoints;
 /// <summary>Notification channel settings, test dispatch, delivery log, and per-channel delivery health.</summary>
 public static class NotificationsEndpoints
 {
+    public sealed record RoutingUpdate(bool NotifyMsp, bool NotifyClient, string? RecipientEmail, string? TeamsWebhookUrl, string? WebhookUrl, string? MinSeverity);
+
     public static void MapNotificationsEndpoints(this WebApplication app)
     {
         // Notification settings (single row). Password is write-only — never returned.
         app.MapGet("/api/notification-settings", async (AppDbContext db, SecretProtector protector, CancellationToken ct) =>
         {
-            var s = await db.NotificationSettings.FirstOrDefaultAsync(ct) ?? new NotificationSettings { Id = 1 };
+            var s = await db.InstallSettingsAsync(ct) ?? new NotificationSettings { Id = 1 };
             return Results.Ok(new
             {
                 s.TeamsEnabled, TeamsWebhookUrl = protector.Unprotect(s.TeamsWebhookUrl),
@@ -25,12 +27,13 @@ public static class NotificationsEndpoints
                 hasWebhookSigningSecret = !string.IsNullOrEmpty(s.WebhookSigningSecret),
                 s.MinSeverity,
                 s.TeamsDigest, s.EmailDigest, s.WebhookDigest, s.DigestHourUtc, s.FailureAlertThreshold,
+                s.MspDigestEnabled, s.MspDigestHourUtc, s.LastMspDigestAt,
             });
         }).RequireAuthorization("RequireAdmin");
 
         app.MapPut("/api/notification-settings", async (AppDbContext db, SecretProtector protector, AuditLogger audit, NotificationSettings input, CancellationToken ct) =>
         {
-            var s = await db.NotificationSettings.FirstOrDefaultAsync(ct);
+            var s = await db.InstallSettingsAsync(ct);
             // Id is store-generated; setting it makes EF include it in the INSERT
             // and SQL Server rejects that against an identity column.
             if (s is null) { s = new NotificationSettings(); db.NotificationSettings.Add(s); }
@@ -54,15 +57,53 @@ public static class NotificationsEndpoints
             s.WebhookDigest = input.WebhookDigest;
             s.DigestHourUtc = Math.Clamp(input.DigestHourUtc, 0, 23);
             s.FailureAlertThreshold = input.FailureAlertThreshold <= 0 ? 3 : input.FailureAlertThreshold;
+            s.MspDigestEnabled = input.MspDigestEnabled;
+            s.MspDigestHourUtc = Math.Clamp(input.MspDigestHourUtc, 0, 23);
             await db.SaveChangesAsync(ct);
             await audit.WriteAsync("settings.update", "settings", "notifications", "notification settings updated", ct);
+            return Results.Ok(new { ok = true });
+        }).RequireAuthorization("RequireAdmin");
+
+        // ── Per-client routing (MSP): where THIS tenant's alerts go, layered over
+        //    the install-wide settings above. Read: Analyst. Write: Admin. ──
+        app.MapGet("/api/notification-routing", async (AppDbContext db, SecretProtector protector, CancellationToken ct) =>
+        {
+            var r = await db.TenantNotificationRoutings.AsNoTracking().FirstOrDefaultAsync(ct);
+            return Results.Ok(new
+            {
+                exists = r is not null,
+                notifyMsp = r?.NotifyMsp ?? true,
+                notifyClient = r?.NotifyClient ?? false,
+                recipientEmail = r?.RecipientEmail,
+                teamsWebhookUrl = protector.Unprotect(r?.TeamsWebhookUrl),
+                hasWebhookUrl = !string.IsNullOrEmpty(r?.WebhookUrl),
+                minSeverity = r?.MinSeverity,
+                lastDigestAt = r?.LastDigestAt,
+            });
+        }).RequireAuthorization("RequireAnalyst");
+
+        app.MapPut("/api/notification-routing", async (AppDbContext db, SecretProtector protector, AuditLogger audit, RoutingUpdate input, CancellationToken ct) =>
+        {
+            var r = await db.TenantNotificationRoutings.FirstOrDefaultAsync(ct);
+            if (r is null) { r = new TenantNotificationRouting(); db.TenantNotificationRoutings.Add(r); }
+            r.NotifyMsp = input.NotifyMsp;
+            r.NotifyClient = input.NotifyClient;
+            r.RecipientEmail = string.IsNullOrWhiteSpace(input.RecipientEmail) ? null : input.RecipientEmail.Trim();
+            r.TeamsWebhookUrl = string.IsNullOrWhiteSpace(input.TeamsWebhookUrl) ? null : protector.Protect(input.TeamsWebhookUrl.Trim());
+            if (input.WebhookUrl is not null) // null = keep; "" = clear
+                r.WebhookUrl = string.IsNullOrWhiteSpace(input.WebhookUrl) ? null : protector.Protect(input.WebhookUrl.Trim());
+            r.MinSeverity = string.IsNullOrWhiteSpace(input.MinSeverity) ? null : input.MinSeverity.Trim().ToLowerInvariant();
+            if (!r.NotifyMsp && !r.NotifyClient)
+                return Results.BadRequest(new { ok = false, message = "Alerts must go somewhere: enable the MSP, the client, or both." });
+            await db.SaveChangesAsync(ct);
+            await audit.WriteAsync("settings.routing", "settings", "routing", $"msp={r.NotifyMsp} client={r.NotifyClient}", ct);
             return Results.Ok(new { ok = true });
         }).RequireAuthorization("RequireAdmin");
 
         // Send a test notification through all enabled channels
         app.MapPost("/api/notification-settings/test", async (AppDbContext db, NotificationSender sender, CancellationToken ct) =>
         {
-            var cfg = await db.NotificationSettings.FirstOrDefaultAsync(ct);
+            var cfg = await db.InstallSettingsAsync(ct);
             if (cfg is null) return Results.Ok(new { ok = false, message = "No settings configured" });
             var test = new TriggeredAlert
             {

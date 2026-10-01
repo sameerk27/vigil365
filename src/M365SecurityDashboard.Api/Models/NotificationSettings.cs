@@ -5,8 +5,11 @@ namespace M365SecurityDashboard.Api.Models;
 /// <summary>
 /// Singleton row (Id = 1) holding notification delivery configuration.
 /// </summary>
-public sealed class NotificationSettings
+public sealed class NotificationSettings : ITenantOptional
 {
+    /// <summary>Null = the MSP-wide default; a value = this tenant's override. See ITenantOptional.</summary>
+    public Guid? TenantId { get; set; }
+
     public int Id { get; set; } = 1;
 
     // ── Microsoft Teams / Slack incoming webhook ──
@@ -71,6 +74,12 @@ public sealed class NotificationSettings
     // ── Delivery-failure alerting ──
     /// <summary>Raise a delivery-failure alert once a channel reaches this many consecutive failed attempts.</summary>
     public int FailureAlertThreshold { get; set; } = 3;
+
+    // ── MSP digest: one email a day summarising every client, worst first.
+    //    Install-wide (lives on the TenantId-null row); sent to DefaultRecipient. ──
+    public bool MspDigestEnabled { get; set; }
+    public int MspDigestHourUtc { get; set; } = 7;
+    public DateTimeOffset? LastMspDigestAt { get; set; }
 
     /// <summary>When the last delivery-failure alert was raised (debounce so we don't re-alert every cycle).</summary>
     public DateTimeOffset? LastFailureAlertAt { get; set; }

@@ -9,6 +9,8 @@ namespace M365SecurityDashboard.Api.Endpoints;
 /// <summary>Alert Center: the collected-alert inventory, policy CRUD/import/export/backtest, suppression rules, the triggered-alert workflow, workbench triage, and analyst notes.</summary>
 public static class AlertsEndpoints
 {
+    public sealed record PolicyOverrideUpdate(bool? Enabled, int? Threshold, string? NotifyEmail);
+
     public static void MapAlertsEndpoints(this WebApplication app)
     {
         app.MapGet("/api/alerts", async (
@@ -65,8 +67,49 @@ public static class AlertsEndpoints
         app.MapGet("/api/alert-policies", async (AppDbContext db, CancellationToken ct) =>
             Results.Ok(await db.AlertPolicies.OrderByDescending(p => p.CreatedAt).ToListAsync(ct)));
 
-        app.MapPost("/api/alert-policies", async (AppDbContext db, AlertPolicy input, AuditLogger audit, CancellationToken ct) =>
+        // GET also reports this tenant's overrides so the UI can show "off for this client".
+        app.MapGet("/api/alert-policies/tenant-overrides", async (AppDbContext db, CancellationToken ct) =>
+            Results.Ok(await db.AlertPolicyTenantOverrides.AsNoTracking().ToListAsync(ct)));
+
+        // Adjust an MSP-wide default policy for THIS client only. Null fields inherit.
+        app.MapPut("/api/alert-policies/{id:guid}/tenant-override", async (AppDbContext db, Guid id, PolicyOverrideUpdate input, System.Security.Claims.ClaimsPrincipal caller, AuditLogger audit, CancellationToken ct) =>
         {
+            var policy = await db.AlertPolicies.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+            if (policy is null) return Results.NotFound();
+            if (policy.TenantId is not null)
+                return Results.BadRequest(new { ok = false, message = "This policy already belongs to one client; edit it directly." });
+            if (input.Threshold is int t && t < 1) return Results.BadRequest(new { ok = false, message = "Threshold must be at least 1." });
+
+            var o = await db.AlertPolicyTenantOverrides.FirstOrDefaultAsync(x => x.PolicyId == id, ct);
+            if (o is null) { o = new AlertPolicyTenantOverride { PolicyId = id }; db.AlertPolicyTenantOverrides.Add(o); }
+            o.Enabled = input.Enabled;
+            o.Threshold = input.Threshold;
+            o.NotifyEmail = string.IsNullOrWhiteSpace(input.NotifyEmail) ? null : input.NotifyEmail.Trim();
+            o.UpdatedAt = DateTimeOffset.UtcNow;
+            o.UpdatedBy = AuthHelpers.GetEmail(caller);
+            if (o.Enabled is null && o.Threshold is null && o.NotifyEmail is null) db.AlertPolicyTenantOverrides.Remove(o); // nothing overridden = no row
+            await db.SaveChangesAsync(ct);
+            await audit.WriteAsync("policy.tenant_override", "policy", id.ToString(), $"enabled={input.Enabled} threshold={input.Threshold}", ct);
+            return Results.Ok(new { ok = true });
+        }).RequireAuthorization("RequireAdmin");
+
+        app.MapDelete("/api/alert-policies/{id:guid}/tenant-override", async (AppDbContext db, Guid id, AuditLogger audit, CancellationToken ct) =>
+        {
+            var o = await db.AlertPolicyTenantOverrides.FirstOrDefaultAsync(x => x.PolicyId == id, ct);
+            if (o is null) return Results.NoContent();
+            db.AlertPolicyTenantOverrides.Remove(o);
+            await db.SaveChangesAsync(ct);
+            await audit.WriteAsync("policy.tenant_override.clear", "policy", id.ToString(), null, ct);
+            return Results.NoContent();
+        }).RequireAuthorization("RequireAdmin");
+
+        // ?scope=tenant makes the policy belong to the current client only (MSP);
+        // the default is an install-wide policy every client inherits.
+        app.MapPost("/api/alert-policies", async (AppDbContext db, AlertPolicy input, string? scope, Data.Tenancy.ITenantContext tenant, AuditLogger audit, CancellationToken ct) =>
+        {
+            input.TenantId = string.Equals(scope, "tenant", StringComparison.OrdinalIgnoreCase)
+                ? tenant.Current ?? throw new Data.Tenancy.TenantRequiredException("a client-specific policy")
+                : null;
             input.Id = input.Id == Guid.Empty ? Guid.NewGuid() : input.Id;
             input.CreatedAt = DateTimeOffset.UtcNow;
             input.TriggerCount = 0;
@@ -82,8 +125,9 @@ public static class AlertsEndpoints
 
         app.MapPut("/api/alert-policies/{id:guid}", async (AppDbContext db, Guid id, AlertPolicy input, AuditLogger audit, CancellationToken ct) =>
         {
-            var p = await db.AlertPolicies.FindAsync([id], ct);
+            var p = await db.AlertPolicies.FirstOrDefaultAsync(x => x.Id == id, ct) /* not Find: Find bypasses the tenant filter */;
             if (p is null) return Results.NotFound();
+            input.TenantId = p.TenantId; // scope is fixed at creation; the SaveChanges guard would refuse a move anyway
             p.Name = input.Name;
             p.Enabled = input.Enabled;
             p.Category = input.Category;
@@ -105,8 +149,11 @@ public static class AlertsEndpoints
 
         app.MapDelete("/api/alert-policies/{id:guid}", async (AppDbContext db, Guid id, AuditLogger audit, CancellationToken ct) =>
         {
-            var p = await db.AlertPolicies.FindAsync([id], ct);
+            var p = await db.AlertPolicies.FirstOrDefaultAsync(x => x.Id == id, ct) /* not Find: Find bypasses the tenant filter */;
             if (p is null) return Results.NotFound();
+            // A default policy's per-client overrides live in every tenant — remove
+            // them all (deliberately cross-tenant) before the policy row goes.
+            await db.CrossTenant<AlertPolicyTenantOverride>().Where(o => o.PolicyId == id).ExecuteDeleteAsync(ct);
             db.AlertPolicies.Remove(p);
             await db.SaveChangesAsync(ct);
             await audit.WriteAsync("policy.delete", "policy", id.ToString(), $"Deleted policy {p.Name}", ct);
@@ -266,7 +313,7 @@ public static class AlertsEndpoints
         app.MapPut("/api/suppression-rules/{id:guid}", async (
             Guid id, SuppressionRuleRequest input, AppDbContext db, AuditLogger audit, CancellationToken ct) =>
         {
-            var rule = await db.SuppressionRules.FindAsync([id], ct);
+            var rule = await db.SuppressionRules.FirstOrDefaultAsync(x => x.Id == id, ct) /* not Find: Find bypasses the tenant filter */;
             if (rule is null) return Results.NotFound();
 
             if (input.Reason is not null) rule.Reason = input.Reason.Trim();
@@ -287,7 +334,7 @@ public static class AlertsEndpoints
         app.MapDelete("/api/suppression-rules/{id:guid}", async (
             Guid id, AppDbContext db, AuditLogger audit, CancellationToken ct) =>
         {
-            var rule = await db.SuppressionRules.FindAsync([id], ct);
+            var rule = await db.SuppressionRules.FirstOrDefaultAsync(x => x.Id == id, ct) /* not Find: Find bypasses the tenant filter */;
             if (rule is null) return Results.NotFound();
             db.SuppressionRules.Remove(rule);
             await db.SaveChangesAsync(ct);
@@ -303,7 +350,7 @@ public static class AlertsEndpoints
         app.MapPost("/api/triggered-alerts/{id:guid}/acknowledge", async (
             AppDbContext db, Guid id, System.Security.Claims.ClaimsPrincipal caller, AuditLogger audit, CancellationToken ct) =>
         {
-            var t = await db.TriggeredAlerts.FindAsync([id], ct);
+            var t = await db.TriggeredAlerts.FirstOrDefaultAsync(x => x.Id == id, ct) /* not Find: Find bypasses the tenant filter */;
             if (t is null) return Results.NotFound();
             t.Status = "acknowledged";
             t.AcknowledgedAt = DateTimeOffset.UtcNow;
@@ -327,7 +374,7 @@ public static class AlertsEndpoints
 
         app.MapPost("/api/triggered-alerts/{id:guid}/resolve", async (AppDbContext db, Guid id, AuditLogger audit, System.Security.Claims.ClaimsPrincipal caller, CancellationToken ct) =>
         {
-            var t = await db.TriggeredAlerts.FindAsync([id], ct);
+            var t = await db.TriggeredAlerts.FirstOrDefaultAsync(x => x.Id == id, ct) /* not Find: Find bypasses the tenant filter */;
             if (t is null) return Results.NotFound();
             t.Status = "resolved";
             t.ResolvedAt = DateTimeOffset.UtcNow;
@@ -343,7 +390,7 @@ public static class AlertsEndpoints
         app.MapPost("/api/triggered-alerts/{id:guid}/snooze", async (
             AppDbContext db, Guid id, SnoozeRequest input, System.Security.Claims.ClaimsPrincipal caller, AuditLogger audit, CancellationToken ct) =>
         {
-            var t = await db.TriggeredAlerts.FindAsync([id], ct);
+            var t = await db.TriggeredAlerts.FirstOrDefaultAsync(x => x.Id == id, ct) /* not Find: Find bypasses the tenant filter */;
             if (t is null) return Results.NotFound();
             if (t.Status is "resolved" or "auto_resolved")
                 return Results.BadRequest(new { error = "Cannot snooze a terminal alert." });
@@ -361,7 +408,7 @@ public static class AlertsEndpoints
         app.MapPost("/api/triggered-alerts/{id:guid}/reopen", async (
             AppDbContext db, Guid id, AuditLogger audit, CancellationToken ct) =>
         {
-            var t = await db.TriggeredAlerts.FindAsync([id], ct);
+            var t = await db.TriggeredAlerts.FirstOrDefaultAsync(x => x.Id == id, ct) /* not Find: Find bypasses the tenant filter */;
             if (t is null) return Results.NotFound();
             var was = t.Status;
             t.Status = "new";
@@ -376,7 +423,7 @@ public static class AlertsEndpoints
         app.MapPost("/api/triggered-alerts/{id:guid}/unsnooze", async (
             AppDbContext db, Guid id, AuditLogger audit, CancellationToken ct) =>
         {
-            var t = await db.TriggeredAlerts.FindAsync([id], ct);
+            var t = await db.TriggeredAlerts.FirstOrDefaultAsync(x => x.Id == id, ct) /* not Find: Find bypasses the tenant filter */;
             if (t is null) return Results.NotFound();
             t.SnoozedUntil = null;
             t.SnoozedBy = null;
@@ -393,7 +440,7 @@ public static class AlertsEndpoints
         app.MapPost("/api/alerts/{id:long}/workbench", async (
             long id, WorkbenchRequest input, AppDbContext db, AuditLogger audit, CancellationToken ct) =>
         {
-            var alert = await db.SecurityAlerts.FindAsync([id], ct);
+            var alert = await db.SecurityAlerts.FirstOrDefaultAsync(x => x.Id == id, ct) /* not Find: Find bypasses the tenant filter */;
             if (alert is null) return Results.NotFound();
 
             if (input.Disposition is not null)
@@ -417,7 +464,7 @@ public static class AlertsEndpoints
         app.MapPost("/api/triggered-alerts/{id:guid}/assign", async (
             Guid id, WorkbenchRequest input, AppDbContext db, AuditLogger audit, CancellationToken ct) =>
         {
-            var t = await db.TriggeredAlerts.FindAsync([id], ct);
+            var t = await db.TriggeredAlerts.FirstOrDefaultAsync(x => x.Id == id, ct) /* not Find: Find bypasses the tenant filter */;
             if (t is null) return Results.NotFound();
             t.AssignedTo = string.IsNullOrWhiteSpace(input.AssignedTo) ? null : input.AssignedTo!.Trim().ToLowerInvariant();
             await db.SaveChangesAsync(ct);
