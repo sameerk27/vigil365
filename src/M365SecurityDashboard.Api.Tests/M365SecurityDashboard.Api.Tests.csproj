@@ -32,6 +32,12 @@
     <PackageReference Include="System.Security.Cryptography.Xml" Version="8.0.4" /> <!-- GHSA-g8r8-53c2-pm3f -->
   </ItemGroup>
 
+  <!-- The installer's MSP-mode decisions have no WPF dependency, so they are
+       compiled in here and unit-tested on any OS (the installer itself is WPF). -->
+  <ItemGroup>
+    <Compile Include="..\M365SecurityDashboard.GuiInstaller\InstallPlan.cs" Link="Installer\InstallPlan.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>

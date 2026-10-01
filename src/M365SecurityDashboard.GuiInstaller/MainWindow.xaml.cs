@@ -188,6 +188,7 @@ namespace M365SecurityDashboard.GuiInstaller
             Scope_Changed(this, e);
             TxtTenant.TextChanged += (_, __) => { if (TxtTenant.IsKeyboardFocusWithin) tenantEditedByUser = true; };
             DetectExistingSqlServer();
+            PreselectFromExistingInstall(); // after detection, so a real previous config wins
         }
 
         /// <summary>
@@ -224,14 +225,62 @@ namespace M365SecurityDashboard.GuiInstaller
 
         // --- Step 2: Configuration ---
 
-        private void ChkInstallSql_Checked(object sender, RoutedEventArgs e)
+        private void ChkInstallSql_Checked(object sender, RoutedEventArgs e) => RefreshDatabasePanels();
+        private void ChkInstallSql_Unchecked(object sender, RoutedEventArgs e) => RefreshDatabasePanels();
+        private void Db_Changed(object sender, RoutedEventArgs e) => RefreshDatabasePanels();
+
+        private EditionChoice SelectedEdition => RadModeMsp?.IsChecked == true ? EditionChoice.Msp : EditionChoice.Single;
+        private DbEngine SelectedEngine => RadDbPostgres?.IsChecked == true ? DbEngine.Postgres : DbEngine.SqlServer;
+
+        private void Mode_Changed(object sender, RoutedEventArgs e)
         {
-            if (PanelSqlString != null) PanelSqlString.Visibility = Visibility.Collapsed;
+            if (TxtModeNote == null || ChkInstallSql == null) return;
+            // MSP mode never installs SQL Express (InstallPlan.DatabaseProblem).
+            if (SelectedEdition == EditionChoice.Msp && ChkInstallSql.IsChecked == true) ChkInstallSql.IsChecked = false;
+            TxtModeNote.Text = SelectedEdition == EditionChoice.Msp && existingInstall?.Edition == EditionChoice.Single
+                ? "This converts the existing install to MSP: same app registration, same data - your current tenant becomes the first client."
+                : "";
+            RefreshDatabasePanels();
         }
 
-        private void ChkInstallSql_Unchecked(object sender, RoutedEventArgs e)
+        /// <summary>One place decides which database inputs are visible.</summary>
+        private void RefreshDatabasePanels()
         {
-            if (PanelSqlString != null) PanelSqlString.Visibility = Visibility.Visible;
+            if (PanelSqlString == null || PanelPgString == null || ChkInstallSql == null) return;
+            var postgres = SelectedEngine == DbEngine.Postgres;
+            var msp = SelectedEdition == EditionChoice.Msp;
+            ChkInstallSql.Visibility = postgres || msp ? Visibility.Collapsed : Visibility.Visible;
+            if ((postgres || msp) && ChkInstallSql.IsChecked == true) ChkInstallSql.IsChecked = false;
+            PanelPgString.Visibility = postgres ? Visibility.Visible : Visibility.Collapsed;
+            PanelSqlString.Visibility = !postgres && ChkInstallSql.IsChecked != true ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        /// <summary>The config of a previous install, if any (preselects the wizard on re-run).</summary>
+        private InstallPlan.ExistingInstall? existingInstall;
+
+        private void PreselectFromExistingInstall()
+        {
+            try
+            {
+                var path = Path.Combine(@"C:\Program Files\Vigil365", "appsettings.Production.json");
+                existingInstall = File.Exists(path) ? InstallPlan.ReadExisting(File.ReadAllText(path)) : null;
+            }
+            catch { existingInstall = null; }
+            if (existingInstall == null) return;
+
+            if (existingInstall.Edition == EditionChoice.Msp) RadModeMsp.IsChecked = true; else RadModeSingle.IsChecked = true;
+            if (existingInstall.Engine == DbEngine.Postgres)
+            {
+                RadDbPostgres.IsChecked = true;
+                if (!string.IsNullOrWhiteSpace(existingInstall.ConnectionString)) TxtPgString.Text = existingInstall.ConnectionString;
+            }
+            else if (!string.IsNullOrWhiteSpace(existingInstall.ConnectionString))
+            {
+                ChkInstallSql.IsChecked = false;
+                TxtSqlString.Text = existingInstall.ConnectionString;
+            }
+            Log($"Existing install found: {existingInstall.Edition} on {existingInstall.Engine}. Its settings are preselected.");
+            RefreshDatabasePanels();
         }
 
         /// <summary>
@@ -368,6 +417,24 @@ namespace M365SecurityDashboard.GuiInstaller
                 return;
             }
 
+            if (SelectedEngine == DbEngine.Postgres)
+            {
+                try
+                {
+                    var pg = new Npgsql.NpgsqlConnectionStringBuilder(TxtPgString.Text.Trim());
+                    if (string.IsNullOrWhiteSpace(pg.Host) || string.IsNullOrWhiteSpace(pg.Database) || string.IsNullOrWhiteSpace(pg.Username))
+                    {
+                        MessageBox.Show("The PostgreSQL connection string needs Host, Database and Username (and usually Password).");
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("That PostgreSQL connection string isn't valid:" + Environment.NewLine + Environment.NewLine + ex.Message);
+                    return;
+                }
+            }
+
             if (!IsLocalScope && ParseUrl(TxtUrl.Text) == null)
             {
                 MessageBox.Show("That address is not a valid URL. Example: https://vigil365.mycompany.com");
@@ -432,8 +499,10 @@ namespace M365SecurityDashboard.GuiInstaller
             // Without the yield the whole install ran on the UI thread, so the
             // window stayed frozen on Configuration and then jumped straight to a
             // half-finished progress bar.
-            installSqlServer = ChkInstallSql.IsChecked == true;
-            existingSqlConnectionString = TxtSqlString.Text;
+            plannedEdition = SelectedEdition;
+            plannedEngine = SelectedEngine;
+            installSqlServer = plannedEngine == DbEngine.SqlServer && ChkInstallSql.IsChecked == true;
+            existingSqlConnectionString = plannedEngine == DbEngine.Postgres ? TxtPgString.Text.Trim() : TxtSqlString.Text;
             plannedLocalOnly = IsLocalScope;
             plannedUri = EffectiveUri;
             plannedAdminEmail = TxtAdminEmail.Text.Trim();
@@ -448,6 +517,8 @@ namespace M365SecurityDashboard.GuiInstaller
 
         // Captured from the UI before the install begins, so the work itself never
         // touches controls from a background thread.
+        private EditionChoice plannedEdition = EditionChoice.Single;
+        private DbEngine plannedEngine = DbEngine.SqlServer;
         private bool installSqlServer;
         private string existingSqlConnectionString = "";
         private bool plannedLocalOnly;
@@ -466,30 +537,56 @@ namespace M365SecurityDashboard.GuiInstaller
                 var tenantForLogin = plannedTenant;
                 await Task.Run(() => EnsureAzureLogin(tenantForLogin, tenantId));
 
-                // SQL Setup
-                if (installSqlServer)
+                // MSP mode refuses SQL Express before anything is installed: an MSP
+                // install outgrows it within a few dozen clients (InstallPlan).
+                if (plannedEdition == EditionChoice.Msp && plannedEngine == DbEngine.SqlServer)
                 {
-                    UpdateProgress(20, "Downloading & Installing SQL Server Express...");
-                    sqlConnectionString = await SetupSqlServer();
+                    var edition = installSqlServer ? null : await Task.Run(() => DatabaseSetup.SqlEngineEdition(existingSqlConnectionString));
+                    var problem = InstallPlan.DatabaseProblem(plannedEdition, plannedEngine, installSqlServer, edition);
+                    if (problem != null) throw new Exception(problem);
+                }
+
+                // Database setup
+                if (plannedEngine == DbEngine.Postgres)
+                {
+                    sqlConnectionString = existingSqlConnectionString;
+                    UpdateProgress(30, "Preparing the PostgreSQL database...");
+                    try
+                    {
+                        var pg = sqlConnectionString;
+                        await Task.Run(() => DatabaseSetup.PreparePostgres(pg, Log));
+                    }
+                    catch (Exception ex)
+                    {
+                        throw new Exception("Could not prepare the PostgreSQL database for Vigil365.\r\n\r\n" + ex.Message, ex);
+                    }
                 }
                 else
                 {
-                    sqlConnectionString = existingSqlConnectionString;
-                }
+                    if (installSqlServer)
+                    {
+                        UpdateProgress(20, "Downloading & Installing SQL Server Express...");
+                        sqlConnectionString = await SetupSqlServer();
+                    }
+                    else
+                    {
+                        sqlConnectionString = existingSqlConnectionString;
+                    }
 
-                // Without this the service has no SQL login at all and dies on its
-                // first connection. Doing it here, while the installer still holds
-                // administrator rights, is the only moment it is straightforward.
-                UpdateProgress(30, "Preparing the database...");
-                try
-                {
-                    DatabaseSetup.GrantServiceAccess(sqlConnectionString, "NT AUTHORITY\\LOCAL SERVICE", Log);
-                }
-                catch (Exception ex)
-                {
-                    throw new Exception(
-                        "Could not prepare the database for the Vigil365 service. " +
-                        "The service account would not be able to sign in to SQL Server.\r\n\r\n" + ex.Message, ex);
+                    // Without this the service has no SQL login at all and dies on its
+                    // first connection. Doing it here, while the installer still holds
+                    // administrator rights, is the only moment it is straightforward.
+                    UpdateProgress(30, "Preparing the database...");
+                    try
+                    {
+                        DatabaseSetup.GrantServiceAccess(sqlConnectionString, "NT AUTHORITY\\LOCAL SERVICE", Log);
+                    }
+                    catch (Exception ex)
+                    {
+                        throw new Exception(
+                            "Could not prepare the database for the Vigil365 service. " +
+                            "The service account would not be able to sign in to SQL Server.\r\n\r\n" + ex.Message, ex);
+                    }
                 }
 
                 // App Registration. Must be the canonical origin, not the raw text:
@@ -873,12 +970,14 @@ namespace M365SecurityDashboard.GuiInstaller
                 """
                 : "";
 
-            var patchJson = $$"""
-            {
-                "spa": { "redirectUris": [ "{{publicUrl}}" ] },
-                "requiredResourceAccess": {{requiredResourceAccess}}{{apiBlock}}
-            }
-            """;
+            // Edition-aware (InstallPlan.AppPatchJson): MSP mode makes the app
+            // multi-tenant and registers the /consented Web redirect so client
+            // tenants can consent. On a re-run over a Single install this patches
+            // the SAME app — the convert-to-MSP path, no new app or secret.
+            var patchJson = InstallPlan.AppPatchJson(plannedEdition, publicUrl, requiredResourceAccess, apiBlock);
+            Log(plannedEdition == EditionChoice.Msp
+                ? $"MSP mode: multi-tenant app, client consent returns to {InstallPlan.ConsentRedirect(publicUrl)}."
+                : "Single-organisation mode: single-tenant app.");
 
             var tempPatch = Path.GetTempFileName();
             File.WriteAllText(tempPatch, patchJson);
@@ -930,6 +1029,9 @@ namespace M365SecurityDashboard.GuiInstaller
                 Log("   Entra admin center > App registrations > Vigil365 > API permissions > Grant admin consent.");
             }
 
+            if (plannedEdition == EditionChoice.Msp)
+                GrantMspReadinessPermission(appRolesJson);
+
             // The collector authenticates to Graph app-only, so it needs a
             // credential of its own — the user's sign-in cannot be reused. Nothing
             // created one before, so collection could never start and the Setup
@@ -956,6 +1058,42 @@ namespace M365SecurityDashboard.GuiInstaller
             {
                 Log($"WARNING: Could not create a client secret. {secretErr}");
                 Log("   Collection stays disabled until a secret is added on the Setup page in the browser.");
+            }
+        }
+
+        /// <summary>
+        /// MSP mode: let the app read its OWN registration (Application.Read.All) so
+        /// the onboarding dialog can say whether client consent will work. Granted
+        /// as a direct app-role assignment in the MSP's tenant — deliberately not in
+        /// requiredResourceAccess, so clients are never asked to consent to it.
+        /// Best effort: without it the readiness card just shows "not checked".
+        /// </summary>
+        private void GrantMspReadinessPermission(string appRolesJson)
+        {
+            try
+            {
+                var roleId = InstallPlan.AppRoleId(appRolesJson, "Application.Read.All");
+                var ourSp = RunCommandAndCapture("az", $"ad sp show --id {clientId} --query id -o tsv").Trim();
+                var graphSp = RunCommandAndCapture("az", $"ad sp show --id {GraphPermissions.GraphAppId} --query id -o tsv").Trim();
+                if (string.IsNullOrEmpty(roleId) || string.IsNullOrEmpty(ourSp) || string.IsNullOrEmpty(graphSp))
+                {
+                    Log("   note: could not resolve Application.Read.All — the MSP app readiness card will show 'not checked'.");
+                    return;
+                }
+                var body = Path.GetTempFileName();
+                File.WriteAllText(body, $$"""{"principalId":"{{ourSp}}","resourceId":"{{graphSp}}","appRoleId":"{{roleId}}"}""");
+                var (ok, _, err) = RunCommandChecked("az",
+                    $"rest --method POST --uri \"https://graph.microsoft.com/v1.0/servicePrincipals/{graphSp}/appRoleAssignedTo\" " +
+                    $"--headers \"Content-Type=application/json\" --body \"@{body}\"");
+                File.Delete(body);
+                if (ok || err.Contains("already exists", StringComparison.OrdinalIgnoreCase))
+                    Log("Granted Application.Read.All in your own tenant (for the MSP app readiness check; clients never see it).");
+                else
+                    Log($"   note: could not grant Application.Read.All ({err.Trim()}). The readiness card will show 'not checked'.");
+            }
+            catch (Exception ex)
+            {
+                Log($"   note: could not grant Application.Read.All ({ex.Message}).");
             }
         }
 
@@ -1090,6 +1228,7 @@ namespace M365SecurityDashboard.GuiInstaller
             var configJson = $$"""
             {
             {{kestrelJson}}
+            {{InstallPlan.ConfigSections(plannedEdition, plannedEngine)}}
                 "ConnectionStrings": {
                     "DefaultConnection": {{connJson}}
                 },
@@ -1269,6 +1408,7 @@ namespace M365SecurityDashboard.GuiInstaller
         private void BtnNextToDone_Click(object sender, RoutedEventArgs e)
         {
             TxtDoneAddress.Text = $"Vigil365 is available at {installedUrl}";
+            TxtDoneNextSteps.Text = "Next:" + Environment.NewLine + string.Join(Environment.NewLine, InstallPlan.NextSteps(plannedEdition).Select((s, i) => $"{i + 1}. {s}"));
 
             if (usedSelfSignedCertificate)
             {
