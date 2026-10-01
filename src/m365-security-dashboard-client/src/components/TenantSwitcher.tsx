@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Building2 } from "lucide-react";
-import { getSelectedTenantId, setSelectedTenantId } from "../services/api";
+import { getSelectedTenantId, setSelectedTenantId, isMspMode } from "../services/api";
 import { tenantApi, type MyTenants } from "../services/tenants";
 
 /**
@@ -14,6 +14,7 @@ export function TenantSwitcher() {
 
   useEffect(() => {
     let cancelled = false;
+    if (!isMspMode()) return; // single-organisation install: nothing to switch
     tenantApi.me().then(r => {
       if (cancelled || !r.ok) return;
       setMine(r.value);
@@ -28,7 +29,7 @@ export function TenantSwitcher() {
     return () => { cancelled = true; };
   }, []);
 
-  if (!mine || mine.tenants.length < 2) return null;
+  if (!isMspMode() || !mine || mine.tenants.length < 2) return null;
 
   const current = getSelectedTenantId() ?? mine.current ?? "";
   return (

@@ -51,6 +51,22 @@ builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection("R
 // AzureAd:Audience in config must match that, or validation fails with 401.
 // Role claims ("Admin"/"Analyst"/"Viewer") come from Entra ID App Roles.
 builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration, "AzureAd");
+// Pin sign-in to the operator's own tenant explicitly (see SignInTenantPin): in
+// MSP mode the app registration is multi-tenant, so a client tenant's users can
+// get a token for it and must never get into the dashboard.
+builder.Services.Configure<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>(
+    Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme, o =>
+    {
+        var previous = o.Events?.OnTokenValidated;
+        o.Events ??= new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents();
+        o.Events.OnTokenValidated = async ctx =>
+        {
+            if (previous is not null) await previous(ctx);
+            if (!SignInTenantPin.IsAllowed(ctx.Principal, builder.Configuration["AzureAd:TenantId"]))
+                ctx.Fail("Token was not issued by this install's tenant.");
+        };
+    });
+builder.Services.Configure<EditionOptions>(builder.Configuration.GetSection(EditionOptions.SectionName));
 // Attaches each user's in-app role (from AppUsers table) as a role claim after
 // token validation. Scoped so it can use the request-scoped AppDbContext.
 // Roles are memory-cached (short TTL) so hot paths skip the per-request DB lookup.

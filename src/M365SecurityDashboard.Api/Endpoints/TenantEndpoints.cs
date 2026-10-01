@@ -34,8 +34,9 @@ public static class TenantEndpoints
         // The onboarding dialog polls the tenant's status and runs the test once
         // this records consent, so the page itself only needs to be a dead end the
         // admin can close (CSP forbids inline script/style, hence the plain markup).
-        app.MapGet("/consented", async (HttpContext ctx, AppDbContext db, SecretProtector protector, AuditLogger audit, CancellationToken ct) =>
+        app.MapGet("/consented", async (HttpContext ctx, AppDbContext db, SecretProtector protector, AuditLogger audit, Microsoft.Extensions.Options.IOptions<EditionOptions> edition, CancellationToken ct) =>
         {
+            if (!edition.Value.IsMsp) return Results.NotFound(); // no client onboarding in a single-organisation install
             var q = ctx.Request.Query;
             var tenantRowId = ConsentState.Decode(protector, q["state"]);
             if (tenantRowId is not Guid rowId)
@@ -162,8 +163,10 @@ public static class TenantEndpoints
             return t is null ? Results.NotFound() : Results.Ok(View(t, creds, null));
         });
 
-        group.MapPost("", async (TenantUpsert body, AppDbContext db, AuditLogger audit, IMemoryCache cache, CancellationToken ct) =>
+        group.MapPost("", async (TenantUpsert body, AppDbContext db, AuditLogger audit, IMemoryCache cache, Microsoft.Extensions.Options.IOptions<EditionOptions> edition, CancellationToken ct) =>
         {
+            if (!edition.Value.IsMsp && await db.ClientTenants.AnyAsync(t => t.IsActive, ct))
+                return Results.Conflict(new { ok = false, message = "This is a single-organisation install. Adding client tenants needs MSP mode (Edition:Mode = Msp)." });
             if (string.IsNullOrWhiteSpace(body.Name))
                 return Results.BadRequest(new { ok = false, message = "Name is required." });
 
@@ -258,8 +261,9 @@ public static class TenantEndpoints
         // The URL a client's Global Administrator opens to grant the app
         // registration admin consent in their tenant. Uses the tenant's own client
         // id if set, else the install-wide one.
-        group.MapGet("/{id:guid}/consent-url", async (Guid id, string? redirectUri, HttpContext ctx, AppDbContext db, SecretProtector protector, TenantGraphCredentials creds, IConfiguration config, CancellationToken ct) =>
+        group.MapGet("/{id:guid}/consent-url", async (Guid id, string? redirectUri, HttpContext ctx, AppDbContext db, SecretProtector protector, TenantGraphCredentials creds, IConfiguration config, Microsoft.Extensions.Options.IOptions<EditionOptions> edition, CancellationToken ct) =>
         {
+            if (!edition.Value.IsMsp) return Results.NotFound();
             var t = await db.ClientTenants.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
             if (t is null) return Results.NotFound();
 

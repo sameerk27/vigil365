@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { CheckCircle, AlertCircle } from "lucide-react";
 import { AppRole, Tone } from "../services/types";
-import { apiBase, apiFetch, useAuth } from "../services/api";
+import { apiBase, apiFetch, useAuth, isMspMode } from "../services/api";
 import { showToast } from "../services/toast";
 import { confirmAction } from "../services/confirm";
 import { Card, Badge, EmptyState, LoadingSkeleton } from "../components/SharedComponents";
@@ -221,7 +221,7 @@ export function UserManagementPage() {
             <div className="tbl-wrap">
               <table className="data-tbl">
                 <thead>
-                  <tr><th scope="col">User</th><th scope="col">Email</th><th scope="col">Role</th>{tenants.length > 1 && <th scope="col">Clients</th>}<th scope="col">Last seen</th><th scope="col">Actions</th></tr>
+                  <tr><th scope="col">User</th><th scope="col">Email</th><th scope="col">Role</th>{isMspMode() && tenants.length > 1 && <th scope="col">Clients</th>}<th scope="col">Last seen</th><th scope="col">Actions</th></tr>
                 </thead>
                 <tbody>
                   {users.map(u => (
@@ -232,7 +232,7 @@ export function UserManagementPage() {
                       </td>
                       <td className="al-date">{u.email}</td>
                       <td><Badge label={u.role} tone={roleTone(u.role)}/></td>
-                      {tenants.length > 1 && (
+                      {isMspMode() && tenants.length > 1 && (
                         <td>
                           <TenantAssignmentPicker email={u.email} role={u.role} tenants={tenants}
                             assigned={assignments[u.email] ?? []}

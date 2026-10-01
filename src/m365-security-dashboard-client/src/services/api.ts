@@ -31,7 +31,15 @@ export async function getAccessToken(): Promise<string | null> {
 // sole tenant, so a single-tenant install never needs this set.
 const TENANT_KEY = "vigil365-tenant";
 
+// Edition mode from /api/auth/config. Outside MSP mode there is no client to
+// select, so the selection reads as empty everywhere: no X-Vigil-Tenant header,
+// and every MSP-only control that keys off a selected client stays hidden.
+let _mspMode = false;
+export function setEditionMode(mode?: string | null): void { _mspMode = mode === "Msp"; }
+export function isMspMode(): boolean { return _mspMode; }
+
 export function getSelectedTenantId(): string | null {
+  if (!_mspMode) return null;
   try { return localStorage.getItem(TENANT_KEY); } catch { return null; }
 }
 

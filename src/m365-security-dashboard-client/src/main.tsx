@@ -19,7 +19,7 @@ import {
   RiskDetectionsData, IdentityHealthData, AttackSimulationData, AlertPolicy, TriggeredAlert,
   PurviewData
 } from "./services/types";
-import { apiBase, apiFetch, AuthContext, initMsal, acApi, AUTO_REFRESH_SEC, useAuth, registerNavHandler, registerRefreshHandler } from "./services/api";
+import { apiBase, apiFetch, AuthContext, initMsal, acApi, AUTO_REFRESH_SEC, useAuth, registerNavHandler, registerRefreshHandler, setEditionMode, isMspMode } from "./services/api";
 import { showToast } from "./services/toast";
 import { ToastContainer } from "./components/ToastContainer";
 import { ConfirmDialog } from "./components/ConfirmDialog";
@@ -95,11 +95,11 @@ function isInteractionInProgress(e: unknown): boolean {
 // pages are grouped into sections; multi-page sections render a tab bar.
 type SectionDef = {
   id: string; label: string; icon: React.ReactNode;
-  pages: { id: NavPage; label: string; adminOnly?: boolean }[];
+  pages: { id: NavPage; label: string; adminOnly?: boolean; mspOnly?: boolean }[];
 };
 const SECTIONS: SectionDef[] = [
   { id:"overview", label:"Overview",       icon:<Home size={17}/>,          pages:[{ id:"overview", label:"Overview" }] },
-  { id:"clients",  label:"Clients",        icon:<Building2 size={17}/>,     pages:[{ id:"clients", label:"Clients" }] },
+  { id:"clients",  label:"Clients",        icon:<Building2 size={17}/>,     pages:[{ id:"clients", label:"Clients", mspOnly:true }] },
   { id:"alerts",   label:"Alerts",         icon:<AlertTriangle size={17}/>, pages:[
       { id:"incidents",    label:"Alert Queue" },
       { id:"alertcenter",  label:"Rules & Notifications" },
@@ -198,7 +198,7 @@ function Sidebar({ page, setPage, alertCounts, collapsed, onToggleCollapse }: {
       </div>
       <nav className="sb-nav">
         {SECTIONS.map(s => {
-          const visible = s.pages.filter(p => !p.adminOnly || isAdmin);
+          const visible = s.pages.filter(p => (!p.adminOnly || isAdmin) && (!p.mspOnly || isMspMode()));
           if (visible.length === 0) return null;
           const count = visible.reduce((acc, p) => acc + (alertCounts[p.id] ?? 0), 0);
           const target = () => {
@@ -548,7 +548,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
   }, [alertCounts, seenCounts]);
 
   const activeSectionDef = sectionOf(page);
-  const visibleTabs = activeSectionDef.pages.filter(p => !p.adminOnly || auth.isAdmin);
+  const visibleTabs = activeSectionDef.pages.filter(p => (!p.adminOnly || auth.isAdmin) && (!p.mspOnly || isMspMode()));
 
   // ── Global search (Ctrl+K) ────────────────────────────────────────────────
   const [searchOpen, setSearchOpen] = useState(false);
@@ -561,7 +561,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
   }, []);
   const searchPages = useMemo(() =>
     SECTIONS.flatMap(s => s.pages
-      .filter(p => !p.adminOnly || auth.isAdmin)
+      .filter(p => (!p.adminOnly || auth.isAdmin) && (!p.mspOnly || isMspMode()))
       .map(p => ({ id: p.id, label: s.pages.length > 1 ? `${s.label} · ${p.label}` : s.label }))),
     [auth.isAdmin]);
 
@@ -702,7 +702,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
             {page==="conditionalaccess"&&<ConditionalAccessPage data={conditionalAccess}/>}
             {page==="signinmap"&&<SignInLocationsPage data={signInLocations}/>}
             {page==="users"&&<UserManagementPage/>}
-            {page==="clients"&&<ClientsPage/>}
+            {page==="clients"&&isMspMode()&&<ClientsPage/>}
             {page==="setup"&&<SetupPage/>}
           </>
         )}
@@ -759,7 +759,8 @@ function AuthGate() {
       try {
         const res = await fetch(`${apiBase}/api/auth/config`);
         if (!res.ok) { setAuthReady(true); return; }
-        const cfg: { clientId: string; tenantId: string; redirectUri: string; instance?: string } = await res.json();
+        const cfg: { clientId: string; tenantId: string; redirectUri: string; instance?: string; mode?: string } = await res.json();
+        setEditionMode(cfg.mode); // before first render of any page: gates the MSP surface
         if (!cfg.clientId || !cfg.tenantId) { setAuthReady(true); return; }
 
         setAuthEnabled(true);

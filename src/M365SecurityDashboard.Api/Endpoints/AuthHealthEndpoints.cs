@@ -89,7 +89,9 @@ public static class AuthHealthEndpoints
                 instance = config["AzureAd:Instance"] ?? "https://login.microsoftonline.com/",
                 clientId = Pick("AzureAd:ClientId", "Graph:ClientId"),
                 tenantId = Pick("AzureAd:TenantId", "Graph:TenantId"),
-                redirectUri = config["Auth:RedirectUri"] ?? "http://localhost:5173"
+                redirectUri = config["Auth:RedirectUri"] ?? "http://localhost:5173",
+                // "Single" | "Msp" — the client gates the MSP surface on it.
+                mode = (config.GetSection(EditionOptions.SectionName).Get<EditionOptions>() ?? new EditionOptions()).Mode.ToString(),
             });
         }).AllowAnonymous();
 
