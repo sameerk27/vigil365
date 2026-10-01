@@ -434,8 +434,6 @@ public sealed record SuppressionRuleRequest(
 /// <summary>Body shape for POST /api/setup/graph (first-run wizard).</summary>
 public sealed record GraphSetupRequest(string TenantId, string ClientId, string? ClientSecret, string? LoginInstance, string? BaseUrl);
 
-/// <summary>Body for POST /api/setup/register-msp-app (auto-create the multi-tenant MSP app).</summary>
-public sealed record MspAppRegisterRequest(string? DisplayName, string? RedirectUri);
 
 /// <summary>Body shape for POST /api/admin/users (pre-provision a user).</summary>
 public sealed record AddUserRequest(string Email, string Role, string? DisplayName, bool SendInvite = false);

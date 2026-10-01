@@ -2,7 +2,9 @@
 
 **Status:** Stage 0 ✅ (draft PR #8, CI green incl. first PostgreSQL run — which caught and
 fixed an audit-hash bug on Postgres). Stage 1 ✅ (M1 mode flag + sign-in pin, T1 component
-harness, T2 signed-in e2e in CI). Next: Stage 2. Combines and replaces `MSP_MODE_PLAN.md` and
+harness, T2 signed-in e2e in CI). Stage 2 ✅ (U1 Choose-a-client gate,
+U4 consent-poll cleanup, U5 client named in header/toasts/exports, M2 web register path
+removed + MSP app readiness card + one `graph-permissions.json`). Next: Stage 3 (installer). Combines and replaces `MSP_MODE_PLAN.md` and
 `MSP_UI_PLAN.md`. Builds on `MSP_EDITION_PLAN.md` (backend Phases 1–8 + one-go
 onboarding — implemented, uncommitted on `feat/msp-phase1-db-providers`).
 

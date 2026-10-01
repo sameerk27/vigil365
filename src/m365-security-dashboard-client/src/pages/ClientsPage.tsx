@@ -5,7 +5,7 @@ import { showToast } from "../services/toast";
 import { confirmAction } from "../services/confirm";
 import { Card, Badge, EmptyState, LoadingSkeleton, StatBox, CopyButton } from "../components/SharedComponents";
 import { fmtDate, relTime } from "../services/utils";
-import { tenantApi, setupApi, collectionTone, type ClientTenant, type TenantRollupRow } from "../services/tenants";
+import { tenantApi, setupApi, collectionTone, type ClientTenant, type TenantRollupRow, type MspAppStatus } from "../services/tenants";
 import type { Tone } from "../services/types";
 
 /**
@@ -289,16 +289,7 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
     if (pollRef.current !== null) { window.clearInterval(pollRef.current); pollRef.current = null; }
   }, []);
 
-  // Register the shared multi-tenant MSP app (Azure CLI, server-side) so per-client
-  // credentials become optional. Fills nothing in the form — it configures the
-  // install-wide app the consent flow uses.
-  const registerMspApp = async () => {
-    setBusy("mspapp");
-    const r = await setupApi.registerMspApp({ redirectUri: redirect.trim() || undefined });
-    setBusy(null);
-    if (r.ok) showToast(`MSP app registered (client ${r.value.clientId.slice(0, 8)}…). Clients can now consent without their own credentials.`);
-    else showToast(r.error, "error");
-  };
+
 
   // The one-go flow: open Microsoft admin consent in a popup, let the client's
   // Global Administrator sign in and approve, then poll until the server records
@@ -387,13 +378,6 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
               Fill this in only to give one client its own app registration.
               {saved?.credentialSource === "install" && " This client currently uses the shared MSP app; storing its own overrides that."}
             </p>
-            <div className="ob-actions ob-mspapp">
-              <button className="btn-export" disabled={busy === "mspapp"} onClick={registerMspApp}
-                title="Create the shared multi-tenant app registration in your own tenant via Azure CLI, and store it install-wide">
-                <ShieldCheck size={13} /> {busy === "mspapp" ? "Registering…" : "Register the shared MSP app"}
-              </button>
-              <span className="al-date">Runs Azure CLI on the server as your signed-in az session — needed once.</span>
-            </div>
             <div className="ob-fields">
               <input className="form-input mono" placeholder="Application (client) ID" value={clientId} onChange={e => setClientId(e.target.value)} disabled={!saved} />
               <label className="ob-check"><input type="checkbox" checked={useCert} onChange={e => setUseCert(e.target.checked)} disabled={!saved} /> Certificate instead of a secret (recommended — nothing long-lived to rotate)</label>
@@ -431,6 +415,7 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
 
           <section className={`ob-step${saved ? "" : " ob-disabled"}`}>
             <h3><span className="ob-num">3</span> Sign in &amp; consent</h3>
+            <MspAppStatusLine />
             <p className="al-date">
               Opens Microsoft admin consent in a popup. The client's Global Administrator signs in and approves once —
               that provisions the app in their tenant. Vigil365 then finishes and tests the connection automatically.
@@ -471,6 +456,35 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
           </section>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── MSP app readiness (replaces the old in-app "register the MSP app" button) ──
+
+/**
+ * Read-only check that the install's own app registration can accept client
+ * consent. When it can't, consent fails at Microsoft with an opaque error, so say
+ * exactly what is wrong here, before the admin opens the popup.
+ */
+function MspAppStatusLine() {
+  const [status, setStatus] = useState<MspAppStatus | null>(null);
+  useEffect(() => { setupApi.mspAppStatus().then(r => { if (r.ok) setStatus(r.value); }); }, []);
+  if (!status) return null;
+  if (status.ready) {
+    return <p className="ob-appstatus ob-ok"><ShieldCheck size={13} /> Your MSP app registration is ready for client consent.</p>;
+  }
+  if (!status.readable) {
+    return <p className="ob-appstatus al-date"><Info size={13} /> App registration not checked: {status.reason}</p>;
+  }
+  const problems: string[] = [];
+  if (status.multiTenant === false) problems.push("it is single-tenant, so other organisations cannot consent to it");
+  if (status.consentRedirectRegistered === false) problems.push(`its Web redirect URIs don't include ${status.expectedRedirect}`);
+  if (status.missingPermissions && status.missingPermissions.length > 0) problems.push(`it doesn't request ${status.missingPermissions.join(", ")}`);
+  return (
+    <div className="ob-appstatus ob-fail" role="alert">
+      <AlertTriangle size={13} /> Client consent will fail: your app registration {problems.join("; ")}.
+      <div className="al-date">Fix: re-run Vigil365 Setup and choose MSP mode, or run <code>register-app.ps1 -MultiTenant</code> and enter the new app in Setup.</div>
     </div>
   );
 }

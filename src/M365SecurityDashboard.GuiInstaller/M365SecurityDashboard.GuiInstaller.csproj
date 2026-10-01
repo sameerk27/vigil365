@@ -44,6 +44,11 @@
        is why this is conditional. An installer built without it still compiles
        and tells the user at runtime rather than failing the build for everyone
        working on the wizard. -->
+  <!-- The single Graph permission list, shared with the API and register-app.ps1. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\graph-permissions.json" LogicalName="Vigil365.graph-permissions.json" />
+  </ItemGroup>
+
   <ItemGroup Condition="Exists('payload.zip')">
     <EmbeddedResource Include="payload.zip" LogicalName="Vigil365.payload.zip" />
   </ItemGroup>

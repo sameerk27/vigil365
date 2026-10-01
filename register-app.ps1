@@ -39,21 +39,13 @@ param(
 $ErrorActionPreference = "Stop"
 $GraphAppId = "00000003-0000-0000-c000-000000000000"  # Microsoft Graph
 
-# Read-only Graph application permissions the dashboard uses (see README).
-$Permissions = @(
-    "SecurityEvents.Read.All",
-    "SecurityIncident.Read.All",
-    "IdentityRiskyUser.Read.All",
-    "IdentityRiskEvent.Read.All",
-    "AuditLog.Read.All",
-    "Reports.Read.All",
-    "DeviceManagementManagedDevices.Read.All",
-    "ServiceHealth.Read.All",
-    "Policy.Read.All",
-    "Directory.Read.All",
-    "ThreatHunting.Read.All",
-    "UserAuthenticationMethod.Read.All"
-)
+# The Graph application permissions Vigil365 requests come from graph-permissions.json
+# (repo root) — the same list the installer and the API embed, so this script can no
+# longer drift from them. Required + optional are both requested.
+$PermissionsFile = Join-Path $PSScriptRoot "graph-permissions.json"
+if (-not (Test-Path $PermissionsFile)) { throw "graph-permissions.json not found next to register-app.ps1." }
+$PermissionsDoc = Get-Content $PermissionsFile -Raw | ConvertFrom-Json
+$Permissions = @($PermissionsDoc.required.name) + @($PermissionsDoc.optional.name)
 
 function Require-Az {
     if (-not (Get-Command az -ErrorAction SilentlyContinue)) {

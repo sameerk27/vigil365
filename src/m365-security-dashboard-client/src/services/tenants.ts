@@ -109,10 +109,19 @@ export const routingApi = {
     call("/api/notification-routing", json("PUT", r)),
 };
 
-/** MSP setup: auto-create the shared multi-tenant app registration via the server's Azure CLI. */
+/** Readiness of the install's own app registration for client consent (read-only). */
+export interface MspAppStatus {
+  readable: boolean;
+  multiTenant: boolean | null;
+  consentRedirectRegistered: boolean | null;
+  missingPermissions: string[] | null;
+  expectedRedirect: string;
+  reason: string | null;
+  ready: boolean;
+}
+
 export const setupApi = {
-  registerMspApp: (body?: { displayName?: string; redirectUri?: string }) =>
-    call<{ clientId: string; tenantId: string; redirectUri: string }>("/api/setup/register-msp-app", json("POST", body ?? {})),
+  mspAppStatus: () => call<MspAppStatus>("/api/setup/msp-app-status"),
 };
 
 export function collectionTone(row: { configured: boolean; lastCollectionStatus: string | null; lastError?: string | null }): "good" | "warning" | "error" | "neutral" {

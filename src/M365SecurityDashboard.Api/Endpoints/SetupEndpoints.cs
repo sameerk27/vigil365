@@ -170,109 +170,42 @@ public static class SetupEndpoints
             return Results.Ok(new { saved = true, testOk = testError is null, testError });
         }).RequireAuthorization("RequireAdmin");
 
-        // Auto-create the multi-tenant MSP app registration (Entra) via the Azure CLI
-        // and store it as the install-wide Graph credentials, so an MSP never has to
-        // hand-register an app in the portal. Runs register-app.ps1 -MultiTenant -Json
-        // as the signed-in operator's az session. Admin-only, audited, and defensive:
-        // it does nothing if the CLI or the script is absent, and never logs the secret.
-        app.MapPost("/api/setup/register-msp-app", async (
-            HttpContext ctx, AppDbContext db, SecretProtector protector, AuditLogger audit,
-            IOptions<GraphOptions> opts, IConfiguration config, IWebHostEnvironment env,
-            MspAppRegisterRequest? input, CancellationToken ct) =>
+        // Read-only readiness check of the install's own app registration for MSP
+        // onboarding (MSP_V12_PLAN.md M2): does it accept client consent, is the
+        // /consented landing registered, does it request every permission in
+        // graph-permissions.json? Always uses the install-wide credentials — the
+        // MSP's own tenant — never the selected client's. Needs Application.Read.All
+        // in the MSP tenant; without it the answer is "unknown" with the reason.
+        // (This replaces the old in-app "register the MSP app" endpoint, which
+        // shelled out to PowerShell and could not work on installed copies.)
+        app.MapGet("/api/setup/msp-app-status", async (IServiceProvider services, IConfiguration config, HttpContext ctx, CancellationToken ct) =>
         {
-            var script = ResolveRegisterScript(env.ContentRootPath);
-            if (script is null)
-                return Results.BadRequest(new { ok = false, message = "register-app.ps1 was not found next to the app. This automated registration is available from a source/dev checkout; on a packaged install, register the multi-tenant app with register-app.ps1 -MultiTenant and paste its client id/secret in Setup." });
+            var expected = $"{(config["Auth:RedirectUri"] ?? $"{ctx.Request.Scheme}://{ctx.Request.Host}").TrimEnd('/')}/consented";
+            using var scope = services.CreateScope(); // no tenant set → install-wide credentials
+            var creds = await scope.ServiceProvider.GetRequiredService<TenantGraphCredentials>().ResolveAsync(ct);
+            if (!creds.IsConfigured())
+                return Results.Ok(MspAppStatus.Unreadable(expected, "Install-wide Graph credentials are not configured (Setup)."));
 
-            var baseUrl = (input?.RedirectUri ?? config["Auth:RedirectUri"]
-                ?? $"{ctx.Request.Scheme}://{ctx.Request.Host}").TrimEnd('/');
-            var displayName = string.IsNullOrWhiteSpace(input?.DisplayName) ? "Vigil365 MSP" : input!.DisplayName!.Trim();
-
-            var (exitCode, stdout, stderr) = await RunPwshAsync(script,
-                ["-MultiTenant", "-Json", "-RedirectUri", baseUrl, "-DisplayName", displayName], ct);
-
-            if (exitCode != 0)
+            var graph = scope.ServiceProvider.GetRequiredService<GraphApiClient>();
+            try
             {
-                var hint = (stderr + stdout).Contains("az login", StringComparison.OrdinalIgnoreCase) || (stderr + stdout).Contains("not signed in", StringComparison.OrdinalIgnoreCase)
-                    ? "Run 'az login' in a terminal on this machine as a user who can create app registrations, then try again."
-                    : (stderr + stdout).Contains("not found", StringComparison.OrdinalIgnoreCase)
-                        ? "Azure CLI (az) was not found. Install it, run 'az login', then try again."
-                        : null;
-                return Results.BadRequest(new { ok = false, message = "App registration failed.", detail = Tail(stderr.Length > 0 ? stderr : stdout, 600), hint });
+                var appObj = (await graph.GetSinglePageAsync(
+                    $"/v1.0/applications(appId='{Uri.EscapeDataString(creds.ClientId)}')?$select=signInAudience,web,requiredResourceAccess", ct)).FirstOrDefault();
+                var graphSp = (await graph.GetSinglePageAsync(
+                    $"/v1.0/servicePrincipals(appId='{GraphPermissionList.GraphAppId}')?$select=appRoles", ct)).FirstOrDefault();
+                if (appObj.ValueKind != JsonValueKind.Object || graphSp.ValueKind != JsonValueKind.Object)
+                    return Results.Ok(MspAppStatus.Unreadable(expected, "Graph returned no application object for this install's client id."));
+                return Results.Ok(MspAppStatus.Evaluate(appObj, graphSp, GraphPermissionList.Required.Select(p => p.Name), expected));
             }
-
-            var jsonLine = stdout.Split('\n').Select(l => l.Trim()).LastOrDefault(l => l.StartsWith("{") && l.Contains("clientId"));
-            if (jsonLine is null)
-                return Results.BadRequest(new { ok = false, message = "The registration script did not return the expected result.", detail = Tail(stdout, 600) });
-
-            MspAppResult? parsed;
-            try { parsed = JsonSerializer.Deserialize<MspAppResult>(jsonLine, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }); }
-            catch { return Results.BadRequest(new { ok = false, message = "Could not parse the registration result." }); }
-            if (parsed is null || string.IsNullOrWhiteSpace(parsed.ClientId) || string.IsNullOrWhiteSpace(parsed.TenantId))
-                return Results.BadRequest(new { ok = false, message = "The registration result was incomplete." });
-
-            var row = await db.GraphConfig.OrderBy(g => g.Id).FirstOrDefaultAsync(ct);
-            if (row is null) { row = new GraphConfig(); db.GraphConfig.Add(row); }
-            row.TenantId = parsed.TenantId;
-            row.ClientId = parsed.ClientId;
-            if (!string.IsNullOrWhiteSpace(parsed.ClientSecret)) row.ClientSecret = protector.Protect(parsed.ClientSecret);
-            row.UpdatedAt = DateTimeOffset.UtcNow;
-            await db.SaveChangesAsync(ct);
-
-            var o = opts.Value; // apply live so consent-url uses it immediately
-            o.TenantId = parsed.TenantId; o.ClientId = parsed.ClientId;
-            if (!string.IsNullOrWhiteSpace(parsed.ClientSecret)) o.ClientSecret = parsed.ClientSecret!;
-
-            await audit.WriteAsync("setup.register_msp_app", "settings", "graph",
-                $"multi-tenant MSP app {parsed.ClientId} registered in tenant {parsed.TenantId}", ct);
-            return Results.Ok(new { ok = true, clientId = parsed.ClientId, tenantId = parsed.TenantId, redirectUri = $"{baseUrl}/consented" });
+            catch (HttpRequestException ex) when (ex.StatusCode is System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.Unauthorized)
+            {
+                return Results.Ok(MspAppStatus.Unreadable(expected,
+                    "Can't read the app registration: grant Application.Read.All to this app in your own tenant (not part of what clients consent to)."));
+            }
+            catch (Exception ex)
+            {
+                return Results.Ok(MspAppStatus.Unreadable(expected, $"Could not check the app registration: {ex.Message}"));
+            }
         }).RequireAuthorization("RequireAdmin");
     }
-
-    /// <summary>register-app.ps1 lives at the repo root in a dev checkout; look up from ContentRoot.</summary>
-    private static string? ResolveRegisterScript(string contentRoot)
-    {
-        var dir = new DirectoryInfo(contentRoot);
-        for (var i = 0; i < 5 && dir is not null; i++, dir = dir.Parent)
-        {
-            var candidate = Path.Combine(dir.FullName, "register-app.ps1");
-            if (File.Exists(candidate)) return candidate;
-        }
-        return null;
-    }
-
-    private static async Task<(int ExitCode, string StdOut, string StdErr)> RunPwshAsync(string script, string[] scriptArgs, CancellationToken ct)
-    {
-        foreach (var shell in new[] { "pwsh", "powershell" })
-        {
-            var psi = new System.Diagnostics.ProcessStartInfo(shell)
-            {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                WorkingDirectory = Path.GetDirectoryName(script)!,
-            };
-            foreach (var a in new[] { "-NoProfile", "-NonInteractive", "-File", script }) psi.ArgumentList.Add(a);
-            foreach (var a in scriptArgs) psi.ArgumentList.Add(a);
-
-            System.Diagnostics.Process? p;
-            try { p = System.Diagnostics.Process.Start(psi); }
-            catch { continue; } // this shell isn't on PATH — try the next
-            if (p is null) continue;
-
-            using var _ = ct.Register(() => { try { if (!p.HasExited) p.Kill(entireProcessTree: true); } catch { } });
-            var outTask = p.StandardOutput.ReadToEndAsync(ct);
-            var errTask = p.StandardError.ReadToEndAsync(ct);
-            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(5));
-            try { await p.WaitForExitAsync(CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token).Token); }
-            catch (OperationCanceledException) { try { p.Kill(entireProcessTree: true); } catch { } return (-1, await outTask, "Registration timed out."); }
-            return (p.ExitCode, await outTask, await errTask);
-        }
-        return (-1, "", "PowerShell (pwsh/powershell) was not found to run the registration script.");
-    }
-
-    private static string Tail(string s, int max) => s.Length <= max ? s : "…" + s[^max..];
-
-    private sealed record MspAppResult(string? TenantId, string? ClientId, string? ClientSecret, string? RedirectUri, bool MultiTenant);
 }

@@ -106,3 +106,24 @@ test('one-go onboarding: consent popup, then automatic connection test', async (
   await expect(page.getByText('Connected to Fabrikam Inc.')).toBeVisible({ timeout: 15_000 });
   await expect.poll(() => popup.isClosed()).toBe(true);
 });
+
+test('onboarding warns before consent when the app registration cannot accept clients (M2)', async ({ page }) => {
+  await signIn(page, {
+    mode: 'Msp', role: 'Admin',
+    api: {
+      'GET /api/tenants/me': { current: null, tenants: [tenantA, tenantB] },
+      'GET /api/tenants/rollup': [rollupRow(tenantA), rollupRow(tenantB)],
+      'GET /api/tenants': [rosterRow(tenantA), rosterRow(tenantB)],
+      'GET /api/setup/msp-app-status': {
+        readable: true, multiTenant: false, consentRedirectRegistered: false, missingPermissions: ['SecurityAlert.Read.All'],
+        expectedRedirect: 'http://localhost:5174/consented', reason: null, ready: false,
+      },
+    },
+  });
+  await page.goto('/');
+  await page.locator('tr', { hasText: 'Fabrikam Inc' }).getByRole('button', { name: /Connect/ }).click();
+  const warning = page.getByRole('alert').filter({ hasText: 'Client consent will fail' });
+  await expect(warning).toContainText('single-tenant');
+  await expect(warning).toContainText('http://localhost:5174/consented');
+  await expect(warning).toContainText('SecurityAlert.Read.All');
+});

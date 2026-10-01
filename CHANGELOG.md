@@ -66,9 +66,18 @@ version lives in exactly two places — the API's `<Version>` and the client's
   Administrator approves once (which provisions the app in their tenant), and Vigil365
   catches the callback on a new anonymous `/consented` landing page, records the Entra
   tenant id + consent time, and auto-runs the connection test. The consent `state` is
-  signed and time-boxed (`ConsentState`). The shared multi-tenant MSP app can be
-  created from the app itself (*Register the shared MSP app*, via `register-app.ps1
-  -MultiTenant -Json` over Azure CLI); per-client credentials are now optional. A
+  signed and time-boxed (`ConsentState`). Clients consent to one shared
+  multi-tenant MSP app (create it with `register-app.ps1 -MultiTenant`; the installer's
+  MSP mode is planned), so per-client credentials are optional. The onboarding dialog
+  checks that app registration first and says exactly what would make consent fail.
+- **Edition mode.** `Edition:Mode` = `Single` (default) or `Msp`. Single-organisation
+  installs show no MSP screens and cannot add a second client. Sign-in is pinned to the
+  install's own Entra tenant, so a client's users can never sign in to the dashboard.
+- **MSP "Choose a client" screen** instead of errors when several clients are visible
+  and none is chosen; the active client is named in the header, every toast and every
+  CSV export filename.
+- **One Graph permission list** (`graph-permissions.json`) shared by the installer, the
+  API and `register-app.ps1`, with `docs/graph-permissions.md` generated from it. A
   copy-link fallback remains for admins who can't sign in in the popup.
 - **MSP hardening.** Certificate authentication per client; parallel, staggered
   collection with per-client exponential backoff; `/health` database-size headroom

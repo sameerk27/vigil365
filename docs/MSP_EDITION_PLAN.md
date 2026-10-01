@@ -265,9 +265,10 @@ redirects to an anonymous `/consented` landing page. The landing trusts only a s
 30-min `state` (`ConsentState`, HMAC via SecretProtector) naming the ClientTenant row;
 it records the Entra tenant id + consent time and resets backoff. The onboarding dialog
 polls the tenant's status while the popup is open, then auto-runs the test. The shared
-multi-tenant MSP app is created on demand via `POST /api/setup/register-msp-app`
-(`register-app.ps1 -MultiTenant -Json` over the operator's Azure CLI session), so
-per-client credentials are optional. Popup-blocked / can't-sign-in-here falls back to a
+multi-tenant MSP app was first created on demand by an in-app endpoint that shelled out to
+Azure CLI; that endpoint was removed in v1.2 Stage 2 (it could not work on installed copies)
+in favour of a read-only readiness check — see `MSP_V12_PLAN.md` M2. Per-client credentials
+are optional. Popup-blocked / can't-sign-in-here falls back to a
 copyable consent link + manual test.
 
 
