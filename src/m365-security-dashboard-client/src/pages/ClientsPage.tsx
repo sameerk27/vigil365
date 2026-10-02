@@ -374,12 +374,12 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
           <section className="ob-step">
             <h3><span className="ob-num">1</span> Client</h3>
             <div className="ob-fields">
-              <input className="form-input" placeholder="Display name (e.g. Contoso Ltd)" value={name} onChange={e => setName(e.target.value)} />
-              <input className="form-input mono" placeholder="Entra tenant id (optional — filled in by the test)" value={entra} onChange={e => setEntra(e.target.value)} />
-              <input className="form-input" placeholder="Notes (optional)" value={notes} onChange={e => setNotes(e.target.value)} />
+              <input className="form-input" aria-label="Client display name" placeholder="Display name (e.g. Contoso Ltd)" value={name} onChange={e => setName(e.target.value)} />
+              <input aria-label="Entra tenant id" className="form-input mono" placeholder="Entra tenant id (optional — filled in by the test)" value={entra} onChange={e => setEntra(e.target.value)} />
+              <input className="form-input" aria-label="Notes" placeholder="Notes (optional)" value={notes} onChange={e => setNotes(e.target.value)} />
               <div className="ob-actions">
-                <input className="form-input" placeholder="Report brand name (optional, e.g. Contoso Security)" value={brandName} onChange={e => setBrandName(e.target.value)} title="Shown instead of Vigil365 on this client's digest emails and PDFs" />
-                <input className="form-input ob-color" placeholder="#1d4ed8" value={brandColor} onChange={e => setBrandColor(e.target.value)} title="Accent colour on this client's reports (hex)" />
+                <input className="form-input" aria-label="Report brand name" placeholder="Report brand name (optional, e.g. Contoso Security)" value={brandName} onChange={e => setBrandName(e.target.value)} title="Shown instead of Vigil365 on this client's digest emails and PDFs" />
+                <input className="form-input ob-color" aria-label="Report accent colour (hex)" placeholder="#1d4ed8" value={brandColor} onChange={e => setBrandColor(e.target.value)} title="Accent colour on this client's reports (hex)" />
               </div>
               <button className="btn-apply" disabled={busy === "save"} onClick={step1}>{busy === "save" ? "Saving…" : saved ? "Save" : "Add client"}</button>
             </div>
@@ -393,25 +393,25 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
               {saved?.credentialSource === "install" && " This client currently uses the shared MSP app; storing its own overrides that."}
             </p>
             <div className="ob-fields">
-              <input className="form-input mono" placeholder="Application (client) ID" value={clientId} onChange={e => setClientId(e.target.value)} disabled={!saved} />
+              <input aria-label="Application (client) ID" className="form-input mono" placeholder="Application (client) ID" value={clientId} onChange={e => setClientId(e.target.value)} disabled={!saved} />
               <label className="ob-check"><input type="checkbox" checked={useCert} onChange={e => setUseCert(e.target.checked)} disabled={!saved} /> Certificate instead of a secret (recommended — nothing long-lived to rotate)</label>
               {!useCert && (
-                <input className="form-input" type="password" autoComplete="off"
+                <input aria-label="Client secret" className="form-input" type="password" autoComplete="off"
                   placeholder={saved?.hasOwnCredentials ? "Client secret (leave blank to keep the stored one)" : "Client secret"}
                   value={secret} onChange={e => setSecret(e.target.value)} disabled={!saved} />
               )}
               {useCert && (
                 <>
-                  <input className="form-input mono" placeholder="Certificate thumbprint (in the server's certificate store)" value={thumbprint} onChange={e => setThumbprint(e.target.value)} disabled={!saved} />
-                  <input className="form-input" placeholder="…or PFX path on the server (e.g. /certs/contoso.pfx)" value={certPath} onChange={e => setCertPath(e.target.value)} disabled={!saved} />
-                  <input className="form-input" type="password" autoComplete="off" placeholder="PFX password (if any)" value={certPassword} onChange={e => setCertPassword(e.target.value)} disabled={!saved} />
+                  <input aria-label="Certificate thumbprint" className="form-input mono" placeholder="Certificate thumbprint (in the server's certificate store)" value={thumbprint} onChange={e => setThumbprint(e.target.value)} disabled={!saved} />
+                  <input className="form-input" aria-label="PFX path on the server" placeholder="…or PFX path on the server (e.g. /certs/contoso.pfx)" value={certPath} onChange={e => setCertPath(e.target.value)} disabled={!saved} />
+                  <input className="form-input" type="password" autoComplete="off" aria-label="PFX password" placeholder="PFX password (if any)" value={certPassword} onChange={e => setCertPassword(e.target.value)} disabled={!saved} />
                 </>
               )}
               <label className="ob-check"><input type="checkbox" checked={sovereign} onChange={e => setSovereign(e.target.checked)} disabled={!saved} /> Sovereign cloud (GCC High / DoD / China)</label>
               {sovereign && (
                 <>
-                  <input className="form-input" placeholder="Login authority, e.g. https://login.microsoftonline.us" value={loginInstance} onChange={e => setLoginInstance(e.target.value)} />
-                  <input className="form-input" placeholder="Graph base URL, e.g. https://graph.microsoft.us" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} />
+                  <input className="form-input" aria-label="Login authority" placeholder="Login authority, e.g. https://login.microsoftonline.us" value={loginInstance} onChange={e => setLoginInstance(e.target.value)} />
+                  <input className="form-input" aria-label="Graph base URL" placeholder="Graph base URL, e.g. https://graph.microsoft.us" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} />
                 </>
               )}
               <div className="ob-actions">
@@ -451,7 +451,7 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
             <details className="ob-fallback">
               <summary>Can't sign in here? Send the client a link instead</summary>
               <div className="ob-fields">
-                <input className="form-input" placeholder="Redirect URI (leave blank to use this app's /consented page)" value={redirect} onChange={e => setRedirect(e.target.value)} disabled={!saved} />
+                <input className="form-input" aria-label="Consent redirect URI" placeholder="Redirect URI (leave blank to use this app's /consented page)" value={redirect} onChange={e => setRedirect(e.target.value)} disabled={!saved} />
                 <div className="ob-actions">
                   <button className="btn-export" disabled={!saved} onClick={async () => {
                     if (!saved) return;

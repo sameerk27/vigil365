@@ -184,11 +184,11 @@ function PolicyModal({ policy, onSave, onClose }: {
         <div className="detail-modal-body">
           <div className="policy-field">
             <label className="policy-label">Policy Name</label>
-            <input className="policy-input" value={form.name ?? ""} onChange={e => set("name", e.target.value)} placeholder="e.g. Critical Alert Monitor"/>
+            <input aria-label="Policy Name" className="policy-input" value={form.name ?? ""} onChange={e => set("name", e.target.value)} placeholder="e.g. Critical Alert Monitor"/>
           </div>
           <div className="policy-field">
             <label className="policy-label">Category</label>
-            <select className="policy-input" value={form.category ?? "identity"} onChange={e => set("category", e.target.value)}>
+            <select aria-label="Category" className="policy-input" value={form.category ?? "identity"} onChange={e => set("category", e.target.value)}>
               <option value="identity">Identity</option>
               <option value="devices">Devices</option>
               <option value="email">Email</option>
@@ -198,7 +198,7 @@ function PolicyModal({ policy, onSave, onClose }: {
           </div>
           <div className="policy-field">
             <label className="policy-label">Policy Type</label>
-            <select className="policy-input" value={kind} onChange={e => set("kind", e.target.value)}>
+            <select aria-label="Policy Type" className="policy-input" value={kind} onChange={e => set("kind", e.target.value)}>
               <option value="metric">Metric threshold — fire when a count crosses a limit</option>
               <option value="activity">Tenant activity — fire when something happens (audit event)</option>
               <option value="anomaly">Anomaly — fire when a trend spikes above baseline</option>
@@ -208,23 +208,23 @@ function PolicyModal({ policy, onSave, onClose }: {
             <>
               <div className="policy-field">
                 <label className="policy-label">Activity to Match (* = wildcard, e.g. "*conditional access policy")</label>
-                <input className="policy-input" value={form.activityPattern ?? ""} onChange={e => set("activityPattern", e.target.value)}
+                <input aria-label="Activity to match (* = wildcard)" className="policy-input" value={form.activityPattern ?? ""} onChange={e => set("activityPattern", e.target.value)}
                   placeholder='e.g. "Add member to role" or "Consent to application"'/>
               </div>
               <div className="policy-field">
                 <label className="policy-label">Time Window (minutes)</label>
-                <input type="number" className="policy-input" min={1} value={form.windowMinutes ?? 60} onChange={e => set("windowMinutes", Number(e.target.value))}/>
+                <input aria-label="Time Window (minutes)" type="number" className="policy-input" min={1} value={form.windowMinutes ?? 60} onChange={e => set("windowMinutes", Number(e.target.value))}/>
               </div>
               <div className="policy-field">
                 <label className="policy-label">Threshold (fire when &ge; this many matching events in the window)</label>
-                <input type="number" className="policy-input" min={1} value={form.threshold ?? 1} onChange={e => set("threshold", Number(e.target.value))}/>
+                <input aria-label="Threshold (fire when ≥ this many matching events in the window)" type="number" className="policy-input" min={1} value={form.threshold ?? 1} onChange={e => set("threshold", Number(e.target.value))}/>
               </div>
             </>
           ) : kind === "anomaly" ? (
             <>
               <div className="policy-field">
                 <label className="policy-label">Trend Metric to Watch</label>
-                <select className="policy-input" value={form.metric ?? ""} onChange={e => set("metric", e.target.value)}>
+                <select aria-label="Trend Metric to Watch" className="policy-input" value={form.metric ?? ""} onChange={e => set("metric", e.target.value)}>
                   <option value="">Select metric…</option>
                   {(metricOptions[form.category ?? "identity"] ?? []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   <option value="complianceIssuesCount">Compliance issues</option>
@@ -233,35 +233,35 @@ function PolicyModal({ policy, onSave, onClose }: {
               </div>
               <div className="policy-field">
                 <label className="policy-label">Absolute Floor (latest value must be ≥ this)</label>
-                <input type="number" className="policy-input" min={1} value={form.threshold ?? 1} onChange={e => set("threshold", Number(e.target.value))}/>
+                <input aria-label="Absolute Floor (latest value must be ≥ this)" type="number" className="policy-input" min={1} value={form.threshold ?? 1} onChange={e => set("threshold", Number(e.target.value))}/>
               </div>
               <div className="policy-field">
                 <label className="policy-label">Baseline Multiplier</label>
-                <input type="number" className="policy-input" min={1} step={0.5} value={form.baselineMultiplier ?? 3} onChange={e => set("baselineMultiplier", Number(e.target.value))}/>
+                <input aria-label="Baseline Multiplier" type="number" className="policy-input" min={1} step={0.5} value={form.baselineMultiplier ?? 3} onChange={e => set("baselineMultiplier", Number(e.target.value))}/>
               </div>
               <div className="policy-field">
                 <label className="policy-label">Baseline Lookback (days, excluding last 24h)</label>
-                <input type="number" className="policy-input" min={1} value={form.baselineDays ?? 30} onChange={e => set("baselineDays", Number(e.target.value))}/>
+                <input aria-label="Baseline Lookback (days, excluding last 24h)" type="number" className="policy-input" min={1} value={form.baselineDays ?? 30} onChange={e => set("baselineDays", Number(e.target.value))}/>
               </div>
             </>
           ) : (
             <>
               <div className="policy-field">
                 <label className="policy-label">Metric to Watch</label>
-                <select className="policy-input" value={form.metric ?? ""} onChange={e => set("metric", e.target.value)}>
+                <select aria-label="Metric to Watch" className="policy-input" value={form.metric ?? ""} onChange={e => set("metric", e.target.value)}>
                   <option value="">Select metric…</option>
                   {(metricOptions[form.category ?? "identity"] ?? []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
               <div className="policy-field">
                 <label className="policy-label">Threshold (trigger when metric &ge; this value)</label>
-                <input type="number" className="policy-input" min={1} value={form.threshold ?? 1} onChange={e => set("threshold", Number(e.target.value))}/>
+                <input aria-label="Threshold (trigger when metric ≥ this value)" type="number" className="policy-input" min={1} value={form.threshold ?? 1} onChange={e => set("threshold", Number(e.target.value))}/>
               </div>
             </>
           )}
           <div className="policy-field">
             <label className="policy-label">Severity</label>
-            <select className="policy-input" value={form.severity ?? "Medium"} onChange={e => set("severity", e.target.value)}>
+            <select aria-label="Severity" className="policy-input" value={form.severity ?? "Medium"} onChange={e => set("severity", e.target.value)}>
               <option value="Critical">Critical</option>
               <option value="High">High</option>
               <option value="Medium">Medium</option>
@@ -270,7 +270,7 @@ function PolicyModal({ policy, onSave, onClose }: {
           </div>
           <div className="policy-field">
             <label className="policy-label">Notify Email (overrides global SMTP recipient for this policy)</label>
-            <input className="policy-input" type="email" value={form.notifyEmail ?? ""} onChange={e => set("notifyEmail", e.target.value)} placeholder="admin@contoso.com"/>
+            <input aria-label="Notify Email (overrides global SMTP recipient for this policy)" className="policy-input" type="email" value={form.notifyEmail ?? ""} onChange={e => set("notifyEmail", e.target.value)} placeholder="admin@contoso.com"/>
           </div>
         </div>
         <PolicyDryRun buildDraft={buildDraft}/>
@@ -341,7 +341,7 @@ function NotificationSettingsTab() {
         <Card title="Microsoft Teams / Slack" badge={<label className="toggle-label"><input type="checkbox" checked={cfg.teamsEnabled} onChange={e=>set("teamsEnabled", e.target.checked)}/> Enabled</label>}>
           <div className="policy-field">
             <span className="policy-label">Incoming Webhook URL</span>
-            <input className="policy-input" placeholder="https://outlook.office.com/webhook/…" value={cfg.teamsWebhookUrl ?? ""} onChange={e=>set("teamsWebhookUrl", e.target.value)}/>
+            <input aria-label="Incoming Webhook URL" className="policy-input" placeholder="https://outlook.office.com/webhook/…" value={cfg.teamsWebhookUrl ?? ""} onChange={e=>set("teamsWebhookUrl", e.target.value)}/>
           </div>
           <div data-inline-style="inline-5313025c2e">{digestChip("teamsDigest")}</div>
           <p className="hdr-sub">Paste a Teams channel "Incoming Webhook" connector URL (or a Slack incoming webhook). A formatted alert card is posted on each trigger.</p>
@@ -350,7 +350,7 @@ function NotificationSettingsTab() {
         <Card title="Generic Webhook / SIEM" badge={<label className="toggle-label"><input type="checkbox" checked={cfg.webhookEnabled} onChange={e=>set("webhookEnabled", e.target.checked)}/> Enabled</label>}>
           <div className="policy-field">
             <span className="policy-label">Endpoint URL</span>
-            <input className="policy-input" placeholder="https://…  (Sentinel, Splunk HEC, Power Automate)" value={cfg.webhookUrl ?? ""} onChange={e=>set("webhookUrl", e.target.value)}/>
+            <input aria-label="Endpoint URL" className="policy-input" placeholder="https://…  (Sentinel, Splunk HEC, Power Automate)" value={cfg.webhookUrl ?? ""} onChange={e=>set("webhookUrl", e.target.value)}/>
           </div>
           <div data-inline-style="inline-5313025c2e">{digestChip("webhookDigest")}</div>
           <p className="hdr-sub">Each alert is POSTed as JSON. Use for SIEM ingestion or custom automation.</p>
@@ -359,13 +359,13 @@ function NotificationSettingsTab() {
 
       <Card title="Email (SMTP)" badge={<div data-inline-style="inline-2b63254f19">{digestChip("emailDigest")}<label className="toggle-label"><input type="checkbox" checked={cfg.emailEnabled} onChange={e=>set("emailEnabled", e.target.checked)}/> Enabled</label></div>}>
         <div className="settings-grid">
-          <div className="policy-field"><span className="policy-label">SMTP Host</span><input className="policy-input" placeholder="smtp.office365.com" value={cfg.smtpHost ?? ""} onChange={e=>set("smtpHost", e.target.value)}/></div>
-          <div className="policy-field"><span className="policy-label">Port</span><input className="policy-input" type="number" value={cfg.smtpPort} onChange={e=>set("smtpPort", Number(e.target.value))}/></div>
+          <div className="policy-field"><span className="policy-label">SMTP Host</span><input aria-label="SMTP Host" className="policy-input" placeholder="smtp.office365.com" value={cfg.smtpHost ?? ""} onChange={e=>set("smtpHost", e.target.value)}/></div>
+          <div className="policy-field"><span className="policy-label">Port</span><input aria-label="Port" className="policy-input" type="number" value={cfg.smtpPort} onChange={e=>set("smtpPort", Number(e.target.value))}/></div>
           <div className="policy-field"><span className="policy-label">Use SSL/TLS</span><label className="toggle-label" data-inline-style="inline-5313025c2e"><input type="checkbox" checked={cfg.smtpUseSsl} onChange={e=>set("smtpUseSsl", e.target.checked)}/> Enabled</label></div>
-          <div className="policy-field"><span className="policy-label">Username</span><input className="policy-input" value={cfg.smtpUsername ?? ""} onChange={e=>set("smtpUsername", e.target.value)}/></div>
-          <div className="policy-field"><span className="policy-label">Password</span><input className="policy-input" type="password" placeholder={cfg.hasSmtpPassword ? "•••••• (unchanged)" : ""} value={cfg.smtpPassword ?? ""} onChange={e=>set("smtpPassword", e.target.value)}/></div>
-          <div className="policy-field"><span className="policy-label">From Address</span><input className="policy-input" placeholder="vigil365@yourdomain.com" value={cfg.fromAddress ?? ""} onChange={e=>set("fromAddress", e.target.value)}/></div>
-          <div className="policy-field"><span className="policy-label">Default Recipient</span><input className="policy-input" placeholder="secops@yourdomain.com" value={cfg.defaultRecipient ?? ""} onChange={e=>set("defaultRecipient", e.target.value)}/></div>
+          <div className="policy-field"><span className="policy-label">Username</span><input aria-label="Username" className="policy-input" value={cfg.smtpUsername ?? ""} onChange={e=>set("smtpUsername", e.target.value)}/></div>
+          <div className="policy-field"><span className="policy-label">Password</span><input aria-label="Password" className="policy-input" type="password" placeholder={cfg.hasSmtpPassword ? "•••••• (unchanged)" : ""} value={cfg.smtpPassword ?? ""} onChange={e=>set("smtpPassword", e.target.value)}/></div>
+          <div className="policy-field"><span className="policy-label">From Address</span><input aria-label="From Address" className="policy-input" placeholder="vigil365@yourdomain.com" value={cfg.fromAddress ?? ""} onChange={e=>set("fromAddress", e.target.value)}/></div>
+          <div className="policy-field"><span className="policy-label">Default Recipient</span><input aria-label="Default Recipient" className="policy-input" placeholder="secops@yourdomain.com" value={cfg.defaultRecipient ?? ""} onChange={e=>set("defaultRecipient", e.target.value)}/></div>
         </div>
       </Card>
 
@@ -376,7 +376,7 @@ function NotificationSettingsTab() {
         <div className="settings-grid">
           <div className="policy-field">
             <span className="policy-label">Minimum severity to notify</span>
-            <select className="policy-input" value={cfg.minSeverity} onChange={e=>set("minSeverity", e.target.value)}>
+            <select aria-label="Minimum severity to notify" className="policy-input" value={cfg.minSeverity} onChange={e=>set("minSeverity", e.target.value)}>
               <option value="low">Low and above</option>
               <option value="medium">Medium and above</option>
               <option value="high">High and above</option>
@@ -385,18 +385,18 @@ function NotificationSettingsTab() {
           </div>
           <div className="policy-field">
             <span className="policy-label">Digest Frequency</span>
-            <select className="policy-input" value={cfg.digestFrequency ?? "daily"} onChange={e=>set("digestFrequency", e.target.value)}>
+            <select aria-label="Digest Frequency" className="policy-input" value={cfg.digestFrequency ?? "daily"} onChange={e=>set("digestFrequency", e.target.value)}>
               <option value="daily">Daily</option>
               <option value="weekly">Weekly (Monday)</option>
             </select>
           </div>
           <div className="policy-field">
             <span className="policy-label">Digest send hour (UTC)</span>
-            <input className="policy-input" type="number" min={0} max={23} value={cfg.digestHourUtc ?? 8} onChange={e=>set("digestHourUtc", Number(e.target.value))}/>
+            <input aria-label="Digest send hour (UTC)" className="policy-input" type="number" min={0} max={23} value={cfg.digestHourUtc ?? 8} onChange={e=>set("digestHourUtc", Number(e.target.value))}/>
           </div>
           <div className="policy-field">
             <span className="policy-label">Alert after N consecutive channel failures</span>
-            <input className="policy-input" type="number" min={1} value={cfg.failureAlertThreshold ?? 3} onChange={e=>set("failureAlertThreshold", Number(e.target.value))}/>
+            <input aria-label="Alert after N consecutive channel failures" className="policy-input" type="number" min={1} value={cfg.failureAlertThreshold ?? 3} onChange={e=>set("failureAlertThreshold", Number(e.target.value))}/>
           </div>
           <div className="policy-field">
             <span className="policy-label">MSP digest (one email a day, every client, worst first)</span>
@@ -404,7 +404,7 @@ function NotificationSettingsTab() {
           </div>
           <div className="policy-field">
             <span className="policy-label">MSP digest hour (UTC)</span>
-            <input className="policy-input" type="number" min={0} max={23} value={cfg.mspDigestHourUtc ?? 7} onChange={e=>set("mspDigestHourUtc", Number(e.target.value))}/>
+            <input aria-label="MSP digest hour (UTC)" className="policy-input" type="number" min={0} max={23} value={cfg.mspDigestHourUtc ?? 7} onChange={e=>set("mspDigestHourUtc", Number(e.target.value))}/>
           </div>
         </div>
         <p className="hdr-sub">Digest channels batch their alerts into one rollup message. If a channel fails to deliver this many times in a row, Vigil365 raises a high-severity delivery-failure alert on the still-working channels.</p>
@@ -1159,12 +1159,12 @@ function ClientRoutingCard() {
       <div className="settings-grid">
         <div className="policy-field"><span className="policy-label">Notify the MSP</span><label className="toggle-label"><input type="checkbox" disabled={!isAdmin} checked={r.notifyMsp} onChange={e=>set("notifyMsp", e.target.checked)}/> MSP default recipient and channels</label></div>
         <div className="policy-field"><span className="policy-label">Notify the client</span><label className="toggle-label"><input type="checkbox" disabled={!isAdmin} checked={r.notifyClient} onChange={e=>set("notifyClient", e.target.checked)}/> Client's own destinations below</label></div>
-        <div className="policy-field"><span className="policy-label">Client recipient email(s)</span><input className="policy-input" disabled={!isAdmin} placeholder="it@client.example, soc@client.example" value={r.recipientEmail ?? ""} onChange={e=>set("recipientEmail", e.target.value)}/></div>
-        <div className="policy-field"><span className="policy-label">Client Teams webhook (optional)</span><input className="policy-input" disabled={!isAdmin} placeholder="https://…webhook.office.com/…" value={r.teamsWebhookUrl ?? ""} onChange={e=>set("teamsWebhookUrl", e.target.value)}/></div>
-        <div className="policy-field"><span className="policy-label">Client webhook URL (optional)</span><input className="policy-input" disabled={!isAdmin} placeholder={r.hasWebhookUrl ? "•••••• (unchanged; type to replace)" : "https://…"} value={webhookUrl} onChange={e=>setWebhookUrl(e.target.value)}/></div>
+        <div className="policy-field"><span className="policy-label">Client recipient email(s)</span><input aria-label="Client recipient email(s)" className="policy-input" disabled={!isAdmin} placeholder="it@client.example, soc@client.example" value={r.recipientEmail ?? ""} onChange={e=>set("recipientEmail", e.target.value)}/></div>
+        <div className="policy-field"><span className="policy-label">Client Teams webhook (optional)</span><input aria-label="Client Teams webhook (optional)" className="policy-input" disabled={!isAdmin} placeholder="https://…webhook.office.com/…" value={r.teamsWebhookUrl ?? ""} onChange={e=>set("teamsWebhookUrl", e.target.value)}/></div>
+        <div className="policy-field"><span className="policy-label">Client webhook URL (optional)</span><input aria-label="Client webhook URL (optional)" className="policy-input" disabled={!isAdmin} placeholder={r.hasWebhookUrl ? "•••••• (unchanged; type to replace)" : "https://…"} value={webhookUrl} onChange={e=>setWebhookUrl(e.target.value)}/></div>
         <div className="policy-field">
           <span className="policy-label">Minimum severity for this client</span>
-          <select className="policy-input" disabled={!isAdmin} value={r.minSeverity ?? ""} onChange={e=>set("minSeverity", e.target.value || null)}>
+          <select aria-label="Minimum severity for this client" className="policy-input" disabled={!isAdmin} value={r.minSeverity ?? ""} onChange={e=>set("minSeverity", e.target.value || null)}>
             <option value="">Inherit the MSP setting</option>
             <option value="low">Low and above</option>
             <option value="medium">Medium and above</option>

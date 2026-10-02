@@ -55,19 +55,19 @@ export function ClientGate({ children }: { children: React.ReactNode }) {
   }
   if (state === "none") {
     return (
-      <div className="client-gate">
+      <main className="client-gate" id="main-content">
         <EmptyState icon={<Building2 size={28} />}
           message="No client tenants are assigned to you yet. Ask an Admin to assign you one in User Management." />
-      </div>
+      </main>
     );
   }
   return (
-    <div className="client-gate">
+    <main className="client-gate" id="main-content">
       <div className="client-gate-hdr">
         <h1 className="hdr-title">Choose a client</h1>
         <p className="hdr-sub">Vigil365 shows one client at a time. Pick one below to open its dashboard — you can switch any time from the header.</p>
       </div>
       <ClientsPage />
-    </div>
+    </main>
   );
 }

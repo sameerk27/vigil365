@@ -9,7 +9,7 @@
   --border: #e2e8f0;   --border-soft: #f1f5f9;
   --sidebar: #0d1f3c;  --sidebar-item-active: rgba(59, 130, 246, .16);
   /* Text */
-  --text: #0f172a;   --text-mid: #475569;   --text-muted: #64748b;   --text-faint: #94a3b8;
+  --text: #0f172a;   --text-mid: #475569;   --text-muted: #576579;   --text-faint: #5f6f86;  /* both ≥4.5:1 on card, subtle and app backgrounds (T3) */
   --text-on-dark: #ffffff;   --text-on-dark-mid: #cbd5e1;   --text-on-dark-faint: #475569;
   /* Brand */
   --accent: #2563eb;   --accent-hover: #1d4ed8;   --accent-light: #3b82f6;
