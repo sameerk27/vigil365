@@ -3,7 +3,7 @@ import { Building2, Plus, Plug, Link as LinkIcon, PlayCircle, Power, Trash2, Shi
 import { useAuth, getSelectedTenantId, setSelectedTenantId } from "../services/api";
 import { showToast } from "../services/toast";
 import { confirmAction } from "../services/confirm";
-import { Card, Badge, EmptyState, LoadingSkeleton, StatBox, CopyButton } from "../components/SharedComponents";
+import { Card, Badge, EmptyState, LoadingSkeleton, StatBox, CopyButton, InlineError } from "../components/SharedComponents";
 import { fmtDate, relTime } from "../services/utils";
 import { ClientAlertQueue } from "../components/ClientAlertQueue";
 import { tenantApi, setupApi, collectionTone, type ClientTenant, type TenantRollupRow, type MspAppStatus } from "../services/tenants";
@@ -25,10 +25,13 @@ export function ClientsPage() {
   const [tenants, setTenants] = useState<ClientTenant[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [onboarding, setOnboarding] = useState<ClientTenant | "new" | null>(null);
+  const [rollupError, setRollupError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [r, t] = await Promise.all([tenantApi.rollup(), isAdmin ? tenantApi.list() : Promise.resolve(null)]);
+    // A failed rollup is an error, not "no clients" (MSP_V12_PLAN.md U12).
     setRollup(r.ok ? r.value : []);
+    setRollupError(r.ok ? null : r.error);
     if (t) setTenants(t.ok ? t.value : []);
   }, [isAdmin]);
 
@@ -103,7 +106,9 @@ export function ClientsPage() {
         </span>
       </div>
 
-      {sorted === null ? <LoadingSkeleton type="kpi" /> : sorted.length === 0 ? (
+      {sorted === null ? <LoadingSkeleton type="kpi" />
+        : rollupError ? <InlineError title="Couldn't load your clients" message={rollupError} onRetry={load} />
+        : sorted.length === 0 ? (
         <EmptyState icon={<Building2 size={28} />} message={isAdmin ? "No clients yet. Add the first one below." : "No clients have been assigned to you yet. Ask an Admin."} />
       ) : (
         <>
@@ -241,6 +246,7 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
   const [baseUrl, setBaseUrl] = useState("");
   const [redirect, setRedirect] = useState(() => `${window.location.origin}/consented`);
   const [consentUrl, setConsentUrl] = useState<string | null>(null);
+  const [consentError, setConsentError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -300,14 +306,16 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
     if (!saved) return;
     setBusy("consent");
     setTestResult(null);
+    setConsentError(null);
+    const before = saved.lastError;
     const r = await tenantApi.consentUrl(saved.id); // server default → its own /consented
-    if (!r.ok) { setBusy(null); showToast(r.error, "error"); return; }
+    if (!r.ok) { setBusy(null); setConsentError(r.error); return; }
 
     const popup = window.open(r.value.url, "vigil365-consent", "width=620,height=800");
     if (!popup) {
       // Popup blocked — fall back to a copyable link the admin can open manually.
       setBusy(null); setConsentUrl(r.value.url);
-      showToast("Allow popups to sign in here, or copy the consent link below.", "error");
+      setConsentError("The browser blocked the sign-in window. Allow popups for this site and try again, or copy the consent link below.");
       return;
     }
 
@@ -328,8 +336,12 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
         await runTest();                 // verify + record the Entra tenant id
       } else {
         setBusy(null);
-        if (timedOut) showToast("Timed out waiting for consent. Try again, or use the copy-link option.", "error");
-        // popup closed without consenting: leave the step ready to retry, no error noise
+        // Say why inline (MSP_V12_PLAN.md U11): the /consented page records a
+        // refusal or an error on the tenant; otherwise the window just closed.
+        const err = g.ok ? g.value.lastError : null;
+        setConsentError(timedOut ? "Timed out after 5 minutes waiting for consent. Try again, or send the client the consent link below."
+          : err && err !== before ? `Consent was not granted: ${err}`
+          : "The sign-in window closed before consent was granted. Nothing changed — try again when ready.");
       }
     }, 2500);
     pollRef.current = poll;
@@ -435,6 +447,7 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
             {saved?.consentGrantedAt && !testResult && (
               <p className="al-date"><Info size={12} /> Last connected {relTime(saved.consentGrantedAt) || fmtDate(saved.consentGrantedAt)}.</p>
             )}
+            {consentError && <InlineError title="Not connected yet" message={consentError} />}
             <details className="ob-fallback">
               <summary>Can't sign in here? Send the client a link instead</summary>
               <div className="ob-fields">

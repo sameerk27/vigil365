@@ -40,6 +40,9 @@ export function ClientGate({ children }: { children: React.ReactNode }) {
 
       if (tenants.length === 0) { setActiveClientName(null); setState("none"); return; }
       if (!active) { setActiveClientName(null); setState("pick"); return; }
+      // The server resolved a client on its own (e.g. the user's only one):
+      // record it so per-client controls know a client is in scope (U13).
+      if (active.id !== stored) setSelectedTenantId(active.id);
       setActiveClientName(active.name);
       setState("ready");
     });

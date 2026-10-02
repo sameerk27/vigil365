@@ -5,7 +5,7 @@ import { acApi, recApi, wbApi, useAuth, crossNavigate, consumeNavTab, getSelecte
 import { showToast } from "../services/toast";
 import { routingApi, type TenantRouting } from "../services/tenants";
 import { confirmAction } from "../services/confirm";
-import { DetailField, Card, Badge, EmptyState, ExportDropdown, ProgressBar, CopyButton, LoadingSkeleton, TriageSection, rowActivation, SeverityFilter} from "../components/SharedComponents";
+import { DetailField, Card, Badge, EmptyState, ExportDropdown, ProgressBar, CopyButton, LoadingSkeleton, TriageSection, rowActivation, SeverityFilter, InlineError} from "../components/SharedComponents";
 import { CollectionStatusBanner } from "../components/CollectionStatusBanner";
 import { CollectionRunHistory } from "../components/CollectionRunHistory";
 import { AlertMetricsTab } from "../components/AlertMetricsTab";
@@ -447,7 +447,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
   deepLinkAlertId?: string | null;
   onDeepLinkConsumed?: () => void;
 }) {
-  const { canMutate } = useAuth();
+  const { canMutate, isAdmin } = useAuth();
 
   // The product is alert-first: land an analyst in the open, worst-first queue.
   // A cross-navigation may request a specific tab (e.g. "show me the collection
@@ -1061,13 +1061,16 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                       </td>
                       {clientSelected && (
                         <td>{p.tenantId ? <span className="al-date">Client policy</span>
-                          : <PolicyOverrideControl policy={p} override={overrides[p.id]} onChanged={loadOverrides}/>}</td>
+                          : isAdmin ? <PolicyOverrideControl policy={p} override={overrides[p.id]} onChanged={loadOverrides}/>
+                          : <span className="al-date">{overrideText(overrides[p.id])}</span>}</td>
                       )}
                       <td className="al-date">{p.lastTriggered ? relTime(p.lastTriggered) : "Never"}</td>
                       <td data-inline-style="inline-3d9df89ef8">{p.triggerCount}</td>
                       <td data-inline-style="inline-95e7b1fc4c">
-                        <button className="btn-export" data-inline-style="inline-fcd3bb7174" onClick={() => { setEditPolicy(p); setShowModal(true); }}>Edit</button>
-                        <button className="btn-ack" onClick={() => handleDeletePolicy(p.id)}>Delete</button>
+                        {canMutate && <>
+                          <button className="btn-export" data-inline-style="inline-fcd3bb7174" onClick={() => { setEditPolicy(p); setShowModal(true); }}>Edit</button>
+                          <button className="btn-ack" onClick={() => handleDeletePolicy(p.id)}>Delete</button>
+                        </>}
                       </td>
                     </tr>
                   ))}
@@ -1124,9 +1127,16 @@ function ClientRoutingCard() {
   const [r, setR] = useState<TenantRouting | null>(null);
   const [webhookUrl, setWebhookUrl] = useState<string>("");
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => { routingApi.get().then(res => { if (res.ok) setR(res.value); }); }, []);
-  if (!r) return null;
+  const load = useCallback(async () => {
+    const res = await routingApi.get();
+    if (res.ok) { setR(res.value); setError(null); } else setError(res.error);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  // Was silently blank on failure (MSP_V12_PLAN.md U12).
+  if (error) return <Card title="This client's routing"><InlineError title="Couldn't load this client's routing" message={error} onRetry={load}/></Card>;
+  if (!r) return <Card title="This client's routing"><LoadingSkeleton type="table"/></Card>;
   const set = <K extends keyof TenantRouting>(k: K, v: TenantRouting[K]) => setR(x => x ? { ...x, [k]: v } : x);
 
   const save = async () => {
@@ -1144,6 +1154,7 @@ function ClientRoutingCard() {
     <Card title="This client's routing"
       badge={<Badge label={r.notifyMsp && r.notifyClient ? "MSP + client" : r.notifyClient ? "Client only" : "MSP only"} tone="info"/>}
       action={isAdmin ? <button className="btn-run" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save routing"}</button> : undefined}>
+      {!isAdmin && <p className="al-date">Read-only — only an Admin can change routing.</p>}
       <p className="hdr-sub">Where alerts for the selected client go. The MSP's channels above are the default; the client's own destinations are used when enabled here.</p>
       <div className="settings-grid">
         <div className="policy-field"><span className="policy-label">Notify the MSP</span><label className="toggle-label"><input type="checkbox" disabled={!isAdmin} checked={r.notifyMsp} onChange={e=>set("notifyMsp", e.target.checked)}/> MSP default recipient and channels</label></div>
@@ -1164,6 +1175,13 @@ function ClientRoutingCard() {
       </div>
     </Card>
   );
+}
+
+// Read-only summary of a client override, for non-admins (MSP_V12_PLAN.md U13).
+function overrideText(o: { enabled: boolean | null; threshold: number | null } | undefined): string {
+  if (o?.enabled === false) return "Off for this client";
+  if (o?.threshold != null) return `Threshold ${o.threshold}`;
+  return "Inherits";
 }
 
 // ─── MSP: per-client override of an install-wide policy ──────────────────────

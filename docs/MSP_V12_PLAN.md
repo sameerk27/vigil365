@@ -6,7 +6,7 @@ harness, T2 signed-in e2e in CI). Stage 2 ✅ (U1 Choose-a-client gate,
 U4 consent-poll cleanup, U5 client named in header/toasts/exports, M2 web register path
 removed + MSP app readiness card + one `graph-permissions.json`). Stage 3 ✅ (M3 installer MSP mode + PostgreSQL + Express block, M4 convert-to-MSP by
 re-running Setup, M5 -Mode/-DatabaseProvider in deploy/enterprise scripts, Postgres compose = MSP).
-Stage 3 is built and unit-tested but **not yet run on a real machine** — that is R1. Next: Stage 4. Combines and replaces `MSP_MODE_PLAN.md` and
+Stage 3 is built and unit-tested but **not yet run on a real machine** — that is R1. Stage 4 ✅ (U6 cross-client queue, U7 API token UI with client restriction, U8 DB-size banner, U9 MSP audit Client column, U10–U13 — see notes under the table). Next: Stage 5. Combines and replaces `MSP_MODE_PLAN.md` and
 `MSP_UI_PLAN.md`. Builds on `MSP_EDITION_PLAN.md` (backend Phases 1–8 + one-go
 onboarding — implemented, uncommitted on `feat/msp-phase1-db-providers`).
 
@@ -132,6 +132,8 @@ Size: S ≈ ½ day · M ≈ 1–2 days · L ≈ 3–4 days.
 | U11 | **Onboarding error states:** popup blocked, consent declined, consented in wrong tenant, test failed after consent — each with a distinct message and retry. | S |
 | U12 | **Loading / empty / error states** on roster, rollup, routing card, override column, assignment picker — consistent with `SharedComponents`. | S |
 | U13 | **Non-admin experience** for 0 / 1 / many assigned clients; every Admin-only control hidden. | S |
+
+**Stage 4 as built — honest gaps:** U10 keeps the page (hash survives the reload) but **not** in-page filters; they reset on switch. U11 covers popup blocked, window closed, consent declined (the tenant's recorded error), and timeout inline; "consented in the wrong tenant" and "test failed after consent" surface through the existing connection-test result, not a dedicated message. U12 covers rollup, routing card and the cross-client queue; the roster table and assignment picker still use their older empty states. U13 also fixed a real bug: a user whose only client was resolved by the server never had it recorded, so per-client controls stayed hidden; and Viewers no longer see policy Edit/Delete (the server requires Analyst).
 
 ### Stage 5 — Docs, accessibility, release gate
 
