@@ -1,7 +1,7 @@
 # Vigil365 Operations Runbook
 
-This runbook covers the data required to recover Vigil365: the SQL Server
-database, the Data Protection key ring, and deployment configuration. Test this
+This runbook covers the data required to recover Vigil365: the database (SQL
+Server or PostgreSQL), the Data Protection key ring, and deployment configuration. Test this
 procedure on a non-production host before relying on it during an incident.
 
 ## Recovery objective
@@ -68,6 +68,36 @@ Copy-Item .env "backups/.env-$stamp" # keep only in encrypted storage
 shell history or source control. The `.env` file and key ring are secret
 material.
 
+## PostgreSQL backup
+
+Use the custom format (`-Fc`): compressed, and restorable table by table.
+
+```powershell
+$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$env:PGPASSWORD = '<from your secret store>'   # or use a pgpass file
+pg_dump -h <host> -U vigil365 -d vigil365 -Fc -f "D:\Vigil365Backups\vigil365-$stamp.dump"
+pg_restore --list "D:\Vigil365Backups\vigil365-$stamp.dump" | Select-Object -First 5   # proves the file is readable
+```
+
+Docker (`docker-compose.postgres.yml` mounts `./backups` into the db container):
+
+```bash
+stamp=$(date +%Y%m%d-%H%M%S)
+docker compose -f docker-compose.postgres.yml exec -T db pg_dump -U vigil365 -d vigil365 -Fc -f /backups/vigil365-$stamp.dump
+docker compose -f docker-compose.postgres.yml cp app:/keys backups/keys-$stamp
+```
+
+Back up the key ring and configuration with it, exactly as for SQL Server.
+
+**Restore** into an empty database (never over production during a drill):
+
+```bash
+createdb -h <host> -U postgres -O vigil365 vigil365_restore
+pg_restore -h <host> -U vigil365 -d vigil365_restore --no-owner "vigil365-<stamp>.dump"
+```
+
+Then follow steps 4–6 of the restore drill below.
+
 ## Restore drill
 
 Perform restores first to an isolated SQL database/server and an isolated app
@@ -105,6 +135,25 @@ docker compose up -d
 5. Keep the previous application artifact until the post-upgrade checks pass.
    Database rollback requires restoring the verified backup; do not use an
    arbitrary migration downgrade against production.
+
+**v1.2 migrations are one-way.** Upgrading to 1.2 adds the client-tenant columns and
+tables. An older build cannot run on the upgraded database; going back means
+restoring the pre-upgrade backup (and losing anything collected since).
+
+## Convert to MSP
+
+1. Make a verified backup set (database, keys, configuration).
+2. **On SQL Server Express?** MSP mode refuses Express. Restore the backup to SQL
+   Server Standard/Enterprise or Azure SQL first and point the connection string
+   there. (Moving to PostgreSQL is a data migration, not a restore — plan it as a
+   fresh MSP install and re-onboard.)
+3. Re-run Setup and choose **MSP**. It reuses the existing app registration, makes it
+   multi-tenant, adds the `/consented` redirect, and sets `Edition:Mode=Msp`.
+4. Sign in. Your existing data is the first client ("Default" — rename it on the
+   Clients page). Add further clients with **Add client**.
+
+Converting back to Single is not a supported path; restore the
+pre-conversion backup instead.
 
 ## Post-incident checks
 

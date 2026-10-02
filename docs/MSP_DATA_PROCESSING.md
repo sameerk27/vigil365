@@ -53,8 +53,10 @@ Protection keys held by the MSP's installation.
 - **MSP Admins** see every client.
 - **Other MSP staff** see only the clients an Admin has explicitly assigned to them.
   A new staff member sees no client until assigned.
-- **Clients** have no login to Vigil365 unless the MSP chooses to grant one, in which
-  case the same assignment mechanism limits them to their own tenant.
+- **Clients** have no login to Vigil365. Sign-in is pinned to the MSP's own Entra
+  tenant; a user from a client tenant is refused even if they hold a valid token.
+  Clients receive what the MSP routes to them (alert emails, Teams/webhook messages,
+  scheduled reports) and nothing else.
 - Every administrative action (assigning staff, changing credentials, deactivating or
   purging a client, changing routing) is written to a tamper-evident audit log
   (SHA-256 hash chain, verifiable and exportable).

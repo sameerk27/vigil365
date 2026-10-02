@@ -62,13 +62,44 @@ The Metrics tab shows the live database size on either engine.
 
 Vigil365 keeps every alert, run, snapshot, note and audit event tagged with the
 tenant it belongs to. A single-organisation install has one tenant — created for
-you on upgrade as "Default" — and never needs to think about this. The MSP edition
-adds more (see `docs/MSP_EDITION_PLAN.md`); until its tenant switcher ships, an
-Admin can address a specific tenant by sending the `X-Vigil-Tenant: <tenant id>`
-header. With several tenants and no header, requests for tenant data return
-**400** rather than mixing tenants' data.
+you on upgrade as "Default" — and never needs to think about this.
+
+**Edition mode.** `Edition:Mode` is `Single` (default) or `Msp`; the installer sets
+it. Single mode hides everything below: no Clients page, no switcher, and the API
+refuses a second client. In MSP mode the header switcher scopes the dashboard to
+one client at a time (the API reads it from the `X-Vigil-Tenant: <tenant id>`
+header). With several clients and none chosen, the app opens on **Clients** and
+tenant-data requests return **400** rather than mixing clients' data. In both modes
+sign-in is accepted only from the install's own Entra tenant.
 
 ### Onboarding a client tenant (MSP)
+
+1. **Clients → Add client**: name it (the Entra tenant id is optional — it is
+   recorded on consent).
+2. **Sign in as global admin & consent**: a Microsoft popup opens. The client's
+   Global Administrator signs in and approves the read-only permissions. The
+   popup lands on Vigil365's `/consented` page, which records the consent.
+3. The dialog tests the connection on its own, records the client's Entra id and
+   shows **Connected**. Collection starts on the next cycle.
+
+If it does not connect, the dialog says why inline: popup blocked (allow popups,
+or use the copy-link option), consent declined (Microsoft's error is shown), the
+window was closed first, or a 5-minute timeout. Nothing is half-saved — retry
+when ready. If the client's admin cannot sign in from your screen, open **Can't
+sign in here? Send the client a link instead**, copy the consent link to them, and
+press **Test now** once they confirm.
+
+The **MSP app readiness** card on Clients checks that the app registration is
+multi-tenant, has the `/consented` redirect and every permission in
+`graph-permissions.json`. It needs `Application.Read.All` in **your** tenant
+(granted by the installer); without it the card shows "unknown".
+
+**Day to day.** The Clients page shows every client worst-first and an **Open
+alerts across clients** queue: acknowledge or resolve in place (the toast names
+the client), or click an alert to switch to its client. The audit log (User
+Management) shows one list across clients, with a Client column, for MSP Admins.
+
+#### Appendix: the same steps through the API
 
 All endpoints are Admin-only and audited.
 
@@ -83,10 +114,9 @@ All endpoints are Admin-only and audited.
    Entra tenant id matches, and records the consent time. Collection starts on the
    next cycle; `GET /api/tenants` shows each client's last collection status and error.
 
-Or do all of the above from the UI: **Clients → Add client** walks through the same
-four steps. Non-Admin staff see only the clients assigned to them (**User Management →
-Clients** column); Admins see every client. The header switcher scopes the dashboard
-to one client at a time.
+Non-Admin staff see only the clients assigned to them (**User Management →
+Clients** column); Admins see every client. Non-Admins see routing and per-client
+policy overrides read-only.
 
 **Where a client's alerts go.** By default every client's alerts go to the MSP's own
 channels and default recipient (Settings → Notifications). Per client, an Admin can
@@ -110,8 +140,13 @@ on that client's digest emails, CSVs and PDFs. `/health` reports the database si
 and flags `sizeWarning` above `Database:SizeWarningBytes` (default 8 GiB). For DPA
 reviews, see `docs/MSP_DATA_PROCESSING.md`.
 
-**SIEM tokens.** Create an API token with a `tenantId` to restrict it to one client.
-An unrestricted token in a multi-tenant install must send `X-Vigil-Tenant`.
+**SIEM tokens.** **User Management → API tokens → New token.** The token is shown
+once. In MSP mode, **Restrict to client** limits it to one client; an unrestricted
+token in a multi-tenant install must send `X-Vigil-Tenant` on every request.
+
+**Database size.** Admins see a banner when `/health` reports `sizeWarning`
+(above `Database:SizeWarningBytes`, default 8 GiB) — on SQL Server Express that is
+the cue to shorten retention or move engines before the 10 GB write limit.
 
 A tenant with no credentials of its own falls back to the install-wide Graph
 credentials **only if** it has no Entra id recorded or its Entra id matches them;

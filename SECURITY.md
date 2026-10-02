@@ -16,7 +16,12 @@ Actively developed; security fixes target the latest `master`. Pin to a released
 
 ## Design & Deployment Model
 
-Vigil365 is a **self-hosted, single-tenant** application meant to run on infrastructure the operating organisation controls — **not** a public multi-tenant SaaS.
+Vigil365 is a **self-hosted** application meant to run on infrastructure the operating organisation controls — **not** a public SaaS. It runs in one of two trust models, set by `Edition:Mode`:
+
+- **Single organisation** — one organisation monitors its own Microsoft 365 tenant. The app registration is single-tenant; one tenant's data in one database.
+- **MSP** — a managed service provider monitors many client tenants. The app registration is multi-tenant so each client's Global Administrator can grant admin consent to the same read-only permissions; the client can revoke it at any time in their own Entra admin center. **Sign-in is still pinned to the MSP's own tenant** — client users cannot sign in. Every row is tagged with its client; a global query filter and a write guard stop one client's data being read or written under another, enforced by an isolation test suite on SQL Server and PostgreSQL. Staff other than Admins see only the clients assigned to them. Client credentials (when a client uses its own) are encrypted at rest. See `docs/MSP_DATA_PROCESSING.md`.
+
+In both models:
 
 - **Read-only against your tenant** — Graph access is app-only (client credentials) with `*.Read.All` permissions only; the app never writes to the M365 tenant.
 - **Data stays in-tenant** — collected data is stored in the operator's own SQL database; nothing is sent to any third-party service.

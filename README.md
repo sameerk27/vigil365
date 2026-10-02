@@ -69,6 +69,7 @@ A self-hosted Microsoft 365 security monitoring dashboard that aggregates alerts
 3. [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) (for building the installer)
 
 Nothing else is required on the server. SQL Server Express and Azure CLI are installed by the setup wizard if they are not already there.
+(MSP mode is the exception: it needs a full SQL Server edition or PostgreSQL that you provide — see [Install for an MSP](#install-for-an-msp-multi-tenant).)
 
 All paths also need a Microsoft 365 tenant where you can create an app registration.
 
@@ -138,6 +139,39 @@ rather than installing a second one.
 
 After the wizard finishes, open the app and finish **Setup** in the browser to
 supply the Graph credentials used for collection.
+
+### Install for an MSP (multi-tenant)
+
+The wizard asks **Single organisation** or **MSP**. Pick MSP to watch many client
+tenants from one install. The differences:
+
+- **Database.** MSP mode needs **SQL Server Standard/Enterprise, Azure SQL, or
+  PostgreSQL 14+**, which you install and own. The wizard refuses SQL Server
+  Express in MSP mode (10 GB write limit) and does not install PostgreSQL for you.
+  Give it a connection string; it creates the database and schema.
+- **App registration.** The wizard makes it multi-tenant and adds the
+  `https://<your host>/consented` redirect, so a client's Global Administrator can
+  consent to the same read-only permissions (`graph-permissions.json`). Sign-in to
+  Vigil365 stays pinned to **your** tenant — client users cannot sign in.
+- **Onboarding a client** is one step in the app: **Clients → Add client → Sign in
+  as global admin & consent**. The client's admin approves in a popup; Vigil365 then
+  tests the connection and starts collecting. See
+  [ADMINISTRATION.md](docs/ADMINISTRATION.md#onboarding-a-client-tenant-msp).
+
+**Docker + PostgreSQL route** (no Windows needed):
+
+```bash
+cp .env.example .env   # set POSTGRES_PASSWORD and the Entra values
+docker compose -f docker-compose.postgres.yml up -d
+```
+
+That stack runs in MSP mode (`Edition__Mode=Msp`); set it to `Single` for a
+one-organisation install on PostgreSQL.
+
+**Converting an existing install to MSP:** take a backup, re-run Setup and choose
+MSP. The existing app registration is reused and patched; your existing data
+becomes the first client. An Express install must first be moved to a full SQL
+Server edition (backup/restore) — see the [Operations Runbook](docs/OPERATIONS_RUNBOOK.md#convert-to-msp).
 
 For detailed instructions on user roles (RBAC), setting up SMTP notifications, and general configuration, see the [Administration & Configuration Guide](docs/ADMINISTRATION.md).
 
