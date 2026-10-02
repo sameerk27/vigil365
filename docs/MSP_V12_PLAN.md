@@ -6,7 +6,7 @@ harness, T2 signed-in e2e in CI). Stage 2 ✅ (U1 Choose-a-client gate,
 U4 consent-poll cleanup, U5 client named in header/toasts/exports, M2 web register path
 removed + MSP app readiness card + one `graph-permissions.json`). Stage 3 ✅ (M3 installer MSP mode + PostgreSQL + Express block, M4 convert-to-MSP by
 re-running Setup, M5 -Mode/-DatabaseProvider in deploy/enterprise scripts, Postgres compose = MSP).
-Stage 3 is built and unit-tested but **not yet run on a real machine** — that is R1. Stage 4 ✅ (U6 cross-client queue, U7 API token UI with client restriction, U8 DB-size banner, U9 MSP audit Client column, U10–U13 — see notes under the table). Next: Stage 5. Combines and replaces `MSP_MODE_PLAN.md` and
+Stage 3 is built and unit-tested but **not yet run on a real machine** — that is R1. Stage 4 ✅ (U6 cross-client queue, U7 API token UI with client restriction, U8 DB-size banner, U9 MSP audit Client column, U10–U13 — see notes under the table). Stage 5: D1d docs ✅, T3 axe on rendered MSP screens ✅, R2 version 1.2.0 + CHANGELOG + rebuilt exe ✅ — **not tagged**: the tag waits for R1, the §6 walkthrough on a real machine and real client tenant, which only the operator can run. Combines and replaces `MSP_MODE_PLAN.md` and
 `MSP_UI_PLAN.md`. Builds on `MSP_EDITION_PLAN.md` (backend Phases 1–8 + one-go
 onboarding — implemented, uncommitted on `feat/msp-phase1-db-providers`).
 

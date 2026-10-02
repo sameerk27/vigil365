@@ -10,6 +10,8 @@ version lives in exactly two places — the API's `<Version>` and the client's
 
 ## [Unreleased]
 
+## [1.2.0] — not yet released (pending the release walkthrough, `docs/MSP_V12_PLAN.md` §6)
+
 ### Added
 - **PostgreSQL support.** Vigil365 now runs on SQL Server *or* PostgreSQL 14+,
   selected by a new `Database:Provider` setting (`SqlServer`, the default, or
@@ -67,8 +69,8 @@ version lives in exactly two places — the API's `<Version>` and the client's
   catches the callback on a new anonymous `/consented` landing page, records the Entra
   tenant id + consent time, and auto-runs the connection test. The consent `state` is
   signed and time-boxed (`ConsentState`). Clients consent to one shared
-  multi-tenant MSP app (create it with `register-app.ps1 -MultiTenant`; the installer's
-  MSP mode is planned), so per-client credentials are optional. The onboarding dialog
+  multi-tenant MSP app (the installer's MSP mode creates it, or `register-app.ps1
+  -MultiTenant`), so per-client credentials are optional. The onboarding dialog
   checks that app registration first and says exactly what would make consent fail.
 - **Edition mode.** `Edition:Mode` = `Single` (default) or `Msp`. Single-organisation
   installs show no MSP screens and cannot add a second client. Sign-in is pinned to the
@@ -84,12 +86,50 @@ version lives in exactly two places — the API's `<Version>` and the client's
   warning (SQL Express ceiling); white-label brand name and colour on each client's
   reports; per-client routing and policy-override forms in the UI; and
   `docs/MSP_DATA_PROCESSING.md` for DPA reviews.
+- **Installer: MSP mode and PostgreSQL.** Setup asks Single organisation or MSP. MSP
+  mode makes the app registration multi-tenant with the `/consented` redirect, grants
+  `Application.Read.All` in the MSP's own tenant for the readiness check, and needs a
+  full SQL Server edition or PostgreSQL (it refuses SQL Server Express, with the
+  reason). Re-running Setup over a Single install and choosing MSP converts it: same
+  app registration, existing data becomes the first client. `deploy.ps1` /
+  `enterprise-install` take `-Mode` and `-DatabaseProvider`.
+- **Cross-client alert queue.** The Clients page lists open alerts across every client
+  you may see, worst first, with a client filter. Acknowledge or resolve in place (the
+  message names the client), or open an alert to switch to its client.
+- **API tokens screen.** User Management → API tokens: create (shown once), list and
+  revoke SIEM tokens; in MSP mode restrict a token to one client.
+- **Database size warning** banner for Admins when `/health` reports `sizeWarning`.
+- **MSP audit log** is one list across clients for MSP Admins, with a Client column.
+- **Onboarding error states:** popup blocked, consent declined (Microsoft's error),
+  window closed early and timeout are each explained inline in the dialog.
+- **Tests:** component tests (React Testing Library), signed-in Playwright journeys
+  through a test-only auth seam (CI asserts it is absent from the release bundle),
+  and axe accessibility checks over the rendered MSP screens.
 
 ### Changed
+- Switching client keeps the page you are on (in-page filters still reset).
+- Non-Admins see per-client routing and policy overrides read-only, and Viewers no
+  longer see policy Edit/Delete buttons the server would refuse.
+- Muted text colours darkened to meet WCAG AA contrast; every settings, policy and
+  onboarding field now has a programmatic label.
+- The in-app "register the MSP app" endpoint was removed; the installer owns app
+  registration, and the Clients page shows an MSP app readiness check instead.
+- **Upgrade note:** 1.2 database migrations are one-way. Take a backup first; going
+  back to 1.1 means restoring it (see `docs/OPERATIONS_RUNBOOK.md`).
 - The pre-migration legacy-schema rescue in startup now runs only on SQL Server,
   which is the only engine that can have such a database.
 - The Metrics tab's database-size figure is queried per engine
   (`sys.database_files` / `pg_database_size`).
+
+### Fixed
+- Audit-log hash chain failed verification on PostgreSQL (`timestamptz` keeps
+  microseconds, .NET keeps 100 ns ticks); timestamps are truncated at write.
+- Toasts and confirm dialogs were invisible on the Choose-a-client screen.
+- A user whose only client was picked by the server never had it recorded, so
+  per-client controls stayed hidden.
+- A failed client rollup showed "No clients yet" instead of an error; the client
+  routing card rendered nothing on failure.
+- The onboarding consent poll kept running after the dialog closed.
 
 ## [1.1.0] — 2026-08-28
 

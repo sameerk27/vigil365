@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -20,7 +20,7 @@
     <!-- Version and identity metadata — surfaced in the exe's Properties >
          Details tab. Version tracks the release; keep in step with the API and
          client via scripts/set-version.ps1. -->
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <AssemblyTitle>Vigil365 Setup</AssemblyTitle>
     <Product>Vigil365</Product>
     <Company>Vigil365</Company>
