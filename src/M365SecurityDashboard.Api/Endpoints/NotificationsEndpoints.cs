@@ -26,7 +26,7 @@ public static class NotificationsEndpoints
                 s.WebhookEnabled, WebhookUrl = protector.Unprotect(s.WebhookUrl),
                 hasWebhookSigningSecret = !string.IsNullOrEmpty(s.WebhookSigningSecret),
                 s.MinSeverity,
-                s.TeamsDigest, s.EmailDigest, s.WebhookDigest, s.DigestHourUtc, s.FailureAlertThreshold,
+                s.TeamsDigest, s.EmailDigest, s.WebhookDigest, s.DigestFrequency, s.DigestHourUtc, s.FailureAlertThreshold,
                 s.MspDigestEnabled, s.MspDigestHourUtc, s.LastMspDigestAt,
             });
         }).RequireAuthorization("RequireAdmin");
@@ -55,18 +55,19 @@ public static class NotificationsEndpoints
             s.TeamsDigest = input.TeamsDigest;
             s.EmailDigest = input.EmailDigest;
             s.WebhookDigest = input.WebhookDigest;
+            s.DigestFrequency = string.Equals(input.DigestFrequency?.Trim(), "weekly", StringComparison.OrdinalIgnoreCase) ? "weekly" : "daily";
             s.DigestHourUtc = Math.Clamp(input.DigestHourUtc, 0, 23);
             s.FailureAlertThreshold = input.FailureAlertThreshold <= 0 ? 3 : input.FailureAlertThreshold;
             s.MspDigestEnabled = input.MspDigestEnabled;
             s.MspDigestHourUtc = Math.Clamp(input.MspDigestHourUtc, 0, 23);
             await db.SaveChangesAsync(ct);
-            await audit.WriteAsync("settings.update", "settings", "notifications", "notification settings updated", ct);
+            await audit.WriteMspAsync("settings.update", "settings", "notifications", "notification settings updated", ct);
             return Results.Ok(new { ok = true });
         }).RequireAuthorization("RequireAdmin");
 
         // ── Per-client routing (MSP): where THIS tenant's alerts go, layered over
         //    the install-wide settings above. Read: Analyst. Write: Admin. ──
-        app.MapGet("/api/notification-routing", async (AppDbContext db, SecretProtector protector, CancellationToken ct) =>
+        app.MapGet("/api/notification-routing", async (AppDbContext db, SecretProtector protector, System.Security.Claims.ClaimsPrincipal user, CancellationToken ct) =>
         {
             var r = await db.TenantNotificationRoutings.AsNoTracking().FirstOrDefaultAsync(ct);
             return Results.Ok(new
@@ -75,7 +76,10 @@ public static class NotificationsEndpoints
                 notifyMsp = r?.NotifyMsp ?? true,
                 notifyClient = r?.NotifyClient ?? false,
                 recipientEmail = r?.RecipientEmail,
-                teamsWebhookUrl = protector.Unprotect(r?.TeamsWebhookUrl),
+                // A Teams incoming-webhook URL lets whoever holds it post into the
+                // client's channel: only the Admins who edit it get it back.
+                teamsWebhookUrl = user.IsInRole(AppRoles.Admin) ? protector.Unprotect(r?.TeamsWebhookUrl) : null,
+                hasTeamsWebhookUrl = !string.IsNullOrEmpty(r?.TeamsWebhookUrl),
                 hasWebhookUrl = !string.IsNullOrEmpty(r?.WebhookUrl),
                 minSeverity = r?.MinSeverity,
                 lastDigestAt = r?.LastDigestAt,
@@ -95,6 +99,8 @@ public static class NotificationsEndpoints
             r.MinSeverity = string.IsNullOrWhiteSpace(input.MinSeverity) ? null : input.MinSeverity.Trim().ToLowerInvariant();
             if (!r.NotifyMsp && !r.NotifyClient)
                 return Results.BadRequest(new { ok = false, message = "Alerts must go somewhere: enable the MSP, the client, or both." });
+            if (!r.NotifyMsp && r.RecipientEmail is null && r.TeamsWebhookUrl is null && r.WebhookUrl is null)
+                return Results.BadRequest(new { ok = false, message = "Alerts must go somewhere: with the MSP left out, give the client an email address, a Teams webhook or a webhook." });
             await db.SaveChangesAsync(ct);
             await audit.WriteAsync("settings.routing", "settings", "routing", $"msp={r.NotifyMsp} client={r.NotifyClient}", ct);
             return Results.Ok(new { ok = true });

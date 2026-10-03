@@ -19,28 +19,32 @@ builder.Host.UseWindowsService();
 
 // JSON logs preserve correlation IDs and structured fields for Docker,
 // journald, Splunk, or Sentinel. Files roll daily and at a size limit so logs
-// remain useful without consuming the host disk indefinitely.
-var configuredLogPath = builder.Configuration["Logging:File:Path"] ?? "logs/vigil365-.json";
-var logPath = Path.GetFullPath(configuredLogPath, AppContext.BaseDirectory);
-Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+// remain useful without consuming the host disk indefinitely. A location the
+// service cannot write to falls back (see LogFileLocation) instead of crashing.
+var logFile = LogFileLocation.Resolve(builder.Configuration["Logging:File:Path"] ?? "logs/vigil365-.json",
+    AppContext.BaseDirectory, LogFileLocation.DefaultFallbackDirectory());
 var retainedLogFiles = Math.Max(1, builder.Configuration.GetValue("Logging:File:RetainedFileCountLimit", 14));
 var maxLogFileBytes = Math.Max(1_048_576, builder.Configuration.GetValue("Logging:File:FileSizeLimitBytes", 10 * 1024 * 1024));
 
-builder.Host.UseSerilog((context, _, logger) => logger
-    .MinimumLevel.Information()
-    .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
-    .MinimumLevel.Override("Microsoft.AspNetCore.Hosting", LogEventLevel.Warning)
-    .Enrich.FromLogContext()
-    .Enrich.WithProperty("Application", "Vigil365")
-    .Enrich.WithProperty("Environment", context.HostingEnvironment.EnvironmentName)
-    .WriteTo.Console(new RenderedCompactJsonFormatter())
-    .WriteTo.File(new RenderedCompactJsonFormatter(), logPath,
-        rollingInterval: RollingInterval.Day,
-        fileSizeLimitBytes: maxLogFileBytes,
-        rollOnFileSizeLimit: true,
-        retainedFileCountLimit: retainedLogFiles,
-        shared: true,
-        flushToDiskInterval: TimeSpan.FromSeconds(1)));
+builder.Host.UseSerilog((context, _, logger) =>
+{
+    logger
+        .MinimumLevel.Information()
+        .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+        .MinimumLevel.Override("Microsoft.AspNetCore.Hosting", LogEventLevel.Warning)
+        .Enrich.FromLogContext()
+        .Enrich.WithProperty("Application", "Vigil365")
+        .Enrich.WithProperty("Environment", context.HostingEnvironment.EnvironmentName)
+        .WriteTo.Console(new RenderedCompactJsonFormatter());
+    if (logFile.Path is not null)
+        logger.WriteTo.File(new RenderedCompactJsonFormatter(), logFile.Path,
+            rollingInterval: RollingInterval.Day,
+            fileSizeLimitBytes: maxLogFileBytes,
+            rollOnFileSizeLimit: true,
+            retainedFileCountLimit: retainedLogFiles,
+            shared: true,
+            flushToDiskInterval: TimeSpan.FromSeconds(1));
+});
 builder.Services.Configure<GraphOptions>(builder.Configuration.GetSection("Graph"));
 builder.Services.Configure<AlertingOptions>(builder.Configuration.GetSection("Alerting"));
 builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection("Retention"));
@@ -142,6 +146,11 @@ builder.Services.AddCors(options =>
               .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS"));
 });
 
+// Behind a reverse proxy the client's address arrives in X-Forwarded-For. It is
+// believed only from a proxy ForwardedHeadersSetup trusts, so a caller cannot
+// choose the address the audit log records or the rate limiter keys on.
+builder.Services.Configure<ForwardedHeadersOptions>(o => ForwardedHeadersSetup.Configure(o, builder.Configuration));
+
 // Basic abuse protection: per-client fixed-window limiter on the API. Generous
 // enough for the SPA's parallel dashboard fan-out, tight enough to blunt scraping
 // or brute-force attempts. 429s include Retry-After via the default handler.
@@ -160,6 +169,7 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
+if (logFile.Warning is not null) app.Logger.LogWarning("{LogFileWarning}", logFile.Warning);
 
 using (var scope = app.Services.CreateScope())
 {
@@ -223,6 +233,7 @@ using (var scope = app.Services.CreateScope())
     if (TenantBootstrap.EnsureTenant(db, dbLog) is Guid soleTenant) startupTenant.Set(soleTenant);
 
     AlertingSchema.SeedDefaultPolicies(db);
+    MetricsCounterStore.EnsureRow(db); // before clients collect in parallel
 
     // Apply Graph credentials saved via the setup wizard over the GraphOptions
     // singleton. Because IOptions<GraphOptions>.Value is a singleton, mutating it
@@ -307,6 +318,10 @@ using (var scope = app.Services.CreateScope())
         db.SaveChanges();
     }
 }
+
+// First, so everything after it (rate limiter, audit log) sees the client's
+// address rather than a trusted proxy's (see ForwardedHeadersSetup).
+app.UseForwardedHeaders();
 
 // Enforce TLS outside Development. The app should be reached over HTTPS — either
 // Kestrel with a certificate, or a reverse proxy terminating TLS. When a proxy

@@ -110,7 +110,10 @@ export interface TenantRouting {
   notifyMsp: boolean;
   notifyClient: boolean;
   recipientEmail: string | null;
+  /** Admins only: the URL lets whoever holds it post into the client's channel. */
   teamsWebhookUrl: string | null;
+  /** For everyone: whether a client Teams webhook is set, when the URL is withheld. */
+  hasTeamsWebhookUrl: boolean;
   hasWebhookUrl: boolean;
   minSeverity: string | null;
   lastDigestAt: string | null;

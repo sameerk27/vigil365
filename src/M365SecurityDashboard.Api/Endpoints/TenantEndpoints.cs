@@ -3,6 +3,7 @@ using M365SecurityDashboard.Api.Data;
 using M365SecurityDashboard.Api.Data.Tenancy;
 using M365SecurityDashboard.Api.Models;
 using M365SecurityDashboard.Api.Services;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 
@@ -28,23 +29,27 @@ public static class TenantEndpoints
         // Microsoft redirects the client's Global Administrator here after they
         // approve (or decline) the multi-tenant app. There is no signed-in Vigil365
         // user on this request — the signed `state` (see ConsentState) is the only
-        // thing we trust, and it names the exact ClientTenant row being onboarded.
+        // thing we trust, and it names the exact ClientTenant row being onboarded
+        // and carries that row's one-time nonce.
         // Consenting to a multi-tenant app provisions its service principal in the
         // client tenant, so this single approval is the "create app + consent" step.
         // The onboarding dialog polls the tenant's status and runs the test once
         // this records consent, so the page itself only needs to be a dead end the
         // admin can close (CSP forbids inline script/style, hence the plain markup).
-        app.MapGet("/consented", async (HttpContext ctx, AppDbContext db, SecretProtector protector, AuditLogger audit, Microsoft.Extensions.Options.IOptions<EditionOptions> edition, CancellationToken ct) =>
+        app.MapGet("/consented", async (HttpContext ctx, AppDbContext db, IDataProtectionProvider dataProtection, TenantGraphCredentials creds, AuditLogger audit, Microsoft.Extensions.Options.IOptions<EditionOptions> edition, CancellationToken ct) =>
         {
             if (!edition.Value.IsMsp) return Results.NotFound(); // no client onboarding in a single-organisation install
             var q = ctx.Request.Query;
-            var tenantRowId = ConsentState.Decode(protector, q["state"]);
-            if (tenantRowId is not Guid rowId)
+            if (ConsentState.Decode(dataProtection, q["state"]) is not (Guid rowId, string nonce))
                 return Landing(false, "This consent link is invalid or has expired. Start onboarding again from Vigil365.");
 
             var t = await db.ClientTenants.FirstOrDefaultAsync(x => x.Id == rowId, ct);
             if (t is null)
                 return Landing(false, "The client this link was for no longer exists.");
+            // Used once already: a replay changes nothing, not even LastError. A
+            // refused or declined consent keeps the nonce, so the same link can retry.
+            if (!ConsentState.IsCurrent(t.ConsentNonce, nonce))
+                return Landing(false, "This consent link has already been used. Start onboarding again from Vigil365 if the client still needs to consent.");
 
             var error = q["error"].ToString();
             if (!string.IsNullOrEmpty(error))
@@ -54,9 +59,12 @@ public static class TenantEndpoints
                 return Landing(false, "Consent was not granted. You can close this window and try again.");
             }
 
-            // Success: admin_consent=True&tenant={client entra id}
-            var consentedTenant = q["tenant"].ToString();
-            if (!string.IsNullOrWhiteSpace(t.MicrosoftTenantId) && !string.IsNullOrWhiteSpace(consentedTenant)
+            // Success: admin_consent=True&tenant={client entra id}. The state is signed
+            // but this parameter is not, so it must at least be a tenant id.
+            if (!Guid.TryParse(q["tenant"].ToString(), out var consentedGuid))
+                return Landing(false, "Microsoft did not say which tenant consented. Start onboarding again from Vigil365.");
+            var consentedTenant = consentedGuid.ToString();
+            if (!string.IsNullOrWhiteSpace(t.MicrosoftTenantId)
                 && !string.Equals(t.MicrosoftTenantId, consentedTenant, StringComparison.OrdinalIgnoreCase))
             {
                 t.LastError = $"Consent was granted in Entra tenant {consentedTenant}, but this client is set to {t.MicrosoftTenantId}.";
@@ -64,14 +72,35 @@ public static class TenantEndpoints
                 return Landing(false, "Consent was granted in a different Microsoft tenant than expected. Check the client and try again.");
             }
 
-            if (string.IsNullOrWhiteSpace(t.MicrosoftTenantId) && !string.IsNullOrWhiteSpace(consentedTenant))
+            // A client never takes the MSP's own tenant from a callback (only the
+            // install's own row may be it): that would collect the MSP's data as
+            // the client's. Usually someone approved while signed in to the MSP.
+            if (string.IsNullOrWhiteSpace(t.MicrosoftTenantId) && t.Id != ClientTenant.DefaultId && creds.IsInstallTenant(consentedTenant))
+            {
+                t.LastError = "Consent was granted in the MSP's own Microsoft tenant, not the client's. The client's Global Administrator must approve it.";
+                await db.SaveChangesAsync(ct);
+                return Landing(false, "Consent was granted in the MSP's own Microsoft tenant. The client's Global Administrator must approve it.");
+            }
+
+            // Only the state is signed, not this parameter: a client never takes an
+            // Entra tenant another client already has, or the shared app would
+            // collect that client's data as this one's.
+            if (string.IsNullOrWhiteSpace(t.MicrosoftTenantId) && await EntraIdOwnerAsync(db, t.Id, consentedTenant, ct) is not null)
+            {
+                t.LastError = $"Consent was granted in Entra tenant {consentedTenant}, which another client in Vigil365 already uses.";
+                await db.SaveChangesAsync(ct);
+                return Landing(false, "This Microsoft tenant cannot be connected to this client. Make sure you approved it signed in to the right organisation.");
+            }
+
+            if (string.IsNullOrWhiteSpace(t.MicrosoftTenantId))
                 t.MicrosoftTenantId = consentedTenant;
+            t.ConsentNonce = null; // the link is spent
             t.ConsentGrantedAt = DateTimeOffset.UtcNow;
             t.LastError = null;
             t.ConsecutiveFailures = 0;
             t.NextCollectionAfter = null;
             await db.SaveChangesAsync(ct);
-            await audit.WriteAsync("tenant.consent", "tenant", t.Id.ToString(), $"admin consent granted for {consentedTenant}", ct);
+            await audit.WriteForTenantAsync(t.Id, "tenant.consent", "tenant", t.Id.ToString(), $"admin consent granted for {consentedTenant}", ct);
 
             return Landing(true, $"{t.Name} is connected. You can close this window — Vigil365 will finish automatically.");
         }).AllowAnonymous();
@@ -150,7 +179,7 @@ public static class TenantEndpoints
                 db.UserTenantAssignments.Add(new UserTenantAssignment { UserEmail = email, TenantId = id, AssignedAt = DateTimeOffset.UtcNow, AssignedBy = by });
             await db.SaveChangesAsync(ct);
             TenantAccess.Invalidate(cache, email);
-            await audit.WriteAsync("tenant.assign", "user", email, $"{wanted.Count} tenant(s)", ct);
+            await audit.WriteMspAsync("tenant.assign", "user", email, $"{wanted.Count} tenant(s)", ct);
             return Results.Ok(new { ok = true, tenantIds = wanted });
         });
 
@@ -158,7 +187,7 @@ public static class TenantEndpoints
         {
             var tenants = await db.ClientTenants.AsNoTracking().OrderBy(t => t.CreatedAt).ToListAsync(ct);
             var openByTenant = await db.CrossTenant<TriggeredAlert>().AsNoTracking()
-                .Where(t => t.Status != "resolved")
+                .Where(t => t.Status == "new" || t.Status == "acknowledged") // as the rollup and queue count them
                 .GroupBy(t => t.TenantId)
                 .Select(g => new { g.Key, Count = g.Count() })
                 .ToDictionaryAsync(x => x.Key, x => x.Count, ct);
@@ -178,6 +207,8 @@ public static class TenantEndpoints
                 return Results.Conflict(new { ok = false, message = "This is a single-organisation install. Adding client tenants needs MSP mode (Edition:Mode = Msp)." });
             if (string.IsNullOrWhiteSpace(body.Name))
                 return Results.BadRequest(new { ok = false, message = "Name is required." });
+            if (await EntraIdOwnerAsync(db, Guid.Empty, body.MicrosoftTenantId, ct) is { } owner)
+                return EntraIdInUse(body.MicrosoftTenantId!, owner);
 
             var t = new ClientTenant
             {
@@ -192,7 +223,7 @@ public static class TenantEndpoints
             db.ClientTenants.Add(t);
             await db.SaveChangesAsync(ct);
             TenantResolutionMiddleware.InvalidateSoleTenant(cache);
-            await audit.WriteAsync("tenant.create", "tenant", t.Id.ToString(), t.Name, ct);
+            await audit.WriteForTenantAsync(t.Id, "tenant.create", "tenant", t.Id.ToString(), t.Name, ct);
             return Results.Created($"/api/tenants/{t.Id}", new { ok = true, id = t.Id });
         });
 
@@ -206,9 +237,13 @@ public static class TenantEndpoints
             var deactivating = t.IsActive && body.IsActive == false;
             if (deactivating && await db.ClientTenants.CountAsync(x => x.IsActive, ct) <= 1)
                 return Results.BadRequest(new { ok = false, message = "Cannot deactivate the only active tenant." });
+            var entraId = Normalize(body.MicrosoftTenantId);
+            if (!string.Equals(entraId, t.MicrosoftTenantId, StringComparison.OrdinalIgnoreCase)
+                && await EntraIdOwnerAsync(db, t.Id, entraId, ct) is { } owner)
+                return EntraIdInUse(entraId!, owner);
 
             t.Name = body.Name.Trim();
-            t.MicrosoftTenantId = Normalize(body.MicrosoftTenantId);
+            t.MicrosoftTenantId = entraId;
             t.Notes = body.Notes;
             t.BrandName = Normalize(body.BrandName);
             t.BrandAccentColor = ValidColor(body.BrandAccentColor);
@@ -219,7 +254,7 @@ public static class TenantEndpoints
             }
             await db.SaveChangesAsync(ct);
             TenantResolutionMiddleware.InvalidateSoleTenant(cache);
-            await audit.WriteAsync("tenant.update", "tenant", t.Id.ToString(), $"{t.Name} active={t.IsActive}", ct);
+            await audit.WriteForTenantAsync(t.Id, "tenant.update", "tenant", t.Id.ToString(), $"{t.Name} active={t.IsActive}", ct);
             return Results.Ok(new { ok = true });
         });
 
@@ -252,7 +287,7 @@ public static class TenantEndpoints
             t.ConsentGrantedAt = null; // re-verify with /test
             t.LastError = null;
             await db.SaveChangesAsync(ct);
-            await audit.WriteAsync("tenant.credentials", "tenant", t.Id.ToString(), $"client id {t.ClientId}", ct);
+            await audit.WriteForTenantAsync(t.Id, "tenant.credentials", "tenant", t.Id.ToString(), $"client id {t.ClientId}", ct);
             return Results.Ok(new { ok = true });
         });
 
@@ -263,17 +298,17 @@ public static class TenantEndpoints
             t.ClientId = null; t.ClientSecret = null; t.LoginInstance = null; t.BaseUrl = null; t.ConsentGrantedAt = null;
             t.CertificateThumbprint = null; t.CertificatePath = null; t.CertificatePassword = null;
             await db.SaveChangesAsync(ct);
-            await audit.WriteAsync("tenant.credentials.clear", "tenant", t.Id.ToString(), null, ct);
+            await audit.WriteForTenantAsync(t.Id, "tenant.credentials.clear", "tenant", t.Id.ToString(), null, ct);
             return Results.Ok(new { ok = true });
         });
 
         // The URL a client's Global Administrator opens to grant the app
         // registration admin consent in their tenant. Uses the tenant's own client
         // id if set, else the install-wide one.
-        group.MapGet("/{id:guid}/consent-url", async (Guid id, string? redirectUri, HttpContext ctx, AppDbContext db, SecretProtector protector, TenantGraphCredentials creds, IConfiguration config, Microsoft.Extensions.Options.IOptions<EditionOptions> edition, CancellationToken ct) =>
+        group.MapGet("/{id:guid}/consent-url", async (Guid id, string? redirectUri, HttpContext ctx, AppDbContext db, IDataProtectionProvider dataProtection, TenantGraphCredentials creds, IConfiguration config, Microsoft.Extensions.Options.IOptions<EditionOptions> edition, CancellationToken ct) =>
         {
             if (!edition.Value.IsMsp) return Results.NotFound();
-            var t = await db.ClientTenants.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+            var t = await db.ClientTenants.FirstOrDefaultAsync(x => x.Id == id, ct);
             if (t is null) return Results.NotFound();
 
             // Default to this app's own /consented landing so the popup flow needs no
@@ -291,14 +326,21 @@ public static class TenantEndpoints
 
             var login = (!string.IsNullOrWhiteSpace(t.LoginInstance) ? t.LoginInstance : creds.Global.LoginInstance).TrimEnd('/');
             var authority = string.IsNullOrWhiteSpace(t.MicrosoftTenantId) ? "organizations" : t.MicrosoftTenantId;
-            var state = Uri.EscapeDataString(ConsentState.Encode(protector, t.Id));
+            // Every link issued until consent is recorded carries the same nonce, so
+            // reopening the dialog does not break a link already sent to the client.
+            if (t.ConsentNonce is null)
+            {
+                t.ConsentNonce = ConsentState.NewNonce();
+                await db.SaveChangesAsync(ct);
+            }
+            var state = Uri.EscapeDataString(ConsentState.Encode(dataProtection, t.Id, t.ConsentNonce));
             var url = $"{login}/{authority}/adminconsent?client_id={Uri.EscapeDataString(clientId)}&redirect_uri={Uri.EscapeDataString(redirect.ToString())}&state={state}";
             return Results.Ok(new { ok = true, url });
         });
 
         // Prove the connection: call Graph as this tenant. On success records the
         // Entra tenant id (from /organization) and the consent timestamp.
-        group.MapPost("/{id:guid}/test", async (Guid id, AppDbContext db, IServiceProvider services, AuditLogger audit, CancellationToken ct) =>
+        group.MapPost("/{id:guid}/test", async (Guid id, AppDbContext db, IServiceProvider services, AuditLogger audit, Microsoft.Extensions.Options.IOptions<EditionOptions> edition, CancellationToken ct) =>
         {
             var t = await db.ClientTenants.FirstOrDefaultAsync(x => x.Id == id, ct);
             if (t is null) return Results.NotFound();
@@ -329,11 +371,26 @@ public static class TenantEndpoints
                     return Results.BadRequest(new { ok = false, message = t.LastError });
                 }
 
+                // Never adopt the MSP's own tenant for a client (see /consented). The
+                // credential rules already leave such a client unconfigured; this
+                // keeps it true if they change.
+                if (string.IsNullOrWhiteSpace(t.MicrosoftTenantId) && edition.Value.IsMsp && t.Id != ClientTenant.DefaultId && creds.IsInstallTenant(entraId))
+                {
+                    t.LastError = "These credentials reach the MSP's own Microsoft tenant, not the client's.";
+                    await db.SaveChangesAsync(ct);
+                    return Results.BadRequest(new { ok = false, message = t.LastError });
+                }
+                if (string.IsNullOrWhiteSpace(t.MicrosoftTenantId) && await EntraIdOwnerAsync(db, t.Id, entraId, ct) is not null)
+                {
+                    t.LastError = $"These credentials reach Entra tenant {entraId}, which another client in Vigil365 already uses.";
+                    await db.SaveChangesAsync(ct);
+                    return Results.BadRequest(new { ok = false, message = t.LastError });
+                }
                 if (string.IsNullOrWhiteSpace(t.MicrosoftTenantId)) t.MicrosoftTenantId = entraId;
                 t.ConsentGrantedAt = DateTimeOffset.UtcNow;
                 t.LastError = null;
                 await db.SaveChangesAsync(ct);
-                await audit.WriteAsync("tenant.test", "tenant", t.Id.ToString(), $"connected to {display ?? entraId}", ct);
+                await audit.WriteForTenantAsync(t.Id, "tenant.test", "tenant", t.Id.ToString(), $"connected to {display ?? entraId}", ct);
                 return Results.Ok(new { ok = true, microsoftTenantId = t.MicrosoftTenantId, displayName = display });
             }
             catch (Exception ex)
@@ -346,7 +403,8 @@ public static class TenantEndpoints
 
         // Offboarding. Default deactivates (data kept, nothing collected, not
         // selectable). ?purge=true deletes the tenant and, by cascade, every row it
-        // owned — the isolation suite proves nothing else goes with it.
+        // owned — the isolation suite proves nothing else goes with it. Its audit
+        // entries stay (no foreign key), and the purge itself is recorded against it.
         group.MapDelete("/{id:guid}", async (Guid id, bool? purge, AppDbContext db, AuditLogger audit, IMemoryCache cache, CancellationToken ct) =>
         {
             var t = await db.ClientTenants.FirstOrDefaultAsync(x => x.Id == id, ct);
@@ -359,14 +417,14 @@ public static class TenantEndpoints
                 db.ClientTenants.Remove(t);
                 await db.SaveChangesAsync(ct);
                 TenantResolutionMiddleware.InvalidateSoleTenant(cache);
-                await audit.WriteAsync("tenant.purge", "tenant", id.ToString(), t.Name, ct);
+                await audit.WriteForTenantAsync(id, "tenant.purge", "tenant", id.ToString(), t.Name, ct);
                 return Results.Ok(new { ok = true, purged = true });
             }
 
             t.IsActive = false;
             await db.SaveChangesAsync(ct);
             TenantResolutionMiddleware.InvalidateSoleTenant(cache);
-            await audit.WriteAsync("tenant.deactivate", "tenant", id.ToString(), t.Name, ct);
+            await audit.WriteForTenantAsync(id, "tenant.deactivate", "tenant", id.ToString(), t.Name, ct);
             return Results.Ok(new { ok = true, purged = false });
         });
     }
@@ -389,6 +447,23 @@ public static class TenantEndpoints
             openAlerts,
         };
     }
+
+    /// <summary>
+    /// The client other than <paramref name="rowId"/> already recorded with this
+    /// Entra tenant, inactive ones included (their data stays theirs); null if none.
+    /// One Entra tenant is one client: a second row would collect the same tenant
+    /// under another client's name, for its staff and its contacts.
+    /// </summary>
+    private static Task<ClientTenant?> EntraIdOwnerAsync(AppDbContext db, Guid rowId, string? entraId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(entraId)) return Task.FromResult<ClientTenant?>(null);
+        var id = entraId.Trim().ToLowerInvariant();
+        return db.ClientTenants.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id != rowId && x.MicrosoftTenantId != null && x.MicrosoftTenantId.ToLower() == id, ct);
+    }
+
+    private static IResult EntraIdInUse(string entraId, ClientTenant owner)
+        => Results.Conflict(new { ok = false, message = $"Entra tenant {entraId.Trim()} is already used by the client \"{owner.Name}\"." });
 
     private static string? Normalize(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
     private static string? ValidColor(string? s)

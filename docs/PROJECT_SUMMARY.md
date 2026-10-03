@@ -42,9 +42,9 @@ third-party SaaS in the data path.
 - **Authorization** 🆕 — role-based access (Admin / Analyst / Viewer). Roles are app-managed (stored in-app), not Entra App Roles; enforced server-side via authorization policies and a claims transformation.
 - **User management** 🆕 — in-app admin UI to add/pre-provision, change roles, remove users, and send/resend access-notification emails. Last-admin lockout guards.
 - **Audit trail** 🆕 — append-only log of security-relevant actions (user add/role-change/remove/invite, settings, setup), with actor identity from the validated token.
-- **Encryption at rest** — secrets (SMTP password, webhook URLs, Graph client secret) DPAPI-encrypted; SQL connection uses `Encrypt=True`.
+- **Encryption at rest** — secrets in the database (SMTP password, webhook URLs, Graph client secret) encrypted with ASP.NET Core Data Protection; SQL connection uses `Encrypt=True`.
 - **Encryption in transit** 🆕 — HSTS + HTTPS redirection enforced outside Development; TLS via reverse proxy or Kestrel certificate (documented).
-- **Least privilege** — Graph permissions are all `*.Read.All`; the app never writes to the tenant.
+- **Least privilege** — Graph permissions are read-only except `AttackSimulation.ReadWrite.All` (Graph has no read-only variant); the app never writes to the tenant.
 - **Network model** — designed as an internal/self-hosted tool; not a public multi-tenant SaaS.
 
 ## Install model 🆕

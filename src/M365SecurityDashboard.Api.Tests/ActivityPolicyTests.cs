@@ -90,6 +90,23 @@ public class ActivityPolicyTests
     }
 
     [Fact]
+    public async Task A_suppression_rule_naming_the_target_suppresses_the_activity_alert()
+    {
+        using var db = TestAppDbContextFactory.Create();
+        var policy = ActivityPolicy("Reset user password");
+        db.AlertPolicies.Add(policy);
+        db.SuppressionRules.Add(new SuppressionRule { PolicyId = policy.Id, EntityPattern = "Break-glass*", Reason = "rotated monthly" });
+        AddEvent(db, "Reset user password", DateTimeOffset.UtcNow.AddMinutes(-5), target: "Break-glass account");
+        await db.SaveChangesAsync();
+
+        var fired = await BuildEvaluator(db).EvaluateAsync(CancellationToken.None);
+
+        Assert.Equal(0, fired);
+        Assert.Empty(await db.TriggeredAlerts.ToListAsync());
+        Assert.Equal(1, (await db.SuppressionRules.SingleAsync()).SuppressedCount);
+    }
+
+    [Fact]
     public async Task Ignores_EventsOutsideWindow()
     {
         using var db = TestAppDbContextFactory.Create();

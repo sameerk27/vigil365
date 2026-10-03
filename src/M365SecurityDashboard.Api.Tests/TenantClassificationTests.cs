@@ -61,6 +61,23 @@ public sealed class TenantClassificationTests
     }
 
     [Fact]
+    public void Purging_a_client_cascades_to_its_rows_but_not_to_the_audit_trail()
+    {
+        // The audit entries are links of one global hash chain and the MSP's own
+        // record: deleting a client's from the middle would read as tampering.
+        using var db = TestAppDbContextFactory.Create();
+        foreach (var t in TenantClassification.Scoped.Concat(TenantClassification.Optional))
+        {
+            var toTenant = db.Model.FindEntityType(t)!.GetForeignKeys()
+                .Where(fk => fk.PrincipalEntityType.ClrType == typeof(ClientTenant)).ToList();
+            if (t == typeof(AuditEntry))
+                Assert.True(toTenant.Count == 0, "AuditEntry must have no foreign key to ClientTenant");
+            else
+                Assert.True(toTenant.Count == 1 && toTenant[0].DeleteBehavior == DeleteBehavior.Cascade, $"{t.Name} must cascade from ClientTenant");
+        }
+    }
+
+    [Fact]
     public void IgnoreQueryFilters_appears_only_in_AppDbContext()
     {
         // Every cross-tenant read goes through AppDbContext.CrossTenant<T>() so

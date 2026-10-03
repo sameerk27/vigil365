@@ -1,6 +1,7 @@
 using M365SecurityDashboard.Api.Data;
 using M365SecurityDashboard.Api.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace M365SecurityDashboard.Api.Services;
 
@@ -10,12 +11,16 @@ namespace M365SecurityDashboard.Api.Services;
 /// </summary>
 public sealed class ReportScheduleWorker(
     IServiceProvider services,
+    IOptions<EditionOptions> edition,
     ILogger<ReportScheduleWorker> logger) : BackgroundService
 {
     private static readonly TimeSpan StartupDelay = TimeSpan.FromMinutes(3);
     // A scheduled 07:00 UTC executive digest should not arrive close to 08:00.
     // This remains inexpensive because only due schedules build a digest.
     private static readonly TimeSpan Interval = TimeSpan.FromMinutes(15);
+
+    /// <summary>What an MSP-mode schedule with no client records instead of being sent.</summary>
+    public const string UnassignedStatus = "skipped: not assigned to a client. Delete it and create it again with the client selected.";
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -26,21 +31,7 @@ public sealed class ReportScheduleWorker(
         {
             try
             {
-                await Data.Tenancy.TenantIterator.ForEachActiveTenantAsync(services, logger, "Scheduled reports", async (sp, tenant, ct) =>
-                {
-                    var db = sp.GetRequiredService<AppDbContext>();
-                    var now = DateTimeOffset.UtcNow;
-                    var due = (await db.ReportSchedules.ToListAsync(ct)).Where(s => s.IsDue(now)).ToList();
-                    foreach (var schedule in due)
-                    {
-                        var (ok, status) = await DispatchAsync(sp, db, schedule, ct);
-                        schedule.LastRunAt = now;
-                        schedule.LastRunStatus = status;
-                        logger.Log(ok ? LogLevel.Information : LogLevel.Warning,
-                            "Report '{Name}' dispatch: {Status}", schedule.Name, status);
-                    }
-                    if (due.Count > 0) await db.SaveChangesAsync(ct);
-                }, stoppingToken);
+                await RunOnceAsync(services, edition.Value.IsMsp, logger, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception ex)
@@ -51,6 +42,57 @@ public sealed class ReportScheduleWorker(
             try { await Task.Delay(Interval, stoppingToken); }
             catch (OperationCanceledException) { break; }
         }
+    }
+
+    /// <summary>
+    /// One tick: each active tenant's due schedules, each digest built in that
+    /// tenant's own scope. In MSP mode a schedule belongs to one client, and one
+    /// with no client is never sent: visible in every client's pass, it would go
+    /// out with whichever client's digest ran first.
+    /// </summary>
+    public static async Task RunOnceAsync(IServiceProvider services, bool msp, ILogger logger, CancellationToken stoppingToken)
+    {
+        if (msp) await SkipUnassignedAsync(services, logger, stoppingToken);
+
+        await Data.Tenancy.TenantIterator.ForEachActiveTenantAsync(services, logger, "Scheduled reports", async (sp, tenant, ct) =>
+        {
+            var db = sp.GetRequiredService<AppDbContext>();
+            var now = DateTimeOffset.UtcNow;
+            // Single mode: the install-wide schedules and the tenant's own. MSP mode: the client's own only.
+            var due = (await db.ReportSchedules.Where(s => !msp || s.TenantId == tenant.Id).ToListAsync(ct))
+                .Where(s => s.IsDue(now)).ToList();
+            foreach (var schedule in due)
+            {
+                var (ok, status) = await DispatchAsync(sp, db, schedule, ct);
+                schedule.LastRunAt = now;
+                schedule.LastRunStatus = status;
+                logger.Log(ok ? LogLevel.Information : LogLevel.Warning,
+                    "Report '{Name}' dispatch: {Status}", schedule.Name, status);
+            }
+            if (due.Count > 0) await db.SaveChangesAsync(ct);
+        }, stoppingToken);
+    }
+
+    /// <summary>
+    /// MSP mode: marks each due schedule that has no client as skipped, so the
+    /// Reports page says why it was not sent and this warns once per period,
+    /// not every tick. Runs with no tenant: these rows belong to none.
+    /// </summary>
+    private static async Task SkipUnassignedAsync(IServiceProvider services, ILogger logger, CancellationToken ct)
+    {
+        using var scope = services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var now = DateTimeOffset.UtcNow;
+        var due = (await db.ReportSchedules.Where(s => s.TenantId == null).ToListAsync(ct))
+            .Where(s => s.IsDue(now)).ToList();
+        foreach (var schedule in due)
+        {
+            schedule.LastRunAt = now;
+            schedule.LastRunStatus = UnassignedStatus;
+            logger.LogWarning("Report '{Name}' was not sent: in MSP mode each schedule belongs to one client, and this one has none. Delete it and create it again with the client selected.",
+                schedule.Name);
+        }
+        if (due.Count > 0) await db.SaveChangesAsync(ct);
     }
 
     /// <summary>

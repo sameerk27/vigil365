@@ -48,6 +48,12 @@ Client-specific secrets (the client's app-registration secret or certificate
 password, per-client webhook URLs) are encrypted at rest with ASP.NET Core Data
 Protection keys held by the MSP's installation.
 
+By default every client consents to the MSP's **one shared app registration**. Its
+client secret is in the installation's `appsettings.Production.json`, readable only
+by Administrators and the service account (or, if entered on the Setup page,
+encrypted in the database). Whoever holds it has the permissions in §8 in every
+consenting client's tenant, so the MSP must protect it accordingly.
+
 ## 3. Who can see it
 
 - **MSP Admins** see every client.
@@ -59,7 +65,9 @@ Protection keys held by the MSP's installation.
   scheduled reports) and nothing else.
 - Every administrative action (assigning staff, changing credentials, deactivating or
   purging a client, changing routing) is written to a tamper-evident audit log
-  (SHA-256 hash chain, verifiable and exportable).
+  (SHA-256 hash chain, verifiable and exportable). Each entry records the acting MSP
+  user, the action, the client it concerned (none for MSP-level actions), the source
+  IP address and up to 500 characters of detail.
 
 ## 4. Where it is sent
 
@@ -85,7 +93,7 @@ by the MSP in `Retention` settings):
 | Notification delivery log | 90 days |
 | Collection run history | 90 days |
 | Posture trend snapshots | 365 days |
-| Vigil365 audit log | 365 days |
+| Vigil365 audit log | 365 days (one chain for the whole install, pruned oldest first once a day) |
 
 Backups of the database are the MSP's responsibility and inherit the database's
 retention; the MSP should align backup retention with the DPA.
@@ -97,10 +105,13 @@ Two operations exist, both Admin-only and audited:
 - **Deactivate** — collection stops, the client disappears from staff views, data is
   kept (for a contractual retention period, or pending deletion).
 - **Purge** — the client record is deleted and every row it owns is deleted with it by
-  database cascade: alerts, audit events, runs, snapshots, notes, suppression rules,
-  routing, policy overrides, staff assignments, client-restricted API tokens. The
-  isolation test suite includes an offboarding test proving nothing of the client
-  remains and nothing of any other client is touched.
+  database cascade: alerts, directory audit events, runs, snapshots, notes,
+  suppression rules, routing, policy overrides, staff assignments, client-restricted
+  API tokens. The isolation test suite includes an offboarding test proving none of
+  that remains and nothing of any other client is touched.
+  **Kept:** the Vigil365 audit log entries about the client (§3), including the
+  purge itself. They are part of the tamper-evident chain, which would break if they
+  were removed. They age out with the audit log retention (§5).
 
 Purge does not rewrite database backups; those expire on the backup schedule.
 
@@ -117,7 +128,13 @@ services the MSP configures for notifications.
 - Least privilege for staff via per-client assignment; role-based access
   (Admin/Analyst/Viewer) on top.
 - Tamper-evident audit log; session limits (idle and absolute) in the web UI.
-- Read-only by design: no permission that can modify the client's tenant is requested.
+- Read-only by design, with one exception the client should know about: every
+  permission requested is read-only except `AttackSimulation.ReadWrite.All`, because
+  Microsoft Graph offers no read-only permission for attack-simulation results. It
+  allows creating and launching phishing simulations in the client's tenant.
+  Vigil365 only reads with it. A client that does not accept it can revoke that one
+  permission after consenting; the attack-simulation results are then missing.
+  Full list: `docs/graph-permissions.md`.
 - Threat model: `docs/THREAT_MODEL.md`. Operations: `docs/OPERATIONS_RUNBOOK.md`.
 
 ## 9. Incident handling
@@ -125,6 +142,8 @@ services the MSP configures for notifications.
 If the MSP suspects unauthorised access to Vigil365 or its database, the runbook
 steps are: rotate the Data Protection key ring and all client app secrets/certificates
 (each client's credentials can be replaced independently via the tenants API), review
-the audit log export, and notify affected clients per the DPA. Because Vigil365 is
-read-only, a compromise exposes the collected data described in §1 but cannot alter
-any client tenant.
+the audit log export, and notify affected clients per the DPA. Vigil365 never writes
+to a client tenant, so a compromise of Vigil365 itself exposes the collected data
+described in §1. A stolen app secret is wider: it grants the consented permissions
+directly, including creating attack simulations in each consenting client's tenant
+(§8). Rotate it first.

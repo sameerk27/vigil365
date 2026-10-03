@@ -2,8 +2,8 @@ import { defineConfig, devices } from '@playwright/test';
 
 /**
  * Two projects:
- *  - chromium: smoke tests against a normal dev build (real auth config) — they
- *    can only check the app loads or redirects to sign-in.
+ *  - chromium: the normal dev build before sign-in (real MSAL path), with
+ *    /api/auth/config stubbed so the Microsoft sign-in screen renders.
  *  - signed-in: journeys past sign-in. Runs a separate dev server built with
  *    VITE_E2E_FAKE_AUTH=1 (MSAL bypassed, see AuthGate in main.tsx) and every
  *    /api call stubbed by e2e/signed-in/fixtures.ts, so no backend or Microsoft

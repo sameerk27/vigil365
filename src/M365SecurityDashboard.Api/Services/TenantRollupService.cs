@@ -71,23 +71,22 @@ public sealed class TenantRollupService(AppDbContext db, TenantGraphCredentials 
         var names = tenants.ToDictionary(t => t.Id, t => t.Name);
         if (names.Count == 0) return [];
         var ids = names.Keys.ToList();
+        // Ranked by severity in the database before the limit, so an older
+        // critical alert is never cut in favour of newer low ones.
         var rows = await db.CrossTenant<TriggeredAlert>().AsNoTracking()
             .Where(t => ids.Contains(t.TenantId) && (t.Status == "new" || t.Status == "acknowledged"))
-            .OrderByDescending(t => t.TriggeredAt)
-            .Take(Math.Clamp(limit, 1, 2000) * 2) // severity sort happens in memory; over-fetch a little
+            .OrderByDescending(t => t.Severity.ToLower() == "critical" ? 4
+                : t.Severity.ToLower() == "high" ? 3
+                : t.Severity.ToLower() == "medium" ? 2
+                : t.Severity.ToLower() == "low" ? 1 : 0)
+            .ThenByDescending(t => t.TriggeredAt)
+            .Take(Math.Clamp(limit, 1, 2000))
             .ToListAsync(ct);
         return rows
-            .OrderByDescending(t => SeverityRank(t.Severity)).ThenByDescending(t => t.TriggeredAt)
-            .Take(Math.Clamp(limit, 1, 2000))
             .Select(t => new QueueItem(t.Id, t.TenantId, names[t.TenantId], t.PolicyName, t.Severity, t.Category,
                 t.Condition, t.MetricValue, t.TriggeredAt, t.Status, t.AssignedTo, t.SnoozedUntil))
             .ToList();
     }
-
-    private static int SeverityRank(string? s) => (s ?? "").ToLowerInvariant() switch
-    {
-        "critical" => 4, "high" => 3, "medium" => 2, "low" => 1, _ => 0,
-    };
 
     public static string HealthOf(bool configured, ClientTenant t, Open o) =>
         !configured ? "neutral"

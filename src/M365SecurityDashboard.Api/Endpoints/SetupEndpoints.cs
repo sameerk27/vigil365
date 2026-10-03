@@ -156,13 +156,16 @@ public static class SetupEndpoints
             if (loginInstance != "") o.LoginInstance = loginInstance;
             if (baseUrl != "") o.BaseUrl = baseUrl;
 
-            await audit.WriteAsync("setup.graph", "settings", "graph", "Graph credentials updated", ct);
+            await audit.WriteMspAsync("setup.graph", "settings", "graph", "Graph credentials updated", ct);
 
-            // Test the connection with a fresh client (reads the just-mutated options).
+            // Test the connection with a fresh client (reads the just-mutated options),
+            // in a scope with no tenant: these are the install's own credentials, so the
+            // test must not run in whichever client is selected (as msp-app-status).
             string? testError = null;
             try
             {
-                var graph = services.GetRequiredService<GraphApiClient>();
+                using var scope = services.CreateScope();
+                var graph = scope.ServiceProvider.GetRequiredService<GraphApiClient>();
                 await graph.GetSinglePageAsync("/v1.0/organization", ct);
             }
             catch (Exception ex) { testError = ex.Message; }

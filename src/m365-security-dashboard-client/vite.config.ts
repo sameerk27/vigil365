@@ -25,14 +25,20 @@ export default defineConfig({
     port: 5000,
     strictPort: true,
     proxy: {
-      "/api": { target: "https://vigil365.local:5001", changeOrigin: true, secure: false }
+      "/api": { target: "https://vigil365.local:5001", changeOrigin: true, secure: false },
+      // The collection-status banner reads /health; without this it always said
+      // the database could not be reached under the dev server.
+      "/health": { target: "https://vigil365.local:5001", changeOrigin: true, secure: false }
     }
   },
   server: {
     port: 5173,
     strictPort: true,
     proxy: {
-      "/api": { target: "https://vigil365.local:5001", changeOrigin: true, secure: false }
+      "/api": { target: "https://vigil365.local:5001", changeOrigin: true, secure: false },
+      // The collection-status banner reads /health; without this it always said
+      // the database could not be reached under the dev server.
+      "/health": { target: "https://vigil365.local:5001", changeOrigin: true, secure: false }
     }
   },
   test: {

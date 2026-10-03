@@ -27,8 +27,8 @@ export async function getAccessToken(): Promise<string | null> {
 
 // ─── Client tenant selection (MSP) ─────────────────────────────────────────────
 // Which client tenant every API call is scoped to. Sent as X-Vigil-Tenant; the
-// server validates the user may see it and otherwise falls back to the install's
-// sole tenant, so a single-tenant install never needs this set.
+// server refuses (403) a client the user may not see, and with no header falls
+// back to the install's sole tenant, so a single-tenant install never needs this set.
 const TENANT_KEY = "vigil365-tenant";
 
 // Edition mode from /api/auth/config. Outside MSP mode there is no client to
@@ -60,6 +60,13 @@ export function setSelectedTenantId(id: string | null): void {
   try { if (id) localStorage.setItem(TENANT_KEY, id); else localStorage.removeItem(TENANT_KEY); } catch { /* storage blocked */ }
 }
 
+// Calls that say who the user is and which clients they may pick are never
+// scoped. A stored selection goes stale when its client is deactivated or
+// purged, or the user's access to it is revoked, and the server answers any
+// call naming it with 403. Scoping these too would sign an Admin in as a Viewer
+// and hide the client list ClientGate needs to drop the stale choice.
+const UNSCOPED_PATHS = ["/api/auth/me", "/api/tenants/me"];
+
 export async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
   const token = await getAccessToken();
   const headers = new Headers(init?.headers);
@@ -67,7 +74,8 @@ export async function apiFetch(url: string, init?: RequestInit): Promise<Respons
   // An explicit header wins: the cross-client queue acts on an alert in ITS
   // client, which may not be the one selected (the server checks permission).
   const tenant = getSelectedTenantId();
-  if (tenant && !headers.has("X-Vigil-Tenant")) headers.set("X-Vigil-Tenant", tenant);
+  const path = url.split("?")[0];
+  if (tenant && !headers.has("X-Vigil-Tenant") && !UNSCOPED_PATHS.some(p => path.endsWith(p))) headers.set("X-Vigil-Tenant", tenant);
   return fetch(url, { ...init, headers });
 }
 
@@ -82,8 +90,11 @@ export function useAuth(): AuthInfo {
 // Standing suppression rules. Reads are Analyst; mutations are Admin-only
 // server-side — the UI hides the controls, the API enforces it.
 export const suppressionApi = {
+  /** Throws on failure: an unreadable list is not "no rules", while rules may be hiding alerts. */
   async list(): Promise<SuppressionRule[]> {
-    try { const r = await apiFetch(`${apiBase}/api/suppression-rules`); return r.ok ? await r.json() : []; } catch { return []; }
+    const r = await apiFetch(`${apiBase}/api/suppression-rules`);
+    if (!r.ok) throw new Error(`Suppression rules request failed (${r.status})`);
+    return await r.json();
   },
   async create(rule: Partial<SuppressionRule>): Promise<{ ok: boolean; error?: string }> {
     try {
@@ -103,13 +114,39 @@ export const suppressionApi = {
   },
 };
 
+/** A refused write carries the server's own reason ({error} or {message}) when
+ *  it gave one (e.g. the 403 for an install-wide policy), so the UI can say why. */
+type WriteResult = { ok: boolean; error?: string };
+async function writeResult(request: Promise<Response>): Promise<WriteResult> {
+  try {
+    const r = await request;
+    if (r.ok) return { ok: true };
+    const body = await r.json().catch(() => ({})) as { error?: string; message?: string };
+    return { ok: false, error: body.error ?? body.message };
+  } catch { return { ok: false, error: "Could not reach the API." }; }
+}
+
+/** Acknowledge/resolve: a 409 means the alert is already resolved — closed, not still open. */
+export type AlertActionResult = WriteResult & { alreadyResolved?: boolean };
+async function alertActionResult(request: Promise<Response>): Promise<AlertActionResult> {
+  try {
+    const r = await request;
+    if (r.ok) return { ok: true };
+    const body = await r.json().catch(() => ({})) as { error?: string; message?: string };
+    return { ok: false, alreadyResolved: r.status === 409, error: body.error ?? body.message };
+  } catch { return { ok: false, error: "Could not reach the API." }; }
+}
+
 export const acApi = {
+  /** Throws on failure: the caller keeps what is on screen rather than showing an empty list. */
   async getPolicies(): Promise<AlertPolicy[]> {
-    try { const r = await apiFetch(`${apiBase}/api/alert-policies`); return r.ok ? await r.json() : []; } catch { return []; }
+    const r = await apiFetch(`${apiBase}/api/alert-policies`);
+    if (!r.ok) throw new Error(`Alert policies request failed (${r.status})`);
+    return await r.json();
   },
   /** scope "tenant" (MSP) makes the policy belong to the currently selected client only. */
-  async createPolicy(p: Partial<AlertPolicy>, scope: "default" | "tenant" = "default"): Promise<AlertPolicy | null> {
-    try { const r = await apiFetch(`${apiBase}/api/alert-policies${scope === "tenant" ? "?scope=tenant" : ""}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p) }); return r.ok ? await r.json() : null; } catch { return null; }
+  async createPolicy(p: Partial<AlertPolicy>, scope: "default" | "tenant" = "default"): Promise<WriteResult> {
+    return writeResult(apiFetch(`${apiBase}/api/alert-policies${scope === "tenant" ? "?scope=tenant" : ""}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p) }));
   },
   async getTenantOverrides(): Promise<{ policyId: string; enabled: boolean | null; threshold: number | null; notifyEmail: string | null }[]> {
     try { const r = await apiFetch(`${apiBase}/api/alert-policies/tenant-overrides`); return r.ok ? await r.json() : []; } catch { return []; }
@@ -117,35 +154,46 @@ export const acApi = {
   async setTenantOverride(policyId: string, o: { enabled?: boolean | null; threshold?: number | null; notifyEmail?: string | null }): Promise<boolean> {
     try { const r = await apiFetch(`${apiBase}/api/alert-policies/${policyId}/tenant-override`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(o) }); return r.ok; } catch { return false; }
   },
-  async updatePolicy(p: AlertPolicy): Promise<boolean> {
-    try { const r = await apiFetch(`${apiBase}/api/alert-policies/${p.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p) }); return r.ok; } catch { return false; }
+  async updatePolicy(p: AlertPolicy): Promise<WriteResult> {
+    return writeResult(apiFetch(`${apiBase}/api/alert-policies/${p.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p) }));
   },
-  async deletePolicy(id: string): Promise<boolean> {
-    try { const r = await apiFetch(`${apiBase}/api/alert-policies/${id}`, { method: "DELETE" }); return r.ok; } catch { return false; }
+  async deletePolicy(id: string): Promise<WriteResult> {
+    return writeResult(apiFetch(`${apiBase}/api/alert-policies/${id}`, { method: "DELETE" }));
   },
+  /** Throws on failure, like getPolicies: a failed read is not an empty queue. */
   async getTriggered(): Promise<TriggeredAlert[]> {
-    try { const r = await apiFetch(`${apiBase}/api/triggered-alerts`); return r.ok ? await r.json() : []; } catch { return []; }
+    const r = await apiFetch(`${apiBase}/api/triggered-alerts`);
+    if (!r.ok) throw new Error(`Triggered alerts request failed (${r.status})`);
+    return await r.json();
   },
-  async acknowledge(id: string): Promise<boolean> {
-    try { const r = await apiFetch(`${apiBase}/api/triggered-alerts/${id}/acknowledge`, { method: "POST" }); return r.ok; } catch { return false; }
+  /** 409 = the alert was resolved meanwhile (by someone else, or automatically): alreadyResolved, with the server's reason. */
+  async acknowledge(id: string): Promise<AlertActionResult> {
+    return alertActionResult(apiFetch(`${apiBase}/api/triggered-alerts/${id}/acknowledge`, { method: "POST" }));
   },
-  async resolve(id: string): Promise<boolean> {
-    try { const r = await apiFetch(`${apiBase}/api/triggered-alerts/${id}/resolve`, { method: "POST" }); return r.ok; } catch { return false; }
+  async resolve(id: string): Promise<AlertActionResult> {
+    return alertActionResult(apiFetch(`${apiBase}/api/triggered-alerts/${id}/resolve`, { method: "POST" }));
   },
   async evaluate(): Promise<number> {
     try { const r = await apiFetch(`${apiBase}/api/alert-policies/evaluate`, { method: "POST" }); return r.ok ? (await r.json()).fired ?? 0 : 0; } catch { return 0; }
   },
-  async getSettings(): Promise<NotificationSettings | null> {
-    try { const r = await apiFetch(`${apiBase}/api/notification-settings`); return r.ok ? await r.json() : null; } catch { return null; }
+  // Throws on failure — callers must show an error state. Falling back to empty
+  // settings drew a form with every channel off, and saving it wiped the real ones.
+  async getSettings(): Promise<NotificationSettings> {
+    const r = await apiFetch(`${apiBase}/api/notification-settings`);
+    if (!r.ok) throw new Error(`Notification settings request failed (${r.status})`);
+    return await r.json();
   },
   async saveSettings(s: NotificationSettings): Promise<boolean> {
     try { const r = await apiFetch(`${apiBase}/api/notification-settings`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(s) }); return r.ok; } catch { return false; }
   },
-  async testNotifications(): Promise<{ ok: boolean; results?: { channel: string; success: boolean; error?: string }[] }> {
-    try { const r = await apiFetch(`${apiBase}/api/notification-settings/test`, { method: "POST" }); return r.ok ? await r.json() : { ok: false }; } catch { return { ok: false }; }
+  async testNotifications(): Promise<{ ok: boolean; message?: string; results?: { channel: string; success: boolean; error?: string }[] }> {
+    try { const r = await apiFetch(`${apiBase}/api/notification-settings/test`, { method: "POST" }); return r.ok ? await r.json() : { ok: false, message: `Test request failed (${r.status})` }; } catch { return { ok: false, message: "Could not reach the API." }; }
   },
+  /** Throws on failure, like getSettings: an unreadable log is not "nothing sent". */
   async getLog(): Promise<NotificationLogEntry[]> {
-    try { const r = await apiFetch(`${apiBase}/api/notification-log`); return r.ok ? await r.json() : []; } catch { return []; }
+    const r = await apiFetch(`${apiBase}/api/notification-log`);
+    if (!r.ok) throw new Error(`Notification history request failed (${r.status})`);
+    return await r.json();
   },
   async getHealth(): Promise<import("./types").NotificationHealth | null> {
     try { const r = await apiFetch(`${apiBase}/api/notification-health`); return r.ok ? await r.json() : null; } catch { return null; }
@@ -197,30 +245,43 @@ export const recApi = {
 
 // ─── Scheduled reports (executive digest) ─────────────────────────────────────
 export const reportApi = {
+  /** Throws on failure: an unreadable list is not "no schedules". */
   async list(): Promise<import("./types").ReportSchedule[]> {
-    try { const r = await apiFetch(`${apiBase}/api/report-schedules`); return r.ok ? await r.json() : []; } catch { return []; }
+    const r = await apiFetch(`${apiBase}/api/report-schedules`);
+    if (!r.ok) throw new Error(`Report schedules request failed (${r.status})`);
+    return await r.json();
   },
   async preview(windowDays = 7): Promise<import("./types").DigestPreview | null> {
     try { const r = await apiFetch(`${apiBase}/api/reports/exec-digest/preview?windowDays=${windowDays}`); return r.ok ? await r.json() : null; } catch { return null; }
   },
-  async create(s: Partial<import("./types").ReportSchedule>): Promise<import("./types").ReportSchedule | null> {
-    try { const r = await apiFetch(`${apiBase}/api/report-schedules`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(s) }); return r.ok ? await r.json() : null; } catch { return null; }
+  /** MSP mode answers 400 {error} with no client selected; the reason is passed on. */
+  async create(s: Partial<import("./types").ReportSchedule>): Promise<WriteResult> {
+    return writeResult(apiFetch(`${apiBase}/api/report-schedules`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(s) }));
   },
-  async update(s: import("./types").ReportSchedule): Promise<import("./types").ReportSchedule | null> {
-    try { const r = await apiFetch(`${apiBase}/api/report-schedules/${s.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(s) }); return r.ok ? await r.json() : null; } catch { return null; }
+  async update(s: import("./types").ReportSchedule): Promise<WriteResult> {
+    return writeResult(apiFetch(`${apiBase}/api/report-schedules/${s.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(s) }));
   },
   async remove(id: string): Promise<boolean> {
     try { const r = await apiFetch(`${apiBase}/api/report-schedules/${id}`, { method: "DELETE" }); return r.ok; } catch { return false; }
   },
+  /** A refusal carries the server's status too (e.g. 400 for a schedule with no client in MSP mode). */
   async runNow(id: string): Promise<{ ok: boolean; status?: string }> {
-    try { const r = await apiFetch(`${apiBase}/api/report-schedules/${id}/run-now`, { method: "POST" }); return r.ok ? await r.json() : { ok: false }; } catch { return { ok: false }; }
+    try {
+      const r = await apiFetch(`${apiBase}/api/report-schedules/${id}/run-now`, { method: "POST" });
+      if (r.ok) return await r.json();
+      const body = await r.json().catch(() => ({})) as { status?: string; error?: string };
+      return { ok: false, status: body.status ?? body.error ?? `request refused (${r.status})` };
+    } catch { return { ok: false, status: "could not reach the API" }; }
   },
 };
 
 // ─── API tokens for SIEM/read-only machine integrations ──────────────────────
 export const apiTokenApi = {
+  /** Throws on failure: an unreadable list is not "no tokens" — an Admin may be looking for one to revoke. */
   async list(): Promise<import("./types").ApiTokenInfo[]> {
-    try { const r = await apiFetch(`${apiBase}/api/api-tokens`); return r.ok ? await r.json() : []; } catch { return []; }
+    const r = await apiFetch(`${apiBase}/api/api-tokens`);
+    if (!r.ok) throw new Error(`API tokens request failed (${r.status})`);
+    return await r.json();
   },
   async create(input: { name: string; scopes: string; expiresAt?: string | null; tenantId?: string | null }): Promise<import("./types").ApiTokenCreated | null> {
     try {

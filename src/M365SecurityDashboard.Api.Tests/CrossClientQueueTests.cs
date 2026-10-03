@@ -45,7 +45,8 @@ public sealed class CrossClientQueueTests
 
     private static TenantRollupService Service(AppDbContext db) => new(db, new TenantGraphCredentials(
         db, TestTenancy.None(), Options.Create(new GraphOptions()),
-        new SecretProtector(new EphemeralDataProtectionProvider(), NullLogger<SecretProtector>.Instance)));
+        new SecretProtector(new EphemeralDataProtectionProvider(), NullLogger<SecretProtector>.Instance),
+        Options.Create(new EditionOptions { Mode = EditionMode.Msp })));
 
     [Fact]
     public async Task Lists_open_alerts_of_permitted_clients_most_severe_first_with_client_names()
@@ -78,5 +79,22 @@ public sealed class CrossClientQueueTests
         var queue = await Service(db).OpenAlertsAcrossAsync(tenants, 2, CancellationToken.None);
         Assert.Equal(2, queue.Count);
         Assert.All(queue, q => Assert.Equal("critical", q.Severity));
+    }
+
+    [Fact]
+    public async Task An_older_critical_alert_is_kept_however_many_newer_low_ones_there_are()
+    {
+        var (dbName, tenants) = await SeedAsync();
+        await using (var b = Open(dbName, B))
+        {
+            // Far more newer low alerts than the limit (and any over-fetch of it).
+            for (var i = 0; i < 10; i++) b.TriggeredAlerts.Add(Alert($"B-low-{i}", "Low", minutesAgo: 0));
+            await b.SaveChangesAsync();
+        }
+        await using var db = Open(dbName, null);
+
+        var queue = await Service(db).OpenAlertsAcrossAsync(tenants.Where(t => t.Id != C).ToList(), 1, CancellationToken.None);
+
+        Assert.Equal("A-critical-old", Assert.Single(queue).PolicyName);
     }
 }

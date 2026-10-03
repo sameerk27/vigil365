@@ -49,6 +49,10 @@ public sealed class GraphCollectionWorker(
                         var collector = sp.GetRequiredService<GraphCollector>();
                         var run = await collector.CollectAsync(ct);
                         Interlocked.Increment(ref collected);
+                        // Every source failed (revoked consent, expired secret): a failed
+                        // collection that backs off, not a success that resets the backoff.
+                        if (run.Status == CollectionStatus.Failed)
+                            throw new InvalidOperationException(run.Error ?? "Every Graph source failed.");
                         logger.LogInformation(
                             "Collection run {RunId} completed: {Upserted} alerts, {Failures} source failures",
                             run.Id, run.AlertsUpserted, run.SourceFailures);

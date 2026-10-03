@@ -1,12 +1,15 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { KeyRound } from "lucide-react";
 import { apiTokenApi, isMspMode } from "../services/api";
-import { showToast } from "../services/toast";
+import { showInstallToast } from "../services/toast";
 import { confirmAction } from "../services/confirm";
-import { Card, Badge, EmptyState, LoadingSkeleton, CopyButton } from "./SharedComponents";
+import { Card, Badge, EmptyState, LoadingSkeleton, CopyButton, InlineError } from "./SharedComponents";
 import { fmtDate, relTime } from "../services/utils";
 import { tenantApi, type ClientTenant } from "../services/tenants";
 import type { ApiTokenInfo } from "../services/types";
+
+/** yyyy-mm-dd of the user's local day: what a date input shows and expects. */
+const localDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 const SCOPES = [
   { value: "alerts:read", label: "Read alerts (/api/siem/alerts)" },
@@ -21,6 +24,7 @@ const SCOPES = [
  */
 export function ApiTokensCard() {
   const [tokens, setTokens] = useState<ApiTokenInfo[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [clients, setClients] = useState<ClientTenant[]>([]);
   const [showNew, setShowNew] = useState(false);
   const [name, setName] = useState("SIEM integration");
@@ -32,7 +36,11 @@ export function ApiTokensCard() {
   const msp = isMspMode();
 
   const load = useCallback(async () => {
-    setTokens(await apiTokenApi.list());
+    // A failed read must never read as "No API tokens yet": an Admin looking for
+    // a leaked token to revoke would be told there is none.
+    setLoadError(null);
+    try { setTokens(await apiTokenApi.list()); }
+    catch (e) { setLoadError(e instanceof Error ? e.message : "Request failed"); }
     if (msp) { const r = await tenantApi.list(); setClients(r.ok ? r.value.filter(t => t.isActive) : []); }
   }, [msp]);
   useEffect(() => { load(); }, [load]);
@@ -40,15 +48,19 @@ export function ApiTokensCard() {
   const clientName = (id?: string | null) => id ? (clients.find(c => c.id === id)?.name ?? "one client") : "All clients";
 
   const create = async () => {
-    if (!name.trim() || scopes.length === 0) { showToast("Give the token a name and at least one scope", "error"); return; }
+    if (!name.trim() || scopes.length === 0) { showInstallToast("Give the token a name and at least one scope", "error"); return; }
+    // The token lasts to the end of the chosen day where the admin is, not UTC
+    // midnight. A day already over would issue a token that is born expired.
+    const expiresAt = expires ? new Date(`${expires}T23:59:59`) : null;
+    if (expiresAt && expiresAt <= new Date()) { showInstallToast("Pick an expiry date from today onwards", "error"); return; }
     setBusy(true);
     const r = await apiTokenApi.create({
       name: name.trim(), scopes: scopes.join(","),
-      expiresAt: expires ? new Date(expires + "T23:59:59Z").toISOString() : null,
+      expiresAt: expiresAt ? expiresAt.toISOString() : null,
       tenantId: msp && client ? client : null,
     });
     setBusy(false);
-    if (!r) { showToast("Could not create the token", "error"); return; }
+    if (!r) { showInstallToast("Could not create the token", "error"); return; }
     setCreated(r.token);
     setShowNew(false);
     await load();
@@ -61,8 +73,8 @@ export function ApiTokensCard() {
       confirmLabel: "Revoke token", danger: true,
     });
     if (!ok) return;
-    if (await apiTokenApi.revoke(t.id)) { showToast(`Revoked ${t.name}`); await load(); }
-    else showToast("Could not revoke the token", "error");
+    if (await apiTokenApi.revoke(t.id)) { showInstallToast(`Revoked ${t.name}`); await load(); }
+    else showInstallToast("Could not revoke the token", "error");
   };
 
   return (
@@ -84,7 +96,7 @@ export function ApiTokensCard() {
                 onChange={e => setScopes(v => e.target.checked ? [...v, s.value] : v.filter(x => x !== s.value))} /> {s.label}
             </label>
           ))}
-          <label className="ob-check">Expires (optional) <input className="form-input" type="date" aria-label="Expiry date" value={expires} onChange={e => setExpires(e.target.value)} /></label>
+          <label className="ob-check">Expires (optional) <input className="form-input" type="date" aria-label="Expiry date" min={localDay(new Date())} value={expires} onChange={e => setExpires(e.target.value)} /></label>
           {msp && (
             <label className="ob-check">Client
               <select className="filter-sel" aria-label="Restrict to client" value={client} onChange={e => setClient(e.target.value)}>
@@ -96,11 +108,14 @@ export function ApiTokensCard() {
           <div className="ob-actions"><button className="btn-apply" disabled={busy} onClick={create}>{busy ? "Creating…" : "Create token"}</button></div>
         </div>
       )}
-      {tokens === null ? <LoadingSkeleton type="table" /> : tokens.length === 0 ? <EmptyState message="No API tokens yet." /> : (
+      {loadError ? (
+        <InlineError title="Couldn't load API tokens" onRetry={load}
+          message={`${loadError}. Tokens may still exist and be in use — this does not mean there are none.`} />
+      ) : tokens === null ? <LoadingSkeleton type="table" /> : tokens.length === 0 ? <EmptyState message="No API tokens yet." /> : (
         <div className="tbl-wrap">
           <table className="data-tbl">
             <thead>
-              <tr><th scope="col">Name</th><th scope="col">Token</th><th scope="col">Scopes</th>{msp && <th scope="col">Client</th>}<th scope="col">Last used</th><th scope="col">Status</th><th scope="col">Actions</th></tr>
+              <tr><th scope="col">Name</th><th scope="col">Token</th><th scope="col">Scopes</th>{msp && <th scope="col">Client</th>}<th scope="col">Last used</th><th scope="col">Expires</th><th scope="col">Status</th><th scope="col">Actions</th></tr>
             </thead>
             <tbody>
               {tokens.map(t => (
@@ -110,6 +125,7 @@ export function ApiTokensCard() {
                   <td className="al-date">{t.scopes}</td>
                   {msp && <td className="al-date">{clientName(t.tenantId)}</td>}
                   <td className="al-date">{t.lastUsedAt ? (relTime(t.lastUsedAt) || fmtDate(t.lastUsedAt)) : "Never"}</td>
+                  <td className="al-date">{t.expiresAt ? fmtDate(t.expiresAt) : "Never"}</td>
                   <td><Badge label={t.revokedAt ? "Revoked" : t.expiresAt && new Date(t.expiresAt) < new Date() ? "Expired" : "Active"}
                     tone={t.revokedAt ? "neutral" : t.expiresAt && new Date(t.expiresAt) < new Date() ? "warning" : "good"} /></td>
                   <td>{!t.revokedAt && <button className="btn-danger" onClick={() => revoke(t)}>Revoke</button>}</td>

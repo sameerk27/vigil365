@@ -293,6 +293,9 @@ namespace M365SecurityDashboard.Api.Data.Migrations.Postgres
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<int>("HashVersion")
+                        .HasColumnType("integer");
+
                     b.Property<string>("IpAddress")
                         .HasMaxLength(45)
                         .HasColumnType("character varying(45)");
@@ -442,6 +445,10 @@ namespace M365SecurityDashboard.Api.Data.Migrations.Postgres
 
                     b.Property<DateTimeOffset?>("ConsentGrantedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ConsentNonce")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -1225,14 +1232,6 @@ namespace M365SecurityDashboard.Api.Data.Migrations.Postgres
                 });
 
             modelBuilder.Entity("M365SecurityDashboard.Api.Models.ApiToken", b =>
-                {
-                    b.HasOne("M365SecurityDashboard.Api.Models.ClientTenant", null)
-                        .WithMany()
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Cascade);
-                });
-
-            modelBuilder.Entity("M365SecurityDashboard.Api.Models.AuditEntry", b =>
                 {
                     b.HasOne("M365SecurityDashboard.Api.Models.ClientTenant", null)
                         .WithMany()

@@ -1,7 +1,8 @@
 # Graph Permission Reference
 
 Vigil365 uses Microsoft Graph **application** permissions (unattended collection) and
-is read-only. This table is generated from `graph-permissions.json` at the repo root —
+only reads. Every permission is read-only except the optional
+`AttackSimulation.ReadWrite.All` (below). This table is generated from `graph-permissions.json` at the repo root —
 the single list the installer, the API and `register-app.ps1` all use. A test fails if
 this page and that file disagree.
 
@@ -25,6 +26,10 @@ this page and that file disagree.
 | SharePoint sharing posture | `SharePointTenantSettings.Read.All` |
 
 ## Optional
+
+Requested with the required ones, so admin consent grants it too. Vigil365 works
+without it. `AttackSimulation.ReadWrite.All` also allows creating and launching
+phishing simulations; Vigil365 only reads results with it.
 
 | Feature | Permission |
 | --- | --- |

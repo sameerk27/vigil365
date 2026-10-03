@@ -44,6 +44,17 @@ public sealed class DataRetentionWorker(
                         logger.LogDebug("Retention prune: nothing to remove.");
                     }
                 }, stoppingToken);
+
+                // The audit chain is one sequence across every client, so it is
+                // pruned once, with no tenant, rather than in each client's pass.
+                using var scope = services.CreateScope();
+                var auditEntries = await PruneAuditEntriesAsync(scope.ServiceProvider.GetRequiredService<AppDbContext>(), options.Value, stoppingToken);
+                if (auditEntries > 0)
+                {
+                    logger.LogInformation("Retention prune removed {Count} audit entries", auditEntries);
+                    await scope.ServiceProvider.GetRequiredService<AuditLogger>()
+                        .WriteMspAsync("retention.prune", "audit_log", null, $"audit entries {auditEntries}", stoppingToken);
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception ex)
@@ -57,9 +68,10 @@ public sealed class DataRetentionWorker(
     }
 
     /// <summary>
-    /// One prune pass. Batched RemoveRange (not ExecuteDelete) so it works on every
-    /// EF provider, including the in-memory one used by tests; volumes stay small
-    /// because the job runs daily.
+    /// One prune pass over the current tenant's data (the audit chain is pruned
+    /// separately, see <see cref="PruneAuditEntriesAsync"/>). Batched RemoveRange
+    /// (not ExecuteDelete) so it works on every EF provider, including the
+    /// in-memory one used by tests; volumes stay small because the job runs daily.
     /// </summary>
     public static async Task<PruneSummary> PruneAsync(AppDbContext db, RetentionOptions o, CancellationToken ct)
     {
@@ -102,13 +114,6 @@ public sealed class DataRetentionWorker(
                 db.TrendSnapshots.Where(t => t.CapturedAt < cutoff), ct);
         }
 
-        if (o.AuditEntriesDays > 0)
-        {
-            var cutoff = now.AddDays(-o.AuditEntriesDays);
-            summary.AuditEntries = await DeleteBatchedAsync(db,
-                db.AuditEntries.Where(a => a.Timestamp < cutoff), ct);
-        }
-
         if (o.TenantAuditEventsDays > 0)
         {
             var cutoff = now.AddDays(-o.TenantAuditEventsDays);
@@ -117,6 +122,26 @@ public sealed class DataRetentionWorker(
         }
 
         return summary;
+    }
+
+    /// <summary>
+    /// Prunes the audit chain across every client (active, deactivated or
+    /// purged) by deleting a strict prefix in Id order: every entry before the
+    /// oldest one still inside the window. Verification starts at the first
+    /// surviving entry, so the chain stays valid. Pruning per client instead
+    /// would leave an inactive client's old entries between deleted
+    /// neighbours, and the next kept entry's PrevHash would point at nothing.
+    /// ExecuteDelete because the rows belong to many clients and the write
+    /// guard admits a client's row only in that client's context.
+    /// </summary>
+    public static async Task<int> PruneAuditEntriesAsync(AppDbContext db, RetentionOptions o, CancellationToken ct)
+    {
+        if (o.AuditEntriesDays <= 0) return 0;
+        var cutoff = DateTimeOffset.UtcNow.AddDays(-o.AuditEntriesDays);
+        var chain = db.CrossTenant<AuditEntry>(); /* the whole chain, every tenant */
+        var keepFrom = await chain.Where(a => a.Timestamp >= cutoff).MinAsync(a => (long?)a.Id, ct);
+        var prefix = keepFrom is long id ? chain.Where(a => a.Id < id) : chain.Where(a => a.Timestamp < cutoff);
+        return await prefix.ExecuteDeleteAsync(ct);
     }
 
     private static async Task<int> DeleteBatchedAsync<T>(AppDbContext db, IQueryable<T> query, CancellationToken ct)
@@ -143,16 +168,14 @@ public sealed class DataRetentionWorker(
         public int NotificationLogs { get; set; }
         public int CollectionRuns { get; set; }
         public int TrendSnapshots { get; set; }
-        public int AuditEntries { get; set; }
         public int TenantAuditEvents { get; set; }
 
         public int TotalDeleted =>
-            ResolvedAlerts + TriggeredAlerts + NotificationLogs + CollectionRuns + TrendSnapshots + AuditEntries + TenantAuditEvents;
+            ResolvedAlerts + TriggeredAlerts + NotificationLogs + CollectionRuns + TrendSnapshots + TenantAuditEvents;
 
         public string Describe() =>
             $"resolved alerts {ResolvedAlerts}, triggered alerts {TriggeredAlerts}, " +
             $"notification logs {NotificationLogs}, collection runs {CollectionRuns}, " +
-            $"trend snapshots {TrendSnapshots}, audit entries {AuditEntries}, " +
-            $"tenant audit events {TenantAuditEvents}";
+            $"trend snapshots {TrendSnapshots}, tenant audit events {TenantAuditEvents}";
     }
 }

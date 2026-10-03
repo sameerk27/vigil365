@@ -8,8 +8,9 @@ namespace M365SecurityDashboard.Api.Tests;
 
 /// <summary>
 /// Whose Graph credentials a tenant uses. The rules keep a single-tenant install
-/// working unchanged and make it impossible for a second MSP client to be
-/// collected with the first client's credentials.
+/// working unchanged, reach a consented MSP client through the shared MSP app in
+/// that client's own tenant, and make it impossible for an MSP client to be
+/// collected from the MSP's tenant or with another client's credentials.
 /// </summary>
 public sealed class TenantGraphCredentialsTests
 {
@@ -22,14 +23,16 @@ public sealed class TenantGraphCredentialsTests
         CollectionIntervalMinutes = 7, SignInLookbackHours = 48, BaseUrl = "https://graph.microsoft.com",
     };
 
-    private static TenantGraphCredentials Sut(GraphOptions global)
+    private static TenantGraphCredentials Sut(GraphOptions global, EditionMode mode = EditionMode.Single)
     {
         using var db = TestAppDbContextFactory.Create();
-        return new TenantGraphCredentials(db, TestTenancy.For(TestTenancy.Default), Options.Create(global), Protector);
+        return new TenantGraphCredentials(db, TestTenancy.For(TestTenancy.Default), Options.Create(global), Protector, Edition(mode));
     }
 
+    private static IOptions<EditionOptions> Edition(EditionMode mode = EditionMode.Single) => Options.Create(new EditionOptions { Mode = mode });
+
     [Fact]
-    public void Tenant_with_no_entra_id_uses_install_wide_credentials()
+    public void Single_mode_tenant_with_no_entra_id_uses_install_wide_credentials()
     {
         // Every upgraded single-tenant install: the default tenant has no Entra id recorded yet.
         var o = Sut(Global()).Resolve(new ClientTenant { Name = "Default" });
@@ -48,9 +51,9 @@ public sealed class TenantGraphCredentialsTests
     }
 
     [Fact]
-    public void Tenant_with_a_different_entra_id_and_no_own_credentials_is_unconfigured()
+    public void Single_mode_tenant_with_a_different_entra_id_and_no_own_credentials_is_unconfigured()
     {
-        // The rule that stops client B being filled with client A's data.
+        // A single-organisation install's credentials reach only its own tenant.
         var o = Sut(Global()).Resolve(new ClientTenant { Name = "Other", MicrosoftTenantId = "22222222-2222-2222-2222-222222222222" });
         Assert.False(o.IsConfigured());
         Assert.Equal("", o.ClientId);
@@ -60,10 +63,64 @@ public sealed class TenantGraphCredentialsTests
         Assert.Equal(48, o.SignInLookbackHours);
     }
 
+    // ── MSP mode: the install's app is the shared multi-tenant MSP app ──
+
     [Fact]
-    public void Own_credentials_win_and_the_secret_is_unprotected()
+    public void Msp_client_with_no_entra_id_is_unconfigured_never_the_msps_own_tenant()
     {
-        var o = Sut(Global()).Resolve(new ClientTenant
+        // Added but not consented yet. Falling back to the install's credentials
+        // would collect the MSP's own tenant and file it under this client.
+        var o = Sut(Global(), EditionMode.Msp).Resolve(new ClientTenant { Name = "Contoso" });
+        Assert.False(o.IsConfigured());
+        Assert.Equal("", o.TenantId);
+        Assert.Equal("", o.ClientId);
+        Assert.Equal("", o.ClientSecret);
+        Assert.Equal(7, o.CollectionIntervalMinutes);
+    }
+
+    [Fact]
+    public void Msp_default_tenant_with_no_entra_id_is_the_install_own_tenant()
+    {
+        var o = Sut(Global(), EditionMode.Msp).Resolve(new ClientTenant { Id = ClientTenant.DefaultId, Name = "Default" });
+        Assert.True(o.IsConfigured());
+        Assert.Equal("11111111-1111-1111-1111-111111111111", o.TenantId);
+        Assert.Equal("global-client", o.ClientId);
+    }
+
+    [Fact]
+    public void Msp_client_whose_entra_id_is_the_install_tenant_uses_the_install_credentials()
+    {
+        var o = Sut(Global(), EditionMode.Msp)
+            .Resolve(new ClientTenant { Name = "Us", MicrosoftTenantId = "11111111-1111-1111-1111-111111111111" });
+        Assert.True(o.IsConfigured());
+        Assert.Equal("11111111-1111-1111-1111-111111111111", o.TenantId);
+        Assert.Equal("global-client", o.ClientId);
+    }
+
+    [Fact]
+    public void Msp_consented_client_uses_the_shared_app_in_its_own_tenant()
+    {
+        // One-go onboarding: no per-client credentials; consent recorded the client's Entra id.
+        var global = Global();
+        global.CertificateThumbprint = "ABCDEF";
+        var o = Sut(global, EditionMode.Msp).Resolve(new ClientTenant
+        {
+            Name = "Contoso", MicrosoftTenantId = "22222222-2222-2222-2222-222222222222", ConsentGrantedAt = DateTimeOffset.UtcNow,
+        });
+        Assert.True(o.IsConfigured());
+        Assert.Equal("22222222-2222-2222-2222-222222222222", o.TenantId); // the client's tenant, never the MSP's
+        Assert.Equal("global-client", o.ClientId);
+        Assert.Equal("global-secret", o.ClientSecret);
+        Assert.Equal("ABCDEF", o.CertificateThumbprint); // the shared app's own credential
+        Assert.Equal(7, o.CollectionIntervalMinutes);
+    }
+
+    [Theory]
+    [InlineData(EditionMode.Single)]
+    [InlineData(EditionMode.Msp)]
+    public void Own_credentials_win_and_the_secret_is_unprotected(EditionMode mode)
+    {
+        var o = Sut(Global(), mode).Resolve(new ClientTenant
         {
             Name = "Own",
             MicrosoftTenantId = "22222222-2222-2222-2222-222222222222",
@@ -98,7 +155,7 @@ public sealed class TenantGraphCredentialsTests
     {
         // /health and startup run without a tenant; they see the install-wide state.
         using var db = TestAppDbContextFactory.Create();
-        var sut = new TenantGraphCredentials(db, TestTenancy.None(), Options.Create(Global()), Protector);
+        var sut = new TenantGraphCredentials(db, TestTenancy.None(), Options.Create(Global()), Protector, Edition());
         Assert.True(await sut.IsConfiguredAsync(CancellationToken.None));
     }
 
@@ -108,7 +165,7 @@ public sealed class TenantGraphCredentialsTests
         using var db = TestAppDbContextFactory.Create();
         db.ClientTenants.Add(new ClientTenant { Id = TestTenancy.Default, Name = "T", CreatedAt = DateTimeOffset.UtcNow });
         await db.SaveChangesAsync();
-        var sut = new TenantGraphCredentials(db, TestTenancy.For(TestTenancy.Default), Options.Create(Global()), Protector);
+        var sut = new TenantGraphCredentials(db, TestTenancy.For(TestTenancy.Default), Options.Create(Global()), Protector, Edition());
 
         var first = await sut.ResolveAsync(CancellationToken.None);
         var second = await sut.ResolveAsync(CancellationToken.None);
@@ -120,7 +177,22 @@ public sealed class TenantGraphCredentialsTests
     {
         var global = Global();
         _ = Sut(global).Resolve(new ClientTenant { Name = "Other", MicrosoftTenantId = "22222222-2222-2222-2222-222222222222" });
+        _ = Sut(global, EditionMode.Msp).Resolve(new ClientTenant { Name = "Shared", MicrosoftTenantId = "33333333-3333-3333-3333-333333333333" });
+        _ = Sut(global, EditionMode.Msp).Resolve(new ClientTenant { Name = "Unconsented" });
+        Assert.Equal("11111111-1111-1111-1111-111111111111", global.TenantId);
         Assert.Equal("global-client", global.ClientId);
         Assert.Equal("global-secret", global.ClientSecret);
+    }
+
+    [Fact]
+    public void Install_tenant_match_is_case_insensitive_and_never_blank()
+    {
+        var sut = Sut(Global());
+        Assert.True(sut.IsInstallTenant("11111111-1111-1111-1111-111111111111"));
+        Assert.True(sut.IsInstallTenant(" 11111111-1111-1111-1111-111111111111 ".ToUpperInvariant()));
+        Assert.False(sut.IsInstallTenant("22222222-2222-2222-2222-222222222222"));
+        Assert.False(sut.IsInstallTenant(""));
+        Assert.False(sut.IsInstallTenant(null));
+        Assert.False(Sut(Global("")).IsInstallTenant(""));
     }
 }

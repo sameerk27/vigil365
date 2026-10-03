@@ -28,7 +28,12 @@ export function ClientAlertQueue() {
 
   const load = useCallback(async () => {
     const r = await queueApi.list();
-    if (r.ok) { setItems(r.value); setError(null); } else { setItems([]); setError(r.error); }
+    if (r.ok) {
+      setItems(r.value); setError(null);
+      // Handling a client's last open alert drops it from the filter options; a
+      // filter left on it would hide every other client's alerts, with no way back.
+      setClient(c => r.value.some(i => i.tenantName === c) ? c : "");
+    } else { setItems([]); setError(r.error); }
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -45,9 +50,11 @@ export function ClientAlertQueue() {
     await load();
   };
 
+  // A triggered (policy) alert opens on Rules & Notifications, the route
+  // notification links use; the Alert Queue lists collected M365 alerts only.
   const open = (item: QueueItem) => {
     setSelectedTenantId(item.tenantId);
-    window.location.hash = `#/incidents?alert=${item.id}`;
+    window.location.hash = `#/alertcenter?alert=${item.id}`;
     window.location.reload();
   };
 

@@ -1,6 +1,7 @@
 using M365SecurityDashboard.Api.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
 
 namespace M365SecurityDashboard.Api.Data.Tenancy;
 
@@ -13,14 +14,17 @@ namespace M365SecurityDashboard.Api.Data.Tenancy;
 ///      Admins every active tenant, others their assigned ones).
 ///   2. Otherwise, if the install has exactly one active tenant (every Edition 1
 ///      install), that tenant. Cached briefly — it is read on every API call.
+///      In MSP mode a signed-in user must also be permitted it: being the only
+///      client does not make it theirs.
 ///   2b. Otherwise, if the signed-in user is permitted exactly one tenant, that one.
 ///   3. Otherwise nothing is set, and any endpoint that touches tenant-scoped
 ///      data fails closed with <see cref="TenantRequiredException"/>, mapped
 ///      here to a 400 telling the caller to pick a tenant.
 ///
-/// Step 2 applies to signed-in and API-token callers alike; step 1 needs a
-/// signed-in Admin. Anonymous install-level probes (/health) read across
-/// tenants explicitly and need no tenant.
+/// API-token callers (/api/siem) resolve separately: a client-restricted token
+/// is pinned to its client while that client is active; an install-wide token
+/// may name any active tenant or fall back to step 2. Anonymous install-level
+/// probes (/health) read across tenants explicitly and need no tenant.
 /// </summary>
 public sealed class TenantResolutionMiddleware(RequestDelegate next)
 {
@@ -28,7 +32,7 @@ public sealed class TenantResolutionMiddleware(RequestDelegate next)
     private const string SoleTenantCacheKey = "tenancy:sole-active-tenant";
     private static readonly TimeSpan SoleTenantTtl = TimeSpan.FromSeconds(30);
 
-    public async Task InvokeAsync(HttpContext ctx, TenantContext tenant, AppDbContext db, IMemoryCache cache, TenantAccess access, Services.ApiTokenService tokens)
+    public async Task InvokeAsync(HttpContext ctx, TenantContext tenant, AppDbContext db, IMemoryCache cache, TenantAccess access, Services.ApiTokenService tokens, IOptions<EditionOptions> edition)
     {
         if (ctx.Request.Path.StartsWithSegments("/api"))
         {
@@ -49,6 +53,9 @@ public sealed class TenantResolutionMiddleware(RequestDelegate next)
                             await Reject(ctx, StatusCodes.Status403Forbidden, "This API token is restricted to one tenant.");
                             return;
                         }
+                        // Deactivating (or purging) the client stops its tokens too.
+                        if (!await db.ClientTenants.AsNoTracking().AnyAsync(t => t.Id == pinned && t.IsActive, ctx.RequestAborted))
+                        { await Reject(ctx, StatusCodes.Status403Forbidden, "Unknown or inactive tenant."); return; }
                         tenant.Set(pinned);
                         await Next(ctx); return;
                     }
@@ -86,11 +93,17 @@ public sealed class TenantResolutionMiddleware(RequestDelegate next)
             }
             else
             {
-                // Applies to every API request, signed-in or API-token: with exactly
-                // one tenant there is nothing to choose and nothing to leak.
+                // With exactly one tenant there is nothing to choose. In a single
+                // organisation install there is nothing to leak either; in MSP mode a
+                // signed-in user still goes through TenantAccess, so an unassigned
+                // Analyst or a never-provisioned Viewer does not get the only client.
+                // (An unauthenticated caller here has an install-wide API token or
+                // reaches only anonymous endpoints, which check their own token.)
+                var signedIn = ctx.User.Identity?.IsAuthenticated == true;
                 var sole = await ResolveSoleActiveTenantAsync(db, cache, ctx.RequestAborted);
-                if (sole is Guid id) tenant.Set(id);
-                else if (ctx.User.Identity?.IsAuthenticated == true)
+                if (sole is Guid id && (!signedIn || !edition.Value.IsMsp || await access.CanSelectAsync(ctx.User, id, ctx.RequestAborted)))
+                    tenant.Set(id);
+                else if (signedIn)
                 {
                     // Several tenants exist but this user may see only one: no
                     // switcher is shown to them, so choose it.

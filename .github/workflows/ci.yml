@@ -57,10 +57,24 @@ jobs:
 
       # The e2e build bypasses Microsoft sign-in (VITE_E2E_FAKE_AUTH=1). That
       # branch must never reach a shipped bundle — fail if its marker is there.
+      # This covers CI's own build; the builds that ship run the same check on
+      # their own output (Dockerfile, scripts/build-installer.ps1).
       - name: Assert release bundle has no e2e auth bypass
         run: |
           if grep -rlE 'vigil365-e2e-fake-auth|VITE_E2E_FAKE_AUTH' src/M365SecurityDashboard.Api/wwwroot; then
             echo "::error::Release bundle contains the e2e fake-auth bypass"; exit 1
+          fi
+
+      # The bypass exists only on the vite dev server (import.meta.env.DEV). A
+      # production build must drop it even with the flag set — as it is when a
+      # developer's client .env.local sets it — which covers every script that
+      # builds the SPA (install.ps1, enterprise-install.*), not just this one.
+      - name: Assert a production build drops the bypass even with the flag set
+        working-directory: src/m365-security-dashboard-client
+        run: |
+          VITE_E2E_FAKE_AUTH=1 npx vite build --outDir "$RUNNER_TEMP/bypass-check" --emptyOutDir
+          if grep -rlE 'vigil365-e2e-fake-auth|VITE_E2E_FAKE_AUTH' "$RUNNER_TEMP/bypass-check"; then
+            echo "::error::A production build with VITE_E2E_FAKE_AUTH=1 still contains the sign-in bypass"; exit 1
           fi
 
       # Signed-in journeys (e2e/signed-in) run against a dev server built with the
@@ -117,6 +131,21 @@ jobs:
         env:
           VIGIL365_REQUIRE_DB_TESTS: "1"
         run: dotnet test src/M365SecurityDashboard.Api.Tests/M365SecurityDashboard.Api.Tests.csproj --configuration Release --no-build --verbosity normal
+
+  # Both compose stacks build this image, and nothing else in CI did: the API
+  # builds fine on the runner, where the whole repository is present, while the
+  # image's build stage only sees what the Dockerfile copies in. That is how
+  # the image stopped building unnoticed. Also runs the Dockerfile's own
+  # e2e-bypass check against the bundle it ships.
+  docker-image:
+    name: Build Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build --pull -t vigil365:ci .
 
   build-installer:
     name: Build installer (Windows)

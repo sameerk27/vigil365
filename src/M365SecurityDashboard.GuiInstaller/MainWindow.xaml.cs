@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Security.AccessControl;
 using System.Security.Principal;
 using MessageBox = System.Windows.MessageBox;
 using Clipboard = System.Windows.Clipboard;
@@ -526,11 +527,15 @@ namespace M365SecurityDashboard.GuiInstaller
         private string plannedAdminEmail = "";
         private string plannedTenant = "";
 
+        // The step the run is on, so a failure is explained by where it happened.
+        private InstallStage stage;
+
         private async Task RunInstallationAsync()
         {
             try
             {
                 // Ensure Azure login first
+                stage = InstallStage.SignIn;
                 UpdateProgress(10, $"Signing in to {plannedTenant}...");
                 Log($"Looking up the Microsoft 365 tenant '{plannedTenant}'...");
                 tenantId = await ResolveTenantIdAsync(plannedTenant);
@@ -541,12 +546,15 @@ namespace M365SecurityDashboard.GuiInstaller
                 // install outgrows it within a few dozen clients (InstallPlan).
                 if (plannedEdition == EditionChoice.Msp && plannedEngine == DbEngine.SqlServer)
                 {
+                    stage = InstallStage.SqlServer;
                     var edition = installSqlServer ? null : await Task.Run(() => DatabaseSetup.SqlEngineEdition(existingSqlConnectionString));
+                    stage = InstallStage.DatabaseChoice;
                     var problem = InstallPlan.DatabaseProblem(plannedEdition, plannedEngine, installSqlServer, edition);
                     if (problem != null) throw new Exception(problem);
                 }
 
                 // Database setup
+                stage = plannedEngine == DbEngine.Postgres ? InstallStage.Postgres : InstallStage.SqlServer;
                 if (plannedEngine == DbEngine.Postgres)
                 {
                     sqlConnectionString = existingSqlConnectionString;
@@ -591,6 +599,7 @@ namespace M365SecurityDashboard.GuiInstaller
 
                 // App Registration. Must be the canonical origin, not the raw text:
                 // Entra matches redirect URIs by exact string.
+                stage = InstallStage.AppRegistration;
                 UpdateProgress(40, "Creating Azure App Registration...");
                 var uri = plannedUri;
                 var origin = uri.IsDefaultPort
@@ -599,11 +608,17 @@ namespace M365SecurityDashboard.GuiInstaller
                 await Task.Run(() => RegisterAzureApp(origin));
 
                 // Application files
+                stage = InstallStage.Files;
                 UpdateProgress(60, "Installing application files...");
                 await InstallApplicationFiles();
 
-                // Service Setup
+                // Service Setup. The collector secret is minted only now, with the
+                // files in place: minting it earlier meant a run that failed on a
+                // locked file left a live two-year secret on the app that nothing
+                // had been configured with.
+                stage = InstallStage.Service;
                 UpdateProgress(80, "Configuring Windows Service...");
+                await Task.Run(CreateCollectorSecret);
                 await Task.Run(SetupService);
 
                 UpdateProgress(100, "Done!");
@@ -624,60 +639,7 @@ namespace M365SecurityDashboard.GuiInstaller
         private void ShowInstallFailure(Exception ex)
         {
             var message = ex.Message ?? "";
-            string title, remedy;
-
-            if (message.Contains("database", StringComparison.OrdinalIgnoreCase)
-                || message.Contains("SQL", StringComparison.OrdinalIgnoreCase)
-                || message.Contains("login", StringComparison.OrdinalIgnoreCase))
-            {
-                title = "Vigil365 could not set up its database.";
-                remedy =
-                    "• Check SQL Server is running: open Services and look for \"SQL Server (SQLEXPRESS)\".\n" +
-                    "• Go back and check the connection string names a server you can reach. The default is " +
-                    ".\\SQLEXPRESS.\n" +
-                    "• You must be a SQL administrator on that instance. If someone else administers SQL Server, " +
-                    "ask them to run this installer, or to create a login for NT AUTHORITY\\LOCAL SERVICE with " +
-                    "db_owner on the Vigil365 database.\n" +
-                    "• Nothing has been installed as a service yet, so it is safe to fix this and try again.";
-            }
-            else if (message.Contains("certificate", StringComparison.OrdinalIgnoreCase)
-                     || message.Contains(".pfx", StringComparison.OrdinalIgnoreCase))
-            {
-                title = "The certificate could not be used.";
-                remedy =
-                    "• Go back and check the .pfx password.\n" +
-                    "• The certificate must include its private key — a .cer or .crt file will not work.\n" +
-                    "• If you do not have one to hand, choose \"Create one for me\" to get running now and " +
-                    "replace it later.";
-            }
-            else if (message.Contains("payload", StringComparison.OrdinalIgnoreCase))
-            {
-                title = "This installer does not contain the Vigil365 application.";
-                remedy =
-                    "• This build is incomplete and cannot install anything.\n" +
-                    "• Download the official Vigil365-Setup.exe, or rebuild it with scripts/build-installer.ps1.";
-            }
-            else if (message.Contains("az ", StringComparison.OrdinalIgnoreCase)
-                     || message.Contains("Entra", StringComparison.OrdinalIgnoreCase)
-                     || message.Contains("tenant", StringComparison.OrdinalIgnoreCase)
-                     || message.Contains("app registration", StringComparison.OrdinalIgnoreCase))
-            {
-                title = "Vigil365 could not register itself with Microsoft Entra.";
-                remedy =
-                    "• Sign in to Azure first: open a terminal and run  az login\n" +
-                    "• Your account needs permission to create app registrations (Application Administrator or " +
-                    "Cloud Application Administrator). If it does not have that, ask an administrator to run this " +
-                    "step, or register the application manually — see the README.\n" +
-                    "• Then come back and try again.";
-            }
-            else
-            {
-                title = "Installation did not complete.";
-                remedy =
-                    "• Read the log below for the step that failed.\n" +
-                    "• Go back, correct the setting it names, and run the installation again.\n" +
-                    "• Use \"Copy details\" to capture the log if you need to send it on.";
-            }
+            var (title, remedy) = InstallPlan.FailureAdvice(stage);
 
             TxtFailureTitle.Text = title + "\n\n" + message.Trim();
             TxtFailureRemedy.Text = remedy;
@@ -882,30 +844,79 @@ namespace M365SecurityDashboard.GuiInstaller
             // the certificate or change the address — and creating a fresh app
             // every time would litter the tenant with near-identical registrations
             // and silently strand whichever one was configured last.
+            //
+            // Which one: the app this install's own config names. A single app named
+            // exactly "Vigil365" that the config does not name is only reused if the
+            // operator says it is this server's: it may be another server's, and
+            // reusing it adds this server's secret to it and rewrites its settings.
+            // It used to be taken silently — a Single pilot beside an MSP server
+            // then made the MSP's app single-tenant, and every client's collection
+            // failed.
             string? objectId = null;
             var reused = false;
-            try
+            string? existingJson = null;
+            var appName = "Vigil365";
+            if (existingInstall?.ClientId is string configuredId)
             {
-                var existingJson = RunCommandAndCapture("az",
-                    "ad app list --display-name \"Vigil365\" --query \"[0]\" -o json").Trim();
-                if (!string.IsNullOrEmpty(existingJson) && existingJson != "null")
+                var (found, appJson, _) = RunCommandChecked("az", $"ad app show --id {configuredId} -o json");
+                if (found) existingJson = appJson;
+                else Log($"The app registration this install used ({configuredId}) is not in this tenant; looking for another.");
+            }
+            if (existingJson == null)
+            {
+                var named = InstallPlan.AppIdsNamedExactly(
+                    RunCommandAndCapture("az", "ad app list --display-name \"Vigil365\" -o json"), "Vigil365");
+                if (named.Count > 1)
+                    throw new Exception(
+                        $"Several app registrations in this tenant are named Vigil365 ({string.Join(", ", named)}), " +
+                        "and this server has no previous configuration saying which one is its own.\r\n\r\n" +
+                        "Rename or delete the ones this server should not use, then run the installer again.");
+                if (named.Count == 1)
                 {
-                    var existing = JsonSerializer.Deserialize<JsonElement>(existingJson);
-                    if (existing.ValueKind == JsonValueKind.Object)
+                    var hostName = InstallPlan.HostAppName(Environment.MachineName);
+                    var answer = Dispatcher.Invoke(() => MessageBox.Show(this,
+                        $"This tenant already has an app registration named Vigil365 ({named[0]}), " +
+                        "and this server has no previous configuration naming it. It may belong to another Vigil365 server.\r\n\r\n" +
+                        "Sharing it adds this server's address and a collection secret to it, and in MSP mode makes it multi-tenant.\r\n\r\n" +
+                        "Yes: share it (choose this only if it is this server's own registration, e.g. a reinstall).\r\n" +
+                        $"No: create a separate registration named \"{hostName}\" for this server.\r\n" +
+                        "Cancel: stop the installation.",
+                        "Existing Vigil365 app registration", MessageBoxButton.YesNoCancel, MessageBoxImage.Question, MessageBoxResult.No));
+                    if (answer == MessageBoxResult.Cancel)
+                        throw new Exception("Installation stopped: choose whether to share the existing Vigil365 app registration, then run the installer again.");
+                    if (answer == MessageBoxResult.Yes)
                     {
-                        clientId = existing.GetProperty("appId").GetString();
-                        objectId = existing.GetProperty("id").GetString();
-                        reused = true;
-                        Log($"Reusing the existing Vigil365 app registration ({clientId}).");
+                        var (found, appJson, _) = RunCommandChecked("az", $"ad app show --id {named[0]} -o json");
+                        if (found) existingJson = appJson;
                     }
+                    else appName = hostName;
                 }
             }
-            catch { /* fall through to creating one */ }
+
+            // Kept, not replaced: another install may share this registration.
+            IReadOnlyList<string> spaRedirects = Array.Empty<string>(), webRedirects = Array.Empty<string>();
+            string? currentAudience = null;
+            if (existingJson != null)
+            {
+                try
+                {
+                    var existing = JsonSerializer.Deserialize<JsonElement>(existingJson);
+                    clientId = existing.GetProperty("appId").GetString();
+                    objectId = existing.GetProperty("id").GetString();
+                    if (existing.TryGetProperty("displayName", out var dn) && dn.GetString() is string name) appName = name;
+                    if (existing.TryGetProperty("signInAudience", out var aud)) currentAudience = aud.GetString();
+                    spaRedirects = InstallPlan.RedirectUris(existingJson, "spa");
+                    webRedirects = InstallPlan.RedirectUris(existingJson, "web");
+                    reused = true;
+                    Log($"Reusing the existing app registration \"{appName}\" ({clientId}).");
+                }
+                catch { /* fall through to creating one */ }
+            }
 
             if (objectId == null)
             {
-                Log("Creating Entra Application...");
-                var appJson = RunCommandAndCapture("az", "ad app create --display-name \"Vigil365\" --sign-in-audience AzureADMyOrg");
+                Log($"Creating Entra Application \"{appName}\"...");
+                var appJson = RunCommandAndCapture("az", $"ad app create --display-name \"{appName}\" --sign-in-audience AzureADMyOrg");
 
                 var app = JsonSerializer.Deserialize<JsonElement>(appJson);
                 clientId = app.GetProperty("appId").GetString();
@@ -974,10 +985,12 @@ namespace M365SecurityDashboard.GuiInstaller
             // multi-tenant and registers the /consented Web redirect so client
             // tenants can consent. On a re-run over a Single install this patches
             // the SAME app — the convert-to-MSP path, no new app or secret.
-            var patchJson = InstallPlan.AppPatchJson(plannedEdition, publicUrl, requiredResourceAccess, apiBlock);
+            var patchJson = InstallPlan.AppPatchJson(plannedEdition, publicUrl, requiredResourceAccess, apiBlock, spaRedirects, webRedirects, currentAudience);
             Log(plannedEdition == EditionChoice.Msp
                 ? $"MSP mode: multi-tenant app, client consent returns to {InstallPlan.ConsentRedirect(publicUrl)}."
-                : "Single-organisation mode: single-tenant app.");
+                : InstallPlan.SignInAudience(plannedEdition, currentAudience) == "AzureADMultipleOrgs"
+                    ? "Single-organisation mode. The app is already multi-tenant (another install may rely on that), so it stays so; sign-in is still limited to your tenant."
+                    : "Single-organisation mode: single-tenant app.");
 
             var tempPatch = Path.GetTempFileName();
             File.WriteAllText(tempPatch, patchJson);
@@ -1026,20 +1039,25 @@ namespace M365SecurityDashboard.GuiInstaller
             {
                 Log($"WARNING: Could not grant admin consent automatically. {lastConsentError}");
                 Log("   The install continues, but collection stays empty until consent is granted:");
-                Log("   Entra admin center > App registrations > Vigil365 > API permissions > Grant admin consent.");
+                Log($"   Entra admin center > App registrations > {appName} > API permissions > Grant admin consent.");
             }
 
             if (plannedEdition == EditionChoice.Msp)
                 GrantMspReadinessPermission(appRolesJson);
+        }
 
-            // The collector authenticates to Graph app-only, so it needs a
-            // credential of its own — the user's sign-in cannot be reused. Nothing
-            // created one before, so collection could never start and the Setup
-            // page demanded a secret the operator had to mint by hand.
-            //
-            // --append so an existing credential someone else added is not
-            // destroyed; the trade-off is that re-running the wizard leaves the
-            // previous installer secret behind, unused, until it expires.
+        /// <summary>
+        /// The collector authenticates to Graph app-only, so it needs a
+        /// credential of its own — the user's sign-in cannot be reused. Nothing
+        /// created one before, so collection could never start and the Setup
+        /// page demanded a secret the operator had to mint by hand.
+        ///
+        /// --append so an existing credential someone else added is not
+        /// destroyed; the trade-off is that re-running the wizard leaves the
+        /// previous installer secret behind, unused, until it expires.
+        /// </summary>
+        private void CreateCollectorSecret()
+        {
             Log("Creating a client secret for data collection...");
             // Stdout carries only the password (--query password -o tsv); az prints
             // its "protect these credentials" notice to stderr, kept separate so it
@@ -1123,34 +1141,50 @@ namespace M365SecurityDashboard.GuiInstaller
             // being replaced, and the extraction failure that produces reads as
             // file corruption rather than "it is still running".
             Log("Stopping any running Vigil365 service...");
+            var wasRunning = QueryService("Vigil365").Contains("RUNNING");
             RunCommand("sc", "stop Vigil365");
-            await Task.Delay(3000);
+            await WaitForServiceStoppedAsync("Vigil365", TimeSpan.FromSeconds(60));
 
             Log($"Extracting the application to {publishPath}...");
             Directory.CreateDirectory(publishPath);
 
-            await Task.Run(() =>
+            try
             {
-                using var archive = new System.IO.Compression.ZipArchive(
-                    payload, System.IO.Compression.ZipArchiveMode.Read);
-
-                foreach (var entry in archive.Entries)
+                await Task.Run(() =>
                 {
-                    var target = Path.GetFullPath(Path.Combine(publishPath, entry.FullName));
+                    using var archive = new System.IO.Compression.ZipArchive(
+                        payload, System.IO.Compression.ZipArchiveMode.Read);
 
-                    // Refuse entries that escape the install directory. A zip is
-                    // an untrusted format even when we built it, and this is the
-                    // check whose absence is the classic path-traversal bug.
-                    if (!target.StartsWith(Path.GetFullPath(publishPath) + Path.DirectorySeparatorChar,
-                                           StringComparison.OrdinalIgnoreCase))
-                        throw new Exception($"Refusing to extract outside the install folder: {entry.FullName}");
+                    foreach (var entry in archive.Entries)
+                    {
+                        var target = Path.GetFullPath(Path.Combine(publishPath, entry.FullName));
 
-                    if (string.IsNullOrEmpty(entry.Name)) { Directory.CreateDirectory(target); continue; }
+                        // Refuse entries that escape the install directory. A zip is
+                        // an untrusted format even when we built it, and this is the
+                        // check whose absence is the classic path-traversal bug.
+                        if (!target.StartsWith(Path.GetFullPath(publishPath) + Path.DirectorySeparatorChar,
+                                               StringComparison.OrdinalIgnoreCase))
+                            throw new Exception($"Refusing to extract outside the install folder: {entry.FullName}");
 
-                    Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                    entry.ExtractToFile(target, overwrite: true);
+                        if (string.IsNullOrEmpty(entry.Name)) { Directory.CreateDirectory(target); continue; }
+
+                        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                        entry.ExtractToFile(target, overwrite: true);
+                    }
+                });
+            }
+            catch
+            {
+                // A clean stop is not restarted by the service's recovery actions,
+                // so without this a failed upgrade left monitoring down until
+                // someone noticed.
+                if (wasRunning)
+                {
+                    Log("Starting the previous Vigil365 service again...");
+                    RunCommand("sc", "start Vigil365");
                 }
-            });
+                throw;
+            }
 
             var exe = Path.Combine(publishPath, "M365SecurityDashboard.Api.exe");
             if (!File.Exists(exe)) throw new Exception($"Extraction finished but {exe} is missing.");
@@ -1170,6 +1204,9 @@ namespace M365SecurityDashboard.GuiInstaller
             var dataDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Vigil365");
             var keyPath = Path.Combine(dataDir, "keys");
+            // Logs too: the default logs\ beside the app is under Program Files,
+            // where the service cannot create it.
+            var logDir = Path.Combine(dataDir, "logs");
 
             var localOnly = plannedLocalOnly;
             var uri = plannedUri;
@@ -1222,10 +1259,15 @@ namespace M365SecurityDashboard.GuiInstaller
             // contain any character, and JsonSerializer emits a complete, quoted,
             // fully-escaped JSON string — so these are interpolated WITHOUT
             // surrounding quotes.
-            var secretJson = JsonSerializer.Serialize(graphClientSecret);
             var connJson = JsonSerializer.Serialize(sqlConnectionString);
 
-            var configJson = $$"""
+            // If no new secret could be minted for the same app, keep the one the
+            // previous config already holds rather than blanking a working install.
+            var keepPreviousSecret = graphClientSecret.Length == 0
+                && string.Equals(existingInstall?.ClientId, clientId, StringComparison.OrdinalIgnoreCase);
+            var secretLine = keepPreviousSecret ? "" : $",\n        \"ClientSecret\": {JsonSerializer.Serialize(graphClientSecret)}";
+
+            var installerJson = $$"""
             {
             {{kestrelJson}}
             {{InstallPlan.ConfigSections(plannedEdition, plannedEngine)}}
@@ -1240,8 +1282,7 @@ namespace M365SecurityDashboard.GuiInstaller
                 },
                 "Graph": {
                     "TenantId": "{{tenantId}}",
-                    "ClientId": "{{clientId}}",
-                    "ClientSecret": {{secretJson}}
+                    "ClientId": "{{clientId}}"{{secretLine}}
                 },
                 "Auth": {
                     "RedirectUri": "{{publicUrl}}",
@@ -1255,32 +1296,45 @@ namespace M365SecurityDashboard.GuiInstaller
                 },
                 "DataProtection": {
                     "KeyPath": "{{keyPath.Replace("\\", "\\\\")}}"
+                },
+                "Logging": {
+                    "File": {
+                        "Path": {{JsonSerializer.Serialize(Path.Combine(logDir, "vigil365-.json"))}}
+                    }
                 }
             }
             """;
 
+            // Laid over the previous file, not written in its place: settings
+            // Setup does not manage (Retention, Graph tuning, the size warning)
+            // survive a re-run. The previous file is kept beside it as .bak.
+            var configPath = Path.Combine(publishPath, "appsettings.Production.json");
+            var previousConfig = File.Exists(configPath) ? File.ReadAllText(configPath) : null;
+            if (previousConfig != null)
+            {
+                WriteRestrictedFile(configPath + ".bak", previousConfig);
+                Log("Keeping the settings Setup does not manage; the previous configuration is saved as appsettings.Production.json.bak.");
+            }
+
             Log("Writing Configuration File...");
-            File.WriteAllText(Path.Combine(publishPath, "appsettings.Production.json"), configJson);
+            WriteRestrictedFile(configPath, InstallPlan.MergeConfig(previousConfig, installerJson));
 
             const string serviceAccount = "NT AUTHORITY\\LOCAL SERVICE";
 
+            // The key ring decrypts every secret Vigil365 keeps in its database, and
+            // the logs name users and devices: the service may write here, and no
+            // one else but administrators may read. ProgramData otherwise lets every
+            // local user read what is under it.
             Directory.CreateDirectory(keyPath);
+            Directory.CreateDirectory(logDir);
             try
             {
-                var acl = new DirectoryInfo(keyPath).GetAccessControl();
-                acl.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
-                    serviceAccount,
-                    System.Security.AccessControl.FileSystemRights.Modify,
-                    System.Security.AccessControl.InheritanceFlags.ContainerInherit |
-                    System.Security.AccessControl.InheritanceFlags.ObjectInherit,
-                    System.Security.AccessControl.PropagationFlags.None,
-                    System.Security.AccessControl.AccessControlType.Allow));
-                new DirectoryInfo(keyPath).SetAccessControl(acl);
-                Log($"Data protection keys will be stored in {keyPath}.");
+                RestrictAccess(new DirectoryInfo(dataDir), FileSystemRights.Modify);
+                Log($"Data protection keys will be stored in {keyPath}, logs in {logDir}.");
             }
             catch (Exception ex)
             {
-                Log($"Could not grant write access to {keyPath} ({ex.Message}). Saving Graph credentials may fail.");
+                Log($"Could not set permissions on {dataDir} ({ex.Message}). The service may be unable to save its keys or logs.");
             }
 
             // A certificate the service account cannot read is the same as no
@@ -1343,6 +1397,53 @@ namespace M365SecurityDashboard.GuiInstaller
         }
 
         /// <summary>
+        /// Writes a file only administrators, SYSTEM and the service account can
+        /// read. appsettings.Production.json carries the Graph client secret (in
+        /// MSP mode, the key to every consenting client's data) and the certificate
+        /// password; Program Files let every local user read it. The ACL is set
+        /// before the content goes in, so the secret is never readable by all.
+        /// </summary>
+        private static void WriteRestrictedFile(string path, string contents)
+        {
+            using (File.Open(path, FileMode.OpenOrCreate)) { }
+            RestrictAccess(new FileInfo(path), FileSystemRights.Read);
+            File.WriteAllText(path, contents);
+        }
+
+        /// <summary>
+        /// Replaces the ACL with Administrators and SYSTEM (full control) and the
+        /// service account (<paramref name="serviceRights"/>), inherited by
+        /// everything below a folder. Well-known SIDs, so it works on any locale.
+        /// </summary>
+        private static void RestrictAccess(FileSystemInfo target, FileSystemRights serviceRights)
+        {
+            var grants = new[]
+            {
+                (Sid: WellKnownSidType.BuiltinAdministratorsSid, Rights: FileSystemRights.FullControl),
+                (Sid: WellKnownSidType.LocalSystemSid, Rights: FileSystemRights.FullControl),
+                (Sid: WellKnownSidType.LocalServiceSid, Rights: serviceRights),
+            };
+            if (target is DirectoryInfo dir)
+            {
+                var acl = new DirectorySecurity();
+                acl.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+                foreach (var (sid, rights) in grants)
+                    acl.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(sid, null), rights,
+                        InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                        PropagationFlags.None, AccessControlType.Allow));
+                dir.SetAccessControl(acl);
+            }
+            else
+            {
+                var acl = new FileSecurity();
+                acl.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+                foreach (var (sid, rights) in grants)
+                    acl.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(sid, null), rights, AccessControlType.Allow));
+                ((FileInfo)target).SetAccessControl(acl);
+            }
+        }
+
+        /// <summary>
         /// Runs sc.exe directly and, unless told otherwise, fails loudly.
         /// </summary>
         private void RunSc(string arguments, bool check = true)
@@ -1381,17 +1482,7 @@ namespace M365SecurityDashboard.GuiInstaller
         {
             for (var attempt = 0; attempt < 15; attempt++)
             {
-                var psi = new ProcessStartInfo
-                {
-                    FileName = "sc.exe",
-                    Arguments = $"query {serviceName}",
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true
-                };
-                using var p = Process.Start(psi)!;
-                var text = p.StandardOutput.ReadToEnd();
-                p.WaitForExit();
+                var text = QueryService(serviceName);
 
                 if (text.Contains("RUNNING")) { Log($"Service '{serviceName}' is running."); return; }
                 if (text.Contains("STOPPED") && attempt > 2) break;
@@ -1400,9 +1491,47 @@ namespace M365SecurityDashboard.GuiInstaller
 
             throw new Exception(
                 $"The '{serviceName}' service was installed but is not running. " +
-                "It usually means it could not reach SQL Server, could not read its certificate, " +
+                "It usually means it could not reach its database, could not read its certificate, " +
                 "or the port is already in use. Windows Event Viewer > Windows Logs > Application " +
                 "records the reason.");
+        }
+
+        /// <summary>
+        /// Waits until the service has actually stopped, or does not exist. "sc stop"
+        /// only asks: the service then finishes its collection cycle and drains its
+        /// hosted services (up to 30 seconds) while still holding its files, so
+        /// overwriting them after a fixed pause failed on a locked file.
+        /// </summary>
+        private async Task WaitForServiceStoppedAsync(string serviceName, TimeSpan timeout)
+        {
+            var deadline = DateTime.UtcNow + timeout;
+            while (true)
+            {
+                var text = QueryService(serviceName);
+                if (text.Contains("STOPPED") || !text.Contains("STATE")) return;   // no STATE: not installed
+                if (DateTime.UtcNow >= deadline)
+                    throw new Exception(
+                        $"The '{serviceName}' service did not stop within {timeout.TotalSeconds:0} seconds, so its files " +
+                        "could not be replaced. Nothing was replaced. Stop it in Services, then run the installer again.");
+                await Task.Delay(1000);
+            }
+        }
+
+        /// <summary>The output of "sc query" for the service (an error text when it does not exist).</summary>
+        private static string QueryService(string serviceName)
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "sc.exe",
+                Arguments = $"query {serviceName}",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true
+            };
+            using var p = Process.Start(psi)!;
+            var text = p.StandardOutput.ReadToEnd();
+            p.WaitForExit();
+            return text;
         }
 
         private void BtnNextToDone_Click(object sender, RoutedEventArgs e)

@@ -36,6 +36,11 @@
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
 
+  <!-- Test-only seams (e.g. GraphApiClient's fixed-token constructor) stay internal. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="M365SecurityDashboard.Api.Tests" />
+  </ItemGroup>
+
   <!-- One permission list for API, installer and register-app.ps1 (see the file's comment). -->
   <ItemGroup>
     <EmbeddedResource Include="..\..\graph-permissions.json" LogicalName="Vigil365.graph-permissions.json" />

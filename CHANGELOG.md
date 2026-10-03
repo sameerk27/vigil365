@@ -131,6 +131,75 @@ version lives in exactly two places — the API's `<Version>` and the client's
   routing card rendered nothing on failure.
 - The onboarding consent poll kept running after the dialog closed.
 
+### Security (pre-release QA review)
+A senior-QA review of the MSP edition found and fixed, each with a regression test:
+- **Forgeable consent state.** `/consented` accepted a hand-made, unsigned `state`,
+  so anyone could mark a client as consented and stop its collection. The state is
+  now signed with its own Data Protection purpose, expires after 30 minutes, works
+  once, and `tenant` must be a tenant id that no other client already has.
+- **Wrong tenant's data under a client.** A client added without an Entra id fell
+  back to the install's credentials — the MSP's own tenant — so the MSP's data was
+  collected, shown and alerted on as that client's. Such a client is now not
+  connected until its admin consents.
+- **One-go onboarding never collected.** A client consented to the shared MSP app had
+  its credentials blanked; it now authenticates with the shared app in its own tenant.
+- **Scheduled reports leaked across clients.** Schedules had no client and were sent
+  with the first tenant's digest. In MSP mode they now belong to the selected client.
+- Unassigned staff got the only active client by default; Analysts could change
+  install-wide policies in MSP mode; a client's Teams webhook URL was returned to
+  Analysts; a client-restricted SIEM token kept working after its client was
+  deactivated; purging a client deleted its audit entries and broke the hash chain;
+  audit entries took the selected client instead of the one acted on.
+
+### Fixed (pre-release QA review)
+- Backend: a client whose Graph access was fully broken was recorded as healthy;
+  collected alerts that left Graph's feed never resolved; alerts stayed open after
+  their policy was raised, disabled or deleted; per-policy and per-client notify
+  addresses were ignored; client-only routing emailed the MSP; concurrent
+  evaluations raised duplicates; entity suppression muted whole alerts; retention
+  broke the audit chain; the cross-client queue dropped older critical alerts; the
+  digest frequency was never saved; the tenant list counted auto-resolved alerts as
+  open; parallel collections raced on the metrics counters.
+- Client: a stale client selection locked the user out; deactivating the selected
+  client showed the next client's data under the old name; failed loads looked like
+  "nothing configured" or "all clear" (and Save could wipe real notification
+  settings); "Open in client" and "Investigate" links did not open the alert;
+  acting on a stale queue row reopened resolved alerts; re-activating a client
+  erased its branding; the threshold override saved on every keystroke; controls
+  were shown to roles the server refuses; toasts named the wrong client.
+- Installer and deployment: the Docker image did not build; the service could not
+  create its log folder; the Graph secret was written to a world-readable file;
+  re-running Setup dropped operator settings and could adopt another server's app
+  registration; `enterprise-install.sh`/`.ps1` produced services that could not
+  start; `register-app.ps1` reported success on failure; docs contradicted the code.
+
+### Upgrade notes
+- `X-Forwarded-For` is trusted only from loopback or from
+  `ForwardedHeaders:KnownProxies`/`KnownNetworks`; list a proxy in another
+  container or host there.
+- The audit CSV export has two new trailing columns, `TenantId` and `HashVersion`.
+  New entries use hash version 1, which also covers `TenantId`; old entries still verify.
+- In MSP mode, report schedules with no client are no longer sent; recreate them
+  with a client selected.
+- In MSP mode only Admins may create, edit, delete or import install-wide alert
+  policies (Analysts get 403).
+- The first collection after the upgrade resolves collected alerts that have
+  dropped out of Graph's feeds, so open counts may fall. Open alerts whose policy is
+  disabled, switched off for the client or deleted now auto-resolve.
+- An entity-pattern suppression rule hides an alert only when every affected entity
+  is covered.
+- A policy's Notify Email, or a client override address, now receives that policy's
+  alerts in place of the default recipient.
+- Logs fall back to `%ProgramData%\Vigil365\logs` (or stdout only) when the
+  configured folder is not writable.
+- Consent links issued before the upgrade must be regenerated. One Microsoft tenant
+  can belong to only one client (409 on a duplicate).
+- `/health` `checks.collection` has a new field, `staleAfterMinutes`.
+- `POST /api/api-tokens` rejects an expiry in the past (400).
+- The Setup wizard asks before sharing an existing "Vigil365" app registration its
+  configuration does not name (default: create "Vigil365 (<server>)").
+- A production client build always drops the test-only sign-in bypass.
+
 ## [1.1.0] — 2026-08-28
 
 A design refresh, two new real-data features, and an important installer fix.

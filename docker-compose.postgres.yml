@@ -1,5 +1,6 @@
 # Vigil365 on PostgreSQL — same one-command deployment as docker-compose.yml,
 # with Postgres in place of SQL Server. No licence, no 10 GB Express ceiling.
+#   0. register the app for MSP mode:  register-app.ps1 -MultiTenant -RedirectUri <REDIRECT_URI>
 #   1. cp .env.example .env   and fill in the values (POSTGRES_PASSWORD instead of MSSQL_SA_PASSWORD)
 #   2. docker compose -f docker-compose.postgres.yml up -d
 #   3. open http://localhost:8080, sign in, enter Graph creds in the Setup wizard

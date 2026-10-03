@@ -47,6 +47,11 @@ dotnet ef migrations add <Name> --project src/M365SecurityDashboard.Api --contex
 
 - **No credentials** — never commit real Tenant IDs, Client IDs, or secrets
 - `appsettings.json` must keep placeholder values (`YOUR_TENANT_ID` etc.)
+- `VITE_E2E_FAKE_AUTH=1` (sign-in bypass) is for the signed-in e2e tests only, and works
+  only on the vite dev server: `vite build` drops it even when the flag is set (CI checks
+  this), and `scripts/build-installer.ps1`, the Docker build and CI also refuse a bundle
+  that contains it. Keep it out of client `.env` files all the same — `npm run dev`
+  would skip sign-in.
 - No new npm packages without discussion in an Issue first
 - Keep it focused on M365 / Microsoft Graph — out of scope: other cloud providers
 

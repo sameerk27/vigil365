@@ -45,7 +45,10 @@ public static class AuthHealthEndpoints
                             startedAt = lastRun.StartedAt,
                             status = lastRun.Status.ToString(),
                             alertsUpserted = lastRun.AlertsUpserted,
-                            fresh = collectionFresh
+                            fresh = collectionFresh,
+                            // The window "fresh" uses, so a signed-in view can judge one
+                            // client's own last run by it: this run may be another client's.
+                            staleAfterMinutes = (int)staleAfter.TotalMinutes
                         };
                     }
                 }
@@ -138,9 +141,9 @@ public static class AuthHealthEndpoints
             await db.SaveChangesAsync(ct);
 
             if (isFirstSignIn)
-                await audit.WriteAsync("auth.first_signin", "user", email, $"first sign-in, role {user.Role}", ct);
+                await audit.WriteMspAsync("auth.first_signin", "user", email, $"first sign-in, role {user.Role}", ct);
             else if (isNewSession)
-                await audit.WriteAsync("auth.signin", "user", email, $"signed in as {user.Role}", ct);
+                await audit.WriteMspAsync("auth.signin", "user", email, $"signed in as {user.Role}", ct);
 
             return Results.Ok(new { name = user.DisplayName ?? "", email = user.Email, role = user.Role });
         });

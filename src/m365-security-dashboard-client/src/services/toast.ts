@@ -20,6 +20,12 @@ export function showToast(message: string, type: ToastEntry["type"] = "success",
   }
 }
 
+/** For install-wide actions (users, API tokens, policy packs): they apply to
+ *  every client, so the toast names none, even with a client selected. */
+export function showInstallToast(message: string, type: ToastEntry["type"] = "success", action?: ToastAction): void {
+  showToast(message, type, action, { client: null });
+}
+
 export function registerToastHandler(handler: (t: Omit<ToastEntry, "id">) => void): () => void {
   _addToast = handler;
   return () => {

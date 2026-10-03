@@ -153,7 +153,9 @@ function parseHash(): { page: NavPage | null; alertId: number | null; triggeredI
   return {
     page,
     alertId: raw && !isGuid ? Number(raw) : null,
-    triggeredId: isGuid ? raw : null,
+    // Only Rules & Notifications opens a triggered alert. Taken from any other
+    // page's link, the id would wait unseen and pop open on a later visit there.
+    triggeredId: isGuid && page === "alertcenter" ? raw : null,
     entity: null,
     fromAlertId: null
   };
@@ -347,7 +349,11 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
   // Alert permalinks: the open alert is reflected in the URL (#/page?alert=id)
   // so the link can be shared; opening such a link selects the alert once data
   // has loaded. replaceState avoids polluting history with every open/close.
+  // An entity route owns the URL: "Investigate →" closes the alert and sets the
+  // entity hash in one click, and rewriting it here before hashchange is handled
+  // would cancel the navigation (and a shared entity link would become #/overview).
   useEffect(() => {
+    if (window.location.hash.startsWith("#/entity/")) return;
     window.history.replaceState(null, "", selectedAlert ? `#/${page}?alert=${selectedAlert.id}` : `#/${page}`);
   }, [selectedAlert, page]);
   useEffect(() => {
@@ -483,11 +489,15 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
   // every level of props.
   useEffect(() => registerRefreshHandler(() => setRefreshKey(k => k + 1)), []);
 
-  // Pull alert policies + triggered alerts from the backend
+  // Pull alert policies + triggered alerts from the backend. A failed read keeps
+  // what is on screen and says so: swapping in an empty list made the Alert
+  // Center report all-clear while alerts were open.
   const refreshAlertCenter = useCallback(async () => {
-    const [pol, trig] = await Promise.all([acApi.getPolicies(), acApi.getTriggered()]);
-    setAlertPolicies(pol);
-    setTriggeredAlerts(trig);
+    const [pol, trig] = await Promise.allSettled([acApi.getPolicies(), acApi.getTriggered()]);
+    if (pol.status === "fulfilled") setAlertPolicies(pol.value);
+    if (trig.status === "fulfilled") setTriggeredAlerts(trig.value);
+    if (pol.status === "rejected" || trig.status === "rejected")
+      setError(e => e || "Alert rules or triggered alerts failed to load — the Alert Center may be out of date.");
   }, []);
 
   // After each data load, ask the backend to evaluate policies, then refresh.
@@ -609,7 +619,8 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
             {overview?.lastRun&&(
               <Badge label={`Last run: ${fmtDate(overview.lastRun.completedAt??overview.lastRun.startedAt)}`} tone="neutral"/>
             )}
-            {auth.isAdmin && (
+            {/* POST /api/collector/run is RequireAnalyst: Analysts may run it too. */}
+            {auth.canMutate && (
               <button className={`btn-run${(!overview&&!running&&!loading)?" btn-run-pulse":""}`} onClick={runCollection} disabled={running||loading} title="Run Graph collection now">
                 <RefreshCw size={13} className={running?"spin":""}/>
                 {running?"Collecting…":"Run Collection"}
@@ -766,12 +777,13 @@ function AuthGate() {
         const cfg: { clientId: string; tenantId: string; redirectUri: string; instance?: string; mode?: string } = await res.json();
         setEditionMode(cfg.mode); // before first render of any page: gates the MSP surface
 
-        // E2E only: a build with VITE_E2E_FAKE_AUTH=1 skips MSAL and treats a fixed
-        // test user as signed in; the (mocked) /api/auth/me then supplies the role.
-        // In every other build this constant is undefined, Vite folds the condition
-        // to false and the branch is removed — CI asserts the marker below is absent
-        // from the release bundle.
-        if (import.meta.env.VITE_E2E_FAKE_AUTH === "1") {
+        // E2E only: the vite dev server started with VITE_E2E_FAKE_AUTH=1 skips MSAL
+        // and treats a fixed test user as signed in; the (mocked) /api/auth/me then
+        // supplies the role. A production build (vite build) has DEV = false, so
+        // Vite folds the condition to false and removes the branch even when the
+        // flag is set — a developer's client .env.local cannot ship a bundle that
+        // skips sign-in, whichever script builds it. CI asserts both.
+        if (import.meta.env.DEV && import.meta.env.VITE_E2E_FAKE_AUTH === "1") {
           console.warn("vigil365-e2e-fake-auth: MSAL bypassed (test build)");
           setAccount({ homeAccountId: "e2e", environment: "e2e", tenantId: cfg.tenantId || "e2e", username: "e2e@vigil365.test", localAccountId: "e2e", name: "E2E User" } as AccountInfo);
           setAuthReady(true);

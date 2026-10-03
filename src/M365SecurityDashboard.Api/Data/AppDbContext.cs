@@ -246,9 +246,9 @@ public class AppDbContext : DbContext
     /// <summary>
     /// Scoped entities: TenantId == CurrentTenantId (throws with no tenant).
     /// Optional entities: TenantId IS NULL OR TenantId == current (null-safe).
-    /// Every scoped/optional entity also gets a TenantId index and, for scoped
-    /// ones, a foreign key to ClientTenant that cascades on tenant deletion —
-    /// offboarding a client provably removes their rows.
+    /// Every scoped/optional entity also gets a TenantId index and a foreign key
+    /// to ClientTenant that cascades on tenant deletion — offboarding a client
+    /// provably removes their rows. AuditEntry alone has no foreign key.
     /// </summary>
     private void ApplyTenantFilters(ModelBuilder modelBuilder)
     {
@@ -275,7 +275,11 @@ public class AppDbContext : DbContext
                 var builder = modelBuilder.Entity(clr);
                 builder.HasQueryFilter(Expression.Lambda(Expression.OrElse(isDefault, isMine), e));
                 builder.HasIndex("TenantId");
-                builder.HasOne(typeof(ClientTenant)).WithMany().HasForeignKey("TenantId").OnDelete(DeleteBehavior.Cascade);
+                // The audit trail is the MSP's record and outlives the client: no
+                // foreign key, so purging a client neither deletes its entries nor
+                // breaks the one global hash chain they are links of.
+                if (clr != typeof(AuditEntry))
+                    builder.HasOne(typeof(ClientTenant)).WithMany().HasForeignKey("TenantId").OnDelete(DeleteBehavior.Cascade);
             }
         }
     }

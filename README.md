@@ -91,8 +91,8 @@ That is the whole install: it is a single self-contained file that carries the a
 
 The wizard will:
 1. Check administrator rights and install Azure CLI if it is missing.
-2. Register the Vigil365 application in Microsoft Entra (reusing an existing
-   registration if you have one).
+2. Register the Vigil365 application in Microsoft Entra (on a re-run, reusing the
+   one this server already uses), and create the client secret collection uses.
 3. Install SQL Server Express, or detect and reuse an instance you already have,
    and create the SQL login the service needs.
 4. Set up HTTPS, including the certificate, for a network install.
@@ -124,7 +124,11 @@ that machine stops warning, every other browser still warns. Fine for a pilot,
 not fine to leave in place: on a security product, a warning you tell people to
 click through is training them to ignore the one that matters. Re-run the wizard
 and pick one of the first two options to replace it; re-running reuses the
-existing Entra app registration rather than creating another.
+existing Entra app registration rather than creating another. A new server whose
+tenant already holds a `Vigil365` registration (another server's, say) asks before
+sharing it, and otherwise creates its own named `Vigil365 (<server name>)`. A
+shared registration that is already multi-tenant (an MSP install's) stays
+multi-tenant even when a Single-organisation server reuses it.
 
 If the server is reachable from the internet, `scripts/request-cert.ps1` gets a
 free, publicly-trusted certificate from Let's Encrypt instead:
@@ -133,12 +137,18 @@ free, publicly-trusted certificate from Let's Encrypt instead:
 pwsh -File scripts/request-cert.ps1 -Hostname vigil365.yourcompany.com -Email you@yourcompany.com
 ```
 
-Everything else is detected or derived: the first administrator is taken from
-your Azure CLI sign-in, and an existing SQL Server instance is found and reused
-rather than installing a second one.
+You also type the first administrator's email; the tenant is derived from its
+domain, and the browser sign-in that follows must be an account in that tenant.
+An existing SQL Server instance is found and reused rather than installing a
+second one.
 
-After the wizard finishes, open the app and finish **Setup** in the browser to
-supply the Graph credentials used for collection.
+The Graph credentials are configured for you, so collection starts on its own.
+Open **Setup** in the browser only if the wizard's log says it could not create
+the client secret. A secret saved there takes precedence over the installer's.
+
+Re-running the wizard (to replace the certificate, change the address or convert
+to MSP) keeps settings it does not manage, such as `Retention` and `Graph` tuning,
+and saves the previous configuration as `appsettings.Production.json.bak`.
 
 ### Install for an MSP (multi-tenant)
 
@@ -151,8 +161,12 @@ tenants from one install. The differences:
   Give it a connection string; it creates the database and schema.
 - **App registration.** The wizard makes it multi-tenant and adds the
   `https://<your host>/consented` redirect, so a client's Global Administrator can
-  consent to the same read-only permissions (`graph-permissions.json`). Sign-in to
-  Vigil365 stays pinned to **your** tenant — client users cannot sign in.
+  consent to the same permissions (`graph-permissions.json`: read-only except
+  `AttackSimulation.ReadWrite.All`). Sign-in to Vigil365 stays pinned to **your**
+  tenant — client users cannot sign in.
+- **A client is connected only after its admin consents.** Until then it is "not
+  connected" and nothing is collected for it; Vigil365 never falls back to your own
+  tenant's data.
 - **Onboarding a client** is one step in the app: **Clients → Add client → Sign in
   as global admin & consent**. The client's admin approves in a popup; Vigil365 then
   tests the connection and starts collecting. See
@@ -161,12 +175,16 @@ tenants from one install. The differences:
 **Docker + PostgreSQL route** (no Windows needed):
 
 ```bash
-cp .env.example .env   # set POSTGRES_PASSWORD and the Entra values
+pwsh -File register-app.ps1 -MultiTenant -RedirectUri https://vigil365.yourmsp.com
+cp .env.example .env   # set POSTGRES_PASSWORD and the Entra values it printed
 docker compose -f docker-compose.postgres.yml up -d
 ```
 
-That stack runs in MSP mode (`Edition__Mode=Msp`); set it to `Single` for a
-one-organisation install on PostgreSQL.
+That stack runs in MSP mode (`Edition__Mode=Msp`), which needs the app registered
+with `-MultiTenant`: that makes it multi-tenant, adds the `/consented` redirect
+clients' consent returns to, and grants `Application.Read.All` in your tenant for
+the readiness check. Without it client onboarding fails at Microsoft. Set the mode
+to `Single` (and drop `-MultiTenant`) for a one-organisation install on PostgreSQL.
 
 **Converting an existing install to MSP:** take a backup, re-run Setup and choose
 MSP. The existing app registration is reused and patched; your existing data
@@ -239,6 +257,14 @@ vigil365.yourcompany.com {
 Run the app bound to localhost only (`--urls http://localhost:8080`) so it is
 never directly exposed; the proxy handles certs (e.g. automatic Let's Encrypt).
 
+`X-Forwarded-For` is honoured only from a trusted proxy. A proxy on the same host
+(loopback) is trusted by default. A proxy in another container or on another host
+must be listed in `ForwardedHeaders:KnownProxies` (IP addresses) or
+`ForwardedHeaders:KnownNetworks` (CIDR, e.g.
+`ForwardedHeaders__KnownNetworks__0=172.18.0.0/16`); otherwise the audit log records
+the proxy's address and everyone behind it shares one rate limit. An entry that is
+not a valid address or network stops startup.
+
 ### Option B — Kestrel with a certificate
 
 Let the app terminate TLS directly by configuring a Kestrel HTTPS endpoint in
@@ -304,15 +330,15 @@ HTTPS URL (e.g. `https://vigil365.yourcompany.com`).
 
 ### What is in scope by design
 
-- **Read-only, least privilege.** Nearly every Graph permission requested is `*.Read.All`. The one exception is `AttackSimulation.ReadWrite.All`, which Microsoft Graph offers with no read-only variant — the app only reads with it and never launches simulations. If you don't use the attack-simulation view, don't grant it. The app **cannot modify** users, devices, policies, or tenant settings.
+- **Read-only, least privilege.** Nearly every Graph permission requested is `*.Read.All`. The one exception is `AttackSimulation.ReadWrite.All`, which Microsoft Graph offers with no read-only variant — the app only reads with it and never launches simulations, though whoever holds the app's secret could. Admin consent grants it with the rest; if you don't use the attack-simulation view, revoke it afterwards. The app **cannot modify** users, devices, policies, or tenant settings.
 - **Recommends, never remediates.** The Recommendations view and "Fix in M365 Portal →" links tell you what to change and deep-link you to the right blade, but the app makes **no** changes itself — every remediation happens in Microsoft's tooling, by you.
 - **No inbound exposure by default.** In development the API binds to `localhost`. A production deployment (`deploy.ps1`) runs behind Kestrel with a TLS certificate; anything beyond localhost is a deliberate choice you make.
 - **App-only collection** via MSAL (`Azure.Identity`) using a client secret or certificate; **user sign-in** via Entra with in-app RBAC. Standard Microsoft auth, not a homegrown scheme. All Graph traffic is HTTPS/TLS.
 
 ### How credentials and secrets are handled
 
-- The Graph client secret is **never** committed to source. Use .NET User Secrets (dev) or `appsettings.Production.json` / environment variables (prod, both gitignored).
-- Notification secrets stored in the database (SMTP password, Teams/Slack & generic webhook URLs) are **encrypted at rest with the Windows Data Protection API (DPAPI), machine scope** — a leaked database row cannot be decrypted on another machine. Secrets are decrypted only in memory at send time and the SMTP password is never returned by the API.
+- The Graph client secret is **never** committed to source. Use .NET User Secrets (dev) or `appsettings.Production.json` / environment variables (prod, both gitignored). The Windows installer writes the secret it creates to `appsettings.Production.json` and restricts that file to Administrators, SYSTEM and the service account.
+- Secrets stored in the database (SMTP password, webhook URLs, per-client credentials, a Graph secret saved on the Setup page) are **encrypted at rest with ASP.NET Core Data Protection** — a leaked database row cannot be decrypted without the key ring. The key ring (`DataProtection:KeyPath`) is itself unencrypted on disk, protected by file permissions: guard it and back it up with the database. Secrets are decrypted only in memory; the SMTP password is never returned by the API, and webhook URLs only to Admins.
 - **Recommended:** use **certificate-based authentication** instead of a client secret for production. A non-exportable certificate in the Windows cert store removes the plaintext shared secret entirely; Vigil365 supports a certificate thumbprint or PFX path, with a secret only as a fallback.
 
 ### Host hardening checklist (your responsibility)
@@ -332,7 +358,7 @@ The security of this app is only as good as the box it runs on. Before productio
 
 - Rate limiting is handled automatically (429 `Retry-After` respected).
 - A failed individual Graph source does not stop the whole collection run; each card degrades independently.
-- Logs are newline-delimited JSON on stdout and in `logs/vigil365-.json` beside the app. Files roll daily (and at 10 MB) with the newest 14 files retained. Configure `Logging__File__Path`, `Logging__File__RetainedFileCountLimit`, and `Logging__File__FileSizeLimitBytes` for the host policy. Docker persists them in the `vigil365-logs` volume at `/app/logs`.
+- Logs are newline-delimited JSON on stdout and in `logs/vigil365-.json` beside the app; `Vigil365-Setup.exe` installs write them to `%ProgramData%\Vigil365\logs`, and `enterprise-install.sh` to `/var/log/vigil365`. If the configured folder is not writable, the app falls back to `%ProgramData%\Vigil365\logs` on Windows (stdout only elsewhere) and warns at startup. Files roll daily (and at 10 MB) with the newest 14 files retained. Configure `Logging__File__Path`, `Logging__File__RetainedFileCountLimit`, and `Logging__File__FileSizeLimitBytes` for the host policy. Docker persists them in the `vigil365-logs` volume at `/app/logs`.
 - Log events include request correlation IDs and structured fields. Do not put access tokens, client secrets, or notification credentials in log messages.
 - Follow the [Operations Runbook](docs/OPERATIONS_RUNBOOK.md) for SQL/key-ring backups, restore drills, and upgrades.
 

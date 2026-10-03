@@ -184,6 +184,41 @@ public sealed class RelationalParityTests(RelationalEngines engines)
     }
 
     [SkippableTheory, MemberData(nameof(RelationalEngines.All), MemberType = typeof(RelationalEngines))]
+    public async Task Metrics_counters_lose_no_increment_when_clients_run_in_parallel(DatabaseProvider provider)
+    {
+        // Clients collect and evaluate concurrently, each in its own context: a
+        // read-increment-write would drop some of these, and two first runs
+        // would both insert Id 1.
+        await using var root = await engines.CreateMigratedDatabaseAsync(provider);
+        MetricsCounterStore.EnsureRow(root);
+        MetricsCounterStore.EnsureRow(root);
+        var cs = root.Database.GetConnectionString()!;
+        AppDbContext Open()
+        {
+            var tenant = TestTenancy.For(ClientTenant.DefaultId);
+            if (provider == DatabaseProvider.Postgres)
+            {
+                var o = new DbContextOptionsBuilder<PostgresAppDbContext>();
+                DatabaseProviderSetup.Configure(o, provider, cs);
+                return new PostgresAppDbContext(o.Options, tenant);
+            }
+            var s = new DbContextOptionsBuilder<AppDbContext>();
+            DatabaseProviderSetup.Configure(s, provider, cs);
+            return new AppDbContext(s.Options, tenant);
+        }
+
+        await Task.WhenAll(Enumerable.Range(0, 20).Select(async _ =>
+        {
+            await using var db = Open();
+            await MetricsCounterStore.AddAsync(db, graphRequests: 3, graphThrottled: 1, evaluations: 1, CancellationToken.None);
+            await db.SaveChangesAsync();
+        }));
+
+        var row = await root.MetricsCounters.AsNoTracking().SingleAsync();
+        Assert.Equal((60L, 20L, 20L), (row.GraphRequestsTotal, row.GraphThrottledTotal, row.EvaluationsTotal));
+    }
+
+    [SkippableTheory, MemberData(nameof(RelationalEngines.All), MemberType = typeof(RelationalEngines))]
     public async Task Database_size_query_returns_a_real_figure(DatabaseProvider provider)
     {
         // The only raw SQL the app runs. A wrong catalog name returns null via

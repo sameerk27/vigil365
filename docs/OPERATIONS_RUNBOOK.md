@@ -19,17 +19,37 @@ application upgrade. Keep the SQL backup and its matching Data Protection key
 backup together; restoring only the database can leave saved encrypted settings
 unreadable.
 
+## Where an install keeps its data
+
+Read the real values from the install's `appsettings.Production.json`
+(`ConnectionStrings:DefaultConnection` and `DataProtection:KeyPath`) rather than
+assuming. The defaults:
+
+| Installed with | Configuration | Database | Key ring |
+|---|---|---|---|
+| `Vigil365-Setup.exe` | `C:\Program Files\Vigil365\appsettings.Production.json` | `Vigil365` | `C:\ProgramData\Vigil365\keys` |
+| `enterprise-install.ps1` | `<InstallPath>\appsettings.Production.json` | as given | `<InstallPath>\keys` |
+| `deploy.ps1` / `install.ps1` | `<publish folder>\appsettings.Production.json` | `M365SecurityDashboard` | `<publish folder>\keys` |
+| Docker | `.env` | `M365SecurityDashboard` (SQL Server), `vigil365` (PostgreSQL) | `dp-keys` volume (`/keys`) |
+
+The Setup-installed configuration (it holds the Graph client secret) and key ring
+are readable only by Administrators, SYSTEM and the service, so back up from an
+elevated prompt. Logs are in `C:\ProgramData\Vigil365\logs`.
+
 ## Windows / SQL Server backup
 
 1. Create a restricted backup directory, for example `D:\Vigil365Backups`.
 2. Use a SQL login or Windows account permitted to back up the database.
-3. Run the following from an elevated PowerShell prompt, changing the SQL Server
-   instance and output path for the deployment:
+3. Run the following from an elevated PowerShell prompt, with the paths and
+   database from the table above (the `Vigil365-Setup.exe` defaults are shown):
 
 ```powershell
-$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$backup = "D:\Vigil365Backups\M365SecurityDashboard-$stamp.bak"
-sqlcmd -S '.\SQLEXPRESS' -E -Q "BACKUP DATABASE [M365SecurityDashboard] TO DISK = N'$backup' WITH COPY_ONLY, COMPRESSION, CHECKSUM, STATS = 10"
+$config = 'C:\Program Files\Vigil365\appsettings.Production.json'
+$keys   = 'C:\ProgramData\Vigil365\keys'
+$db     = 'Vigil365'
+$stamp  = Get-Date -Format 'yyyyMMdd-HHmmss'
+$backup = "D:\Vigil365Backups\$db-$stamp.bak"
+sqlcmd -S '.\SQLEXPRESS' -E -Q "BACKUP DATABASE [$db] TO DISK = N'$backup' WITH COPY_ONLY, COMPRESSION, CHECKSUM, STATS = 10"
 ```
 
 4. Verify the backup before treating it as successful:
@@ -41,12 +61,11 @@ sqlcmd -S '.\SQLEXPRESS' -E -Q "RESTORE VERIFYONLY FROM DISK = N'$backup' WITH C
 5. Copy these files to the same protected backup set:
 
 ```powershell
-Copy-Item 'C:\Apps\Vigil365\keys' "D:\Vigil365Backups\keys-$stamp" -Recurse
-Copy-Item 'C:\Apps\Vigil365\appsettings.Production.json' "D:\Vigil365Backups\appsettings.Production-$stamp.json"
+Copy-Item $keys "D:\Vigil365Backups\keys-$stamp" -Recurse
+Copy-Item $config "D:\Vigil365Backups\appsettings.Production-$stamp.json"
 ```
 
-Use the actual publish directory if it differs from `C:\Apps\Vigil365`. Do not
-place backup sets in the application directory or a source-control checkout.
+Do not place backup sets in the application directory or a source-control checkout.
 
 ## Docker backup
 
@@ -123,7 +142,15 @@ is only proven after a documented restore drill succeeds.
 
 1. Read the release notes and make a verified backup set.
 2. Stop the Windows service or scale the container down.
-3. Publish the new Windows build with `install.ps1` / `deploy.ps1`, or run:
+3. Install the new build the same way as the current one:
+   - **`Vigil365-Setup.exe`:** run the new one. It stops the service, replaces the
+     files, reuses the app registration, and keeps settings it does not manage
+     (the previous file is saved as `appsettings.Production.json.bak`). Do not use
+     `install.ps1 -InstallService` on such an install: it recreates the service as
+     LocalSystem with `--urls`, which drops the HTTPS endpoint.
+   - **`enterprise-install.ps1` / `deploy.ps1`:** re-run it with the same parameters.
+     It writes `appsettings.Production.json` afresh: re-apply any settings you added.
+   - **Docker:**
 
 ```powershell
 docker compose build app
@@ -138,7 +165,14 @@ docker compose up -d
 
 **v1.2 migrations are one-way.** Upgrading to 1.2 adds the client-tenant columns and
 tables. An older build cannot run on the upgraded database; going back means
-restoring the pre-upgrade backup (and losing anything collected since).
+restoring the pre-upgrade backup (and losing anything collected since). If you do
+step migrations back with `dotnet ef database update` (a test system, not
+production), reverting `AuditTrailOutlivesTenant` keeps a purged client's audit
+entries as MSP-level entries rather than deleting them, and entries written since
+the upgrade (hash version 1) no longer verify on the older build. The first
+collection after the upgrade resolves collected alerts that have dropped out of
+Graph's feeds (old failed sign-ins, closed advisories, remediated risky users), so
+counts may fall sharply; that is expected.
 
 ## Convert to MSP
 

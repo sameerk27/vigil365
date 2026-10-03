@@ -24,6 +24,9 @@ public static class IntegrationsEndpoints
             AppDbContext db, AuditLogger audit, System.Security.Claims.ClaimsPrincipal user,
             ApiTokenCreateRequest input, CancellationToken ct) =>
         {
+            // A token born expired works nowhere, yet looks issued.
+            if (input.ExpiresAt is DateTimeOffset expires && expires <= DateTimeOffset.UtcNow)
+                return Results.BadRequest(new { error = "The expiry must be in the future." });
             var (row, rawToken) = ApiTokenService.Create(
                 input.Name ?? "SIEM integration",
                 input.Scopes ?? "alerts:read,health:read",
@@ -37,7 +40,7 @@ public static class IntegrationsEndpoints
             }
             db.ApiTokens.Add(row);
             await db.SaveChangesAsync(ct);
-            await audit.WriteAsync("api_token.create", "api_token", row.Id.ToString(), row.Name, ct);
+            await audit.WriteForTenantAsync(row.TenantId, "api_token.create", "api_token", row.Id.ToString(), row.Name, ct);
             return Results.Ok(new { row.Id, row.Name, row.Prefix, row.Scopes, row.CreatedAt, row.ExpiresAt, row.TenantId, token = rawToken });
         }).RequireAuthorization("RequireAdmin");
 
@@ -47,7 +50,7 @@ public static class IntegrationsEndpoints
             if (token is null) return Results.NotFound();
             token.RevokedAt ??= DateTimeOffset.UtcNow;
             await db.SaveChangesAsync(ct);
-            await audit.WriteAsync("api_token.revoke", "api_token", id.ToString(), token.Name, ct);
+            await audit.WriteForTenantAsync(token.TenantId, "api_token.revoke", "api_token", id.ToString(), token.Name, ct);
             return Results.Ok(new { ok = true });
         }).RequireAuthorization("RequireAdmin");
 

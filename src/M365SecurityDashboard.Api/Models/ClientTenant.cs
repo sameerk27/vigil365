@@ -87,6 +87,14 @@ public sealed class ClientTenant
     [MaxLength(20)]
     public string? BrandAccentColor { get; set; }
 
+    /// <summary>
+    /// Carried by this client's consent links (ConsentState). Issued with the first
+    /// link and cleared when /consented records consent, so a link works until it
+    /// has been used successfully once. Never returned by the API.
+    /// </summary>
+    [MaxLength(64)]
+    public string? ConsentNonce { get; set; }
+
     // ── Connection health, written by the tenants API's /test and by the collector ──
     public DateTimeOffset? ConsentGrantedAt { get; set; }
     public DateTimeOffset? LastCollectionAt { get; set; }

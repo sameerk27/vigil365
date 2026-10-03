@@ -67,6 +67,42 @@ test('User Management: API tokens with client restriction, audit Client column',
   expect(await axeViolations(page, 'main')).toBe('');
 });
 
+// The data pages, rendered (src/a11y.test.ts covers components without the stylesheet).
+const triggered = [
+  { id: '11111111-0000-0000-0000-000000000001', policyId: 'p1', policyName: 'Risky sign-ins spike', severity: 'high', category: 'identity', condition: 'riskySignIns >= 5', metricValue: 9, threshold: 5, triggeredAt: '2026-10-02T08:00:00Z', status: 'new' },
+  { id: '11111111-0000-0000-0000-000000000002', policyId: 'p1', policyName: 'MFA coverage drop', severity: 'medium', category: 'identity', condition: 'mfaMissing >= 5', metricValue: 7, threshold: 5, triggeredAt: '2026-10-01T08:00:00Z', status: 'new', snoozedUntil: null },
+];
+const single = (api: Record<string, unknown> = {}) => ({ mode: 'Single' as const, role: 'Analyst' as const, api: {
+  'GET /api/triggered-alerts': triggered, 'GET /api/alert-policies': [policy], ...api,
+} });
+
+test('Alert Center queue and an open alert', async ({ page }) => {
+  await signIn(page, single());
+  await page.goto('/#/alertcenter');
+  await expect(page.getByRole('button', { name: 'Open triggered alert Risky sign-ins spike' })).toBeVisible();
+  expect(await axeViolations(page, 'main')).toBe('');
+  await page.getByRole('button', { name: 'Open triggered alert Risky sign-ins spike' }).click();
+  await expect(page.getByRole('dialog', { name: 'Risky sign-ins spike' })).toBeVisible();
+  expect(await axeViolations(page, '[role="dialog"]')).toBe('');
+});
+
+test('Reports with a schedule and the digest preview', async ({ page }) => {
+  await signIn(page, { mode: 'Single', role: 'Admin', api: {
+    'GET /api/report-schedules': [{ id: 's1', tenantId: null, name: 'Weekly executive digest', reportType: 'exec-digest', cadence: 'weekly', dayOfWeek: 1, dayOfMonth: 1, hourUtc: 7, recipients: 'ciso@contoso.com', includeCsv: true, includePdf: true, enabled: true, createdAt: '2026-09-01T00:00:00Z' }],
+    'GET /api/reports/exec-digest/preview': { subject: 'Digest', htmlBody: '', csv: 'a,b', generatedAt: '2026-10-02T08:00:00Z', hasData: true, metrics: [{ label: 'Secure score', value: '60%', delta: 2, higherIsWorse: false }], topAlerts: [{ severity: 'high', category: 'identity', policyName: 'Risky sign-ins spike', condition: 'riskySignIns >= 5', status: 'new', assignedTo: null }] },
+  } });
+  await page.goto('/#/reports');
+  await expect(page.getByRole('row', { name: /Weekly executive digest/ })).toBeVisible();
+  expect(await axeViolations(page, 'main')).toBe('');
+});
+
+test('Overview', async ({ page }) => {
+  await signIn(page, single());
+  await page.goto('/#/overview');
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  expect(await axeViolations(page, 'main')).toBe('');
+});
+
 test('Alert Center policies with per-client override column, and routing card', async ({ page }) => {
   await signIn(page, msp(tenantA.id, {
     'GET /api/alert-policies': [policy],
@@ -79,5 +115,24 @@ test('Alert Center policies with per-client override column, and routing card', 
   expect(await axeViolations(page, 'main')).toBe('');
   await page.getByRole('tab', { name: 'Notifications', exact: true }).click();
   await expect(page.getByText("This client's routing")).toBeVisible();
+  expect(await axeViolations(page, 'main')).toBe('');
+});
+
+test('Incidents with a collected alert', async ({ page }) => {
+  const collected = {
+    id: 7, alertType: 'riskyUser', service: 'EntraId', severity: 'High', title: 'Risky user detected',
+    userPrincipalName: 'megan@contoso.test', detectedAt: '2026-10-02T08:00:00Z', lastUpdatedAt: '2026-10-02T08:00:00Z', isResolved: false,
+  };
+  await signIn(page, single({ 'GET /api/alerts': { items: [collected], total: 1 } }));
+  await page.goto('/#/incidents');
+  await expect(page.getByText('Risky user detected').first()).toBeVisible();
+  expect(await axeViolations(page, 'main')).toBe('');
+});
+
+test('Trends with snapshots', async ({ page }) => {
+  const snap = (capturedAt: string, score: number) => ({ id: capturedAt, capturedAt, riskyUsersCount: 1, mfaCoveragePct: 90, nonCompliantDevicesCount: 2, criticalAlertsCount: 0, highAlertsCount: 1, secureScorePct: score, complianceIssuesCount: 0 });
+  await signIn(page, single({ 'GET /api/dashboard/trends': [snap('2026-10-01T08:00:00Z', 58), snap('2026-10-02T08:00:00Z', 60)] }));
+  await page.goto('/#/trends');
+  await expect(page.locator('.line-chart-svg').first()).toBeVisible();
   expect(await axeViolations(page, 'main')).toBe('');
 });

@@ -42,7 +42,8 @@ public sealed class CollectionHardeningTests
         var protector = new SecretProtector(new EphemeralDataProtectionProvider(), NullLogger<SecretProtector>.Instance);
         using var db = TestAppDbContextFactory.Create();
         var creds = new TenantGraphCredentials(db, TestTenancy.For(TestTenancy.Default),
-            Options.Create(new GraphOptions { TenantId = "x", ClientId = "install", ClientSecret = "s" }), protector);
+            Options.Create(new GraphOptions { TenantId = "x", ClientId = "install", ClientSecret = "s" }), protector,
+            Options.Create(new EditionOptions()));
 
         var tenant = new ClientTenant
         {

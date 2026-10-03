@@ -3,14 +3,28 @@ import React from "react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { ClientGate } from "./ClientGate";
-import { AuthContext, setEditionMode, setSelectedTenantId, getSelectedTenantId, getActiveClientName, setActiveClientName, clientFileName } from "../services/api";
+import { AuthContext, apiFetch, setEditionMode, setSelectedTenantId, getSelectedTenantId, getActiveClientName, setActiveClientName, clientFileName } from "../services/api";
 import { resetMyTenantsCache } from "../services/tenants";
-import { showToast, registerToastHandler } from "../services/toast";
+import { showToast, showInstallToast, registerToastHandler } from "../services/toast";
 import { mockApi } from "../test/apiMock";
 
 const A = { id: "aaaa", name: "Contoso Ltd", isActive: true, configured: true, lastCollectionStatus: "Completed" };
 const B = { id: "bbbb", name: "Fabrikam Inc", isActive: true, configured: true, lastCollectionStatus: "Completed" };
 const admin = { email: "a@x.test", name: "A", role: "Admin" as const, isAdmin: true, canMutate: true };
+
+// What TenantResolutionMiddleware does: any /api call naming a client the user
+// may not select is refused with 403 before the endpoint runs.
+function rejectUnpermittedTenant(permitted: string[]) {
+  const inner = globalThis.fetch;
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const asked = new Headers(init?.headers).get("X-Vigil-Tenant");
+    if (asked && !permitted.includes(asked)) {
+      return Promise.resolve(new Response(JSON.stringify({ ok: false, message: "You do not have access to that tenant." }),
+        { status: 403, headers: { "Content-Type": "application/json" } }));
+    }
+    return inner(input, init);
+  }));
+}
 
 function renderGate() {
   return render(
@@ -70,9 +84,20 @@ describe("ClientGate (U1, U5)", () => {
       "/api/tenants/rollup": { body: [] },
       "/api/tenants": { body: [] },
     });
+    rejectUnpermittedTenant([A.id, B.id]);
     renderGate();
     expect(await screen.findByText("Choose a client")).toBeInTheDocument();
     expect(getSelectedTenantId()).toBeNull();
+  });
+
+  it("identity calls never carry the selection; data calls do", async () => {
+    setEditionMode("Msp");
+    setSelectedTenantId("bbbb");
+    const api = mockApi({ "/api/auth/me": { body: {} }, "/api/tenants/me": { body: {} }, "/api/dashboard/overview": { body: {} } });
+    await apiFetch("/api/auth/me");
+    await apiFetch("/api/tenants/me");
+    await apiFetch("/api/dashboard/overview");
+    expect(api.calls.map(c => c.headers.get("X-Vigil-Tenant"))).toEqual([null, null, "bbbb"]);
   });
 
   it("no clients assigned: explains it instead of showing errors", async () => {
@@ -98,6 +123,16 @@ describe("active client is named everywhere (U5)", () => {
     showToast("Alert resolved");
     expect(seen.at(-1)).toBe("Alert resolved");
     expect(clientFileName("alerts.csv")).toBe("alerts.csv");
+    off();
+  });
+
+  it("install-wide actions name no client, even with one selected", () => {
+    const seen: string[] = [];
+    const off = registerToastHandler(t => seen.push(t.message));
+    setEditionMode("Msp");
+    setActiveClientName("Contoso Ltd");
+    showInstallToast("alice@x.test is now Analyst");
+    expect(seen.at(-1)).toBe("alice@x.test is now Analyst");
     off();
   });
 });
@@ -131,6 +166,7 @@ describe("onboarding consent poll (U4)", () => {
     expect(pollsWhileOpen).toBeGreaterThan(0);
 
     view.unmount(); // dialog (and page) gone mid sign-in
+    expect(popup.close).toHaveBeenCalled(); // nobody is left approving consent nothing waits for
     await vi.advanceTimersByTimeAsync(30_000);
     expect(api.calls.filter(c => c.path === "/api/tenants/bbbb").length).toBe(pollsWhileOpen);
     vi.useRealTimers();

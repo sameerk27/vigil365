@@ -22,20 +22,36 @@ const mspAdmin = (extra: Record<string, unknown> = {}) => ({
 test('cross-client queue lists every client and acts in the alert\'s own client (U6)', async ({ page }) => {
   let ackTenant: string | undefined;
   await signIn(page, mspAdmin({
+    // Contoso is selected, so the alert's own client has to win over the selection.
+    'GET /api/tenants/me': { current: tenantA.id, tenants: [tenantA, tenantB] },
     [`POST /api/triggered-alerts/${queue[0].id}/acknowledge`]: (route: any) => { ackTenant = route.request().headers()['x-vigil-tenant']; return { ok: true }; },
   }));
-  await page.goto('/');
+  await page.goto('/#/clients');
+  await expect(page.locator('.hdr-client')).toHaveText('Contoso Ltd');
 
   const table = page.locator('.queue-tbl');
   await expect(table.locator('tbody tr')).toHaveCount(2);
   await expect(table.locator('tbody tr').first()).toContainText('Fabrikam Inc'); // critical first
 
   await table.locator('tr', { hasText: 'Risky sign-ins spike' }).getByRole('button', { name: 'Acknowledge' }).click();
-  expect(ackTenant).toBe(tenantB.id);                                   // the alert's client, not a selected one
+  await expect.poll(() => ackTenant).toBe(tenantB.id);                  // the alert's client, not the selected one
   await expect(page.getByText('Fabrikam Inc: Risky sign-ins spike acknowledged')).toBeVisible();
 
   await page.getByLabel('Filter by client').selectOption('Contoso Ltd');
   await expect(table.locator('tbody tr')).toHaveCount(1);
+});
+
+test('opening an alert from the queue switches to its client and opens it there (U6)', async ({ page }) => {
+  const triggered = { id: queue[0].id, policyId: 'p1', policyName: 'Risky sign-ins spike', severity: 'critical', category: 'identity', condition: 'riskySignIns >= 5', metricValue: 9, threshold: 5, triggeredAt: '2026-10-02T08:00:00Z', status: 'new' };
+  await signIn(page, mspAdmin({
+    // Only Fabrikam has this alert: it opens only once the dashboard is scoped to it.
+    'GET /api/triggered-alerts': (route: any) => route.request().headers()['x-vigil-tenant'] === tenantB.id ? [triggered] : [],
+  }));
+  await page.goto('/');
+  await page.locator('.queue-tbl').getByRole('button', { name: 'Risky sign-ins spike' }).click(); // stores the client + reloads
+
+  await expect(page.locator('.hdr-client')).toHaveText('Fabrikam Inc');
+  await expect(page.locator('.detail-modal .dm-title')).toHaveText('Risky sign-ins spike');
 });
 
 test('a Viewer sees the queue but cannot act on it (U6, U13)', async ({ page }) => {
@@ -75,14 +91,19 @@ test('database size warning shows for Admins only (U8)', async ({ page }) => {
   await page.route('**/health', r => r.fulfill({ json: health }));
   await signIn(page, { mode: 'Single', role: 'Admin' });
   await page.goto('/');
-  await expect(page.getByRole('alert').filter({ hasText: 'SQL Server Express stops accepting writes' })).toContainText('9.0 GB');
+  // /health does not say which database engine this is, so the advice must hold
+  // for any of them: the SQL Server Express limit is a condition, not a verdict.
+  const banner = page.getByRole('alert').filter({ hasText: 'Shorten retention' });
+  await expect(banner).toContainText('9.0 GB');
+  await expect(banner).toContainText('On SQL Server Express, writes stop at 10 GB');
 
   const viewer = await page.context().newPage();
   await viewer.route('**/health', r => r.fulfill({ json: health }));
   await signIn(viewer, { mode: 'Single', role: 'Viewer' });
   await viewer.goto('/');
   await expect(viewer.getByRole('button', { name: /Overview/ }).first()).toBeVisible();
-  await expect(viewer.getByText('SQL Server Express stops accepting writes')).toHaveCount(0);
+  await viewer.waitForLoadState('networkidle'); // every /health answer is in, so a banner would be up by now
+  await expect(viewer.getByText('Shorten retention')).toHaveCount(0);
 });
 
 test('MSP audit log labels every entry with its client (U9)', async ({ page }) => {

@@ -15,6 +15,9 @@ while [[ $# -gt 0 ]]; do
 done
 [[ $EUID -eq 0 ]] || { echo "Run with sudo." >&2; exit 1; }
 ask() { local label="$1" value="$2"; if [[ -n "$value" ]]; then printf '%s' "$value"; else read -r -p "$label: " value; [[ -n "$value" ]] || { echo "$label is required." >&2; exit 2; }; printf '%s' "$value"; fi; }
+# A JSON string literal. Values go into JSON escaped: a SQL named instance
+# (Server=sql01\PROD) written raw is an invalid \P escape and the app cannot load its config.
+json() { local s="$1"; s=${s//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\t'/\\t}; s=${s//$'\r'/\\r}; s=${s//$'\n'/\\n}; printf '"%s"' "$s"; }
 echo "Vigil365 enterprise installer"
 tenant_id="$(ask 'Entra Tenant ID' "$tenant_id")"
 client_id="$(ask 'Entra Application (client) ID' "$client_id")"
@@ -38,11 +41,16 @@ popd >/dev/null
 install -d -m 0750 -o root -g root "$install_dir"
 dotnet publish "$repo_root/src/M365SecurityDashboard.Api" -c Release -o "$install_dir"
 id -u vigil365 >/dev/null 2>&1 || useradd --system --home-dir "$install_dir" --shell /usr/sbin/nologin vigil365
+# Root owns the application; the vigil365 group may read and run it (go-rwx left
+# the service unable to enter its own directory), and nobody else may read it.
+# Set, not just removed: under a strict umask (077) publish output has no group bits.
 chown -R root:vigil365 "$install_dir"
-chmod -R go-rwx "$install_dir"
+chmod -R u=rwX,g=rX,o= "$install_dir"
 install -d -m 0750 -o vigil365 -g vigil365 "$install_dir/keys"
+chown -R vigil365:vigil365 "$install_dir/keys"   # a re-run's chown above must not take the key ring from the service
+# Logs go to /var/log/vigil365 (systemd LogsDirectory below): the app directory is read-only to the service.
 cat > "$install_dir/appsettings.Production.json" <<EOF
-{"Edition":{"Mode":"$mode"},"Database":{"Provider":"$db_provider"},"ConnectionStrings":{"DefaultConnection":"$sql_connection"},"AzureAd":{"Instance":"https://login.microsoftonline.com/","TenantId":"$tenant_id","ClientId":"$client_id","Audience":"api://$client_id"},"Auth":{"RedirectUri":"$public_url","BootstrapAdminEmail":"$admin_email"},"Cors":{"AllowedOrigins":["${public_url%/}"]},"Security":{"RequireHttps":false},"DataProtection":{"KeyPath":"$install_dir/keys"}}
+{"Edition":{"Mode":$(json "$mode")},"Database":{"Provider":$(json "$db_provider")},"ConnectionStrings":{"DefaultConnection":$(json "$sql_connection")},"AzureAd":{"Instance":"https://login.microsoftonline.com/","TenantId":$(json "$tenant_id"),"ClientId":$(json "$client_id"),"Audience":$(json "api://$client_id")},"Auth":{"RedirectUri":$(json "$public_url"),"BootstrapAdminEmail":$(json "$admin_email")},"Cors":{"AllowedOrigins":[$(json "${public_url%/}")]},"Security":{"RequireHttps":false},"DataProtection":{"KeyPath":$(json "$install_dir/keys")},"Logging":{"File":{"Path":"/var/log/vigil365/vigil365-.json"}}}
 EOF
 chown root:vigil365 "$install_dir/appsettings.Production.json"
 chmod 0640 "$install_dir/appsettings.Production.json"
@@ -65,6 +73,8 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ReadWritePaths=$install_dir/keys
+LogsDirectory=vigil365
+LogsDirectoryMode=0750
 Environment=ASPNETCORE_ENVIRONMENT=Production
 
 [Install]

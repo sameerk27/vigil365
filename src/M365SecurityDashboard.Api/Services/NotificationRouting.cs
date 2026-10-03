@@ -15,6 +15,8 @@ namespace M365SecurityDashboard.Api.Services;
 ///   recipients = (NotifyMsp ? MSP default recipient) + (NotifyClient ? client recipient)
 ///   Teams/webhook = client's own URL if NotifyClient and set; else the MSP's if NotifyMsp; else none
 ///   minimum severity = client's if set; else the MSP's
+///   no recipient = the MSP's From mailbox only while the MSP is notified; otherwise no email
+/// A policy's NotifyEmail stands in for the MSP default recipient for that policy's alerts.
 /// A tenant with no routing row behaves exactly as before: everything to the MSP.
 /// </summary>
 public static class NotificationRouting
@@ -26,31 +28,46 @@ public static class NotificationRouting
     /// <summary>The settings to dispatch with for the current tenant. Detached; do not save.</summary>
     public static async Task<NotificationSettings> EffectiveNotificationSettingsAsync(this AppDbContext db, CancellationToken ct)
     {
+        var (install, routing) = await db.NotificationInputsAsync(ct);
+        return Apply(install, routing);
+    }
+
+    /// <summary>The inputs to <see cref="Apply"/> for the current tenant: the install-wide row and this tenant's routing. Detached.</summary>
+    public static async Task<(NotificationSettings Install, TenantNotificationRouting? Routing)> NotificationInputsAsync(this AppDbContext db, CancellationToken ct)
+    {
         var install = await db.NotificationSettings.AsNoTracking().Where(s => s.TenantId == null).OrderBy(s => s.Id).FirstOrDefaultAsync(ct)
                       ?? new NotificationSettings { Id = 1 };
         var routing = db.CurrentTenantIdOrNull is null
             ? null
             : await db.TenantNotificationRoutings.AsNoTracking().FirstOrDefaultAsync(ct);
-        return Apply(install, routing);
+        return (install, routing);
     }
 
-    public static NotificationSettings Apply(NotificationSettings install, TenantNotificationRouting? routing)
+    /// <param name="policyRecipient">A policy's NotifyEmail (or this client's override of it); stands in for the MSP's default recipient.</param>
+    public static NotificationSettings Apply(NotificationSettings install, TenantNotificationRouting? routing, string? policyRecipient = null)
     {
         var cfg = Clone(install);
+        var mspRecipient = string.IsNullOrWhiteSpace(policyRecipient) ? install.DefaultRecipient : policyRecipient.Trim();
+        cfg.DefaultRecipient = mspRecipient;
         if (routing is null) return cfg;
 
         var recipients = new List<string>();
-        if (routing.NotifyMsp && !string.IsNullOrWhiteSpace(install.DefaultRecipient)) recipients.Add(install.DefaultRecipient.Trim());
+        if (routing.NotifyMsp && !string.IsNullOrWhiteSpace(mspRecipient)) recipients.Add(mspRecipient.Trim());
         if (routing.NotifyClient && !string.IsNullOrWhiteSpace(routing.RecipientEmail)) recipients.Add(routing.RecipientEmail.Trim());
         // MailMessage.To.Add accepts a comma-separated list, and SendReportEmailAsync
         // splits on the same character, so one string serves both paths.
         cfg.DefaultRecipient = recipients.Count == 0 ? null : string.Join(",", recipients.Distinct(StringComparer.OrdinalIgnoreCase));
+        // The From mailbox is the MSP's: a client routed away from the MSP never falls back to it.
+        cfg.FromAddressFallback = routing.NotifyMsp;
 
         cfg.TeamsWebhookUrl = routing.NotifyClient && !string.IsNullOrWhiteSpace(routing.TeamsWebhookUrl) ? routing.TeamsWebhookUrl
             : routing.NotifyMsp ? install.TeamsWebhookUrl : null;
-        cfg.WebhookUrl = routing.NotifyClient && !string.IsNullOrWhiteSpace(routing.WebhookUrl) ? routing.WebhookUrl
+        var clientWebhook = routing.NotifyClient && !string.IsNullOrWhiteSpace(routing.WebhookUrl);
+        cfg.WebhookUrl = clientWebhook ? routing.WebhookUrl
             : routing.NotifyMsp ? install.WebhookUrl : null;
-        if (!routing.NotifyMsp) cfg.WebhookSigningSecret = null; // the MSP's secret signs only the MSP's webhook
+        // The MSP's secret signs only the MSP's webhook: a client's endpoint holding
+        // MSP-signed payloads could replay them to the MSP's own receiver.
+        if (clientWebhook || !routing.NotifyMsp) cfg.WebhookSigningSecret = null;
 
         if (!string.IsNullOrWhiteSpace(routing.MinSeverity)) cfg.MinSeverity = routing.MinSeverity;
 

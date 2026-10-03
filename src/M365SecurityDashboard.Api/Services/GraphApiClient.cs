@@ -28,6 +28,17 @@ public sealed class GraphApiClient
         _metrics = metrics;
     }
 
+    /// <summary>Tests: fixed options and token, no credential resolution. Not visible to DI.</summary>
+    internal GraphApiClient(HttpClient http, GraphOptions options, TokenCredential credential, GraphMetrics metrics)
+        : this(http, credentials: null!, metrics)
+    {
+        _options = options;
+        _credential = credential;
+    }
+
+    /// <summary>A paged read. Complete is false when a later page failed and only the pages before it came back.</summary>
+    public sealed record GraphCollection(IReadOnlyList<JsonElement> Items, bool Complete);
+
     private async Task<(GraphOptions Options, TokenCredential Credential)> EnsureAsync(CancellationToken ct)
     {
         if (_options is null || _credential is null)
@@ -105,6 +116,14 @@ public sealed class GraphApiClient
     }
 
     public async Task<IReadOnlyList<JsonElement>> GetCollectionAsync(string path, CancellationToken ct)
+        => (await ReadCollectionAsync(path, ct)).Items;
+
+    /// <summary>
+    /// Every page of a collection. A failure on the first page throws; a failure
+    /// on a later page keeps the pages already read and reports Complete = false,
+    /// so a caller never mistakes a truncated read for the whole collection.
+    /// </summary>
+    public async Task<GraphCollection> ReadCollectionAsync(string path, CancellationToken ct)
     {
         var (options, credential) = await EnsureAsync(ct);
         var items = new List<JsonElement>();
@@ -112,6 +131,7 @@ public sealed class GraphApiClient
             ? path
             : $"{options.BaseUrl.TrimEnd('/')}/{path.TrimStart('/')}";
 
+        var complete = true;
         var isFirstPage = true;
         var throttleRetries = 0;
         const int maxThrottleRetries = 3; // a persistently throttling tenant must fail, not hang forever
@@ -132,7 +152,7 @@ public sealed class GraphApiClient
                     _metrics.RecordThrottle();
                     if (++throttleRetries > maxThrottleRetries)
                     {
-                        if (!isFirstPage) break; // keep the pages we already have
+                        if (!isFirstPage) { complete = false; break; } // keep the pages we already have
                         throw new HttpRequestException(
                             $"Graph throttled the request {maxThrottleRetries} times in a row (429). Try again later.",
                             null, response.StatusCode);
@@ -144,7 +164,7 @@ public sealed class GraphApiClient
                 else if (!response.IsSuccessStatusCode)
                 {
                     var body = await response.Content.ReadAsStringAsync(ct);
-                    if (!isFirstPage) break;
+                    if (!isFirstPage) { complete = false; break; }
                     throw new HttpRequestException($"{(int)response.StatusCode} {response.StatusCode}: {body}", null, response.StatusCode);
                 }
                 else
@@ -169,11 +189,11 @@ public sealed class GraphApiClient
                         : null;
                 }
             }
-            catch when (!isFirstPage) { break; } // pagination failure — return what we have
+            catch when (!isFirstPage) { complete = false; break; } // pagination failure — return what we have
             next = nextForIteration;
         }
 
-        return items;
+        return new GraphCollection(items, complete);
     }
 
     public async Task<IReadOnlyList<JsonElement>> GetSinglePageAsync(string path, CancellationToken ct)

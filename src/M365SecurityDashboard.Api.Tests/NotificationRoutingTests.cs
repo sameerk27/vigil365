@@ -64,6 +64,35 @@ public sealed class NotificationRoutingTests
     }
 
     [Fact]
+    public void Only_a_route_that_includes_the_msp_may_fall_back_to_its_from_mailbox()
+    {
+        Assert.True(NotificationRouting.Apply(Install(), null).FromAddressFallback);
+        Assert.True(NotificationRouting.Apply(Install(), new TenantNotificationRouting { NotifyMsp = true }).FromAddressFallback);
+        Assert.False(NotificationRouting.Apply(Install(), new TenantNotificationRouting { NotifyMsp = false, NotifyClient = true }).FromAddressFallback);
+    }
+
+    [Fact]
+    public void A_client_webhook_never_carries_the_msp_signing_secret()
+    {
+        // Payloads the client receives signed with the MSP's key could be
+        // replayed into the MSP's own webhook receiver.
+        var cfg = NotificationRouting.Apply(Install(), new TenantNotificationRouting { NotifyMsp = true, NotifyClient = true, WebhookUrl = "dp:client-hook" });
+        Assert.Equal("dp:client-hook", cfg.WebhookUrl);
+        Assert.Null(cfg.WebhookSigningSecret);
+        Assert.Equal("dp:sig", NotificationRouting.Apply(Install(), new TenantNotificationRouting { NotifyMsp = true }).WebhookSigningSecret);
+    }
+
+    [Fact]
+    public void A_policy_address_stands_in_for_the_msp_default_recipient_only()
+    {
+        Assert.Equal("owner@msp.test", NotificationRouting.Apply(Install(), null, "owner@msp.test").DefaultRecipient);
+        Assert.Equal("owner@msp.test,it@client.test", NotificationRouting.Apply(Install(),
+            new TenantNotificationRouting { NotifyMsp = true, NotifyClient = true, RecipientEmail = "it@client.test" }, "owner@msp.test").DefaultRecipient);
+        Assert.Equal("it@client.test", NotificationRouting.Apply(Install(),
+            new TenantNotificationRouting { NotifyMsp = false, NotifyClient = true, RecipientEmail = "it@client.test" }, "owner@msp.test").DefaultRecipient);
+    }
+
+    [Fact]
     public void Per_tenant_digest_timestamps_come_from_the_routing_row_not_the_install_row()
     {
         var routing = new TenantNotificationRouting { LastDigestAt = null };

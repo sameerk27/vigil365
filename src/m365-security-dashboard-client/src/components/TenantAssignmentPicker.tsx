@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { showToast } from "../services/toast";
+import { showInstallToast } from "../services/toast";
 import { tenantApi, type ClientTenant } from "../services/tenants";
 
 /**
@@ -21,7 +21,10 @@ export function TenantAssignmentPicker({ email, role, tenants, assigned, onChang
   if (role === "Admin") return <span className="al-date" title="Admins see every client">All clients</span>;
 
   const active = tenants.filter(t => t.isActive);
-  const label = assigned.length === 0 ? "No clients" : assigned.length === active.length ? "All clients" : `${assigned.length} of ${active.length}`;
+  // Assignments to deactivated clients are kept (they come back on re-activation)
+  // but grant nothing today, so only active ones count towards the label.
+  const seen = active.filter(t => assigned.includes(t.id)).length;
+  const label = seen === 0 ? "No clients" : seen === active.length ? "All clients" : `${seen} of ${active.length}`;
 
   const toggle = async (tenantId: string, on: boolean) => {
     const next = on ? [...assigned, tenantId] : assigned.filter(id => id !== tenantId);
@@ -29,7 +32,7 @@ export function TenantAssignmentPicker({ email, role, tenants, assigned, onChang
     const r = await tenantApi.setAssignments(email, next);
     setBusy(false);
     if (r.ok) onChanged(email, next);
-    else showToast(r.error, "error");
+    else showInstallToast(r.error, "error");
   };
 
   return (

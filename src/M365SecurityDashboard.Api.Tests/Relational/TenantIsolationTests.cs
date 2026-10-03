@@ -3,6 +3,7 @@ using M365SecurityDashboard.Api.Data.Tenancy;
 using M365SecurityDashboard.Api.Models;
 using M365SecurityDashboard.Api.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace M365SecurityDashboard.Api.Tests.Relational;
@@ -343,5 +344,119 @@ public sealed class TenantIsolationTests(RelationalEngines engines)
                 Assert.Contains(B, rows);
             }
         }
+    }
+
+    // ── The audit trail across offboarding and retention ──────────────────────
+
+    private static AuditLogger Audit(AppDbContext ctx, Guid? t) => new(ctx, t is Guid g ? TestTenancy.For(g) : TestTenancy.None(),
+        new Microsoft.AspNetCore.Http.HttpContextAccessor(), NullLogger<AuditLogger>.Instance);
+
+    private static async Task<List<AuditEntry>> ChainAsync(Db db)
+    {
+        await using var none = db.Open(null);
+        return await none.CrossTenant<AuditEntry>().AsNoTracking().OrderBy(e => e.Id).ToListAsync();
+    }
+
+    [SkippableTheory, MemberData(nameof(RelationalEngines.All), MemberType = typeof(RelationalEngines))]
+    public async Task Offboarding_a_tenant_keeps_its_audit_entries_and_the_chain_still_verifies(DatabaseProvider provider)
+    {
+        var db = await SetupAsync(provider);
+        foreach (var t in new Guid?[] { A, B, null, A, C })
+        {
+            await using var ctx = db.Open(t);
+            await Audit(ctx, t).WriteAsync("test", "thing", null, "d", CancellationToken.None);
+        }
+        await using (var a = db.Open(A))
+        {
+            // A's own optional rows still go with it.
+            a.AlertPolicies.Add(new AlertPolicy { Id = Guid.NewGuid(), TenantId = A, Name = "a-only", Category = "c", Condition = "x", Metric = "m", Severity = "High", CreatedAt = DateTimeOffset.UtcNow });
+            a.ReportSchedules.Add(new ReportSchedule { TenantId = A, Name = "a-weekly" });
+            await a.SaveChangesAsync();
+        }
+
+        await using (var admin = db.Open(null))
+        {
+            admin.ClientTenants.Remove(await admin.ClientTenants.SingleAsync(t => t.Id == A));
+            await admin.SaveChangesAsync();
+        }
+        // The purge itself is recorded against the client it removed.
+        await using (var a = db.Open(A))
+            await Audit(a, A).WriteAsync("tenant.purge", "tenant", A.ToString(), "A", CancellationToken.None);
+
+        await using (var none = db.Open(null))
+        {
+            Assert.False(await none.CrossTenant<AlertPolicy>().AnyAsync(p => p.TenantId == A));
+            Assert.False(await none.CrossTenant<ReportSchedule>().AnyAsync(s => s.TenantId == A));
+        }
+        var chain = await ChainAsync(db);
+        Assert.Equal(new Guid?[] { A, B, null, A, C, A }, chain.Select(e => e.TenantId));
+        Assert.Equal("tenant.purge", chain[^1].Action);
+        Assert.True(AuditLogger.VerifyChain(chain).Valid);
+    }
+
+    [SkippableTheory, MemberData(nameof(RelationalEngines.All), MemberType = typeof(RelationalEngines))]
+    public async Task Rolling_back_the_audit_trail_migration_keeps_a_purged_client_s_entries(DatabaseProvider provider)
+    {
+        // Down() re-adds the foreign key to ClientTenants. A purged client's entries
+        // name a row that no longer exists, which used to make the rollback fail.
+        var db = await SetupAsync(provider);
+        foreach (var t in new Guid?[] { A, B })
+        {
+            await using var ctx = db.Open(t);
+            await Audit(ctx, t).WriteAsync("test", "thing", null, "d", CancellationToken.None);
+        }
+        await using (var admin = db.Open(null))
+        {
+            admin.ClientTenants.Remove(await admin.ClientTenants.SingleAsync(t => t.Id == A));
+            await admin.SaveChangesAsync();
+        }
+        await using (var a = db.Open(A))
+            await Audit(a, A).WriteAsync("tenant.purge", "tenant", A.ToString(), "A", CancellationToken.None);
+
+        await using (var none = db.Open(null))
+        {
+            var migrator = none.GetService<Microsoft.EntityFrameworkCore.Migrations.IMigrator>();
+            await migrator.MigrateAsync("TenantHardening");
+            await migrator.MigrateAsync(); // and forward again, so the model can read the rows
+        }
+
+        var chain = await ChainAsync(db);
+        Assert.Equal(new[] { "test", "test", "tenant.purge" }, chain.Select(e => e.Action));
+        Assert.Equal(new Guid?[] { null, B, null }, chain.Select(e => e.TenantId)); // kept, now MSP-level
+    }
+
+    [SkippableTheory, MemberData(nameof(RelationalEngines.All), MemberType = typeof(RelationalEngines))]
+    public async Task Audit_retention_prunes_a_prefix_of_the_one_chain_whatever_client_the_entries_name(DatabaseProvider provider)
+    {
+        var db = await SetupAsync(provider);
+        var old = DateTimeOffset.UtcNow.AddDays(-400);
+        var recent = DateTimeOffset.UtcNow.AddDays(-1);
+        // C is deactivated, so no per-client pass would ever prune its entries;
+        // the fourth entry is old but written after a recent one.
+        await using (var admin = db.Open(null))
+        {
+            (await admin.ClientTenants.SingleAsync(t => t.Id == C)).IsActive = false;
+            await admin.SaveChangesAsync();
+        }
+        foreach (var (t, at) in new (Guid?, DateTimeOffset)[] { (C, old), (A, old), (null, recent), (C, old), (B, recent) })
+        {
+            await using var ctx = db.Open(t);
+            var prev = await ctx.CrossTenant<AuditEntry>().OrderByDescending(e => e.Id).Select(e => e.EntryHash).FirstOrDefaultAsync();
+            var entry = new AuditEntry
+            {
+                TenantId = t, HashVersion = AuditLogger.CurrentHashVersion, Timestamp = AuditLogger.TruncateToMicroseconds(at),
+                ActorEmail = "a@msp.test", Action = "test", TargetType = "thing", PrevHash = prev,
+            };
+            entry.EntryHash = AuditLogger.ComputeHash(entry);
+            ctx.AuditEntries.Add(entry);
+            await ctx.SaveChangesAsync();
+        }
+
+        await using (var none = db.Open(null))
+            Assert.Equal(2, await DataRetentionWorker.PruneAuditEntriesAsync(none, new RetentionOptions { AuditEntriesDays = 365 }, CancellationToken.None));
+
+        var chain = await ChainAsync(db);
+        Assert.Equal(new Guid?[] { null, C, B }, chain.Select(e => e.TenantId));
+        Assert.True(AuditLogger.VerifyChain(chain).Valid);
     }
 }

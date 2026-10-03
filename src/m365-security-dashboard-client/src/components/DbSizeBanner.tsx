@@ -28,8 +28,8 @@ export function DbSizeBanner() {
       <Database size={16} aria-hidden="true" />
       <span>
         The database is {gb(db.sizeBytes)}{db.sizeWarningBytes ? ` (warning threshold ${gb(db.sizeWarningBytes)})` : ""}.
-        SQL Server Express stops accepting writes at 10 GB. Shorten retention, or move to SQL Server Standard or PostgreSQL —
-        see the Operations Runbook.
+        Shorten retention or give the database more room — see the Operations Runbook. On SQL Server Express, writes
+        stop at 10 GB: move to SQL Server Standard or PostgreSQL before then.
       </span>
     </div>
   );

@@ -36,7 +36,8 @@ public static class TenantClassification
         typeof(ReportSchedule),
         typeof(MetricsCounters),
         // MSP-level actions record null; tenant-scoped actions record the tenant.
-        // The hash chain stays global (see AuditLogger).
+        // The hash chain stays global (see AuditLogger), and the entries outlive
+        // a purged client (no foreign key, see AppDbContext).
         typeof(AuditEntry),
     };
 

@@ -94,4 +94,157 @@ public sealed class InstallPlanTests
     [Fact]
     public void Msp_next_steps_point_to_onboarding()
         => Assert.Contains(InstallPlan.NextSteps(EditionChoice.Msp), s => s.Contains("Add client"));
+
+    // ── Re-running Setup: reuse this install's own app, keep what it does not own ──
+
+    [Fact]
+    public void Existing_config_names_its_app_registration()
+    {
+        var back = InstallPlan.ReadExisting("""{ "AzureAd": { "ClientId": "8F1C2B9A-0000-4000-8000-000000000001" } }""");
+        Assert.Equal("8f1c2b9a-0000-4000-8000-000000000001", back!.ClientId);
+        // The appsettings.json placeholder is not an app to look up.
+        Assert.Null(InstallPlan.ReadExisting("""{ "AzureAd": { "ClientId": "YOUR_APP_CLIENT_ID" } }""")!.ClientId);
+    }
+
+    [Fact]
+    public void Only_apps_named_exactly_vigil365_are_reuse_candidates()
+    {
+        // az ad app list --display-name is a starts-with match.
+        const string list = """
+            [ { "displayName": "Vigil365 (Pilot)", "appId": "pilot" },
+              { "displayName": "Vigil365", "appId": "prod" },
+              { "displayName": "vigil365", "appId": "lower" } ]
+            """;
+        Assert.Equal(new[] { "prod" }, InstallPlan.AppIdsNamedExactly(list, "Vigil365"));
+        Assert.Empty(InstallPlan.AppIdsNamedExactly("", "Vigil365"));
+    }
+
+    [Fact]
+    public void Patch_keeps_the_redirect_uris_another_install_relies_on()
+    {
+        const string app = """
+            { "spa": { "redirectUris": [ "https://pilot.test" ] },
+              "web": { "redirectUris": [ "https://pilot.test/consented" ] } }
+            """;
+        var json = InstallPlan.AppPatchJson(EditionChoice.Msp, "https://prod.test", "[]", "",
+            InstallPlan.RedirectUris(app, "spa"), InstallPlan.RedirectUris(app, "web"));
+        var doc = JsonDocument.Parse(json).RootElement;
+        Assert.Equal(new[] { "https://pilot.test", "https://prod.test" },
+            doc.GetProperty("spa").GetProperty("redirectUris").EnumerateArray().Select(u => u.GetString()));
+        Assert.Equal(new[] { "https://pilot.test/consented", "https://prod.test/consented" },
+            doc.GetProperty("web").GetProperty("redirectUris").EnumerateArray().Select(u => u.GetString()));
+
+        // Re-running on the same server adds nothing.
+        var again = JsonDocument.Parse(InstallPlan.AppPatchJson(EditionChoice.Single, "https://pilot.test", "[]", "",
+            InstallPlan.RedirectUris(app, "spa"))).RootElement;
+        Assert.Equal(1, again.GetProperty("spa").GetProperty("redirectUris").GetArrayLength());
+    }
+
+    [Theory]
+    [InlineData(EditionChoice.Single, null, "AzureADMyOrg")]                    // new app
+    [InlineData(EditionChoice.Single, "AzureADMyOrg", "AzureADMyOrg")]
+    [InlineData(EditionChoice.Single, "AzureADMultipleOrgs", "AzureADMultipleOrgs")] // an MSP's app is never narrowed
+    [InlineData(EditionChoice.Msp, null, "AzureADMultipleOrgs")]
+    [InlineData(EditionChoice.Msp, "AzureADMyOrg", "AzureADMultipleOrgs")]      // convert to MSP
+    public void A_reused_app_is_never_narrowed_to_single_tenant(EditionChoice edition, string? current, string expected)
+    {
+        Assert.Equal(expected, InstallPlan.SignInAudience(edition, current));
+        var doc = JsonDocument.Parse(InstallPlan.AppPatchJson(edition, "https://pilot.test", "[]", "", currentAudience: current)).RootElement;
+        Assert.Equal(expected, doc.GetProperty("signInAudience").GetString());
+    }
+
+    [Fact]
+    public void A_single_pilot_sharing_an_msp_app_keeps_its_consent_redirect_and_audience()
+    {
+        const string mspApp = """
+            { "signInAudience": "AzureADMultipleOrgs",
+              "spa": { "redirectUris": [ "https://msp.test" ] },
+              "web": { "redirectUris": [ "https://msp.test/consented" ] } }
+            """;
+        var doc = JsonDocument.Parse(InstallPlan.AppPatchJson(EditionChoice.Single, "https://pilot.test", "[]", "",
+            InstallPlan.RedirectUris(mspApp, "spa"), InstallPlan.RedirectUris(mspApp, "web"), "AzureADMultipleOrgs")).RootElement;
+        Assert.Equal("AzureADMultipleOrgs", doc.GetProperty("signInAudience").GetString());
+        Assert.False(doc.TryGetProperty("web", out _)); // left as it is, /consented included
+        Assert.Equal(new[] { "https://msp.test", "https://pilot.test" },
+            doc.GetProperty("spa").GetProperty("redirectUris").EnumerateArray().Select(u => u.GetString()));
+    }
+
+    [Fact]
+    public void A_server_that_does_not_share_another_install_s_app_names_its_own_after_the_host()
+    {
+        Assert.Equal("Vigil365 (VIGIL-PILOT)", InstallPlan.HostAppName("VIGIL-PILOT"));
+        // ...which is not a candidate for another server's exact-name reuse.
+        Assert.Empty(InstallPlan.AppIdsNamedExactly("""[ { "displayName": "Vigil365 (VIGIL-PILOT)", "appId": "pilot" } ]""", "Vigil365"));
+    }
+
+    [Fact]
+    public void Rerun_keeps_operator_settings_and_replaces_what_setup_owns()
+    {
+        const string previous = """
+            {
+              // operator edits
+              "Kestrel": { "Endpoints": { "Public": { "Url": "https://*:443", "Certificate": { "Path": "old.pfx", "Password": "p" } } } },
+              "graph": { "ClientId": "old-app", "ClientSecret": "old", "TenantParallelism": 8 },
+              "Database": { "Provider": "SqlServer", "SizeWarningBytes": 1000 },
+              "Retention": { "ResolvedAlertsDays": 30 },
+            }
+            """;
+        const string installer = """
+            {
+              "Kestrel": { "Endpoints": { "Public": { "Url": "https://*:443", "Certificate": { "Subject": "CN=vigil", "Store": "My" } } } },
+              "Graph": { "ClientId": "new-app", "ClientSecret": "new" },
+              "Database": { "Provider": "Postgres" }
+            }
+            """;
+        var merged = JsonDocument.Parse(InstallPlan.MergeConfig(previous, installer)).RootElement;
+
+        Assert.Equal(30, merged.GetProperty("Retention").GetProperty("ResolvedAlertsDays").GetInt32());
+        Assert.Equal(1000, merged.GetProperty("Database").GetProperty("SizeWarningBytes").GetInt32());
+        Assert.Equal("Postgres", merged.GetProperty("Database").GetProperty("Provider").GetString());
+
+        // Merged into the existing section whatever its casing — .NET config would refuse two "Graph" keys.
+        var graph = merged.EnumerateObject().Single(p => p.NameEquals("graph") || p.NameEquals("Graph")).Value;
+        Assert.Equal("new-app", graph.GetProperty("ClientId").GetString());
+        Assert.Equal("new", graph.GetProperty("ClientSecret").GetString());
+        Assert.Equal(8, graph.GetProperty("TenantParallelism").GetInt32());
+
+        // Kestrel is replaced whole: a stale Path beside the new Subject is a config Kestrel refuses.
+        var cert = merged.GetProperty("Kestrel").GetProperty("Endpoints").GetProperty("Public").GetProperty("Certificate");
+        Assert.False(cert.TryGetProperty("Path", out _));
+        Assert.Equal("CN=vigil", cert.GetProperty("Subject").GetString());
+    }
+
+    [Fact]
+    public void Missing_or_unreadable_previous_config_writes_the_installer_values()
+    {
+        const string installer = """{ "Edition": { "Mode": "Msp" } }""";
+        foreach (var previous in new[] { null, "", "{ not json" })
+            Assert.Equal("Msp", JsonDocument.Parse(InstallPlan.MergeConfig(previous, installer)).RootElement
+                .GetProperty("Edition").GetProperty("Mode").GetString());
+    }
+
+    // ── Failure advice follows the step that failed, not words in the message ──
+
+    [Theory]
+    [InlineData(InstallStage.Service)]
+    [InlineData(InstallStage.Files)]
+    public void Late_failures_never_claim_nothing_was_installed(InstallStage stage)
+    {
+        var (_, remedy) = InstallPlan.FailureAdvice(stage);
+        Assert.DoesNotContain("not been changed", remedy);
+        Assert.DoesNotContain("Nothing has been", remedy);
+    }
+
+    [Fact]
+    public void Each_step_gets_advice_about_that_step()
+    {
+        Assert.Contains("az logout", InstallPlan.FailureAdvice(InstallStage.SignIn).Remedy);
+        Assert.DoesNotContain("SQL", InstallPlan.FailureAdvice(InstallStage.SignIn).Remedy);
+        Assert.DoesNotContain("SQLEXPRESS", InstallPlan.FailureAdvice(InstallStage.DatabaseChoice).Remedy);
+        Assert.Contains("PostgreSQL", InstallPlan.FailureAdvice(InstallStage.Postgres).Title);
+        Assert.DoesNotContain("SQL Server", InstallPlan.FailureAdvice(InstallStage.Postgres).Remedy);
+        Assert.Contains("Event Viewer", InstallPlan.FailureAdvice(InstallStage.Service).Remedy);
+        foreach (var stage in Enum.GetValues<InstallStage>())
+            Assert.False(string.IsNullOrWhiteSpace(InstallPlan.FailureAdvice(stage).Title));
+    }
 }

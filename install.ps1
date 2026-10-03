@@ -68,9 +68,13 @@ if ($InstallService) {
         sc.exe delete $ServiceName | Out-Null
         Start-Sleep -Seconds 2
     }
-    $bin = "`"$exe`" --environment Production --urls $Url"
-    sc.exe create $ServiceName binPath= $bin start= auto | Out-Null
-    sc.exe start $ServiceName | Out-Null
+    # One command line, passed as written: as PowerShell arguments, binPath's
+    # embedded quotes reach sc.exe unescaped under Windows PowerShell 5.1
+    # (binPath= C:\Program), and Out-Null hid that the service was never created.
+    foreach ($scArgs in "create $ServiceName binPath= `"\`"$exe\`" --environment Production --urls $Url`" start= auto", "start $ServiceName") {
+        $p = Start-Process -FilePath sc.exe -ArgumentList $scArgs -NoNewWindow -Wait -PassThru
+        if ($p.ExitCode -ne 0) { throw "sc.exe $scArgs failed with exit code $($p.ExitCode)." }
+    }
     Write-Host "      Service '$ServiceName' installed and started on $Url." -ForegroundColor Green
 } else {
     Write-Host "[4/4] Skipping service install (use -InstallService to enable)." -ForegroundColor DarkGray

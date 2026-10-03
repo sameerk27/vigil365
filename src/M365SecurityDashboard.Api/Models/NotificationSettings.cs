@@ -83,4 +83,13 @@ public sealed class NotificationSettings : ITenantOptional
 
     /// <summary>When the last delivery-failure alert was raised (debounce so we don't re-alert every cycle).</summary>
     public DateTimeOffset? LastFailureAlertAt { get; set; }
+
+    /// <summary>
+    /// Not stored. Whether email with no recipient falls back to FromAddress (the
+    /// MSP's own mailbox). False on a client's effective copy when its routing
+    /// leaves the MSP out (NotificationRouting.Apply).
+    /// </summary>
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool FromAddressFallback { get; set; } = true;
 }

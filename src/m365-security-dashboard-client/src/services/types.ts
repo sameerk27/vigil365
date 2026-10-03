@@ -235,6 +235,8 @@ export interface NotificationHealth {
 
 export interface ReportSchedule {
   id: string;
+  /** MSP mode: the client the schedule belongs to; null = made before the install became MSP. */
+  tenantId?: string | null;
   name: string;
   reportType: string;
   cadence: "daily" | "weekly" | "monthly";

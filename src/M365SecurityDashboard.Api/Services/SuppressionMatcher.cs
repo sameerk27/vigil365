@@ -37,6 +37,10 @@ public static class SuppressionMatcher
     /// <summary>Entity identifiers from an alert's AffectedEntities JSON.
     /// Tolerates malformed JSON by returning nothing rather than throwing.</summary>
     public static IReadOnlyList<string> ExtractEntities(string? affectedEntitiesJson)
+        => ExtractEntityRows(affectedEntitiesJson).SelectMany(ids => ids).ToList();
+
+    /// <summary>The identifiers of each affected entity (one list per JSON array element).</summary>
+    private static List<List<string>> ExtractEntityRows(string? affectedEntitiesJson)
     {
         if (string.IsNullOrWhiteSpace(affectedEntitiesJson)) return [];
         try
@@ -44,10 +48,11 @@ public static class SuppressionMatcher
             using var doc = JsonDocument.Parse(affectedEntitiesJson);
             if (doc.RootElement.ValueKind != JsonValueKind.Array) return [];
 
-            var result = new List<string>();
+            var result = new List<List<string>>();
             foreach (var el in doc.RootElement.EnumerateArray())
             {
                 if (el.ValueKind != JsonValueKind.Object) continue;
+                var ids = new List<string>();
                 // Entity JSON is camelCase by contract (locked by test after the
                 // PascalCase bug that produced "System / N/A" rows).
                 foreach (var key in new[] { "userPrincipalName", "deviceName", "targetName" })
@@ -55,9 +60,10 @@ public static class SuppressionMatcher
                     if (el.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String)
                     {
                         var s = v.GetString();
-                        if (!string.IsNullOrWhiteSpace(s)) result.Add(s!);
+                        if (!string.IsNullOrWhiteSpace(s)) ids.Add(s!);
                     }
                 }
+                result.Add(ids);
             }
             return result;
         }
@@ -65,9 +71,12 @@ public static class SuppressionMatcher
     }
 
     /// <summary>
-    /// Returns the first rule that suppresses this alert, or null. A rule applies
-    /// when it is enabled, unexpired, scoped to this policy (or all policies), and
-    /// — if it names an entity pattern — at least one affected entity matches.
+    /// Returns a rule that suppresses this alert, or null. A rule applies when it
+    /// is enabled, unexpired and scoped to this policy (or all policies). A
+    /// policy-wide rule suppresses the alert outright. Entity rules suppress it
+    /// only when every affected entity matches one of them: an alert lists all
+    /// of a policy's entities, so muting it because one matched would hide every
+    /// other user or device in it too. An entity with no identifier matches none.
     /// </summary>
     public static SuppressionRule? FindMatch(
         IEnumerable<SuppressionRule> rules,
@@ -75,25 +84,27 @@ public static class SuppressionMatcher
         string? affectedEntitiesJson,
         DateTimeOffset now)
     {
-        var entities = ExtractEntities(affectedEntitiesJson);
+        var applicable = rules
+            .Where(r => r.Enabled && (r.ExpiresAt is null || r.ExpiresAt > now) && (r.PolicyId is null || r.PolicyId == policyId))
+            .ToList();
 
-        foreach (var rule in rules)
+        // Policy-wide suppression. Requires an explicit policy scope — a rule
+        // with neither policy nor entity would mute everything, which is never
+        // what someone means.
+        var policyWide = applicable.FirstOrDefault(r => string.IsNullOrWhiteSpace(r.EntityPattern) && r.PolicyId is not null);
+        if (policyWide is not null) return policyWide;
+
+        var entityRules = applicable.Where(r => !string.IsNullOrWhiteSpace(r.EntityPattern)).ToList();
+        var entities = ExtractEntityRows(affectedEntitiesJson);
+        if (entityRules.Count == 0 || entities.Count == 0) return null;
+
+        SuppressionRule? first = null;
+        foreach (var ids in entities)
         {
-            if (!rule.Enabled) continue;
-            if (rule.ExpiresAt is not null && rule.ExpiresAt <= now) continue;
-            if (rule.PolicyId is not null && rule.PolicyId != policyId) continue;
-
-            if (string.IsNullOrWhiteSpace(rule.EntityPattern))
-            {
-                // Policy-wide suppression. Requires an explicit policy scope —
-                // a rule with neither policy nor entity would mute everything,
-                // which is never what someone means.
-                if (rule.PolicyId is null) continue;
-                return rule;
-            }
-
-            if (entities.Any(e => EntityMatches(rule.EntityPattern, e))) return rule;
+            var rule = entityRules.FirstOrDefault(r => ids.Any(id => EntityMatches(r.EntityPattern, id)));
+            if (rule is null) return null; // this entity is not suppressed: raise the alert
+            first ??= rule;
         }
-        return null;
+        return first;
     }
 }

@@ -33,6 +33,13 @@ $client = Join-Path $repoRoot "src\m365-security-dashboard-client"
 $exe = Join-Path $InstallPath "M365SecurityDashboard.Api.exe"
 
 foreach ($tool in "dotnet", "npm") { if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { throw "Required tool '$tool' is not available on PATH." } }
+# Runs sc.exe with this exact command line and fails on a non-zero exit code.
+# Passed as PowerShell arguments, binPath's embedded quotes reach sc.exe unescaped
+# under Windows PowerShell 5.1 (binPath= C:\Program), and Out-Null hid the failure.
+function Invoke-Sc([string]$Arguments) {
+    $p = Start-Process -FilePath sc.exe -ArgumentList $Arguments -NoNewWindow -Wait -PassThru
+    if ($p.ExitCode -ne 0) { throw "sc.exe $Arguments failed with exit code $($p.ExitCode)." }
+}
 function Read-Required([string]$Name, [string]$Value) {
     if ($Value) { return $Value }
     do { $Value = Read-Host $Name } while ([string]::IsNullOrWhiteSpace($Value))
@@ -81,11 +88,13 @@ foreach ($identity in @("BUILTIN\Administrators", "NT AUTHORITY\SYSTEM", "NT AUT
 }
 Set-Acl -LiteralPath $InstallPath -AclObject $acl
 
-if (Get-Service $ServiceName -ErrorAction SilentlyContinue) { sc.exe delete $ServiceName | Out-Null; Start-Sleep -Seconds 2 }
-$binPath = "`"$exe`" --environment Production --urls http://127.0.0.1:$Port"
-sc.exe create $ServiceName binPath= $binPath start= auto obj= "NT AUTHORITY\LocalService" | Out-Null
-sc.exe description $ServiceName "Vigil365 Microsoft 365 security monitoring service" | Out-Null
-sc.exe failure $ServiceName reset= 86400 actions= restart/5000/restart/15000/restart/60000 | Out-Null
-sc.exe start $ServiceName | Out-Null
+if (Get-Service $ServiceName -ErrorAction SilentlyContinue) { Invoke-Sc "delete $ServiceName"; Start-Sleep -Seconds 2 }
+Invoke-Sc "create $ServiceName binPath= `"\`"$exe\`" --environment Production --urls http://127.0.0.1:$Port`" start= auto obj= `"NT AUTHORITY\LocalService`""
+Invoke-Sc "description $ServiceName `"Vigil365 Microsoft 365 security monitoring service`""
+Invoke-Sc "failure $ServiceName reset= 86400 actions= restart/5000/restart/15000/restart/60000"
+Invoke-Sc "start $ServiceName"
+# "sc start" returns while the service is still starting; one that dies on startup must not read as installed.
+try { (Get-Service $ServiceName).WaitForStatus("Running", [TimeSpan]::FromSeconds(60)) }
+catch { throw "The $ServiceName service was installed but is not running. Windows Event Viewer > Windows Logs > Application records why." }
 
 Write-Host "Installed $ServiceName. Configure a TLS reverse proxy for $PublicUrl -> http://127.0.0.1:$Port, then add $PublicUrl as an Entra SPA redirect URI." -ForegroundColor Green

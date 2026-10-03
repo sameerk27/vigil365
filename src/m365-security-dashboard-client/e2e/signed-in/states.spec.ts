@@ -91,7 +91,8 @@ test('a Viewer sees client overrides and routing read-only (U13)', async ({ page
       'GET /api/tenants/me': { current: tenantA.id, tenants: [tenantA] },
       'GET /api/alert-policies': [policy],
       'GET /api/alert-policies/tenant-overrides': [{ policyId: 'p1', enabled: false, threshold: null, notifyEmail: null }],
-      'GET /api/notification-routing': { exists: true, notifyMsp: true, notifyClient: false, recipientEmail: null, teamsWebhookUrl: null, hasWebhookUrl: false, minSeverity: null, lastDigestAt: null },
+      // Non-Admins get whether a Teams webhook is set, never its URL.
+      'GET /api/notification-routing': { exists: true, notifyMsp: true, notifyClient: false, recipientEmail: null, teamsWebhookUrl: null, hasTeamsWebhookUrl: true, hasWebhookUrl: false, minSeverity: null, lastDigestAt: null },
     },
   });
   await page.goto('/#/alertcenter');
@@ -99,9 +100,29 @@ test('a Viewer sees client overrides and routing read-only (U13)', async ({ page
   const row = page.locator('tr', { hasText: 'Risky sign-ins spike' });
   await expect(row).toContainText('Off for this client');
   await expect(row.getByRole('checkbox')).toHaveCount(0);
-  await expect(row.getByRole('button', { name: 'Delete' })).toHaveCount(0); // server requires Analyst
+  await expect(row.getByRole('button')).toHaveCount(0); // toggle, Edit and Delete all need Analyst
 
   await page.getByRole('tab', { name: 'Notifications', exact: true }).click();
   await expect(page.getByText('Read-only — only an Admin can change routing.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Save routing' })).toHaveCount(0);
+  await expect(page.getByLabel('Client Teams webhook (optional)')).toHaveAttribute('placeholder', 'Set (only an Admin can see it)');
+});
+
+test('an Analyst can run a collection, as the server allows; a Viewer cannot', async ({ page }) => {
+  let ran = false;
+  await signIn(page, {
+    mode: 'Single', role: 'Analyst',
+    api: { 'POST /api/collector/run': () => { ran = true; return { status: 'Completed' }; } },
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Run Collection', exact: true }).click();
+  await expect.poll(() => ran).toBe(true);
+
+  const viewer = await page.context().newPage();
+  await signIn(viewer, { mode: 'Single', role: 'Viewer' });
+  const me = viewer.waitForResponse(r => r.url().endsWith('/api/auth/me'));
+  await viewer.goto('/');
+  await me; // the role is known: an Analyst would have the button by now
+  await expect(viewer.getByRole('button', { name: 'Refresh data' })).toBeVisible();
+  await expect(viewer.getByRole('button', { name: 'Run Collection', exact: true })).toHaveCount(0);
 });

@@ -174,7 +174,9 @@ export function LineChart({ data, color = "var(--accent-light)", onClick }: { da
 
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className="line-chart-svg" style={{ width: "100%", height: "100%" }} data-inline-style="inline-ca8b563226" onMouseLeave={() => setHoverIdx(null)}
-      role="img" aria-label={`Line chart, ${data.length} points, from ${data[0].value} (${data[0].date}) to ${data.at(-1)!.value} (${data.at(-1)!.date}); min ${rawMin}, max ${rawMax}`}>
+      // "group", not "img": an image's children are presentational, and the
+      // focusable point buttons inside it were then hidden (nested-interactive).
+      role="group" aria-label={`Line chart, ${data.length} points, from ${data[0].value} (${data[0].date}) to ${data.at(-1)!.value} (${data.at(-1)!.date}); min ${rawMin}, max ${rawMax}`}>
       <defs>
         <linearGradient id={`grad-${chartId}`} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={color} stopOpacity="0.3" />

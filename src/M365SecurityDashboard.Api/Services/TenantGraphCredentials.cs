@@ -13,12 +13,19 @@ namespace M365SecurityDashboard.Api.Services;
 ///
 ///   1. The tenant's own credentials (set through the tenants API) win.
 ///   2. Otherwise the install-wide credentials (appsettings + the setup wizard's
-///      GraphConfig row) apply — but only if the tenant has no recorded Entra id,
-///      or its Entra id is the one those credentials belong to. That is what keeps
-///      a single-tenant install working unchanged, and what stops a second MSP
-///      client being silently filled with the first client's data.
-///   3. Otherwise the tenant is unconfigured: collection skips it and the dashboard
-///      reports "not connected" for it.
+///      GraphConfig row) apply as they are if the tenant's Entra id is the one
+///      those credentials belong to — or if it has none recorded and is the
+///      install's own tenant: in Single mode the one tenant, in MSP mode only
+///      <see cref="ClientTenant.DefaultId"/>. That keeps a single-tenant install
+///      working unchanged.
+///   3. MSP mode: the install's app is the shared multi-tenant MSP app, so a client
+///      with a recorded Entra id (its admin consented to that app) uses the
+///      install's client id and secret or certificate, asking for a token in the
+///      client's own tenant.
+///   4. Otherwise the tenant is unconfigured: collection skips it and the dashboard
+///      reports "not connected" for it. In particular an MSP client with no Entra id
+///      yet has not consented, and must never fall back to the MSP's own tenant —
+///      that would collect the MSP's data as the client's.
 ///
 /// Non-credential settings (collection interval, lookbacks, feed paths) are always
 /// the install-wide values; see <see cref="Global"/>.
@@ -27,7 +34,8 @@ public sealed class TenantGraphCredentials(
     AppDbContext db,
     ITenantContext tenant,
     IOptions<GraphOptions> global,
-    SecretProtector protector)
+    SecretProtector protector,
+    IOptions<EditionOptions> edition)
 {
     private GraphOptions? _resolved;
 
@@ -52,6 +60,11 @@ public sealed class TenantGraphCredentials(
     /// <summary>Pure decision, exposed for tests and for the tenants API's health view.</summary>
     public GraphOptions Resolve(ClientTenant row) { var o = Clone(global.Value); Apply(o, row); return o; }
 
+    /// <summary>True when <paramref name="entraId"/> is the tenant the install-wide credentials belong to.</summary>
+    public bool IsInstallTenant(string? entraId)
+        => !string.IsNullOrWhiteSpace(entraId)
+           && string.Equals(entraId.Trim(), global.Value.TenantId, StringComparison.OrdinalIgnoreCase);
+
     private void Apply(GraphOptions o, ClientTenant row)
     {
         if (row.HasOwnCredentials)
@@ -69,18 +82,30 @@ public sealed class TenantGraphCredentials(
             return;
         }
 
-        var belongsToGlobal = string.IsNullOrWhiteSpace(row.MicrosoftTenantId)
-            || string.Equals(row.MicrosoftTenantId, global.Value.TenantId, StringComparison.OrdinalIgnoreCase);
-        if (!belongsToGlobal)
+        var msp = edition.Value.IsMsp;
+        if (string.IsNullOrWhiteSpace(row.MicrosoftTenantId))
         {
-            // Not this tenant's credentials. Leave everything else intact so
-            // IsConfigured() is false for the right reason.
-            o.TenantId = "";
-            o.ClientId = "";
-            o.ClientSecret = "";
-            o.CertificateThumbprint = "";
-            o.CertificatePath = "";
+            // No Entra id yet: the install's own tenant, or an MSP client that has
+            // not consented.
+            if (msp && row.Id != ClientTenant.DefaultId) Clear(o);
+            return;
         }
+        if (IsInstallTenant(row.MicrosoftTenantId)) return;
+
+        // Another organisation: the shared MSP app it consented to, in its tenant.
+        if (msp) o.TenantId = row.MicrosoftTenantId.Trim();
+        else Clear(o);
+    }
+
+    /// <summary>Not this tenant's credentials. Leaves everything else intact so
+    /// IsConfigured() is false for the right reason.</summary>
+    private static void Clear(GraphOptions o)
+    {
+        o.TenantId = "";
+        o.ClientId = "";
+        o.ClientSecret = "";
+        o.CertificateThumbprint = "";
+        o.CertificatePath = "";
     }
 
     private static GraphOptions Clone(GraphOptions g) => new()

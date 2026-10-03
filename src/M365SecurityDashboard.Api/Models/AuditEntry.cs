@@ -9,7 +9,8 @@ namespace M365SecurityDashboard.Api.Models;
 /// </summary>
 public sealed class AuditEntry : ITenantOptional
 {
-    /// <summary>Null = the MSP-wide default; a value = this tenant's override. See ITenantOptional.</summary>
+    /// <summary>The client the action concerned; null = an MSP-level action. Not a
+    /// foreign key: the audit trail outlives a purged client (see AppDbContext).</summary>
     public Guid? TenantId { get; set; }
 
     public long Id { get; set; }
@@ -36,7 +37,8 @@ public sealed class AuditEntry : ITenantOptional
     [MaxLength(500)]
     public string? Details { get; set; }
 
-    /// <summary>Client IP the request came from (first X-Forwarded-For hop behind a proxy).</summary>
+    /// <summary>Client IP the request came from. Behind a trusted reverse proxy
+    /// (ForwardedHeaders), the address the proxy forwarded; otherwise the socket's.</summary>
     [MaxLength(45)]
     public string? IpAddress { get; set; }
 
@@ -52,4 +54,10 @@ public sealed class AuditEntry : ITenantOptional
     /// historical row breaks every later hash, which /verify detects.</summary>
     [MaxLength(64)]
     public string? EntryHash { get; set; }
+
+    /// <summary>Which canonical form <see cref="EntryHash"/> was computed over (see
+    /// AuditLogger.ComputeHash). 0 = the original form, without TenantId: every
+    /// entry written before 1.2.0, kept so existing chains still verify.
+    /// 1 = also covers TenantId and this version.</summary>
+    public int HashVersion { get; set; }
 }

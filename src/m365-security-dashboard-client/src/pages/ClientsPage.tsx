@@ -53,9 +53,19 @@ export function ClientsPage() {
     setBusy(t.id);
     const r = await tenantApi.test(t.id);
     setBusy(null);
-    if (r.ok) showToast(`Connected to ${r.value.displayName ?? r.value.microsoftTenantId ?? t.name}`);
-    else showToast(r.error, "error");
+    if (r.ok) clientToast(t.name, `Connected to ${r.value.displayName ?? r.value.microsoftTenantId ?? t.name}`);
+    else clientToast(t.name, awaitingConsent(t) ? `${AWAITING_CONSENT} Use Connect to sign in as their Global Administrator, or send them the consent link.` : r.error, "error");
     await load();
+  };
+
+  // The whole app is scoped to the selected client and holds its data in state.
+  // Once that client is gone, reload so ClientGate decides the scope again —
+  // otherwise later calls quietly fall back to another client under this name.
+  const reloadIfSelected = (t: ClientTenant) => {
+    if (getSelectedTenantId() !== t.id) return false;
+    setSelectedTenantId(null);
+    window.location.reload();
+    return true;
   };
 
   const deactivate = async (t: ClientTenant) => {
@@ -68,8 +78,8 @@ export function ClientsPage() {
     setBusy(t.id);
     const r = await tenantApi.remove(t.id, false);
     setBusy(null);
-    if (r.ok) { showToast(`${t.name} deactivated`); if (getSelectedTenantId() === t.id) setSelectedTenantId(null); }
-    else showToast(r.error, "error");
+    if (r.ok) { clientToast(t.name, "Deactivated"); if (reloadIfSelected(t)) return; }
+    else clientToast(t.name, r.error, "error");
     await load();
   };
 
@@ -83,16 +93,20 @@ export function ClientsPage() {
     setBusy(t.id);
     const r = await tenantApi.remove(t.id, true);
     setBusy(null);
-    if (r.ok) { showToast(`${t.name} removed`); if (getSelectedTenantId() === t.id) setSelectedTenantId(null); }
-    else showToast(r.error, "error");
+    if (r.ok) { clientToast(t.name, "Removed with all its data"); if (reloadIfSelected(t)) return; }
+    else clientToast(t.name, r.error, "error");
     await load();
   };
 
   const reactivate = async (t: ClientTenant) => {
     setBusy(t.id);
-    const r = await tenantApi.update(t.id, { name: t.name, microsoftTenantId: t.microsoftTenantId, notes: t.notes, isActive: true });
+    // A PUT replaces every field it carries, so send the branding too or it is wiped.
+    const r = await tenantApi.update(t.id, {
+      name: t.name, microsoftTenantId: t.microsoftTenantId, notes: t.notes, isActive: true,
+      brandName: t.brandName, brandAccentColor: t.brandAccentColor,
+    });
     setBusy(null);
-    if (r.ok) showToast(`${t.name} re-activated`); else showToast(r.error, "error");
+    if (r.ok) clientToast(t.name, "Re-activated"); else clientToast(t.name, r.error, "error");
     await load();
   };
 
@@ -251,25 +265,27 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
   const [busy, setBusy] = useState<string | null>(null);
 
   const step1 = async () => {
-    if (!name.trim()) { showToast("Name is required", "error"); return; }
+    if (!name.trim()) { clientToast(null, "Name is required", "error"); return; }
     setBusy("save");
     const body = { name: name.trim(), microsoftTenantId: entra.trim() || null, notes: notes.trim() || null, brandName: brandName.trim() || null, brandAccentColor: brandColor.trim() || null };
     const r = saved ? await tenantApi.update(saved.id, body) : await tenantApi.create(body);
-    setBusy(null);
-    if (!r.ok) { showToast(r.error, "error"); return; }
+    if (!r.ok) { setBusy(null); clientToast(body.name, r.error, "error"); return; }
     const id = saved ? saved.id : (r.value as { id: string }).id;
-    const list = await tenantApi.list();
-    const fresh = list.ok ? list.value.find(t => t.id === id) ?? null : null;
-    setSaved(fresh);
-    showToast(saved ? "Client updated" : "Client added");
+    // Read the row back before Save is enabled again: until `saved` holds it, a
+    // second click would add the client twice. If the read fails, keep what was
+    // just saved; "no client" would turn the next Save into a duplicate create.
+    const g = await tenantApi.get(id);
+    setSaved(g.ok ? g.value : { ...(saved ?? unreadRow(id)), ...body });
+    setBusy(null);
+    clientToast(body.name, saved ? "Client updated" : "Client added");
     await onChanged();
   };
 
   const step2 = async () => {
     if (!saved) return;
-    if (!clientId.trim()) { showToast("Client ID is required", "error"); return; }
+    if (!clientId.trim()) { clientToast(saved.name, "Client ID is required", "error"); return; }
     const certGiven = useCert && (thumbprint.trim() || certPath.trim());
-    if (!saved.hasOwnCredentials && !secret && !certGiven) { showToast("A client secret or a certificate is required the first time", "error"); return; }
+    if (!saved.hasOwnCredentials && !secret && !certGiven) { clientToast(saved.name, "A client secret or a certificate is required the first time", "error"); return; }
     setBusy("creds");
     const r = await tenantApi.setCredentials(saved.id, {
       clientId: clientId.trim(), clientSecret: !useCert && secret ? secret : undefined,
@@ -279,9 +295,9 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
       certificatePassword: useCert && certPassword ? certPassword : null,
     });
     setBusy(null);
-    if (!r.ok) { showToast(r.error, "error"); return; }
+    if (!r.ok) { clientToast(saved.name, r.error, "error"); return; }
     setSecret("");
-    showToast("Credentials stored");
+    clientToast(saved.name, "Credentials stored");
     const list = await tenantApi.list();
     if (list.ok) setSaved(list.value.find(t => t.id === saved.id) ?? saved);
     await onChanged();
@@ -289,15 +305,38 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
 
   // The consent poll must die with the dialog: closing it (or navigating away)
   // mid-sign-in otherwise left it calling the API every 2.5 s for 5 minutes and
-  // setting state on an unmounted component (MSP_V12_PLAN.md U4).
+  // setting state on an unmounted component (MSP_V12_PLAN.md U4). The Microsoft
+  // window goes with it, so nobody approves consent that nothing is waiting for.
   const pollRef = useRef<number | null>(null);
+  const popupRef = useRef<Window | null>(null);
   const mounted = useRef(true);
   useEffect(() => () => {
     mounted.current = false;
     if (pollRef.current !== null) { window.clearInterval(pollRef.current); pollRef.current = null; }
+    try { if (popupRef.current && !popupRef.current.closed) popupRef.current.close(); } catch { /* cross-origin close race */ }
   }, []);
 
-
+  // Modal like DetailModal: focus starts inside, Tab stays inside, Escape closes.
+  const panelRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const panel = panelRef.current;
+    panel?.querySelector<HTMLElement>("input")?.focus();
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { closeRef.current(); return; }
+      if (e.key === "Tab" && panel) {
+        const focusable = panel.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input:not([disabled]), select, textarea, summary');
+        if (focusable.length === 0) return;
+        const first = focusable[0], last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => { window.removeEventListener("keydown", handler); previouslyFocused?.focus?.(); };
+  }, []);
 
   // The one-go flow: open Microsoft admin consent in a popup, let the client's
   // Global Administrator sign in and approve, then poll until the server records
@@ -308,6 +347,9 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
     setTestResult(null);
     setConsentError(null);
     const before = saved.lastError;
+    // Re-consent (a revoked app, a permission added since) starts from a client
+    // already marked consented: only a new consent time means this one went through.
+    const consentedBefore = saved.consentGrantedAt;
     const r = await tenantApi.consentUrl(saved.id); // server default → its own /consented
     if (!r.ok) { setBusy(null); setConsentError(r.error); return; }
 
@@ -318,13 +360,14 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
       setConsentError("The browser blocked the sign-in window. Allow popups for this site and try again, or copy the consent link below.");
       return;
     }
+    popupRef.current = popup;
 
     const deadline = Date.now() + 5 * 60 * 1000;
     const poll = window.setInterval(async () => {
       if (!mounted.current) { window.clearInterval(poll); return; }
       const g = await tenantApi.get(saved.id);
       if (!mounted.current) return;
-      const granted = g.ok && !!g.value.consentGrantedAt;
+      const granted = g.ok && !!g.value.consentGrantedAt && g.value.consentGrantedAt !== consentedBefore;
       const timedOut = Date.now() > deadline;
       if (!granted && !popup.closed && !timedOut) return;
 
@@ -351,17 +394,24 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
     if (!saved) return;
     setBusy("test");
     const r = await tenantApi.test(saved.id);
+    // Read the row back either way: a pass records the Entra tenant id, and a
+    // refusal may only mean the client's admin has not consented yet, which the
+    // server reports as "no Graph credentials apply".
+    const g = await tenantApi.get(saved.id);
     setBusy(null);
+    if (g.ok) setSaved(g.value);
     setTestResult(r.ok
       ? { ok: true, text: `Connected to ${r.value.displayName ?? r.value.microsoftTenantId ?? saved.name}.` }
-      : { ok: false, text: r.error });
-    if (r.ok) { const g = await tenantApi.get(saved.id); if (g.ok) setSaved(g.value); }
+      : { ok: false, text: g.ok && awaitingConsent(g.value) ? `${AWAITING_CONSENT} Sign in as their Global Administrator above, or send them the consent link.` : r.error });
+    // Show the Entra tenant id consent recorded, so a later Save keeps it.
+    if (r.ok && g.ok) setEntra(e => e || (g.value.microsoftTenantId ?? ""));
     await onChanged();
   };
 
   return (
-    <div className="detail-modal-backdrop" onClick={onClose}>
-      <div className="detail-modal onboarding" role="dialog" aria-modal="true" aria-label={saved ? `Connect ${saved.name}` : "Add client"} onClick={e => e.stopPropagation()}>
+    // A stray click outside must not end a sign-in or save that is under way.
+    <div className="detail-modal-backdrop" onClick={() => { if (!busy) onClose(); }}>
+      <div className="detail-modal onboarding" ref={panelRef} role="dialog" aria-modal="true" aria-label={saved ? `Connect ${saved.name}` : "Add client"} onClick={e => e.stopPropagation()}>
         <div className="detail-modal-hdr">
           <div>
             <h2>{saved ? saved.name : "Add client"}</h2>
@@ -375,7 +425,7 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
             <h3><span className="ob-num">1</span> Client</h3>
             <div className="ob-fields">
               <input className="form-input" aria-label="Client display name" placeholder="Display name (e.g. Contoso Ltd)" value={name} onChange={e => setName(e.target.value)} />
-              <input aria-label="Entra tenant id" className="form-input mono" placeholder="Entra tenant id (optional — filled in by the test)" value={entra} onChange={e => setEntra(e.target.value)} />
+              <input aria-label="Entra tenant id" className="form-input mono" placeholder="Entra tenant id (optional — filled in when the client consents)" value={entra} onChange={e => setEntra(e.target.value)} />
               <input className="form-input" aria-label="Notes" placeholder="Notes (optional)" value={notes} onChange={e => setNotes(e.target.value)} />
               <div className="ob-actions">
                 <input className="form-input" aria-label="Report brand name" placeholder="Report brand name (optional, e.g. Contoso Security)" value={brandName} onChange={e => setBrandName(e.target.value)} title="Shown instead of Vigil365 on this client's digest emails and PDFs" />
@@ -419,8 +469,8 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
                 {saved?.hasOwnCredentials && (
                   <button className="btn-export" disabled={busy !== null} onClick={async () => {
                     const r = await tenantApi.clearCredentials(saved.id);
-                    if (r.ok) { showToast("Credentials cleared"); const l = await tenantApi.list(); if (l.ok) setSaved(l.value.find(t => t.id === saved.id) ?? saved); await onChanged(); }
-                    else showToast(r.error, "error");
+                    if (r.ok) { clientToast(saved.name, "Credentials cleared"); const l = await tenantApi.list(); if (l.ok) setSaved(l.value.find(t => t.id === saved.id) ?? saved); await onChanged(); }
+                    else clientToast(saved.name, r.error, "error");
                   }}>Clear</button>
                 )}
               </div>
@@ -456,7 +506,7 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
                   <button className="btn-export" disabled={!saved} onClick={async () => {
                     if (!saved) return;
                     const r = await tenantApi.consentUrl(saved.id, redirect.trim() || undefined);
-                    if (r.ok) setConsentUrl(r.value.url); else showToast(r.error, "error");
+                    if (r.ok) setConsentUrl(r.value.url); else clientToast(saved.name, r.error, "error");
                   }}><LinkIcon size={13} /> Generate consent link</button>
                   <button className="btn-export" disabled={!saved || busy === "test"} onClick={runTest}><PlayCircle size={13} /> {busy === "test" ? "Testing…" : "Test now"}</button>
                 </div>
@@ -505,3 +555,24 @@ function MspAppStatusLine() {
 }
 
 function truncate(s: string, n: number) { return s.length <= n ? s : s.slice(0, n - 1) + "…"; }
+
+/** Roster and onboarding act on one client, often not the selected one, so
+ *  their toasts name that client rather than the selection (U5). */
+function clientToast(client: string | null, message: string, type: "success" | "error" = "success") {
+  showToast(message, type, undefined, { client });
+}
+
+/** A client with no Entra tenant id and no app of its own is not connected until
+ *  its Global Administrator consents to the shared MSP app: nothing to test yet. */
+function awaitingConsent(t: ClientTenant) { return !t.configured && !t.microsoftTenantId && !t.hasOwnCredentials; }
+const AWAITING_CONSENT = "Not connected yet: waiting for the client's Global Administrator to consent.";
+
+/** A client just added whose row could not be read back yet. */
+function unreadRow(id: string): ClientTenant {
+  return {
+    id, name: "", microsoftTenantId: null, isActive: true, notes: null, createdAt: new Date().toISOString(),
+    hasOwnCredentials: false, clientId: null, authMode: null, certificateThumbprint: null, brandName: null, brandAccentColor: null,
+    consecutiveFailures: 0, nextCollectionAfter: null, credentialSource: "none", configured: false, consentGrantedAt: null,
+    lastCollectionAt: null, lastCollectionStatus: null, lastError: null, openAlerts: null,
+  };
+}
