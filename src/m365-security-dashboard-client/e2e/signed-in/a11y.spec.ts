@@ -9,6 +9,13 @@ import { signIn, tenantA, tenantB, rosterRow, rollupRow } from './fixtures';
 const axePath = createRequire(import.meta.url).resolve('axe-core/axe.min.js');
 
 async function axeViolations(page: Page, include?: string): Promise<string> {
+  // Pages and dialogs fade in (.18-.2s). Axe samples colours at the moment it runs,
+  // so mid-fade it reports contrast for a half-transparent blend that never exists
+  // on screen (it failed only on CI's slower runner). Measure the settled state.
+  // Infinite animations (spinners, the loading-skeleton slide) never finish; skip them.
+  await page.evaluate(() => Promise.all(document.getAnimations()
+    .filter(a => a.effect?.getComputedTiming().iterations !== Infinity)
+    .map(a => a.finished.catch(() => undefined))));
   await page.addScriptTag({ path: axePath });
   const v = await page.evaluate(async (sel) => {
     const r = await (window as any).axe.run(sel ? document.querySelector(sel) : document, { resultTypes: ['violations'] });
