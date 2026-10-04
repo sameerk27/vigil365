@@ -96,6 +96,13 @@ public sealed class ClientTenant
     public string? ConsentNonce { get; set; }
 
     // ── Connection health, written by the tenants API's /test and by the collector ──
+
+    /// <summary>
+    /// When consent was recorded (/consented) or the connection last proved itself
+    /// (/test). Cleared when the client's own credentials or its Entra id change.
+    /// In MSP mode this, not a typed-in Entra id, is what lets a client without its
+    /// own app use the shared MSP app (TenantGraphCredentials).
+    /// </summary>
     public DateTimeOffset? ConsentGrantedAt { get; set; }
     public DateTimeOffset? LastCollectionAt { get; set; }
 

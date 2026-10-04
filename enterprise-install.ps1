@@ -40,6 +40,12 @@ function Invoke-Sc([string]$Arguments) {
     $p = Start-Process -FilePath sc.exe -ArgumentList $Arguments -NoNewWindow -Wait -PassThru
     if ($p.ExitCode -ne 0) { throw "sc.exe $Arguments failed with exit code $($p.ExitCode)." }
 }
+# The "sc create" command line. binPath's value is one argument: the executable,
+# quoted because Program Files has a space (\" inside the outer quotes), then its
+# arguments. Tested in scripts/tests/install-scripts.Tests.ps1.
+function Get-ScCreateArguments([string]$ServiceName, [string]$Exe, [string]$Urls) {
+    "create $ServiceName binPath= `"\`"$Exe\`" --environment Production --urls $Urls`" start= auto obj= `"NT AUTHORITY\LocalService`""
+}
 function Read-Required([string]$Name, [string]$Value) {
     if ($Value) { return $Value }
     do { $Value = Read-Host $Name } while ([string]::IsNullOrWhiteSpace($Value))
@@ -89,7 +95,7 @@ foreach ($identity in @("BUILTIN\Administrators", "NT AUTHORITY\SYSTEM", "NT AUT
 Set-Acl -LiteralPath $InstallPath -AclObject $acl
 
 if (Get-Service $ServiceName -ErrorAction SilentlyContinue) { Invoke-Sc "delete $ServiceName"; Start-Sleep -Seconds 2 }
-Invoke-Sc "create $ServiceName binPath= `"\`"$exe\`" --environment Production --urls http://127.0.0.1:$Port`" start= auto obj= `"NT AUTHORITY\LocalService`""
+Invoke-Sc (Get-ScCreateArguments $ServiceName $exe "http://127.0.0.1:$Port")
 Invoke-Sc "description $ServiceName `"Vigil365 Microsoft 365 security monitoring service`""
 Invoke-Sc "failure $ServiceName reset= 86400 actions= restart/5000/restart/15000/restart/60000"
 Invoke-Sc "start $ServiceName"

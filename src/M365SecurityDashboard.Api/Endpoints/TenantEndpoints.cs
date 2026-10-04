@@ -85,7 +85,7 @@ public static class TenantEndpoints
             // Only the state is signed, not this parameter: a client never takes an
             // Entra tenant another client already has, or the shared app would
             // collect that client's data as this one's.
-            if (string.IsNullOrWhiteSpace(t.MicrosoftTenantId) && await EntraIdOwnerAsync(db, t.Id, consentedTenant, ct) is not null)
+            if (string.IsNullOrWhiteSpace(t.MicrosoftTenantId) && await EntraIdOwnerAsync(db, creds, t.Id, consentedTenant, ct) is not null)
             {
                 t.LastError = $"Consent was granted in Entra tenant {consentedTenant}, which another client in Vigil365 already uses.";
                 await db.SaveChangesAsync(ct);
@@ -201,13 +201,13 @@ public static class TenantEndpoints
             return t is null ? Results.NotFound() : Results.Ok(View(t, creds, null));
         });
 
-        group.MapPost("", async (TenantUpsert body, AppDbContext db, AuditLogger audit, IMemoryCache cache, Microsoft.Extensions.Options.IOptions<EditionOptions> edition, CancellationToken ct) =>
+        group.MapPost("", async (TenantUpsert body, AppDbContext db, TenantGraphCredentials creds, AuditLogger audit, IMemoryCache cache, Microsoft.Extensions.Options.IOptions<EditionOptions> edition, CancellationToken ct) =>
         {
             if (!edition.Value.IsMsp && await db.ClientTenants.AnyAsync(t => t.IsActive, ct))
                 return Results.Conflict(new { ok = false, message = "This is a single-organisation install. Adding client tenants needs MSP mode (Edition:Mode = Msp)." });
             if (string.IsNullOrWhiteSpace(body.Name))
                 return Results.BadRequest(new { ok = false, message = "Name is required." });
-            if (await EntraIdOwnerAsync(db, Guid.Empty, body.MicrosoftTenantId, ct) is { } owner)
+            if (await EntraIdOwnerAsync(db, creds, Guid.Empty, body.MicrosoftTenantId, ct) is { } owner)
                 return EntraIdInUse(body.MicrosoftTenantId!, owner);
 
             var t = new ClientTenant
@@ -227,7 +227,7 @@ public static class TenantEndpoints
             return Results.Created($"/api/tenants/{t.Id}", new { ok = true, id = t.Id });
         });
 
-        group.MapPut("/{id:guid}", async (Guid id, TenantUpsert body, AppDbContext db, AuditLogger audit, IMemoryCache cache, CancellationToken ct) =>
+        group.MapPut("/{id:guid}", async (Guid id, TenantUpsert body, AppDbContext db, TenantGraphCredentials creds, AuditLogger audit, IMemoryCache cache, CancellationToken ct) =>
         {
             var t = await db.ClientTenants.FirstOrDefaultAsync(x => x.Id == id, ct);
             if (t is null) return Results.NotFound();
@@ -237,13 +237,19 @@ public static class TenantEndpoints
             var deactivating = t.IsActive && body.IsActive == false;
             if (deactivating && await db.ClientTenants.CountAsync(x => x.IsActive, ct) <= 1)
                 return Results.BadRequest(new { ok = false, message = "Cannot deactivate the only active tenant." });
-            var entraId = Normalize(body.MicrosoftTenantId);
-            if (!string.Equals(entraId, t.MicrosoftTenantId, StringComparison.OrdinalIgnoreCase)
-                && await EntraIdOwnerAsync(db, t.Id, entraId, ct) is { } owner)
+            // A blank Entra id keeps the one consent recorded. The form sending this
+            // edit can predate the consent (a link the client's admin opened elsewhere,
+            // a test that failed while Graph replicated), and clearing the id would
+            // quietly disconnect a consented client. A different id is a deliberate
+            // change, and the consent recorded for the old tenant does not carry over.
+            var entraId = Normalize(body.MicrosoftTenantId) ?? (t.ConsentGrantedAt is not null ? t.MicrosoftTenantId : null);
+            var entraChanged = !string.Equals(entraId, t.MicrosoftTenantId, StringComparison.OrdinalIgnoreCase);
+            if (entraChanged && await EntraIdOwnerAsync(db, creds, t.Id, entraId, ct) is { } owner)
                 return EntraIdInUse(entraId!, owner);
 
             t.Name = body.Name.Trim();
             t.MicrosoftTenantId = entraId;
+            if (entraChanged) t.ConsentGrantedAt = null;
             t.Notes = body.Notes;
             t.BrandName = Normalize(body.BrandName);
             t.BrandAccentColor = ValidColor(body.BrandAccentColor);
@@ -380,7 +386,7 @@ public static class TenantEndpoints
                     await db.SaveChangesAsync(ct);
                     return Results.BadRequest(new { ok = false, message = t.LastError });
                 }
-                if (string.IsNullOrWhiteSpace(t.MicrosoftTenantId) && await EntraIdOwnerAsync(db, t.Id, entraId, ct) is not null)
+                if (string.IsNullOrWhiteSpace(t.MicrosoftTenantId) && await EntraIdOwnerAsync(db, creds, t.Id, entraId, ct) is not null)
                 {
                     t.LastError = $"These credentials reach Entra tenant {entraId}, which another client in Vigil365 already uses.";
                     await db.SaveChangesAsync(ct);
@@ -449,17 +455,22 @@ public static class TenantEndpoints
     }
 
     /// <summary>
-    /// The client other than <paramref name="rowId"/> already recorded with this
-    /// Entra tenant, inactive ones included (their data stays theirs); null if none.
+    /// The client other than <paramref name="rowId"/> that already has this Entra
+    /// tenant, inactive ones included (their data stays theirs); null if none.
     /// One Entra tenant is one client: a second row would collect the same tenant
-    /// under another client's name, for its staff and its contacts.
+    /// under another client's name, for its staff and its contacts. The install's
+    /// own row (<see cref="ClientTenant.DefaultId"/>) has the install's tenant even
+    /// with no id recorded, since it collects that tenant with no id.
     /// </summary>
-    private static Task<ClientTenant?> EntraIdOwnerAsync(AppDbContext db, Guid rowId, string? entraId, CancellationToken ct)
+    private static async Task<ClientTenant?> EntraIdOwnerAsync(AppDbContext db, TenantGraphCredentials creds, Guid rowId, string? entraId, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(entraId)) return Task.FromResult<ClientTenant?>(null);
+        if (string.IsNullOrWhiteSpace(entraId)) return null;
         var id = entraId.Trim().ToLowerInvariant();
-        return db.ClientTenants.AsNoTracking()
+        var recorded = await db.ClientTenants.AsNoTracking()
             .FirstOrDefaultAsync(x => x.Id != rowId && x.MicrosoftTenantId != null && x.MicrosoftTenantId.ToLower() == id, ct);
+        if (recorded is not null || rowId == ClientTenant.DefaultId || !creds.IsInstallTenant(entraId)) return recorded;
+        return await db.ClientTenants.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == ClientTenant.DefaultId && x.MicrosoftTenantId == null, ct);
     }
 
     private static IResult EntraIdInUse(string entraId, ClientTenant owner)

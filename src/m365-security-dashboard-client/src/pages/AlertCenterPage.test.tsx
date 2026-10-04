@@ -146,6 +146,18 @@ describe("Client routing card (ui-8, MSP)", () => {
     await waitFor(() => expect(toasts.map(t => t.message).join()).toMatch(/give the client an email address/));
   });
 
+  it("a Viewer is told routing needs the Analyst role, never shown a 403 with a Retry that cannot work", async () => {
+    msp();
+    const api = mockApi({ "GET /api/notification-routing": { status: 403, body: {} } });
+    renderPage("Viewer");
+    await openTab("Notifications");
+
+    expect(await screen.findByText("Analyst role needed")).toBeInTheDocument();
+    expect(screen.queryByText(/Couldn't load this client's routing/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /Retry/ })).toBeNull();
+    expect(api.calls.some(c => c.path === "/api/notification-routing")).toBe(false);
+  });
+
   it("a non-Admin sees that a client Teams webhook is set, without its URL", async () => {
     msp();
     mockApi({ "GET /api/notification-routing": { body: routing({ hasTeamsWebhookUrl: true }) }, "GET /api/notification-log": { body: [] } });

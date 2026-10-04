@@ -91,14 +91,17 @@ when ready. If the client's admin cannot sign in from your screen, open **Can't
 sign in here? Send the client a link instead**, copy the consent link to them, and
 press **Test now** once they confirm. Until their admin consents the client is not
 connected (Test now reports "No Graph credentials apply to this tenant") and
-nothing is collected for it.
+nothing is collected for it — even if you typed its Entra tenant id when adding it.
+Consent is what connects a client, not the id.
 
 A consent link expires after 30 minutes and works once: after it has recorded
 consent it is dead, so re-consent (for example after a new permission) needs a new
 link from the dialog. A declined or refused consent does not use it up. One
 Microsoft tenant can belong to only one client: consent, **Test now** or an edit
 that would give a client an Entra id another client (active or not) already has is
-refused.
+refused — including your own tenant, which the **Default** client has even with no
+id recorded. Saving a client with the Entra id field blank keeps an id that consent
+recorded; changing it to another id means that client must consent again.
 
 The **MSP app readiness** card on Clients checks that the app registration is
 multi-tenant, has the `/consented` redirect and every permission in
@@ -122,13 +125,17 @@ All endpoints are Admin-only and audited.
    The secret is encrypted at rest and never returned.
 3. `GET /api/tenants/{id}/consent-url?redirectUri=https://your-host/consented` — send
    the URL to the client's Global Administrator. They sign in and grant admin consent.
-4. `POST /api/tenants/{id}/test` — Vigil365 calls Graph as that tenant, confirms the
-   Entra tenant id matches, and records the consent time. Collection starts on the
-   next cycle; `GET /api/tenants` shows each client's last collection status and error.
+4. `POST /api/tenants/{id}/test` — once the admin's approval has landed on
+   `/consented` (which records the consent), Vigil365 calls Graph as that tenant,
+   confirms the Entra tenant id matches, and records the time. Before that it
+   returns 400 "No Graph credentials apply to this tenant": the id from step 1 does
+   not connect the client on its own. Collection starts on the next cycle;
+   `GET /api/tenants` shows each client's last collection status and error.
 
 Non-Admin staff see only the clients assigned to them (**User Management →
-Clients** column); Admins see every client. Non-Admins see routing and per-client
-policy overrides read-only.
+Clients** column); Admins see every client. Non-Admins see per-client policy
+overrides read-only; Analysts also see the client's alert routing read-only, and
+Viewers are told it needs the Analyst role.
 
 **Where a client's alerts go.** By default every client's alerts go to the MSP's own
 channels and default recipient (Settings → Notifications). Per client, an Admin can
@@ -174,12 +181,12 @@ token in a multi-tenant install must send `X-Vigil-Tenant` on every request.
 the cue to shorten retention or move engines before the 10 GB write limit.
 
 **Which credentials a client uses.** Its own credentials, if set, always win.
-Otherwise, in MSP mode: a client whose admin has consented (its Entra id is
-recorded) uses the shared MSP app — the install's client id and secret or
-certificate — in its own tenant; a client with no Entra id has not consented, is
-reported as not connected and is never collected; only the **Default** client, or
-one whose Entra id is the install's own, uses the install's credentials as they
-are. In Single mode the one tenant uses the install's credentials. `DELETE
+Otherwise, in MSP mode: a client whose admin has consented (`consentGrantedAt` is
+recorded, with its Entra id) uses the shared MSP app — the install's client id and
+secret or certificate — in its own tenant; a client without recorded consent, with
+or without an Entra id typed in, is reported as not connected and is never
+collected; only the **Default** client, or one whose Entra id is the install's own,
+uses the install's credentials as they are. In Single mode the one tenant uses the install's credentials. `DELETE
 /api/tenants/{id}` deactivates (data kept); `?purge=true` deletes the tenant and
 every row it owned, except its audit log entries (see the audit trail above).
 

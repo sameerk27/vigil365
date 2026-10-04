@@ -264,6 +264,16 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
   const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
+  // Every read-back of the row comes through here, so the Entra tenant id consent
+  // recorded reaches the field whether or not the test that follows passes (it can
+  // fail while Graph is still replicating the new consent): an empty field reads as
+  // "not connected". The server also keeps a consent-recorded id a Save sends blank.
+  const adoptRow = (row: ClientTenant) => {
+    setSaved(row);
+    const recorded = row.microsoftTenantId;
+    if (recorded) setEntra(e => e.trim() ? e : recorded);
+  };
+
   const step1 = async () => {
     if (!name.trim()) { clientToast(null, "Name is required", "error"); return; }
     setBusy("save");
@@ -275,7 +285,7 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
     // second click would add the client twice. If the read fails, keep what was
     // just saved; "no client" would turn the next Save into a duplicate create.
     const g = await tenantApi.get(id);
-    setSaved(g.ok ? g.value : { ...(saved ?? unreadRow(id)), ...body });
+    if (g.ok) adoptRow(g.value); else setSaved({ ...(saved ?? unreadRow(id)), ...body });
     setBusy(null);
     clientToast(body.name, saved ? "Client updated" : "Client added");
     await onChanged();
@@ -299,7 +309,7 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
     setSecret("");
     clientToast(saved.name, "Credentials stored");
     const list = await tenantApi.list();
-    if (list.ok) setSaved(list.value.find(t => t.id === saved.id) ?? saved);
+    if (list.ok) adoptRow(list.value.find(t => t.id === saved.id) ?? saved);
     await onChanged();
   };
 
@@ -375,7 +385,7 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
       pollRef.current = null;
       try { if (!popup.closed) popup.close(); } catch { /* cross-origin close race */ }
       if (granted) {
-        if (g.ok) setSaved(g.value);
+        if (g.ok) adoptRow(g.value);
         await runTest();                 // verify + record the Entra tenant id
       } else {
         setBusy(null);
@@ -399,12 +409,10 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
     // server reports as "no Graph credentials apply".
     const g = await tenantApi.get(saved.id);
     setBusy(null);
-    if (g.ok) setSaved(g.value);
+    if (g.ok) adoptRow(g.value);
     setTestResult(r.ok
       ? { ok: true, text: `Connected to ${r.value.displayName ?? r.value.microsoftTenantId ?? saved.name}.` }
       : { ok: false, text: g.ok && awaitingConsent(g.value) ? `${AWAITING_CONSENT} Sign in as their Global Administrator above, or send them the consent link.` : r.error });
-    // Show the Entra tenant id consent recorded, so a later Save keeps it.
-    if (r.ok && g.ok) setEntra(e => e || (g.value.microsoftTenantId ?? ""));
     await onChanged();
   };
 
@@ -469,7 +477,7 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
                 {saved?.hasOwnCredentials && (
                   <button className="btn-export" disabled={busy !== null} onClick={async () => {
                     const r = await tenantApi.clearCredentials(saved.id);
-                    if (r.ok) { clientToast(saved.name, "Credentials cleared"); const l = await tenantApi.list(); if (l.ok) setSaved(l.value.find(t => t.id === saved.id) ?? saved); await onChanged(); }
+                    if (r.ok) { clientToast(saved.name, "Credentials cleared"); const l = await tenantApi.list(); if (l.ok) adoptRow(l.value.find(t => t.id === saved.id) ?? saved); await onChanged(); }
                     else clientToast(saved.name, r.error, "error");
                   }}>Clear</button>
                 )}
@@ -562,9 +570,10 @@ function clientToast(client: string | null, message: string, type: "success" | "
   showToast(message, type, undefined, { client });
 }
 
-/** A client with no Entra tenant id and no app of its own is not connected until
- *  its Global Administrator consents to the shared MSP app: nothing to test yet. */
-function awaitingConsent(t: ClientTenant) { return !t.configured && !t.microsoftTenantId && !t.hasOwnCredentials; }
+/** A client with no app of its own is not connected until its Global Administrator
+ *  consents to the shared MSP app — an Entra id typed in is not consent: nothing to
+ *  test yet. */
+function awaitingConsent(t: ClientTenant) { return !t.configured && !t.consentGrantedAt && !t.hasOwnCredentials; }
 const AWAITING_CONSENT = "Not connected yet: waiting for the client's Global Administrator to consent.";
 
 /** A client just added whose row could not be read back yet. */

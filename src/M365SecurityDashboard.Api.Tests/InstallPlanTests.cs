@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using M365SecurityDashboard.GuiInstaller;
 
 namespace M365SecurityDashboard.Api.Tests;
@@ -246,5 +247,162 @@ public sealed class InstallPlanTests
         Assert.Contains("Event Viewer", InstallPlan.FailureAdvice(InstallStage.Service).Remedy);
         foreach (var stage in Enum.GetValues<InstallStage>())
             Assert.False(string.IsNullOrWhiteSpace(InstallPlan.FailureAdvice(stage).Title));
+    }
+
+    // ── Who may read the secrets Setup writes (inst-3) ──
+
+    private static (string, AclRights)[] Grants(RestrictedAcl acl) => acl.Grants.Select(g => (g.Sid, g.Rights)).ToArray();
+
+    [Fact]
+    public void The_config_file_is_readable_by_the_service_and_managed_only_by_admins_and_system()
+    {
+        // appsettings.Production.json holds the Graph secret: in MSP mode, the key to
+        // every consenting client's data. Program Files lets every local user read.
+        var acl = InstallPlan.ConfigFileAcl();
+
+        Assert.True(acl.ProtectFromParent); // nothing inherited, so no "Users: Read"
+        Assert.False(acl.InheritedByChildren);
+        Assert.Equal(new[]
+        {
+            ("S-1-5-32-544", AclRights.FullControl), // BUILTIN\Administrators
+            ("S-1-5-18", AclRights.FullControl),     // SYSTEM
+            ("S-1-5-19", AclRights.Read),            // LOCAL SERVICE, the service account
+        }, Grants(acl));
+    }
+
+    [Fact]
+    public void The_data_folder_is_writable_by_the_service_for_everything_below_it_and_closed_to_others()
+    {
+        // %ProgramData%\Vigil365: the key ring that decrypts every stored secret, and logs.
+        var acl = InstallPlan.DataFolderAcl();
+
+        Assert.True(acl.ProtectFromParent);
+        Assert.True(acl.InheritedByChildren); // keys\ and logs\ and every file in them
+        Assert.Equal(new[]
+        {
+            ("S-1-5-32-544", AclRights.FullControl),
+            ("S-1-5-18", AclRights.FullControl),
+            ("S-1-5-19", AclRights.Modify),
+        }, Grants(acl));
+    }
+
+    [Fact]
+    public void No_installer_acl_lets_anyone_else_in_or_the_service_rewrite_it()
+    {
+        string[] others = ["S-1-1-0", "S-1-5-11", "S-1-5-32-545", "S-1-5-4"]; // Everyone, Authenticated Users, Users, Interactive
+        foreach (var acl in new[] { InstallPlan.ConfigFileAcl(), InstallPlan.DataFolderAcl() })
+        {
+            Assert.DoesNotContain(acl.Grants, g => others.Contains(g.Sid));
+            Assert.DoesNotContain(acl.Grants, g => g.Sid == InstallPlan.LocalServiceSid && g.Rights == AclRights.FullControl);
+        }
+    }
+
+    [Fact]
+    public void Setup_writes_its_config_and_data_folder_only_through_the_restricted_acls()
+    {
+        var source = MainWindowSource();
+        Assert.Contains("RestrictAccess(new FileInfo(path), InstallPlan.ConfigFileAcl())", source);
+        Assert.Contains("RestrictAccess(new DirectoryInfo(dataDir), InstallPlan.DataFolderAcl())", source);
+        // The config and its .bak are written by WriteRestrictedFile, never directly.
+        Assert.Equal(2, Regex.Matches(source, @"WriteRestrictedFile\(configPath").Count);
+        Assert.DoesNotMatch(@"File\.(WriteAllText|Copy|Move)\(\s*configPath", source);
+    }
+
+    // ── Replacing the files of a running service (inst-8) ──
+
+    private const string ScRunning = """
+
+        SERVICE_NAME: Vigil365
+                TYPE               : 10  WIN32_OWN_PROCESS
+                STATE              : 4  RUNNING
+                                        (STOPPABLE, NOT_PAUSABLE, ACCEPTS_SHUTDOWN)
+                WIN32_EXIT_CODE    : 0  (0x0)
+                SERVICE_EXIT_CODE  : 0  (0x0)
+                CHECKPOINT         : 0x0
+                WAIT_HINT          : 0x0
+        """;
+
+    [Theory]
+    [InlineData("4  RUNNING", ServiceState.Running)]
+    [InlineData("1  STOPPED", ServiceState.Stopped)]
+    [InlineData("3  STOP_PENDING", ServiceState.Changing)]   // asked to stop, still holding its files
+    [InlineData("2  START_PENDING", ServiceState.Changing)]
+    [InlineData("7  PAUSED", ServiceState.Changing)]
+    public void Reads_the_service_state_from_sc_query(string state, ServiceState expected)
+        => Assert.Equal(expected, InstallPlan.ParseServiceState(ScRunning.Replace("4  RUNNING", state)));
+
+    [Theory]
+    [InlineData("[SC] EnumQueryServicesStatus:OpenService FAILED 1060:\r\n\r\nThe specified service does not exist as an installed service.\r\n")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void No_state_means_not_installed(string? output)
+        => Assert.Equal(ServiceState.NotInstalled, InstallPlan.ParseServiceState(output));
+
+    [Fact]
+    public void State_is_read_from_the_state_name_not_the_label()
+    {
+        // A translated label must not read as "not installed".
+        Assert.Equal(ServiceState.Running, InstallPlan.ParseServiceState(ScRunning.Replace("STATE    ", "STATUS   ")));
+        // The TYPE line's "WIN32_OWN_PROCESS" is not a state.
+        Assert.Equal(ServiceState.NotInstalled, InstallPlan.ParseServiceState("        TYPE               : 10  WIN32_OWN_PROCESS"));
+    }
+
+    [Theory]
+    [InlineData(ServiceState.NotInstalled, true)]  // a first install
+    [InlineData(ServiceState.Stopped, true)]
+    [InlineData(ServiceState.Changing, false)]     // STOP_PENDING: overwriting now fails on a locked file
+    [InlineData(ServiceState.Running, false)]
+    public void Files_are_replaced_only_once_the_service_has_stopped(ServiceState state, bool replaceable)
+        => Assert.Equal(replaceable, InstallPlan.FilesReplaceable(state));
+
+    [Theory]
+    [InlineData(ServiceState.Running, true)]       // monitoring was up: bring it back
+    [InlineData(ServiceState.Stopped, false)]      // stopped on purpose: leave it
+    [InlineData(ServiceState.NotInstalled, false)]
+    [InlineData(ServiceState.Changing, false)]
+    public void A_failed_upgrade_restarts_only_a_service_that_was_running(ServiceState before, bool restart)
+        => Assert.Equal(restart, InstallPlan.RestartAfterFailedUpgrade(before));
+
+    [Fact]
+    public void Setup_waits_for_the_stop_and_restarts_on_any_failure_to_replace_the_files()
+    {
+        var source = MainWindowSource();
+        var method = source[source.IndexOf("private async Task InstallApplicationFiles()", StringComparison.Ordinal)..];
+        method = method[..method.IndexOf("private void SetupService()", StringComparison.Ordinal)];
+
+        // The state is read before "sc stop", the wait sits inside the try, so a stop
+        // that times out restarts the service too, and the catch asks InstallPlan.
+        var read = method.IndexOf("InstallPlan.ParseServiceState(QueryService(", StringComparison.Ordinal);
+        var stop = method.IndexOf("RunCommand(\"sc\", \"stop Vigil365\")", StringComparison.Ordinal);
+        var tryAt = method.IndexOf("try", stop, StringComparison.Ordinal);
+        var wait = method.IndexOf("await WaitForServiceStoppedAsync(", StringComparison.Ordinal);
+        var extract = method.IndexOf("ExtractToFile(", StringComparison.Ordinal);
+        var catchAt = method.IndexOf("catch", extract, StringComparison.Ordinal);
+        Assert.True(read >= 0 && read < stop && stop < tryAt && tryAt < wait && wait < extract && extract < catchAt,
+            "InstallApplicationFiles: read state, stop, then wait and extract inside one try");
+        Assert.Contains("InstallPlan.RestartAfterFailedUpgrade(", method[catchAt..]);
+        Assert.Contains("InstallPlan.FilesReplaceable(", source);
+    }
+
+    [Fact]
+    public void The_collector_secret_is_minted_only_after_the_files_are_in_place()
+    {
+        // Minting it first left a live two-year secret on the app registration
+        // whenever a locked file failed the run, with nothing configured to use it.
+        var source = MainWindowSource();
+        var files = source.IndexOf("await InstallApplicationFiles();", StringComparison.Ordinal);
+        var secretCalls = Regex.Matches(source, @"(?<!void )\bCreateCollectorSecret\b(?!\(\)\s*\{)").Cast<Match>().ToList();
+
+        Assert.True(files >= 0, "InstallApplicationFiles is no longer awaited by the install run");
+        Assert.Single(secretCalls);
+        Assert.True(secretCalls[0].Index > files, "CreateCollectorSecret must run after InstallApplicationFiles");
+    }
+
+    private static string MainWindowSource()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "graph-permissions.json"))) dir = dir.Parent;
+        var root = dir?.FullName ?? throw new DirectoryNotFoundException("repo root (graph-permissions.json) not found");
+        return File.ReadAllText(Path.Combine(root, "src", "M365SecurityDashboard.GuiInstaller", "MainWindow.xaml.cs"));
     }
 }

@@ -3,6 +3,18 @@
 set -euo pipefail
 
 usage() { echo "Usage: sudo $0 [--tenant-id ID --client-id ID --admin-email EMAIL --sql-connection STRING --public-url https://host] [--mode Single|Msp] [--db-provider SqlServer|Postgres]"; }
+# A JSON string literal. Values go into JSON escaped: a SQL named instance
+# (Server=sql01\PROD) written raw is an invalid \P escape and the app cannot load its config.
+json() { local s="$1"; s=${s//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\t'/\\t}; s=${s//$'\r'/\\r}; s=${s//$'\n'/\\n}; printf '"%s"' "$s"; }
+# appsettings.Production.json, from the values below. Every value goes through json().
+settings_json() {
+  cat <<EOF
+{"Edition":{"Mode":$(json "$mode")},"Database":{"Provider":$(json "$db_provider")},"ConnectionStrings":{"DefaultConnection":$(json "$sql_connection")},"AzureAd":{"Instance":"https://login.microsoftonline.com/","TenantId":$(json "$tenant_id"),"ClientId":$(json "$client_id"),"Audience":$(json "api://$client_id")},"Auth":{"RedirectUri":$(json "$public_url"),"BootstrapAdminEmail":$(json "$admin_email")},"Cors":{"AllowedOrigins":[$(json "${public_url%/}")]},"Security":{"RequireHttps":false},"DataProtection":{"KeyPath":$(json "$install_dir/keys")},"Logging":{"File":{"Path":"/var/log/vigil365/vigil365-.json"}}}
+EOF
+}
+# Sourced (scripts/tests/enterprise-install.test.sh): define the functions above, install nothing.
+if (return 0 2>/dev/null); then return 0; fi
+
 tenant_id= client_id= admin_email= sql_connection= public_url= install_dir=/opt/vigil365 port=8080 mode=Single db_provider=SqlServer
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -15,9 +27,6 @@ while [[ $# -gt 0 ]]; do
 done
 [[ $EUID -eq 0 ]] || { echo "Run with sudo." >&2; exit 1; }
 ask() { local label="$1" value="$2"; if [[ -n "$value" ]]; then printf '%s' "$value"; else read -r -p "$label: " value; [[ -n "$value" ]] || { echo "$label is required." >&2; exit 2; }; printf '%s' "$value"; fi; }
-# A JSON string literal. Values go into JSON escaped: a SQL named instance
-# (Server=sql01\PROD) written raw is an invalid \P escape and the app cannot load its config.
-json() { local s="$1"; s=${s//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\t'/\\t}; s=${s//$'\r'/\\r}; s=${s//$'\n'/\\n}; printf '"%s"' "$s"; }
 echo "Vigil365 enterprise installer"
 tenant_id="$(ask 'Entra Tenant ID' "$tenant_id")"
 client_id="$(ask 'Entra Application (client) ID' "$client_id")"
@@ -49,9 +58,7 @@ chmod -R u=rwX,g=rX,o= "$install_dir"
 install -d -m 0750 -o vigil365 -g vigil365 "$install_dir/keys"
 chown -R vigil365:vigil365 "$install_dir/keys"   # a re-run's chown above must not take the key ring from the service
 # Logs go to /var/log/vigil365 (systemd LogsDirectory below): the app directory is read-only to the service.
-cat > "$install_dir/appsettings.Production.json" <<EOF
-{"Edition":{"Mode":$(json "$mode")},"Database":{"Provider":$(json "$db_provider")},"ConnectionStrings":{"DefaultConnection":$(json "$sql_connection")},"AzureAd":{"Instance":"https://login.microsoftonline.com/","TenantId":$(json "$tenant_id"),"ClientId":$(json "$client_id"),"Audience":$(json "api://$client_id")},"Auth":{"RedirectUri":$(json "$public_url"),"BootstrapAdminEmail":$(json "$admin_email")},"Cors":{"AllowedOrigins":[$(json "${public_url%/}")]},"Security":{"RequireHttps":false},"DataProtection":{"KeyPath":$(json "$install_dir/keys")},"Logging":{"File":{"Path":"/var/log/vigil365/vigil365-.json"}}}
-EOF
+settings_json > "$install_dir/appsettings.Production.json"
 chown root:vigil365 "$install_dir/appsettings.Production.json"
 chmod 0640 "$install_dir/appsettings.Production.json"
 cat > /etc/systemd/system/vigil365.service <<EOF

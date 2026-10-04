@@ -49,10 +49,12 @@ public sealed class TenantOnboardingEndpointTests
         return Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(url.Query)["state"].ToString();
     }
 
+    /// <summary>A client whose admin consented: /consented records the Entra id and the time.</summary>
     private static ClientTenant Consented(Guid id, string name, string entraId)
     {
         var row = Row(id, name);
         row.MicrosoftTenantId = entraId;
+        row.ConsentGrantedAt = DateTimeOffset.UtcNow;
         return row;
     }
 
@@ -150,9 +152,7 @@ public sealed class TenantOnboardingEndpointTests
     [Fact]
     public async Task Consented_client_on_the_shared_app_is_reported_as_configured()
     {
-        var consented = Row(Contoso, "Contoso");
-        consented.MicrosoftTenantId = ClientEntraId;
-        await using var h = await HarnessAsync(Row(ClientTenant.DefaultId, "Default"), consented, Row(TestTenancy.TenantB, "Fabrikam"));
+        await using var h = await HarnessAsync(Row(ClientTenant.DefaultId, "Default"), Consented(Contoso, "Contoso", ClientEntraId), Row(TestTenancy.TenantB, "Fabrikam"));
 
         var (_, body) = await h.SendAsync("GET", "/api/tenants/{id:guid}", routeValues: new { id = Contoso });
         Assert.Contains("\"configured\":true", body);
@@ -249,5 +249,109 @@ public sealed class TenantOnboardingEndpointTests
         (status, _) = await h.SendAsync("PUT", "/api/tenants/{id:guid}", routeValues: new { id = TestTenancy.TenantB },
             body: new TenantEndpoints.TenantUpsert("Fabrikam Inc", FabrikamEntraId, null, null));
         Assert.Equal(200, status);
+    }
+
+    // ── An edit never disconnects a consented client, or connects one that has not consented ──
+
+    [Fact]
+    public async Task Saving_with_a_blank_entra_id_keeps_the_one_consent_recorded()
+    {
+        // The dialog's field stays empty when the auto-test fails after consent, or
+        // when it was opened from a roster row older than an emailed-link consent.
+        await using var h = await HarnessAsync(Row(ClientTenant.DefaultId, "Default"), Consented(Contoso, "Contoso", ClientEntraId));
+
+        var (status, _) = await h.SendAsync("PUT", "/api/tenants/{id:guid}", routeValues: new { id = Contoso },
+            body: new TenantEndpoints.TenantUpsert("Contoso Ltd", null, null, null, BrandName: "Contoso Security"));
+
+        Assert.Equal(200, status);
+        var row = await ReloadAsync(h, Contoso);
+        Assert.Equal("Contoso Ltd", row.Name);
+        Assert.Equal(ClientEntraId, row.MicrosoftTenantId);
+        Assert.NotNull(row.ConsentGrantedAt);
+        Assert.Contains("\"configured\":true", (await h.SendAsync("GET", "/api/tenants/{id:guid}", routeValues: new { id = Contoso })).Body);
+    }
+
+    [Fact]
+    public async Task A_typed_in_entra_id_is_not_consent()
+    {
+        // Typing the id when adding the client must not make Vigil365 collect it
+        // before its admin consents: every token request would fail (AADSTS700016).
+        await using var h = await HarnessAsync(Row(ClientTenant.DefaultId, "Default"));
+        var (status, body) = await h.SendAsync("POST", "/api/tenants/", body: new TenantEndpoints.TenantUpsert("Contoso", ClientEntraId, null, null));
+        Assert.Equal(201, status);
+        var id = JsonDocument.Parse(body).RootElement.GetProperty("id").GetGuid();
+
+        Assert.Contains("\"configured\":false", (await h.SendAsync("GET", "/api/tenants/{id:guid}", routeValues: new { id })).Body);
+        (status, body) = await h.SendAsync("POST", "/api/tenants/{id:guid}/test", routeValues: new { id });
+        Assert.Equal(400, status);
+        Assert.Contains("No Graph credentials apply", body);
+        Assert.Null((await ReloadAsync(h, id)).ConsentGrantedAt);
+
+        // Consent for that tenant connects it.
+        Assert.Contains("is connected", (await CallbackAsync(h, await StateAsync(h, id), $"admin_consent=True&tenant={ClientEntraId}")).Body);
+        Assert.Contains("\"configured\":true", (await h.SendAsync("GET", "/api/tenants/{id:guid}", routeValues: new { id })).Body);
+    }
+
+    [Fact]
+    public async Task Changing_the_entra_id_drops_the_consent_recorded_for_the_old_one()
+    {
+        const string OtherEntraId = "44444444-4444-4444-4444-444444444444";
+        await using var h = await HarnessAsync(Row(ClientTenant.DefaultId, "Default"), Consented(Contoso, "Contoso", ClientEntraId));
+
+        var (status, _) = await h.SendAsync("PUT", "/api/tenants/{id:guid}", routeValues: new { id = Contoso },
+            body: new TenantEndpoints.TenantUpsert("Contoso", OtherEntraId, null, null));
+
+        Assert.Equal(200, status);
+        var row = await ReloadAsync(h, Contoso);
+        Assert.Equal(OtherEntraId, row.MicrosoftTenantId);
+        Assert.Null(row.ConsentGrantedAt);
+        Assert.Contains("\"configured\":false", (await h.SendAsync("GET", "/api/tenants/{id:guid}", routeValues: new { id = Contoso })).Body);
+    }
+
+    [Fact]
+    public async Task A_blank_entra_id_still_clears_one_that_was_only_typed_in()
+    {
+        var typed = Row(Contoso, "Contoso");
+        typed.MicrosoftTenantId = ClientEntraId; // no consent recorded
+        await using var h = await HarnessAsync(Row(ClientTenant.DefaultId, "Default"), typed);
+
+        await h.SendAsync("PUT", "/api/tenants/{id:guid}", routeValues: new { id = Contoso },
+            body: new TenantEndpoints.TenantUpsert("Contoso", null, null, null));
+
+        Assert.Null((await ReloadAsync(h, Contoso)).MicrosoftTenantId);
+    }
+
+    [Fact]
+    public async Task An_admin_cannot_give_a_client_the_msps_own_tenant()
+    {
+        // The install's own row collects the MSP's tenant with no id recorded, so
+        // comparing recorded ids alone let a second client collect it under another name.
+        await using var h = await HarnessAsync(Row(ClientTenant.DefaultId, "Default"), Row(Contoso, "Contoso"));
+
+        var (status, body) = await h.SendAsync("POST", "/api/tenants/", body: new TenantEndpoints.TenantUpsert("Us again", InstallTenant, null, null));
+        Assert.Equal(409, status);
+        Assert.Contains("Default", body);
+
+        (status, _) = await h.SendAsync("PUT", "/api/tenants/{id:guid}", routeValues: new { id = Contoso },
+            body: new TenantEndpoints.TenantUpsert("Contoso", InstallTenant.ToUpperInvariant(), null, null));
+        Assert.Equal(409, status);
+        Assert.Null((await ReloadAsync(h, Contoso)).MicrosoftTenantId);
+
+        // The install's own row may record it.
+        (status, _) = await h.SendAsync("PUT", "/api/tenants/{id:guid}", routeValues: new { id = ClientTenant.DefaultId },
+            body: new TenantEndpoints.TenantUpsert("Default", InstallTenant, null, null));
+        Assert.Equal(200, status);
+    }
+
+    [Fact]
+    public async Task With_the_install_own_row_purged_a_client_may_take_the_msps_tenant()
+    {
+        // One tenant per client, not "never": an MSP that purged the Default row can
+        // add its own tenant back as an ordinary client.
+        await using var h = await HarnessAsync(Row(Contoso, "Contoso"));
+
+        var (status, _) = await h.SendAsync("POST", "/api/tenants/", body: new TenantEndpoints.TenantUpsert("Our own tenant", InstallTenant, null, null));
+
+        Assert.Equal(201, status);
     }
 }

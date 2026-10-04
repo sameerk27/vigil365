@@ -115,6 +115,20 @@ public sealed class TenantGraphCredentialsTests
         Assert.Equal(7, o.CollectionIntervalMinutes);
     }
 
+    [Fact]
+    public void Msp_client_with_a_typed_in_entra_id_but_no_consent_is_unconfigured()
+    {
+        // An Entra id entered when the client was added is not consent. Using the
+        // shared app before the client's admin approves it only fails (AADSTS700016),
+        // every cycle, and shows the client as failing instead of awaiting consent.
+        var o = Sut(Global(), EditionMode.Msp)
+            .Resolve(new ClientTenant { Name = "Contoso", MicrosoftTenantId = "22222222-2222-2222-2222-222222222222" });
+        Assert.False(o.IsConfigured());
+        Assert.Equal("", o.TenantId);
+        Assert.Equal("", o.ClientId);
+        Assert.Equal("", o.ClientSecret);
+    }
+
     [Theory]
     [InlineData(EditionMode.Single)]
     [InlineData(EditionMode.Msp)]

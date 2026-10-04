@@ -39,6 +39,23 @@ jobs:
         shell: pwsh
         run: ./scripts/check-version.ps1
 
+      # The Linux installer: a syntax check, then the JSON it writes into
+      # appsettings.Production.json (a named SQL instance's backslash written raw
+      # left a config the service could not load). Installs nothing.
+      - name: Check enterprise-install.sh
+        run: |
+          bash -n enterprise-install.sh
+          bash scripts/tests/enterprise-install.test.sh
+
+      # register-app.ps1 against a fake az (failures reported, never "done";
+      # -MultiTenant's Application.Read.All grant) and the installers' sc.exe
+      # command line. Also run under Windows PowerShell 5.1 in build-installer.
+      - name: Test the PowerShell scripts (Pester)
+        shell: pwsh
+        run: |
+          if (-not (Get-Module -ListAvailable Pester)) { Install-Module Pester -Scope CurrentUser -Force -SkipPublisherCheck }
+          ./scripts/tests/Invoke-ScriptTests.ps1
+
       - name: Restore frontend dependencies
         working-directory: src/m365-security-dashboard-client
         run: npm ci
@@ -164,3 +181,15 @@ jobs:
       # single-file exe (that is scripts/build-installer.ps1, run at release time).
       - name: Build the installer project
         run: dotnet build src/M365SecurityDashboard.GuiInstaller/M365SecurityDashboard.GuiInstaller.csproj --configuration Release
+
+      # install.ps1 / enterprise-install.ps1 pass sc.exe one verbatim command line;
+      # as separate arguments, Windows PowerShell 5.1 dropped binPath's quotes and
+      # the service was never created. The runner is elevated, so these also create,
+      # read back and delete a real service, in both shells.
+      - name: Test the PowerShell scripts under Windows PowerShell 5.1 (Pester)
+        shell: powershell
+        run: ./scripts/tests/Invoke-ScriptTests.ps1
+
+      - name: Test the PowerShell scripts under PowerShell 7 (Pester)
+        shell: pwsh
+        run: ./scripts/tests/Invoke-ScriptTests.ps1

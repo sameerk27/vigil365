@@ -84,15 +84,17 @@ test('a failed rollup is an error with retry, not "No clients yet" (U12)', async
   await expect(page.getByText('No clients yet. Add the first one below.')).toHaveCount(0);
 });
 
-test('a Viewer sees client overrides and routing read-only (U13)', async ({ page }) => {
-  await signIn(page, {
+// Routing is Analyst-readable server-side (GET /api/notification-routing is
+// RequireAnalyst), so a Viewer is told so instead of being shown a 403.
+const routingForNonAdmin = { exists: true, notifyMsp: true, notifyClient: false, recipientEmail: null, teamsWebhookUrl: null, hasTeamsWebhookUrl: true, hasWebhookUrl: false, minSeverity: null, lastDigestAt: null };
+
+test('a Viewer sees client overrides read-only, and that routing needs the Analyst role (U13)', async ({ page }) => {
+  const { calls } = await signIn(page, {
     mode: 'Msp', role: 'Viewer',
     api: {
       'GET /api/tenants/me': { current: tenantA.id, tenants: [tenantA] },
       'GET /api/alert-policies': [policy],
       'GET /api/alert-policies/tenant-overrides': [{ policyId: 'p1', enabled: false, threshold: null, notifyEmail: null }],
-      // Non-Admins get whether a Teams webhook is set, never its URL.
-      'GET /api/notification-routing': { exists: true, notifyMsp: true, notifyClient: false, recipientEmail: null, teamsWebhookUrl: null, hasTeamsWebhookUrl: true, hasWebhookUrl: false, minSeverity: null, lastDigestAt: null },
     },
   });
   await page.goto('/#/alertcenter');
@@ -102,6 +104,23 @@ test('a Viewer sees client overrides and routing read-only (U13)', async ({ page
   await expect(row.getByRole('checkbox')).toHaveCount(0);
   await expect(row.getByRole('button')).toHaveCount(0); // toggle, Edit and Delete all need Analyst
 
+  await page.getByRole('tab', { name: 'Notifications', exact: true }).click();
+  await expect(page.getByText('Analyst role needed')).toBeVisible();
+  await expect(page.getByText("Couldn't load this client's routing")).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Save routing' })).toHaveCount(0);
+  expect(calls).not.toContain('GET /api/notification-routing');
+});
+
+test('an Analyst sees client routing read-only (U13)', async ({ page }) => {
+  await signIn(page, {
+    mode: 'Msp', role: 'Analyst',
+    api: {
+      'GET /api/tenants/me': { current: tenantA.id, tenants: [tenantA] },
+      // Non-Admins get whether a Teams webhook is set, never its URL.
+      'GET /api/notification-routing': routingForNonAdmin,
+    },
+  });
+  await page.goto('/#/alertcenter');
   await page.getByRole('tab', { name: 'Notifications', exact: true }).click();
   await expect(page.getByText('Read-only — only an Admin can change routing.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Save routing' })).toHaveCount(0);

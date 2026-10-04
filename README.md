@@ -165,8 +165,8 @@ tenants from one install. The differences:
   `AttackSimulation.ReadWrite.All`). Sign-in to Vigil365 stays pinned to **your**
   tenant — client users cannot sign in.
 - **A client is connected only after its admin consents.** Until then it is "not
-  connected" and nothing is collected for it; Vigil365 never falls back to your own
-  tenant's data.
+  connected" and nothing is collected for it, even if you typed its Entra tenant id;
+  Vigil365 never falls back to your own tenant's data.
 - **Onboarding a client** is one step in the app: **Clients → Add client → Sign in
   as global admin & consent**. The client's admin approves in a popup; Vigil365 then
   tests the connection and starts collecting. See

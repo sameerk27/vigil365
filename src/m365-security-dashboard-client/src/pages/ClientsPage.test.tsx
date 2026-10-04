@@ -141,6 +141,54 @@ describe("onboarding dialog", () => {
     vi.useRealTimers();
   });
 
+  it("a Save after consent keeps the Entra id consent recorded, even when the auto-test failed", async () => {
+    // The test can fail while Graph is still replicating the new consent; the id
+    // must still reach the field, or step-1 Save would send it blank.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const entraId = "0f000000-0000-0000-0000-00000000000f";
+    const pending = row("bbbb", "Fabrikam Inc", { configured: false, credentialSource: "none" });
+    let consented = false;
+    const api = mockApi({
+      "/api/tenants/rollup": { body: [] },
+      "GET /api/tenants": { body: [pending] },
+      "GET /api/tenants/bbbb/consent-url": { body: { ok: true, url: "https://login.example/consent" } },
+      "GET /api/tenants/bbbb": () => ({ body: consented ? { ...pending, configured: true, credentialSource: "install", consentGrantedAt: "2026-10-03T10:00:00Z", microsoftTenantId: entraId } : pending }),
+      "POST /api/tenants/bbbb/test": { status: 400, body: { ok: false, message: "AADSTS700016: Application not found in the directory" } },
+      "PUT /api/tenants/bbbb": { body: { ok: true } },
+    });
+    const popup = { closed: false, close: vi.fn() };
+    vi.stubGlobal("open", vi.fn(() => popup));
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderPage();
+
+    await user.click(within(await rosterRow("Fabrikam Inc")).getByRole("button", { name: /Connect/ }));
+    await user.click(await screen.findByRole("button", { name: /Sign in as global admin & consent/ }));
+    consented = true;
+    await vi.advanceTimersByTimeAsync(3000);
+    await waitFor(() => expect(screen.getByText(/AADSTS700016/)).toBeInTheDocument());
+    expect(screen.getByLabelText("Entra tenant id")).toHaveValue(entraId);
+
+    await user.type(screen.getByLabelText("Report brand name"), "Fabrikam Security");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(api.calls.some(c => c.method === "PUT" && c.path === "/api/tenants/bbbb")).toBe(true));
+    expect(api.calls.find(c => c.method === "PUT" && c.path === "/api/tenants/bbbb")!.body)
+      .toMatchObject({ microsoftTenantId: entraId, brandName: "Fabrikam Security" });
+    vi.useRealTimers();
+  });
+
+  it("a client whose Entra id was typed in but who has not consented is waiting for consent, not failing", async () => {
+    const typed = row("bbbb", "Fabrikam Inc", { configured: false, credentialSource: "none", microsoftTenantId: "0f000000-0000-0000-0000-00000000000f" });
+    mockApi({
+      "/api/tenants/rollup": { body: [] },
+      "GET /api/tenants": { body: [typed] },
+      "POST /api/tenants/bbbb/test": { status: 400, body: { ok: false, message: "No Graph credentials apply to this tenant." } },
+    });
+    renderPage();
+
+    await userEvent.click(within(await rosterRow("Fabrikam Inc")).getByRole("button", { name: /Test/ }));
+    await waitFor(() => expect(toasts.at(-1)).toMatch(/^Fabrikam Inc: Not connected yet: waiting for the client's Global Administrator to consent/));
+  });
+
   it("testing a client that has not consented yet says it is waiting for its Global Administrator", async () => {
     // MSP mode: no Entra id and no app of its own means nothing applies until consent.
     const pending = row("bbbb", "Fabrikam Inc", { configured: false, credentialSource: "none" });

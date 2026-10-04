@@ -108,7 +108,8 @@ version lives in exactly two places — the API's `<Version>` and the client's
 
 ### Changed
 - Switching client keeps the page you are on (in-page filters still reset).
-- Non-Admins see per-client routing and policy overrides read-only, and Viewers no
+- Non-Admins see per-client policy overrides read-only, Analysts see per-client
+  routing read-only (Viewers are told it needs the Analyst role), and Viewers no
   longer see policy Edit/Delete buttons the server would refuse.
 - Muted text colours darkened to meet WCAG AA contrast; every settings, policy and
   onboarding field now has a programmatic label.
@@ -173,6 +174,28 @@ A senior-QA review of the MSP edition found and fixed, each with a regression te
   registration; `enterprise-install.sh`/`.ps1` produced services that could not
   start; `register-app.ps1` reported success on failure; docs contradicted the code.
 
+### Fixed (final QA acceptance)
+- A client added with its Entra tenant id typed in counted as consented: it was
+  collected every cycle before its admin approved, failed (AADSTS700016), backed off
+  and showed as failing. The shared MSP app is now used only once consent is
+  recorded; until then the client is waiting for consent, as documented.
+- Saving the onboarding dialog could erase the Entra id consent had recorded (when
+  the auto-test failed, or the dialog was opened from a roster row older than an
+  emailed-link consent), silently disconnecting the client. A blank id now keeps a
+  consent-recorded one, and the dialog shows the recorded id.
+- An Admin could give a client the MSP's own tenant through `POST`/`PUT
+  /api/tenants`, collecting it twice under two names: the Default client has it
+  with no id recorded. Refused with 409.
+- Viewers got a 403 error card, with a Retry that could not work, for client
+  routing on the Notifications tab; they are told it needs the Analyst role.
+- Installer and scripts now have regression tests: the setup wizard's ACLs and its
+  wait/restart when replacing a running service's files (`InstallPlan`), which now
+  also restarts the service when it did not stop in time; Pester tests for
+  `register-app.ps1` against a fake `az` and for the `sc.exe` command line of
+  `install.ps1`/`enterprise-install.ps1`, run in CI under Windows PowerShell 5.1
+  and PowerShell 7 (creating a real service on the Windows runner); and a check of
+  `enterprise-install.sh` and the JSON it writes.
+
 ### Upgrade notes
 - `X-Forwarded-For` is trusted only from loopback or from
   `ForwardedHeaders:KnownProxies`/`KnownNetworks`; list a proxy in another
@@ -193,7 +216,12 @@ A senior-QA review of the MSP edition found and fixed, each with a regression te
 - Logs fall back to `%ProgramData%\Vigil365\logs` (or stdout only) when the
   configured folder is not writable.
 - Consent links issued before the upgrade must be regenerated. One Microsoft tenant
-  can belong to only one client (409 on a duplicate).
+  can belong to only one client (409 on a duplicate), and the MSP's own tenant
+  belongs to the Default client.
+- In MSP mode a client without an app of its own is collected only once its
+  consent is recorded (`consentGrantedAt`); one whose Entra id was entered by hand
+  waits for its admin to approve a Vigil365 consent link. Changing a client's Entra
+  id clears its recorded consent; saving it blank keeps one consent recorded.
 - `/health` `checks.collection` has a new field, `staleAfterMinutes`.
 - `POST /api/api-tokens` rejects an expiry in the past (400).
 - The Setup wizard asks before sharing an existing "Vigil365" app registration its

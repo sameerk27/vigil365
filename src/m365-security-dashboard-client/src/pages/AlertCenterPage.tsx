@@ -450,7 +450,12 @@ function NotificationSettingsTab() {
       </>
       )}
 
-      {getSelectedTenantId() && <ClientRoutingCard />}
+      {/* Routing is Analyst-readable server-side, like the history below. */}
+      {getSelectedTenantId() && (canMutate ? <ClientRoutingCard /> : (
+        <Card title="This client's routing">
+          <StateMessage type="permission" title="Analyst role needed" message="Where this client's alerts go is visible to Analysts and Admins."/>
+        </Card>
+      ))}
 
       {canMutate && (
       <Card title="Notification History" badge={log ? <Badge label={`${log.length} sent`} tone="neutral"/> : undefined}>

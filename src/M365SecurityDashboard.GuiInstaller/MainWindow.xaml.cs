@@ -1141,15 +1141,16 @@ namespace M365SecurityDashboard.GuiInstaller
             // being replaced, and the extraction failure that produces reads as
             // file corruption rather than "it is still running".
             Log("Stopping any running Vigil365 service...");
-            var wasRunning = QueryService("Vigil365").Contains("RUNNING");
+            var before = InstallPlan.ParseServiceState(QueryService("Vigil365"));
             RunCommand("sc", "stop Vigil365");
-            await WaitForServiceStoppedAsync("Vigil365", TimeSpan.FromSeconds(60));
-
-            Log($"Extracting the application to {publishPath}...");
-            Directory.CreateDirectory(publishPath);
 
             try
             {
+                await WaitForServiceStoppedAsync("Vigil365", TimeSpan.FromSeconds(60));
+
+                Log($"Extracting the application to {publishPath}...");
+                Directory.CreateDirectory(publishPath);
+
                 await Task.Run(() =>
                 {
                     using var archive = new System.IO.Compression.ZipArchive(
@@ -1175,10 +1176,10 @@ namespace M365SecurityDashboard.GuiInstaller
             }
             catch
             {
-                // A clean stop is not restarted by the service's recovery actions,
-                // so without this a failed upgrade left monitoring down until
-                // someone noticed.
-                if (wasRunning)
+                // It did not stop in time, or the files could not be replaced. A clean
+                // stop is not restarted by the service's recovery actions, so without
+                // this a failed upgrade left monitoring down until someone noticed.
+                if (InstallPlan.RestartAfterFailedUpgrade(before))
                 {
                     Log("Starting the previous Vigil365 service again...");
                     RunCommand("sc", "start Vigil365");
@@ -1329,7 +1330,7 @@ namespace M365SecurityDashboard.GuiInstaller
             Directory.CreateDirectory(logDir);
             try
             {
-                RestrictAccess(new DirectoryInfo(dataDir), FileSystemRights.Modify);
+                RestrictAccess(new DirectoryInfo(dataDir), InstallPlan.DataFolderAcl());
                 Log($"Data protection keys will be stored in {keyPath}, logs in {logDir}.");
             }
             catch (Exception ex)
@@ -1398,49 +1399,40 @@ namespace M365SecurityDashboard.GuiInstaller
 
         /// <summary>
         /// Writes a file only administrators, SYSTEM and the service account can
-        /// read. appsettings.Production.json carries the Graph client secret (in
-        /// MSP mode, the key to every consenting client's data) and the certificate
-        /// password; Program Files let every local user read it. The ACL is set
-        /// before the content goes in, so the secret is never readable by all.
+        /// read (<see cref="InstallPlan.ConfigFileAcl"/>). The ACL is set before the
+        /// content goes in, so the secret is never readable by all.
         /// </summary>
         private static void WriteRestrictedFile(string path, string contents)
         {
             using (File.Open(path, FileMode.OpenOrCreate)) { }
-            RestrictAccess(new FileInfo(path), FileSystemRights.Read);
+            RestrictAccess(new FileInfo(path), InstallPlan.ConfigFileAcl());
             File.WriteAllText(path, contents);
         }
 
         /// <summary>
-        /// Replaces the ACL with Administrators and SYSTEM (full control) and the
-        /// service account (<paramref name="serviceRights"/>), inherited by
-        /// everything below a folder. Well-known SIDs, so it works on any locale.
+        /// Replaces the target's ACL with <paramref name="plan"/> — who gets what is
+        /// decided (and unit-tested) in InstallPlan; this only applies it.
         /// </summary>
-        private static void RestrictAccess(FileSystemInfo target, FileSystemRights serviceRights)
+        private static void RestrictAccess(FileSystemInfo target, RestrictedAcl plan)
         {
-            var grants = new[]
+            static FileSystemRights Rights(AclRights r) => r switch
             {
-                (Sid: WellKnownSidType.BuiltinAdministratorsSid, Rights: FileSystemRights.FullControl),
-                (Sid: WellKnownSidType.LocalSystemSid, Rights: FileSystemRights.FullControl),
-                (Sid: WellKnownSidType.LocalServiceSid, Rights: serviceRights),
+                AclRights.FullControl => FileSystemRights.FullControl,
+                AclRights.Modify => FileSystemRights.Modify,
+                _ => FileSystemRights.Read,
             };
-            if (target is DirectoryInfo dir)
-            {
-                var acl = new DirectorySecurity();
-                acl.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-                foreach (var (sid, rights) in grants)
-                    acl.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(sid, null), rights,
-                        InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
-                        PropagationFlags.None, AccessControlType.Allow));
-                dir.SetAccessControl(acl);
-            }
-            else
-            {
-                var acl = new FileSecurity();
-                acl.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-                foreach (var (sid, rights) in grants)
-                    acl.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(sid, null), rights, AccessControlType.Allow));
-                ((FileInfo)target).SetAccessControl(acl);
-            }
+            var inheritance = plan.InheritedByChildren
+                ? InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit
+                : InheritanceFlags.None;
+
+            FileSystemSecurity acl = target is DirectoryInfo ? new DirectorySecurity() : new FileSecurity();
+            acl.SetAccessRuleProtection(isProtected: plan.ProtectFromParent, preserveInheritance: false);
+            foreach (var grant in plan.Grants)
+                acl.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(grant.Sid), Rights(grant.Rights),
+                    inheritance, PropagationFlags.None, AccessControlType.Allow));
+
+            if (target is DirectoryInfo dir) dir.SetAccessControl((DirectorySecurity)acl);
+            else ((FileInfo)target).SetAccessControl((FileSecurity)acl);
         }
 
         /// <summary>
@@ -1507,8 +1499,7 @@ namespace M365SecurityDashboard.GuiInstaller
             var deadline = DateTime.UtcNow + timeout;
             while (true)
             {
-                var text = QueryService(serviceName);
-                if (text.Contains("STOPPED") || !text.Contains("STATE")) return;   // no STATE: not installed
+                if (InstallPlan.FilesReplaceable(InstallPlan.ParseServiceState(QueryService(serviceName)))) return;
                 if (DateTime.UtcNow >= deadline)
                     throw new Exception(
                         $"The '{serviceName}' service did not stop within {timeout.TotalSeconds:0} seconds, so its files " +

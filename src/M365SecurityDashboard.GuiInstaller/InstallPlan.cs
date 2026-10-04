@@ -16,6 +16,23 @@ namespace M365SecurityDashboard.GuiInstaller
     /// <summary>The step an install run was on when it failed; decides what the failure screen advises.</summary>
     public enum InstallStage { SignIn, DatabaseChoice, SqlServer, Postgres, AppRegistration, Files, Service }
 
+    /// <summary>The rights an installer ACL grants (mapped to FileSystemRights by MainWindow).</summary>
+    public enum AclRights { Read, Modify, FullControl }
+
+    /// <summary>One allow entry: a well-known SID (locale-independent) and what it may do.</summary>
+    public sealed record AclGrant(string Sid, AclRights Rights);
+
+    /// <summary>
+    /// An ACL that replaces the target's: with <see cref="ProtectFromParent"/> nothing is
+    /// inherited from the folder above (Program Files and ProgramData let every local
+    /// user read), so only <see cref="Grants"/> apply. <see cref="InheritedByChildren"/>
+    /// carries them to everything below a folder.
+    /// </summary>
+    public sealed record RestrictedAcl(IReadOnlyList<AclGrant> Grants, bool ProtectFromParent, bool InheritedByChildren);
+
+    /// <summary>A Windows service's state, as "sc query" reports it.</summary>
+    public enum ServiceState { NotInstalled, Stopped, Running, Changing }
+
     /// <summary>
     /// The installer's decisions, kept free of WPF so they can be unit tested
     /// (this file is linked into the API test project). MainWindow gathers the
@@ -305,6 +322,76 @@ namespace M365SecurityDashboard.GuiInstaller
                     return id.GetString();
             return null;
         }
+
+        // ── Who may read what the installer writes ──────────────────────────────
+
+        /// <summary>BUILTIN\Administrators.</summary>
+        public const string AdministratorsSid = "S-1-5-32-544";
+        /// <summary>NT AUTHORITY\SYSTEM.</summary>
+        public const string LocalSystemSid = "S-1-5-18";
+        /// <summary>NT AUTHORITY\LOCAL SERVICE, the account the Vigil365 service runs as.</summary>
+        public const string LocalServiceSid = "S-1-5-19";
+
+        /// <summary>
+        /// appsettings.Production.json and its .bak. They hold the Graph client secret
+        /// (in MSP mode, the key to every consenting client's data) and the certificate
+        /// password, so the service may read them and only administrators and SYSTEM
+        /// may do more. Nobody else — Program Files lets every local user read.
+        /// </summary>
+        public static RestrictedAcl ConfigFileAcl() => Restricted(AclRights.Read, inheritedByChildren: false);
+
+        /// <summary>
+        /// %ProgramData%\Vigil365 and everything below it: the data-protection key ring,
+        /// which decrypts every secret Vigil365 keeps in its database, and the logs, which
+        /// name users and devices. The service writes both; no one else but
+        /// administrators and SYSTEM may read them — ProgramData lets every local user read.
+        /// </summary>
+        public static RestrictedAcl DataFolderAcl() => Restricted(AclRights.Modify, inheritedByChildren: true);
+
+        // The service account never gets FullControl: it must not be able to rewrite
+        // the ACL that keeps everyone else out.
+        private static RestrictedAcl Restricted(AclRights service, bool inheritedByChildren) => new(new[]
+        {
+            new AclGrant(AdministratorsSid, AclRights.FullControl),
+            new AclGrant(LocalSystemSid, AclRights.FullControl),
+            new AclGrant(LocalServiceSid, service),
+        }, ProtectFromParent: true, InheritedByChildren: inheritedByChildren);
+
+        // ── Replacing the files of a running service ────────────────────────────
+
+        /// <summary>
+        /// The state in "sc query" output ("STATE : 4  RUNNING"), read from the state
+        /// name rather than the "STATE" label, so a translated label does not read as
+        /// "not installed". No state at all means the service is not installed (sc
+        /// prints error 1060 instead).
+        /// </summary>
+        public static ServiceState ParseServiceState(string? scQueryOutput)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(scQueryOutput ?? "",
+                @":\s*\d+\s+(STOPPED|START_PENDING|STOP_PENDING|RUNNING|CONTINUE_PENDING|PAUSE_PENDING|PAUSED)\b");
+            if (!m.Success) return ServiceState.NotInstalled;
+            return m.Groups[1].Value switch
+            {
+                "STOPPED" => ServiceState.Stopped,
+                "RUNNING" => ServiceState.Running,
+                _ => ServiceState.Changing,
+            };
+        }
+
+        /// <summary>
+        /// The application files can be overwritten. "sc stop" only asks: the service
+        /// then finishes its collection cycle and drains its hosted services while it
+        /// still holds its files, so anything but stopped (or absent) means wait.
+        /// </summary>
+        public static bool FilesReplaceable(ServiceState state) => state is ServiceState.Stopped or ServiceState.NotInstalled;
+
+        /// <summary>
+        /// Whether to start the previous service again when replacing its files failed
+        /// (it did not stop in time, or extraction failed). A service stopped cleanly
+        /// is not restarted by its recovery actions, so a failed upgrade left monitoring
+        /// down until someone noticed. One that was not running stays as it was.
+        /// </summary>
+        public static bool RestartAfterFailedUpgrade(ServiceState before) => before == ServiceState.Running;
 
         /// <summary>Next steps shown on the completion page.</summary>
         public static IReadOnlyList<string> NextSteps(EditionChoice edition) => edition == EditionChoice.Msp

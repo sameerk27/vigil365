@@ -19,9 +19,10 @@ namespace M365SecurityDashboard.Api.Services;
 ///      <see cref="ClientTenant.DefaultId"/>. That keeps a single-tenant install
 ///      working unchanged.
 ///   3. MSP mode: the install's app is the shared multi-tenant MSP app, so a client
-///      with a recorded Entra id (its admin consented to that app) uses the
-///      install's client id and secret or certificate, asking for a token in the
-///      client's own tenant.
+///      whose admin consented to that app (<see cref="ClientTenant.ConsentGrantedAt"/>,
+///      recorded with its Entra id by /consented) uses the install's client id and
+///      secret or certificate, asking for a token in the client's own tenant. An
+///      Entra id typed in when the client was added is not consent.
 ///   4. Otherwise the tenant is unconfigured: collection skips it and the dashboard
 ///      reports "not connected" for it. In particular an MSP client with no Entra id
 ///      yet has not consented, and must never fall back to the MSP's own tenant —
@@ -92,8 +93,10 @@ public sealed class TenantGraphCredentials(
         }
         if (IsInstallTenant(row.MicrosoftTenantId)) return;
 
-        // Another organisation: the shared MSP app it consented to, in its tenant.
-        if (msp) o.TenantId = row.MicrosoftTenantId.Trim();
+        // Another organisation: the shared MSP app, in its tenant, once its admin has
+        // consented. Before that every token request fails (AADSTS700016), so a client
+        // whose Entra id was only typed in would be collected, fail and back off.
+        if (msp && row.ConsentGrantedAt is not null) o.TenantId = row.MicrosoftTenantId.Trim();
         else Clear(o);
     }
 
