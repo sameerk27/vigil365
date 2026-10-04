@@ -1,0 +1,56 @@
+# Vigil365 on PostgreSQL — same one-command deployment as docker-compose.yml,
+# with Postgres in place of SQL Server. No licence, no 10 GB Express ceiling.
+#   0. register the app for MSP mode:  register-app.ps1 -MultiTenant -RedirectUri <REDIRECT_URI>
+#   1. cp .env.example .env   and fill in the values (POSTGRES_PASSWORD instead of MSSQL_SA_PASSWORD)
+#   2. docker compose -f docker-compose.postgres.yml up -d
+#   3. open http://localhost:8080, sign in, enter Graph creds in the Setup wizard
+#
+# TLS: see the note in docker-compose.yml — put a reverse proxy in front for a
+# real hostname and set REDIRECT_URI to the https URL.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: vigil365
+      POSTGRES_USER: vigil365
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vigil365 -d vigil365"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      Database__Provider: "Postgres"
+      # The Postgres stack is the MSP route (no SQL Express ceiling). Set to "Single"
+      # for a one-organisation install on PostgreSQL.
+      Edition__Mode: "Msp"
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=vigil365;Username=vigil365;Password=${POSTGRES_PASSWORD}"
+      AzureAd__Instance: "https://login.microsoftonline.com/"
+      AzureAd__TenantId: "${TENANT_ID}"
+      AzureAd__ClientId: "${CLIENT_ID}"
+      AzureAd__Audience: "api://${CLIENT_ID}"
+      Auth__RedirectUri: "${REDIRECT_URI:-http://localhost:8080}"
+      Auth__BootstrapAdminEmail: "${ADMIN_EMAIL}"
+      Logging__File__Path: "/app/logs/vigil365-.json"
+    volumes:
+      - dp-keys:/keys
+      - vigil365-logs:/app/logs
+    restart: unless-stopped
+
+volumes:
+  pg-data:
+  dp-keys:
+  vigil365-logs:

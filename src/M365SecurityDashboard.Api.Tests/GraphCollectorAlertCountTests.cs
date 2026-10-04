@@ -14,7 +14,7 @@ public class GraphCollectorAlertCountTests : IDisposable
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
-        _db = new AppDbContext(options);
+        _db = new AppDbContext(options, TestTenancy.For(TestTenancy.Default));
     }
 
     public void Dispose()

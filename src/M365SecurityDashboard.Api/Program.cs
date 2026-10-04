@@ -1,4 +1,5 @@
 using M365SecurityDashboard.Api.Data;
+using M365SecurityDashboard.Api.Data.Tenancy;
 using M365SecurityDashboard.Api.Endpoints;
 using M365SecurityDashboard.Api.Models;
 using M365SecurityDashboard.Api.Services;
@@ -18,28 +19,32 @@ builder.Host.UseWindowsService();
 
 // JSON logs preserve correlation IDs and structured fields for Docker,
 // journald, Splunk, or Sentinel. Files roll daily and at a size limit so logs
-// remain useful without consuming the host disk indefinitely.
-var configuredLogPath = builder.Configuration["Logging:File:Path"] ?? "logs/vigil365-.json";
-var logPath = Path.GetFullPath(configuredLogPath, AppContext.BaseDirectory);
-Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+// remain useful without consuming the host disk indefinitely. A location the
+// service cannot write to falls back (see LogFileLocation) instead of crashing.
+var logFile = LogFileLocation.Resolve(builder.Configuration["Logging:File:Path"] ?? "logs/vigil365-.json",
+    AppContext.BaseDirectory, LogFileLocation.DefaultFallbackDirectory());
 var retainedLogFiles = Math.Max(1, builder.Configuration.GetValue("Logging:File:RetainedFileCountLimit", 14));
 var maxLogFileBytes = Math.Max(1_048_576, builder.Configuration.GetValue("Logging:File:FileSizeLimitBytes", 10 * 1024 * 1024));
 
-builder.Host.UseSerilog((context, _, logger) => logger
-    .MinimumLevel.Information()
-    .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
-    .MinimumLevel.Override("Microsoft.AspNetCore.Hosting", LogEventLevel.Warning)
-    .Enrich.FromLogContext()
-    .Enrich.WithProperty("Application", "Vigil365")
-    .Enrich.WithProperty("Environment", context.HostingEnvironment.EnvironmentName)
-    .WriteTo.Console(new RenderedCompactJsonFormatter())
-    .WriteTo.File(new RenderedCompactJsonFormatter(), logPath,
-        rollingInterval: RollingInterval.Day,
-        fileSizeLimitBytes: maxLogFileBytes,
-        rollOnFileSizeLimit: true,
-        retainedFileCountLimit: retainedLogFiles,
-        shared: true,
-        flushToDiskInterval: TimeSpan.FromSeconds(1)));
+builder.Host.UseSerilog((context, _, logger) =>
+{
+    logger
+        .MinimumLevel.Information()
+        .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+        .MinimumLevel.Override("Microsoft.AspNetCore.Hosting", LogEventLevel.Warning)
+        .Enrich.FromLogContext()
+        .Enrich.WithProperty("Application", "Vigil365")
+        .Enrich.WithProperty("Environment", context.HostingEnvironment.EnvironmentName)
+        .WriteTo.Console(new RenderedCompactJsonFormatter());
+    if (logFile.Path is not null)
+        logger.WriteTo.File(new RenderedCompactJsonFormatter(), logFile.Path,
+            rollingInterval: RollingInterval.Day,
+            fileSizeLimitBytes: maxLogFileBytes,
+            rollOnFileSizeLimit: true,
+            retainedFileCountLimit: retainedLogFiles,
+            shared: true,
+            flushToDiskInterval: TimeSpan.FromSeconds(1));
+});
 builder.Services.Configure<GraphOptions>(builder.Configuration.GetSection("Graph"));
 builder.Services.Configure<AlertingOptions>(builder.Configuration.GetSection("Alerting"));
 builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection("Retention"));
@@ -50,6 +55,22 @@ builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection("R
 // AzureAd:Audience in config must match that, or validation fails with 401.
 // Role claims ("Admin"/"Analyst"/"Viewer") come from Entra ID App Roles.
 builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration, "AzureAd");
+// Pin sign-in to the operator's own tenant explicitly (see SignInTenantPin): in
+// MSP mode the app registration is multi-tenant, so a client tenant's users can
+// get a token for it and must never get into the dashboard.
+builder.Services.Configure<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>(
+    Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme, o =>
+    {
+        var previous = o.Events?.OnTokenValidated;
+        o.Events ??= new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents();
+        o.Events.OnTokenValidated = async ctx =>
+        {
+            if (previous is not null) await previous(ctx);
+            if (!SignInTenantPin.IsAllowed(ctx.Principal, builder.Configuration["AzureAd:TenantId"]))
+                ctx.Fail("Token was not issued by this install's tenant.");
+        };
+    });
+builder.Services.Configure<EditionOptions>(builder.Configuration.GetSection(EditionOptions.SectionName));
 // Attaches each user's in-app role (from AppUsers table) as a role claim after
 // token validation. Scoped so it can use the request-scoped AppDbContext.
 // Roles are memory-cached (short TTL) so hot paths skip the per-request DB lookup.
@@ -68,8 +89,16 @@ builder.Services.AddAuthorization(options =>
         .RequireAuthenticatedUser()
         .Build();
 });
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+// Engine is chosen by Database:Provider (SqlServer default, or Postgres); the
+// connection string stays in ConnectionStrings:DefaultConnection either way.
+builder.Services.AddVigilDatabase(builder.Configuration);
+// The ambient tenant every AppDbContext in a scope reads. Set by the request
+// middleware, by TenantIterator in workers, and by startup for the sole tenant.
+builder.Services.AddScoped<TenantContext>();
+builder.Services.AddScoped<TenantAccess>();
+builder.Services.AddScoped<TenantRollupService>();
+builder.Services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<TenantContext>());
+builder.Services.AddScoped<TenantGraphCredentials>();
 builder.Services.AddHttpClient<GraphApiClient>();
 builder.Services.AddHttpClient();
 
@@ -117,6 +146,11 @@ builder.Services.AddCors(options =>
               .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS"));
 });
 
+// Behind a reverse proxy the client's address arrives in X-Forwarded-For. It is
+// believed only from a proxy ForwardedHeadersSetup trusts, so a caller cannot
+// choose the address the audit log records or the rate limiter keys on.
+builder.Services.Configure<ForwardedHeadersOptions>(o => ForwardedHeadersSetup.Configure(o, builder.Configuration));
+
 // Basic abuse protection: per-client fixed-window limiter on the API. Generous
 // enough for the SPA's parallel dashboard fan-out, tight enough to blunt scraping
 // or brute-force attempts. 429s include Retry-After via the default handler.
@@ -135,6 +169,7 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
+if (logFile.Warning is not null) app.Logger.LogWarning("{LogFileWarning}", logFile.Warning);
 
 using (var scope = app.Services.CreateScope())
 {
@@ -152,7 +187,12 @@ using (var scope = app.Services.CreateScope())
     {
         try
         {
-            if (db.Database.CanConnect() && !db.Database.GetAppliedMigrations().Any())
+            // The legacy-baseline rescue is SQL Server only, by construction:
+            // it exists for installs that predate migrations, and every one of
+            // those is a SQL Server database. A Postgres database is always a
+            // fresh install whose schema comes from migrations alone, so the
+            // T-SQL below must never run there.
+            if (db.Database.IsSqlServer() && db.Database.CanConnect() && !db.Database.GetAppliedMigrations().Any())
             {
                 var isLegacyDb = db.Database
                     .SqlQueryRaw<int>("SELECT CASE WHEN OBJECT_ID(N'[SecurityAlerts]', N'U') IS NOT NULL THEN 1 ELSE 0 END AS [Value]")
@@ -186,7 +226,14 @@ using (var scope = app.Services.CreateScope())
         }
     }
 
+    // Tenancy: make sure a tenant exists, and if this is a single-tenant install
+    // run the rest of startup inside it. An MSP install (several tenants) gets no
+    // startup tenant; the single-tenant conveniences below are skipped.
+    var startupTenant = scope.ServiceProvider.GetRequiredService<TenantContext>();
+    if (TenantBootstrap.EnsureTenant(db, dbLog) is Guid soleTenant) startupTenant.Set(soleTenant);
+
     AlertingSchema.SeedDefaultPolicies(db);
+    MetricsCounterStore.EnsureRow(db); // before clients collect in parallel
 
     // Apply Graph credentials saved via the setup wizard over the GraphOptions
     // singleton. Because IOptions<GraphOptions>.Value is a singleton, mutating it
@@ -204,7 +251,7 @@ using (var scope = app.Services.CreateScope())
         if (!string.IsNullOrWhiteSpace(secret)) graphOpts.ClientSecret = secret;
     }
 
-    if (graphOpts.IsConfigured())
+    if (graphOpts.IsConfigured() && startupTenant.Current is not null)
     {
         // One-time cleanup: purge demo/sample alerts (identified by the seed
         // ExternalId prefixes) so they never commingle with real tenant data.
@@ -221,7 +268,7 @@ using (var scope = app.Services.CreateScope())
         if (purged > 0)
             dbLog.LogInformation("Purged {Count} demo/sample alerts now that Graph is configured.", purged);
     }
-    else if (builder.Configuration.GetValue("Seed:DemoData", false) && !db.SecurityAlerts.Any())
+    else if (startupTenant.Current is not null && builder.Configuration.GetValue("Seed:DemoData", false) && !db.SecurityAlerts.Any())
     {
         db.CollectionRuns.Add(new CollectionRun
         {
@@ -271,6 +318,10 @@ using (var scope = app.Services.CreateScope())
         db.SaveChanges();
     }
 }
+
+// First, so everything after it (rate limiter, audit log) sees the client's
+// address rather than a trusted proxy's (see ForwardedHeadersSetup).
+app.UseForwardedHeaders();
 
 // Enforce TLS outside Development. The app should be reached over HTTPS — either
 // Kestrel with a certificate, or a reverse proxy terminating TLS. When a proxy
@@ -338,6 +389,9 @@ app.UseCors();
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
+// Resolves the request's tenant (header, or the sole tenant) after auth so
+// role claims exist; maps "no tenant selected" to a 400 instead of a 500.
+app.UseMiddleware<TenantResolutionMiddleware>();
 
 if (app.Environment.IsDevelopment())
 {
@@ -360,6 +414,7 @@ app.MapMetricsEndpoints();
 app.MapReportsEndpoints();
 app.MapIntegrationsEndpoints();
 app.MapPlatformEndpoints();
+app.MapTenantEndpoints();
 
 app.Map("/api/{**rest}", (HttpContext ctx) =>
 {
@@ -394,11 +449,12 @@ public sealed record SuppressionRuleRequest(
 /// <summary>Body shape for POST /api/setup/graph (first-run wizard).</summary>
 public sealed record GraphSetupRequest(string TenantId, string ClientId, string? ClientSecret, string? LoginInstance, string? BaseUrl);
 
+
 /// <summary>Body shape for POST /api/admin/users (pre-provision a user).</summary>
 public sealed record AddUserRequest(string Email, string Role, string? DisplayName, bool SendInvite = false);
 
 /// <summary>Body shape for POST /api/api-tokens.</summary>
-public sealed record ApiTokenCreateRequest(string? Name, string? Scopes, DateTimeOffset? ExpiresAt);
+public sealed record ApiTokenCreateRequest(string? Name, string? Scopes, DateTimeOffset? ExpiresAt, Guid? TenantId = null);
 
 /// <summary>Body shape for the workbench endpoints (assign / disposition).</summary>
 public sealed record WorkbenchRequest(string? AssignedTo, string? Disposition);

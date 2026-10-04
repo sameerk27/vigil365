@@ -10,26 +10,31 @@ public sealed class GraphCollector(
     AppDbContext db,
     GraphApiClient graph,
     IOptions<GraphOptions> options,
+    TenantGraphCredentials credentials,
     GraphMetrics graphMetrics,
     ILogger<GraphCollector> logger)
 {
+    // Install-wide, non-credential settings (feed paths, lookbacks). Whether Graph
+    // is reachable for the *current tenant* is a per-tenant question: `credentials`.
     private readonly GraphOptions _options = options.Value;
 
-    // One collection at a time per process: the manual endpoint and the background
-    // worker would otherwise race the (Service, AlertType, ExternalId) unique index.
-    private static readonly SemaphoreSlim CollectionGate = new(1, 1);
+    // One collection at a time PER TENANT: the manual endpoint and the background
+    // worker would otherwise race the (TenantId, Service, AlertType, ExternalId)
+    // unique index. Different tenants may collect concurrently (TenantIterator).
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, SemaphoreSlim> Gates = new();
 
     public async Task<CollectionRun> CollectAsync(CancellationToken ct)
     {
-        if (!await CollectionGate.WaitAsync(TimeSpan.Zero, ct))
-            throw new InvalidOperationException("A collection run is already in progress.");
+        var gate = Gates.GetOrAdd(db.CurrentTenantIdOrNull ?? Guid.Empty, _ => new SemaphoreSlim(1, 1));
+        if (!await gate.WaitAsync(TimeSpan.Zero, ct))
+            throw new InvalidOperationException("A collection run is already in progress for this tenant.");
         try
         {
             return await CollectCoreAsync(ct);
         }
         finally
         {
-            CollectionGate.Release();
+            gate.Release();
         }
     }
 
@@ -46,24 +51,31 @@ public sealed class GraphCollector(
         try
         {
             var sources = BuildSources();
-            var failures = new List<object>();
+            var failures = new List<(string Source, string Error)>();
             foreach (var source in sources)
             {
                 try
                 {
-                    var rows = await graph.GetCollectionAsync(source.Path, ct);
-                    foreach (var row in rows)
+                    var read = await graph.ReadCollectionAsync(source.Path, ct);
+                    var returned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var row in read.Items)
                     {
-                        await UpsertAlertAsync(source.Map(row), ct);
+                        var alert = source.Map(row);
+                        if (alert.ExternalId is not null) returned.Add(alert.ExternalId);
+                        await UpsertAlertAsync(alert, ct);
                         run.AlertsUpserted++;
                     }
+                    // Most feeds are filtered (non-compliant, unresolved, inside the
+                    // lookback), so a row that stops coming back has cleared. Only a
+                    // complete read proves that; a truncated one proves nothing.
+                    if (read.Complete) await ResolveMissingAsync(source, returned, ct);
                 }
                 catch (Exception ex)
                 {
                     run.SourceFailures++;
                     // Store an actionable sentence, not the raw Graph JSON — this
                     // string is what the Collection Health card and Runs view show.
-                    failures.Add(new { source = source.Name, error = GraphErrorHint.Describe(ex.Message, source.Name) });
+                    failures.Add((source.Name, GraphErrorHint.Describe(ex.Message, source.Name)));
                     logger.LogWarning(ex, "Graph source {SourceName} failed", source.Name);
                 }
             }
@@ -77,12 +89,25 @@ public sealed class GraphCollector(
             catch (Exception ex)
             {
                 run.SourceFailures++;
-                failures.Add(new { source = "Tenant audit events", error = GraphErrorHint.Describe(ex.Message, "Tenant audit events") });
+                failures.Add(("Tenant audit events", GraphErrorHint.Describe(ex.Message, "Tenant audit events")));
                 logger.LogWarning(ex, "Tenant audit event collection failed");
             }
 
-            run.SourceFailureDetails = failures.Count > 0 ? JsonSerializer.Serialize(failures) : null;
-            run.Status = run.SourceFailures == sources.Count ? CollectionStatus.Failed : CollectionStatus.Completed;
+            run.SourceFailureDetails = failures.Count > 0
+                ? JsonSerializer.Serialize(failures.Select(f => new { source = f.Source, error = f.Error }))
+                : null;
+            // Nothing came back at all (revoked consent, expired secret): a failed
+            // collection, with the reason, so the worker backs off and the Clients
+            // view shows it. The audit-event pull counts as one of the sources.
+            if (run.SourceFailures >= sources.Count + 1)
+            {
+                run.Status = CollectionStatus.Failed;
+                run.Error = $"Every Graph source failed. {failures[0].Source}: {failures[0].Error}";
+            }
+            else
+            {
+                run.Status = CollectionStatus.Completed;
+            }
             run.CompletedAt = DateTimeOffset.UtcNow;
             var (endReq, endThrottle) = graphMetrics.Snapshot();
             run.GraphRequestCount = (int)(endReq - startReq);
@@ -113,16 +138,10 @@ public sealed class GraphCollector(
 
     /// <summary>
     /// Fold this run's real Graph delta into the durable cumulative counters
-    /// (persisted, so the "_total" metrics survive a service restart). The
-    /// modified singleton is saved by the caller's SaveChangesAsync.
+    /// (persisted, so the "_total" metrics survive a service restart).
     /// </summary>
-    private async Task AccumulateCountersAsync(int graphRequests, int graphThrottled, CancellationToken ct)
-    {
-        var counters = await db.MetricsCounters.FirstOrDefaultAsync(c => c.Id == 1, ct);
-        if (counters is null) { counters = new MetricsCounters { Id = 1 }; db.MetricsCounters.Add(counters); }
-        counters.GraphRequestsTotal += graphRequests;
-        counters.GraphThrottledTotal += graphThrottled;
-    }
+    private Task AccumulateCountersAsync(int graphRequests, int graphThrottled, CancellationToken ct)
+        => MetricsCounterStore.AddAsync(db, graphRequests, graphThrottled, evaluations: 0, ct);
 
     /// <summary>
     /// Incrementally pull Entra directory-audit records into the AuditEvents
@@ -194,25 +213,43 @@ public sealed class GraphCollector(
 
         return
         [
-            new("Risky users", "/v1.0/identityProtection/riskyUsers?$top=50", MapRiskyUser),
-            new("Risky sign-ins", WithFilter("/v1.0/auditLogs/signIns?$top=50", $"riskState ne 'none' and createdDateTime ge {signInCutoff}"), MapRiskySignIn),
-            new("Failed sign-ins", WithFilter("/v1.0/auditLogs/signIns?$top=50", $"status/errorCode ne 0 and createdDateTime ge {signInCutoff}"), MapFailedSignIn),
-            new("MFA registration", "/v1.0/reports/authenticationMethods/userRegistrationDetails?$top=100", MapMfaStatus),
-            new("Non-compliant devices", WithFilter("/v1.0/deviceManagement/managedDevices?$top=50", "complianceState ne 'compliant'"), MapNonCompliantDevice),
-            new("Devices not checked in", WithFilter("/v1.0/deviceManagement/managedDevices?$top=50", $"lastSyncDateTime lt {deviceCutoff}"), MapDeviceNotCheckedIn),
-            new("Defender incidents", "/v1.0/security/incidents?$top=50", MapDefenderIncident),
-            new("Defender alerts", "/v1.0/security/alerts_v2?$top=50", MapDefenderAlert),
-            new("Malware detections", WithFilter("/v1.0/security/alerts_v2?$top=50", "category eq 'Malware'"), MapMalwareDetection),
-            new("Quarantined messages", _options.ExchangeQuarantinePath, MapQuarantinedMessage),
-            new("Mail flow issues", _options.MailFlowIssuesPath, MapMailFlowIssue),
-            new("Service health issues", WithFilter("/v1.0/admin/serviceAnnouncement/issues?$top=50", "isResolved eq false"), MapServiceHealth),
+            new("Risky users", "/v1.0/identityProtection/riskyUsers?$top=50", M365ServiceArea.EntraId, "RiskyUser", MapRiskyUser),
+            new("Risky sign-ins", WithFilter("/v1.0/auditLogs/signIns?$top=50", $"riskState ne 'none' and createdDateTime ge {signInCutoff}"), M365ServiceArea.EntraId, "RiskySignIn", MapRiskySignIn),
+            new("Failed sign-ins", WithFilter("/v1.0/auditLogs/signIns?$top=50", $"status/errorCode ne 0 and createdDateTime ge {signInCutoff}"), M365ServiceArea.EntraId, "FailedSignIn", MapFailedSignIn),
+            new("MFA registration", "/v1.0/reports/authenticationMethods/userRegistrationDetails?$top=100", M365ServiceArea.EntraId, "MfaStatus", MapMfaStatus),
+            new("Non-compliant devices", WithFilter("/v1.0/deviceManagement/managedDevices?$top=50", "complianceState ne 'compliant'"), M365ServiceArea.Intune, "NonCompliantDevice", MapNonCompliantDevice),
+            new("Devices not checked in", WithFilter("/v1.0/deviceManagement/managedDevices?$top=50", $"lastSyncDateTime lt {deviceCutoff}"), M365ServiceArea.Intune, "DeviceNotCheckedIn", MapDeviceNotCheckedIn),
+            new("Defender incidents", "/v1.0/security/incidents?$top=50", M365ServiceArea.DefenderXdr, "Incident", MapDefenderIncident),
+            new("Defender alerts", "/v1.0/security/alerts_v2?$top=50", M365ServiceArea.DefenderXdr, "Alert", MapDefenderAlert),
+            new("Malware detections", WithFilter("/v1.0/security/alerts_v2?$top=50", "category eq 'Malware'"), M365ServiceArea.DefenderXdr, "MalwareDetection", MapMalwareDetection),
+            new("Quarantined messages", _options.ExchangeQuarantinePath, M365ServiceArea.ExchangeOnline, "QuarantinedMessage", MapQuarantinedMessage),
+            new("Mail flow issues", _options.MailFlowIssuesPath, M365ServiceArea.ExchangeOnline, "MailFlowIssue", MapMailFlowIssue),
+            new("Service health issues", WithFilter("/v1.0/admin/serviceAnnouncement/issues?$top=50", "isResolved eq false"), M365ServiceArea.ServiceHealth, "ServiceHealthIssue", MapServiceHealth),
             // Single-object endpoint: GetCollectionAsync yields the settings object once.
             // Requires SharePointTenantSettings.Read.All (counts as a source failure if missing).
-            new("SharePoint sharing posture", "/v1.0/admin/sharepoint/settings", MapSharingPosture)
+            new("SharePoint sharing posture", "/v1.0/admin/sharepoint/settings", M365ServiceArea.SharePoint, "SharingPosture", MapSharingPosture)
         ];
     }
 
     private static string WithFilter(string path, string filter) => $"{path}&$filter={Uri.EscapeDataString(filter)}";
+
+    /// <summary>
+    /// After a complete read of one source: its open alerts that did not come
+    /// back are resolved (the device became compliant, the advisory closed, the
+    /// sign-in left the lookback window). Rows the run just upserted are the
+    /// same tracked instances, so they are skipped by the returned-id check.
+    /// </summary>
+    private async Task ResolveMissingAsync(GraphSource source, HashSet<string> returned, CancellationToken ct)
+    {
+        var open = await db.SecurityAlerts
+            .Where(a => a.Service == source.Service && a.AlertType == source.AlertType && !a.IsResolved && a.ExternalId != null)
+            .ToListAsync(ct);
+        foreach (var alert in open.Where(a => !returned.Contains(a.ExternalId!)))
+        {
+            alert.IsResolved = true;
+            alert.LastUpdatedAt = DateTimeOffset.UtcNow;
+        }
+    }
 
     private async Task UpsertAlertAsync(SecurityAlert next, CancellationToken ct)
     {
@@ -238,13 +275,16 @@ public sealed class GraphCollector(
         current.RawJson = next.RawJson;
     }
 
+    // riskyUsers returns every user who was ever at risk; riskState says whether still is.
     private static SecurityAlert MapRiskyUser(JsonElement e) => Alert(e, M365ServiceArea.EntraId, "RiskyUser",
         Get(e, "id"), SeverityFromRisk(Get(e, "riskLevel")), $"Risky user: {Get(e, "userPrincipalName") ?? Get(e, "id")}",
-        Get(e, "riskState"), Get(e, "userPrincipalName"), null, GetDate(e, "riskLastUpdatedDateTime"));
+        Get(e, "riskState"), Get(e, "userPrincipalName"), null, GetDate(e, "riskLastUpdatedDateTime"),
+        isResolved: IsRiskClosed(Get(e, "riskState")));
 
     private static SecurityAlert MapRiskySignIn(JsonElement e) => Alert(e, M365ServiceArea.EntraId, "RiskySignIn",
         Get(e, "id"), SeverityFromRisk(Get(e, "riskLevelAggregated")), $"Risky sign-in: {Get(e, "userPrincipalName")}",
-        Get(e, "riskState"), Get(e, "userPrincipalName"), Get(e, "deviceDetail", "displayName"), GetDate(e, "createdDateTime"));
+        Get(e, "riskState"), Get(e, "userPrincipalName"), Get(e, "deviceDetail", "displayName"), GetDate(e, "createdDateTime"),
+        isResolved: IsRiskClosed(Get(e, "riskState")));
 
     private static SecurityAlert MapFailedSignIn(JsonElement e) => Alert(e, M365ServiceArea.EntraId, "FailedSignIn",
         Get(e, "id"), AlertSeverity.Medium, $"Failed sign-in: {Get(e, "userPrincipalName")}",
@@ -386,6 +426,10 @@ public sealed class GraphCollector(
         value?.Equals("resolved", StringComparison.OrdinalIgnoreCase) == true ||
         value?.Equals("closed", StringComparison.OrdinalIgnoreCase) == true;
 
+    /// <summary>Identity Protection riskState values that mean the risk is over.</summary>
+    private static bool IsRiskClosed(string? riskState) => riskState?.ToLowerInvariant() is
+        "none" or "remediated" or "dismissed" or "confirmedsafe";
+
     private static string Trim(string s, int max) => s.Length <= max ? s : s[..max];
     private static string? TrimOrNull(string? s, int max) => s is null ? null : Trim(s, max);
 
@@ -405,7 +449,8 @@ public sealed class GraphCollector(
 
         // Calculate Secure Score
         double secureScorePct = 0;
-        if (_options.IsConfigured())
+        var graphConfigured = await credentials.IsConfiguredAsync(ct);
+        if (graphConfigured)
         {
             try
             {
@@ -426,7 +471,7 @@ public sealed class GraphCollector(
 
         // Calculate MFA Coverage Pct
         double mfaCoveragePct = 0;
-        if (_options.IsConfigured())
+        if (graphConfigured)
         {
             try
             {
@@ -457,5 +502,6 @@ public sealed class GraphCollector(
         db.TrendSnapshots.Add(snapshot);
     }
 
-    private sealed record GraphSource(string Name, string Path, Func<JsonElement, SecurityAlert> Map);
+    /// <param name="Service">With <paramref name="AlertType"/>, the alerts this source owns (what its Map produces).</param>
+    private sealed record GraphSource(string Name, string Path, M365ServiceArea Service, string AlertType, Func<JsonElement, SecurityAlert> Map);
 }

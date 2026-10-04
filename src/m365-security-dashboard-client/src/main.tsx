@@ -5,7 +5,7 @@ import {
   Home, Users, Monitor, Mail, AlertTriangle, Bell, CheckSquare, Activity, Wifi,
   Package, ShieldCheck, BookOpen, MapPin, UserCheck, Settings, ChevronRight, ChevronLeft,
   Clock, RefreshCw, Rows2, Rows3, LogIn, LogOut, ShieldAlert, UserX, TrendingUp, Lightbulb, Lock,
-  Search as SearchIcon, Pause, Play, Globe
+  Search as SearchIcon, Pause, Play, Globe, Building2
 } from "lucide-react";
 import "./styles.css";
 
@@ -19,7 +19,7 @@ import {
   RiskDetectionsData, IdentityHealthData, AttackSimulationData, AlertPolicy, TriggeredAlert,
   PurviewData
 } from "./services/types";
-import { apiBase, apiFetch, AuthContext, initMsal, acApi, AUTO_REFRESH_SEC, useAuth, registerNavHandler, registerRefreshHandler } from "./services/api";
+import { apiBase, apiFetch, AuthContext, initMsal, acApi, AUTO_REFRESH_SEC, useAuth, registerNavHandler, registerRefreshHandler, setEditionMode, isMspMode, getActiveClientName } from "./services/api";
 import { showToast } from "./services/toast";
 import { ToastContainer } from "./components/ToastContainer";
 import { ConfirmDialog } from "./components/ConfirmDialog";
@@ -49,6 +49,10 @@ import { TrendsPage } from "./pages/TrendsPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { EntityPage } from "./pages/EntityPage";
 import { ActivityFeedPage } from "./pages/ActivityFeedPage";
+import { ClientsPage } from "./pages/ClientsPage";
+import { TenantSwitcher } from "./components/TenantSwitcher";
+import { ClientGate } from "./components/ClientGate";
+import { DbSizeBanner } from "./components/DbSizeBanner";
 
 // App version — surfaced in the sidebar so the running build is always
 // identifiable. Injected by Vite from package.json rather than hardcoded, so it
@@ -93,10 +97,11 @@ function isInteractionInProgress(e: unknown): boolean {
 // pages are grouped into sections; multi-page sections render a tab bar.
 type SectionDef = {
   id: string; label: string; icon: React.ReactNode;
-  pages: { id: NavPage; label: string; adminOnly?: boolean }[];
+  pages: { id: NavPage; label: string; adminOnly?: boolean; mspOnly?: boolean }[];
 };
 const SECTIONS: SectionDef[] = [
   { id:"overview", label:"Overview",       icon:<Home size={17}/>,          pages:[{ id:"overview", label:"Overview" }] },
+  { id:"clients",  label:"Clients",        icon:<Building2 size={17}/>,     pages:[{ id:"clients", label:"Clients", mspOnly:true }] },
   { id:"alerts",   label:"Alerts",         icon:<AlertTriangle size={17}/>, pages:[
       { id:"incidents",    label:"Alert Queue" },
       { id:"alertcenter",  label:"Rules & Notifications" },
@@ -148,7 +153,9 @@ function parseHash(): { page: NavPage | null; alertId: number | null; triggeredI
   return {
     page,
     alertId: raw && !isGuid ? Number(raw) : null,
-    triggeredId: isGuid ? raw : null,
+    // Only Rules & Notifications opens a triggered alert. Taken from any other
+    // page's link, the id would wait unseen and pop open on a later visit there.
+    triggeredId: isGuid && page === "alertcenter" ? raw : null,
     entity: null,
     fromAlertId: null
   };
@@ -195,7 +202,7 @@ function Sidebar({ page, setPage, alertCounts, collapsed, onToggleCollapse }: {
       </div>
       <nav className="sb-nav">
         {SECTIONS.map(s => {
-          const visible = s.pages.filter(p => !p.adminOnly || isAdmin);
+          const visible = s.pages.filter(p => (!p.adminOnly || isAdmin) && (!p.mspOnly || isMspMode()));
           if (visible.length === 0) return null;
           const count = visible.reduce((acc, p) => acc + (alertCounts[p.id] ?? 0), 0);
           const target = () => {
@@ -342,7 +349,11 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
   // Alert permalinks: the open alert is reflected in the URL (#/page?alert=id)
   // so the link can be shared; opening such a link selects the alert once data
   // has loaded. replaceState avoids polluting history with every open/close.
+  // An entity route owns the URL: "Investigate →" closes the alert and sets the
+  // entity hash in one click, and rewriting it here before hashchange is handled
+  // would cancel the navigation (and a shared entity link would become #/overview).
   useEffect(() => {
+    if (window.location.hash.startsWith("#/entity/")) return;
     window.history.replaceState(null, "", selectedAlert ? `#/${page}?alert=${selectedAlert.id}` : `#/${page}`);
   }, [selectedAlert, page]);
   useEffect(() => {
@@ -478,11 +489,15 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
   // every level of props.
   useEffect(() => registerRefreshHandler(() => setRefreshKey(k => k + 1)), []);
 
-  // Pull alert policies + triggered alerts from the backend
+  // Pull alert policies + triggered alerts from the backend. A failed read keeps
+  // what is on screen and says so: swapping in an empty list made the Alert
+  // Center report all-clear while alerts were open.
   const refreshAlertCenter = useCallback(async () => {
-    const [pol, trig] = await Promise.all([acApi.getPolicies(), acApi.getTriggered()]);
-    setAlertPolicies(pol);
-    setTriggeredAlerts(trig);
+    const [pol, trig] = await Promise.allSettled([acApi.getPolicies(), acApi.getTriggered()]);
+    if (pol.status === "fulfilled") setAlertPolicies(pol.value);
+    if (trig.status === "fulfilled") setTriggeredAlerts(trig.value);
+    if (pol.status === "rejected" || trig.status === "rejected")
+      setError(e => e || "Alert rules or triggered alerts failed to load — the Alert Center may be out of date.");
   }, []);
 
   // After each data load, ask the backend to evaluate policies, then refresh.
@@ -545,7 +560,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
   }, [alertCounts, seenCounts]);
 
   const activeSectionDef = sectionOf(page);
-  const visibleTabs = activeSectionDef.pages.filter(p => !p.adminOnly || auth.isAdmin);
+  const visibleTabs = activeSectionDef.pages.filter(p => (!p.adminOnly || auth.isAdmin) && (!p.mspOnly || isMspMode()));
 
   // ── Global search (Ctrl+K) ────────────────────────────────────────────────
   const [searchOpen, setSearchOpen] = useState(false);
@@ -558,7 +573,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
   }, []);
   const searchPages = useMemo(() =>
     SECTIONS.flatMap(s => s.pages
-      .filter(p => !p.adminOnly || auth.isAdmin)
+      .filter(p => (!p.adminOnly || auth.isAdmin) && (!p.mspOnly || isMspMode()))
       .map(p => ({ id: p.id, label: s.pages.length > 1 ? `${s.label} · ${p.label}` : s.label }))),
     [auth.isAdmin]);
 
@@ -577,6 +592,9 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
           <div>
             <div className="hdr-title-row">
               <h1 className="hdr-title">{pageLabel(page)}</h1>
+              {getActiveClientName() && (
+                <span className="hdr-client" title="Every number on this page is for this client">{getActiveClientName()}</span>
+              )}
               <PageHelp page={page}/>
             </div>
             <p className="hdr-sub">
@@ -594,13 +612,15 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
             </p>
           </div>
           <div className="hdr-actions">
+            <TenantSwitcher/>
             <button className="hdr-search" onClick={() => setSearchOpen(true)} aria-label="Search (Ctrl+K)">
               <SearchIcon size={13}/><span>Search</span><kbd>Ctrl K</kbd>
             </button>
             {overview?.lastRun&&(
               <Badge label={`Last run: ${fmtDate(overview.lastRun.completedAt??overview.lastRun.startedAt)}`} tone="neutral"/>
             )}
-            {auth.isAdmin && (
+            {/* POST /api/collector/run is RequireAnalyst: Analysts may run it too. */}
+            {auth.canMutate && (
               <button className={`btn-run${(!overview&&!running&&!loading)?" btn-run-pulse":""}`} onClick={runCollection} disabled={running||loading} title="Run Graph collection now">
                 <RefreshCw size={13} className={running?"spin":""}/>
                 {running?"Collecting…":"Run Collection"}
@@ -653,6 +673,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
             )}
           </div>
         </header>
+        {auth.isAdmin && <DbSizeBanner/>}
         {visibleTabs.length > 1 && (
           <div className="ac-tabs section-tabs" role="tablist" aria-label={`${activeSectionDef.label} sections`}>
             {visibleTabs.map(t => (
@@ -698,6 +719,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
             {page==="conditionalaccess"&&<ConditionalAccessPage data={conditionalAccess}/>}
             {page==="signinmap"&&<SignInLocationsPage data={signInLocations}/>}
             {page==="users"&&<UserManagementPage/>}
+            {page==="clients"&&isMspMode()&&<ClientsPage/>}
             {page==="setup"&&<SetupPage/>}
           </>
         )}
@@ -706,8 +728,6 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
       {selectedAlert&&<AlertDetailModal alert={selectedAlert} allAlerts={allAlerts} onSelectAlert={setSelectedAlert} onClose={()=>setSelectedAlert(null)}/>}
       <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} alerts={allAlerts}
         pages={searchPages} onOpenAlert={a => setSelectedAlert(a)} onNavigatePage={setPage}/>
-      <ToastContainer/>
-      <ConfirmDialog/>
     </div>
   );
 }
@@ -754,7 +774,21 @@ function AuthGate() {
       try {
         const res = await fetch(`${apiBase}/api/auth/config`);
         if (!res.ok) { setAuthReady(true); return; }
-        const cfg: { clientId: string; tenantId: string; redirectUri: string; instance?: string } = await res.json();
+        const cfg: { clientId: string; tenantId: string; redirectUri: string; instance?: string; mode?: string } = await res.json();
+        setEditionMode(cfg.mode); // before first render of any page: gates the MSP surface
+
+        // E2E only: the vite dev server started with VITE_E2E_FAKE_AUTH=1 skips MSAL
+        // and treats a fixed test user as signed in; the (mocked) /api/auth/me then
+        // supplies the role. A production build (vite build) has DEV = false, so
+        // Vite folds the condition to false and removes the branch even when the
+        // flag is set — a developer's client .env.local cannot ship a bundle that
+        // skips sign-in, whichever script builds it. CI asserts both.
+        if (import.meta.env.DEV && import.meta.env.VITE_E2E_FAKE_AUTH === "1") {
+          console.warn("vigil365-e2e-fake-auth: MSAL bypassed (test build)");
+          setAccount({ homeAccountId: "e2e", environment: "e2e", tenantId: cfg.tenantId || "e2e", username: "e2e@vigil365.test", localAccountId: "e2e", name: "E2E User" } as AccountInfo);
+          setAuthReady(true);
+          return;
+        }
         if (!cfg.clientId || !cfg.tenantId) { setAuthReady(true); return; }
 
         setAuthEnabled(true);
@@ -924,7 +958,13 @@ function AuthGate() {
 
   return (
     <AuthContext.Provider value={auth}>
-      <App account={account} onSignOut={handleSignOut} />
+      {/* Above the gate, so toasts and confirms also work on the "Choose a
+          client" screen, which renders without the app shell. */}
+      <ToastContainer/>
+      <ConfirmDialog/>
+      <ClientGate>
+        <App account={account} onSignOut={handleSignOut} />
+      </ClientGate>
     </AuthContext.Provider>
   );
 }

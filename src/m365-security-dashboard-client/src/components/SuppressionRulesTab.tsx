@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { BellOff, Plus, Trash2, AlertTriangle } from "lucide-react";
 import { AlertPolicy, SuppressionRule } from "../services/types";
 import { suppressionApi, useAuth } from "../services/api";
-import { Card, Badge, EmptyState } from "./SharedComponents";
+import { Card, Badge, EmptyState, InlineError, StateMessage } from "./SharedComponents";
 import { StatCard } from "./ui";
 import { showToast } from "../services/toast";
 import { confirmAction } from "../services/confirm";
@@ -19,6 +19,7 @@ import { fmtDate, relTime } from "../services/utils";
 export function SuppressionRulesTab({ policies }: { policies: AlertPolicy[] }) {
   const auth = useAuth();
   const [rules, setRules] = useState<SuppressionRule[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [policyId, setPolicyId] = useState("");
   const [entityPattern, setEntityPattern] = useState("");
@@ -26,10 +27,23 @@ export function SuppressionRulesTab({ policies }: { policies: AlertPolicy[] }) {
   const [expiresAt, setExpiresAt] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Rules are readable by Analysts and up. A failed read must never become the
+  // "every alert is shown" all-clear while rules may in fact be hiding alerts.
   const load = useCallback(() => {
-    suppressionApi.list().then(setRules).catch(() => setRules([]));
-  }, []);
+    if (!auth.canMutate) return;
+    setLoadError(null);
+    suppressionApi.list().then(setRules).catch((e: unknown) => setLoadError(e instanceof Error ? e.message : "Request failed"));
+  }, [auth.canMutate]);
   useEffect(() => { load(); }, [load]);
+
+  if (!auth.canMutate) {
+    return (
+      <Card title="Suppression Rules">
+        <StateMessage type="permission" title="Analyst role needed"
+          message="Suppression rules, and which alerts they are hiding, are visible to Analysts and Admins."/>
+      </Card>
+    );
+  }
 
   const resetForm = () => {
     setPolicyId(""); setEntityPattern(""); setReason(""); setExpiresAt(""); setAdding(false);
@@ -135,7 +149,10 @@ export function SuppressionRulesTab({ policies }: { policies: AlertPolicy[] }) {
         </div>
       )}
 
-      {!rules ? (
+      {loadError ? (
+        <InlineError title="Couldn't load suppression rules" onRetry={load}
+          message={`${loadError}. Rules may still be hiding alerts — this does not mean there are none.`}/>
+      ) : !rules ? (
         <EmptyState message="Loading suppression rules…"/>
       ) : rules.length === 0 ? (
         <EmptyState icon={<BellOff size={24}/>} message="No suppression rules — every alert that fires is shown."/>

@@ -308,6 +308,78 @@ public class AlertEvaluatorAutoResolveTests
         Assert.Empty(await db.NotificationLogs.Where(l => l.TriggeredAlertId == alert.Id).ToListAsync());
     }
 
+    private static TriggeredAlert OpenAlertFor(AlertPolicy policy, Guid? policyId = null) => new()
+    {
+        Id = Guid.NewGuid(),
+        PolicyId = policyId ?? policy.Id,
+        PolicyName = policy.Name,
+        Severity = policy.Severity,
+        Category = policy.Category,
+        Condition = policy.Condition,
+        MetricValue = 5,
+        Threshold = policy.Threshold,
+        TriggeredAt = DateTimeOffset.UtcNow.AddMinutes(-30),
+        Status = "new",
+    };
+
+    [Fact]
+    public async Task AutoResolve_MeasuresAgainstThePolicysCurrentThreshold()
+    {
+        // Raised at threshold 3 with 5 risky users; the MSP then raises the
+        // threshold to 10 to cut noise. 5 < 10: the alert has recovered.
+        using var db = TestAppDbContextFactory.Create();
+        var policy = RiskyUsersPolicy(threshold: 3);
+        db.AlertPolicies.Add(policy);
+        db.TriggeredAlerts.Add(OpenAlertFor(policy));
+        await db.SaveChangesAsync();
+        SeedOpenRiskyUsers(db, count: 5);
+        policy.Threshold = 10;
+        await db.SaveChangesAsync();
+
+        await BuildEvaluator(db, autoResolveDebounceCycles: 1).EvaluateAsync(CancellationToken.None);
+
+        Assert.Equal("auto_resolved", (await db.TriggeredAlerts.SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task AutoResolve_RetiresTheOpenAlertOfADisabledPolicy()
+    {
+        // The only policy is switched off while its alert is open and still breaching.
+        using var db = TestAppDbContextFactory.Create();
+        var policy = RiskyUsersPolicy();
+        policy.Enabled = false;
+        db.AlertPolicies.Add(policy);
+        db.TriggeredAlerts.Add(OpenAlertFor(policy));
+        await db.SaveChangesAsync();
+        SeedOpenRiskyUsers(db, count: 5);
+
+        var evaluator = BuildEvaluator(db, autoResolveDebounceCycles: 2);
+        await evaluator.EvaluateAsync(CancellationToken.None);
+        Assert.Equal("new", (await db.TriggeredAlerts.SingleAsync()).Status); // debounced like any recovery
+        await evaluator.EvaluateAsync(CancellationToken.None);
+
+        var alert = await db.TriggeredAlerts.SingleAsync();
+        Assert.Equal("auto_resolved", alert.Status);
+        Assert.Equal("system", alert.ResolvedBy);
+    }
+
+    [Fact]
+    public async Task AutoResolve_RetiresTheOpenAlertOfADeletedPolicy()
+    {
+        using var db = TestAppDbContextFactory.Create();
+        var policy = RiskyUsersPolicy();
+        db.AlertPolicies.Add(policy);
+        db.TriggeredAlerts.Add(OpenAlertFor(policy, policyId: Guid.NewGuid())); // its policy row is gone
+        await db.SaveChangesAsync();
+        SeedOpenRiskyUsers(db, count: 5);
+
+        await BuildEvaluator(db, autoResolveDebounceCycles: 1).EvaluateAsync(CancellationToken.None);
+
+        var alerts = await db.TriggeredAlerts.ToListAsync();
+        Assert.Equal("auto_resolved", alerts.Single(a => a.PolicyId != policy.Id).Status);
+        Assert.Equal("new", alerts.Single(a => a.PolicyId == policy.Id).Status); // the live policy still breaches and fires
+    }
+
     [Fact]
     public async Task AutoResolve_PreservesAcknowledgedAt()
     {

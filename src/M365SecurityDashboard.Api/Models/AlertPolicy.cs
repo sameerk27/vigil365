@@ -6,8 +6,11 @@ namespace M365SecurityDashboard.Api.Models;
 /// A user-defined alert policy. Evaluated against collected data on every
 /// collection cycle (server-side), so alerts fire even when no browser is open.
 /// </summary>
-public sealed class AlertPolicy
+public sealed class AlertPolicy : ITenantOptional
 {
+    /// <summary>Null = the MSP-wide default; a value = this tenant's override. See ITenantOptional.</summary>
+    public Guid? TenantId { get; set; }
+
     public Guid Id { get; set; }
 
     [MaxLength(200)]
@@ -64,4 +67,8 @@ public sealed class AlertPolicy
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? LastTriggered { get; set; }
     public int TriggerCount { get; set; }
+
+    /// <summary>A detached copy for evaluation, so a per-tenant override can adjust
+    /// threshold/notify address without the change being saved to the shared row.</summary>
+    public AlertPolicy CloneForEvaluation() => (AlertPolicy)MemberwiseClone();
 }

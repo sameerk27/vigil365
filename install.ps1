@@ -37,6 +37,22 @@ function Test-Tool($name, $hint) {
     }
 }
 
+# Runs sc.exe with this exact command line and fails on a non-zero exit code.
+# As PowerShell arguments, binPath's embedded quotes reach sc.exe unescaped under
+# Windows PowerShell 5.1 (binPath= C:\Program), and Out-Null hid that the service
+# was never created.
+function Invoke-Sc([string]$Arguments) {
+    $p = Start-Process -FilePath sc.exe -ArgumentList $Arguments -NoNewWindow -Wait -PassThru
+    if ($p.ExitCode -ne 0) { throw "sc.exe $Arguments failed with exit code $($p.ExitCode)." }
+}
+
+# The "sc create" command line. binPath's value is one argument: the executable,
+# quoted because a path such as Program Files has a space (\" inside the outer
+# quotes), then its arguments. Tested in scripts/tests/install-scripts.Tests.ps1.
+function Get-ScCreateArguments([string]$ServiceName, [string]$Exe, [string]$Urls) {
+    "create $ServiceName binPath= `"\`"$Exe\`" --environment Production --urls $Urls`" start= auto"
+}
+
 Write-Host "`n=== Vigil365 installer ===`n" -ForegroundColor Cyan
 
 # 1. Prerequisites
@@ -68,9 +84,8 @@ if ($InstallService) {
         sc.exe delete $ServiceName | Out-Null
         Start-Sleep -Seconds 2
     }
-    $bin = "`"$exe`" --environment Production --urls $Url"
-    sc.exe create $ServiceName binPath= $bin start= auto | Out-Null
-    sc.exe start $ServiceName | Out-Null
+    Invoke-Sc (Get-ScCreateArguments $ServiceName $exe $Url)
+    Invoke-Sc "start $ServiceName"
     Write-Host "      Service '$ServiceName' installed and started on $Url." -ForegroundColor Green
 } else {
     Write-Host "[4/4] Skipping service install (use -InstallService to enable)." -ForegroundColor DarkGray
@@ -81,6 +96,7 @@ Write-Host "`n=== Done ===`n" -ForegroundColor Cyan
 Write-Host "Next steps:" -ForegroundColor White
 Write-Host "  1. Make sure you have an Entra app registration (run register-app.ps1, or see README)."
 Write-Host "  2. Set ConnectionStrings + AzureAd in appsettings.Production.json (DB + login)."
+Write-Host "     For an MSP install also set Edition:Mode=Msp, and Database:Provider=Postgres if using PostgreSQL."
 if (-not $InstallService) {
     Write-Host "  3. Start the app from the publish folder (the working directory must be" -ForegroundColor White
     Write-Host "     the publish folder so config + wwwroot resolve; the Windows service" -ForegroundColor White

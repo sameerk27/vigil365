@@ -19,29 +19,63 @@ public sealed class AlertEvaluator(
     MetricsState metricsState,
     ILogger<AlertEvaluator> logger)
 {
+    // One evaluation at a time PER TENANT: the evaluate endpoint (every dashboard
+    // load) and the worker would otherwise both find no open alert for a new
+    // breach, both raise it and both notify. Different tenants run concurrently.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, SemaphoreSlim> Gates = new();
+
     public async Task<int> EvaluateAsync(CancellationToken ct)
     {
-        // Time the whole evaluation for the real Metrics tab (eval latency / p95).
-        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var gate = Gates.GetOrAdd(db.CurrentTenantIdOrNull ?? Guid.Empty, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct);
         try
         {
-            return await EvaluateCoreAsync(ct);
+            // Time the whole evaluation for the real Metrics tab (eval latency / p95).
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                return await EvaluateCoreAsync(ct);
+            }
+            finally
+            {
+                sw.Stop();
+                metricsState.RecordEvaluation((int)sw.ElapsedMilliseconds);
+            }
         }
         finally
         {
-            sw.Stop();
-            metricsState.RecordEvaluation((int)sw.ElapsedMilliseconds);
+            gate.Release();
         }
     }
 
     private async Task<int> EvaluateCoreAsync(CancellationToken ct)
     {
-        var policies = await db.AlertPolicies.Where(p => p.Enabled).ToListAsync(ct);
-        if (policies.Count == 0) return 0;
+        // Defaults (TenantId null) plus this tenant's own policies, via the filter.
+        var tracked = await db.AlertPolicies.Where(p => p.Enabled).ToListAsync(ct);
+        // This tenant's adjustments to the shared defaults: off, or a different
+        // threshold / address. Applied to detached copies so nothing leaks into the
+        // shared row; trigger statistics still go to the tracked original below.
+        var overrides = await db.AlertPolicyTenantOverrides.AsNoTracking().ToDictionaryAsync(o => o.PolicyId, ct);
+        var originalById = tracked.ToDictionary(p => p.Id);
+        var policies = tracked
+            .Where(p => !(overrides.TryGetValue(p.Id, out var off) && off.Enabled == false))
+            .Select(p =>
+            {
+                if (!overrides.TryGetValue(p.Id, out var o) || (o.Threshold is null && o.NotifyEmail is null)) return p;
+                var copy = p.CloneForEvaluation();
+                if (o.Threshold is int t) copy.Threshold = t;
+                if (!string.IsNullOrWhiteSpace(o.NotifyEmail)) copy.NotifyEmail = o.NotifyEmail;
+                return copy;
+            })
+            .ToList();
+        // With no policy left, open alerts may still need retiring (below).
+        if (policies.Count == 0 && !await db.TriggeredAlerts.AnyAsync(t => t.Status != "resolved" && t.Status != "auto_resolved", ct))
+            return 0;
 
         var metrics = await ComputeMetricsAsync(ct);
-        var cfg = await db.NotificationSettings.FirstOrDefaultAsync(ct)
-                  ?? new NotificationSettings { Id = 1 };
+        // The MSP's settings with this tenant's routing layered on (detached copy).
+        var (install, routing) = await db.NotificationInputsAsync(ct);
+        var cfg = NotificationRouting.Apply(install, routing);
 
         var now = DateTimeOffset.UtcNow;
         var fired = 0;
@@ -125,13 +159,19 @@ public sealed class AlertEvaluator(
             };
             db.TriggeredAlerts.Add(alert);
 
-            policy.LastTriggered = now;
-            policy.TriggerCount++;
+            var stats = originalById[policy.Id]; // the tracked row, not the evaluation copy
+            stats.LastTriggered = now;
+            stats.TriggerCount++;
             fired++;
 
             try
             {
-                await sender.DispatchAsync(db, cfg, alert, ct);
+                // The policy's own address (or this client's override of it)
+                // stands in for the MSP's default recipient for its alerts.
+                var policyCfg = string.IsNullOrWhiteSpace(policy.NotifyEmail)
+                    ? cfg
+                    : NotificationRouting.Apply(install, routing, policy.NotifyEmail);
+                await sender.DispatchAsync(db, policyCfg, alert, ct);
                 alert.Notified = true;
             }
             catch (Exception ex)
@@ -149,10 +189,14 @@ public sealed class AlertEvaluator(
         var autoResolved = 0;
         foreach (var alert in openAlerts)
         {
-            if (!policyById.TryGetValue(alert.PolicyId, out var alertPolicy)) continue;
-            var current = await ComputePolicyValueAsync(alertPolicy, metrics, now, ct);
+            // Measured against the policy's threshold as it is now, so raising it
+            // (or a client override raising it) lets the alert resolve. A policy
+            // that is disabled, off for this client or deleted watches nothing
+            // any more: its open alert retires like a recovered one.
+            var recovered = !policyById.TryGetValue(alert.PolicyId, out var alertPolicy)
+                || await ComputePolicyValueAsync(alertPolicy, metrics, now, ct) < alertPolicy.Threshold;
 
-            if (current < alert.Threshold)
+            if (recovered)
             {
                 alert.BelowThresholdStreakCount++;
                 if (alert.BelowThresholdStreakCount >= streakTarget)
@@ -172,9 +216,7 @@ public sealed class AlertEvaluator(
 
         // Durable cumulative evaluation count — survives restarts (the in-process
         // MetricsState only tracks recent-window p95). Persisted with this cycle's save.
-        var counters = await db.MetricsCounters.FirstOrDefaultAsync(c => c.Id == 1, ct);
-        if (counters is null) { counters = new MetricsCounters { Id = 1 }; db.MetricsCounters.Add(counters); }
-        counters.EvaluationsTotal += 1;
+        await MetricsCounterStore.AddAsync(db, graphRequests: 0, graphThrottled: 0, evaluations: 1, ct);
 
         // Always save — in-place updates to open alerts happen even when nothing fired.
         await db.SaveChangesAsync(ct);
@@ -258,6 +300,7 @@ public sealed class AlertEvaluator(
                     e.Id,
                     UserPrincipalName = e.ActorUpn ?? e.ActorApp,
                     DeviceName = (string?)null,
+                    e.TargetName, // what suppression rules match on, besides the actor
                     Title = e.TargetName != null ? e.Activity + " → " + e.TargetName : e.Activity,
                     PortalUrl = (string?)null,
                     DetectedAt = e.OccurredAt,

@@ -89,10 +89,34 @@ public class SuppressionMatcherTests
     }
 
     [Fact]
-    public void FindMatch_SuppressesWhenAnyAffectedEntityMatches()
+    public void FindMatch_EntityRuleNeverHidesTheOtherEntitiesInTheSameAlert()
     {
+        // One alert lists every risky user. The service account being in it
+        // must not hide the real user who became risky alongside it.
         var rules = new[] { Rule(pattern: "svc-*") };
-        Assert.NotNull(SuppressionMatcher.FindMatch(rules, PolicyA, Entities("real@x.com", "svc-1@x.com"), Now));
+        Assert.Null(SuppressionMatcher.FindMatch(rules, PolicyA, Entities("real@x.com", "svc-1@x.com"), Now));
+        Assert.NotNull(SuppressionMatcher.FindMatch(rules, PolicyA, Entities("svc-1@x.com", "svc-2@x.com"), Now));
+    }
+
+    [Fact]
+    public void FindMatch_SuppressesWhenEveryEntityIsCoveredByOneRuleOrAnother()
+    {
+        var rules = new[] { Rule(pattern: "svc-*"), Rule(pattern: "*@contractors.x.com") };
+        Assert.NotNull(SuppressionMatcher.FindMatch(rules, PolicyA, Entities("svc-1@x.com", "bob@contractors.x.com"), Now));
+        Assert.Null(SuppressionMatcher.FindMatch(rules, PolicyA, Entities("svc-1@x.com", "bob@contractors.x.com", "real@x.com"), Now));
+    }
+
+    [Fact]
+    public void FindMatch_AnEntityMatchesOnAnyOfItsIdentifiers()
+    {
+        // A device row names its device and its user; an entity with no
+        // identifier at all can never be covered, so it keeps the alert raised.
+        var rules = new[] { Rule(pattern: "SVC-PC*") };
+        Assert.NotNull(SuppressionMatcher.FindMatch(rules, PolicyA, """[{"userPrincipalName":"real@x.com","deviceName":"svc-pc-01"}]""", Now));
+        Assert.Null(SuppressionMatcher.FindMatch(rules, PolicyA, """[{"deviceName":"svc-pc-01"},{"title":"Defender incident"}]""", Now));
+        // Activity entities carry the target, so target-based rules match.
+        Assert.NotNull(SuppressionMatcher.FindMatch([Rule(pattern: "Break-glass*")], PolicyA,
+            """[{"userPrincipalName":"admin@x.com","targetName":"Break-glass account"}]""", Now));
     }
 
     [Fact]

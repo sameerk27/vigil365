@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { FileText, Mail, Plus, Play, Trash2, Clock, Download } from "lucide-react";
 import { ReportSchedule, DigestPreview } from "../services/types";
-import { reportApi, useAuth } from "../services/api";
+import { reportApi, useAuth, clientFileName, isMspMode } from "../services/api";
 import { fmtShort } from "../services/utils";
-import { Card, Badge, EmptyState, LoadingSkeleton } from "../components/SharedComponents";
+import { Card, Badge, EmptyState, LoadingSkeleton, InlineError, StateMessage } from "../components/SharedComponents";
 import { showToast } from "../services/toast";
 import { confirmAction } from "../services/confirm";
 
@@ -20,15 +20,28 @@ function cadenceLabel(s: ReportSchedule): string {
 }
 
 export function ReportsPage() {
-  const { canMutate } = useAuth();
+  // Server: reading schedules and the preview needs Analyst; changing or
+  // sending a schedule needs Admin. Controls follow the same lines.
+  const { canMutate, isAdmin } = useAuth();
   const [schedules, setSchedules] = useState<ReportSchedule[] | null>(null);
-  const [preview, setPreview] = useState<DigestPreview | null>(null);
+  const [schedulesError, setSchedulesError] = useState<string | null>(null);
+  // undefined while loading; null when the preview could not be built.
+  const [preview, setPreview] = useState<DigestPreview | null | undefined>(undefined);
   const [windowDays, setWindowDays] = useState(7);
   const [editing, setEditing] = useState<Partial<ReportSchedule> | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const loadSchedules = useCallback(async () => setSchedules(await reportApi.list()), []);
-  const loadPreview = useCallback(async (days: number) => setPreview(await reportApi.preview(days)), []);
+  const loadSchedules = useCallback(async () => {
+    if (!canMutate) return;
+    setSchedulesError(null);
+    try { setSchedules(await reportApi.list()); }
+    catch (e) { setSchedulesError(e instanceof Error ? e.message : "Request failed"); }
+  }, [canMutate]);
+  const loadPreview = useCallback(async (days: number) => {
+    if (!canMutate) return;
+    setPreview(undefined);
+    setPreview(await reportApi.preview(days));
+  }, [canMutate]);
 
   useEffect(() => { loadSchedules(); }, [loadSchedules]);
   useEffect(() => { loadPreview(windowDays); }, [windowDays, loadPreview]);
@@ -39,8 +52,8 @@ export function ReportsPage() {
     setBusy(true);
     const result = editing.id ? await reportApi.update(editing as ReportSchedule) : await reportApi.create(editing);
     setBusy(false);
-    if (result) { showToast(editing.id ? "Schedule updated" : "Schedule created", "success"); setEditing(null); loadSchedules(); }
-    else showToast("Could not save the schedule", "error");
+    if (result.ok) { showToast(editing.id ? "Schedule updated" : "Schedule created", "success"); setEditing(null); loadSchedules(); }
+    else showToast(result.error ?? "Could not save the schedule", "error");
   };
 
   const remove = async (s: ReportSchedule) => {
@@ -59,13 +72,16 @@ export function ReportsPage() {
     setBusy(true);
     const r = await reportApi.runNow(s.id);
     setBusy(false);
-    showToast(r.ok ? `Sent — ${r.status}` : `Failed — ${r.status ?? "check SMTP settings"}`, r.ok ? "success" : "error");
+    // A refused or unreachable request is not an SMTP problem; the server's own
+    // status (e.g. an SMTP error) comes back in r.status.
+    showToast(r.ok ? `Sent — ${r.status}` : `Failed — ${r.status ?? "the report could not be sent"}`, r.ok ? "success" : "error");
     loadSchedules();
   };
 
   const toggleEnabled = async (s: ReportSchedule) => {
     const updated = await reportApi.update({ ...s, enabled: !s.enabled });
-    if (updated) loadSchedules();
+    if (updated.ok) loadSchedules();
+    else showToast(updated.error ?? `Could not ${s.enabled ? "disable" : "enable"} the schedule`, "error");
   };
 
   const downloadCsv = () => {
@@ -73,7 +89,8 @@ export function ReportsPage() {
     const blob = new Blob([preview.csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = `vigil365-digest-${preview.generatedAt.slice(0, 10)}.csv`; a.click();
+    // MSP mode: the client's name leads the filename, as on every other export.
+    a.href = url; a.download = clientFileName(`vigil365-digest-${preview.generatedAt.slice(0, 10)}.csv`); a.click();
     URL.revokeObjectURL(url);
   };
 
@@ -86,7 +103,7 @@ export function ReportsPage() {
         Read-only; nothing is changed in your tenant.</p>
 
       {/* ── Live preview of the executive digest ─────────────────────────────── */}
-      <Card title="Executive digest — preview" id="digest-preview" action={
+      <Card title="Executive digest — preview" id="digest-preview" action={canMutate &&
         <div className="digest-preview-actions">
           <label className="digest-window-label">Window
             <select value={windowDays} onChange={e => setWindowDays(Number(e.target.value))} className="digest-window-select">
@@ -96,7 +113,11 @@ export function ReportsPage() {
           {preview?.csv && <button className="btn-secondary digest-download" onClick={downloadCsv}><Download size={13} className="report-inline-icon"/>CSV</button>}
         </div>
       }>
-        {preview === null ? <LoadingSkeleton /> : !preview.hasData ? (
+        {!canMutate ? (
+          <StateMessage type="permission" title="Analyst role needed" message="The executive digest and its schedules are visible to Analysts and Admins."/>
+        ) : preview === undefined ? <LoadingSkeleton /> : preview === null ? (
+          <InlineError title="Couldn't build the digest preview" onRetry={() => loadPreview(windowDays)}/>
+        ) : !preview.hasData ? (
           <EmptyState message="No data yet — trend metrics and alerts appear once the collector has run at least once."/>
         ) : (
           <div className="digest-preview-grid">
@@ -152,8 +173,9 @@ export function ReportsPage() {
       </Card>
 
       {/* ── Schedules ────────────────────────────────────────────────────────── */}
+      {canMutate && (
       <Card title="Delivery schedules" id="report-schedules" action={
-        canMutate && !editing && <button className="btn-apply report-new-schedule" onClick={() => setEditing(blankSchedule())}><Plus size={13} className="report-inline-icon"/>New schedule</button>
+        isAdmin && !editing && <button className="btn-apply report-new-schedule" onClick={() => setEditing(blankSchedule())}><Plus size={13} className="report-inline-icon"/>New schedule</button>
       }>
         {editing && (
           <div className="report-editor">
@@ -191,33 +213,43 @@ export function ReportsPage() {
           </div>
         )}
 
-        {schedules === null ? <LoadingSkeleton /> : schedules.length === 0 && !editing ? (
-          <EmptyState message={canMutate ? "No schedules yet — create one to email the executive digest on a recurring cadence." : "No report schedules have been configured."}/>
+        {schedulesError ? (
+          <InlineError title="Couldn't load report schedules" message={schedulesError} onRetry={loadSchedules}/>
+        ) : schedules === null ? <LoadingSkeleton /> : schedules.length === 0 && !editing ? (
+          <EmptyState message={isAdmin ? "No schedules yet — create one to email the executive digest on a recurring cadence." : "No report schedules have been configured."}/>
         ) : (
           <table className="data-table">
-            <thead><tr><th scope="col">Report</th><th scope="col">Cadence</th><th scope="col">Recipients</th><th scope="col">Attachments</th><th scope="col">Last run</th><th scope="col"></th></tr></thead>
+            <thead><tr><th scope="col">Report</th><th scope="col">Cadence</th><th scope="col">Recipients</th><th scope="col">Attachments</th><th scope="col">Last run</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>
-              {schedules?.map(s => (
-                <tr key={s.id} className={s.enabled ? "report-row" : "report-row is-disabled"}>
-                  <td><b>{s.name}</b>{!s.enabled && <span className="report-disabled-label">(disabled)</span>}</td>
+              {schedules?.map(s => {
+                // MSP mode: a schedule made before the install became MSP belongs to
+                // no client, and the server never sends it (run-now refuses it too).
+                const unassigned = isMspMode() && !s.tenantId;
+                return (
+                <tr key={s.id} className={s.enabled && !unassigned ? "report-row" : "report-row is-disabled"}>
+                  <td><b>{s.name}</b>{!s.enabled && <span className="report-disabled-label">(disabled)</span>}
+                    {unassigned && <> <Badge label="No client" tone="warning"/>
+                      <div className="report-muted-cell">Not assigned to a client, so it is never sent. Delete it and create it again with the client selected.</div></>}</td>
                   <td className="report-nowrap"><Clock size={12} className="report-inline-icon report-muted-icon"/>{cadenceLabel(s)}</td>
                   <td className="report-muted-cell"><Mail size={12} className="report-inline-icon"/>{s.recipients || "—"}</td>
                   <td><Badge label={[s.includePdf ? "PDF" : null, s.includeCsv ? "CSV" : null].filter(Boolean).join(" + ") || "HTML"} tone="neutral"/></td>
                   <td className="report-muted-cell">{s.lastRunAt ? `${fmtShort(s.lastRunAt)} · ${s.lastRunStatus ?? ""}` : "never"}</td>
                   <td className="report-actions-cell">
-                    {canMutate && <>
-                      <button className="icon-btn" title="Send now" disabled={busy} onClick={() => runNow(s)}><Play size={14}/></button>
-                      <button className="icon-btn" title={s.enabled ? "Disable" : "Enable"} onClick={() => toggleEnabled(s)}><Clock size={14}/></button>
-                      <button className="icon-btn" title="Edit" onClick={() => setEditing(s)}>Edit</button>
+                    {isAdmin && <>
+                      {!unassigned && <button className="icon-btn" title="Send now" disabled={busy} onClick={() => runNow(s)}><Play size={14}/></button>}
+                      {!unassigned && <button className="icon-btn" title={s.enabled ? "Disable" : "Enable"} onClick={() => toggleEnabled(s)}><Clock size={14}/></button>}
+                      {!unassigned && <button className="icon-btn" title="Edit" onClick={() => setEditing(s)}>Edit</button>}
                       <button className="icon-btn btn-danger-icon" title="Delete" onClick={() => remove(s)}><Trash2 size={14}/></button>
                     </>}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         )}
       </Card>
+      )}
     </div>
   );
 }

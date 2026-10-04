@@ -1,7 +1,7 @@
 # Vigil365 Operations Runbook
 
-This runbook covers the data required to recover Vigil365: the SQL Server
-database, the Data Protection key ring, and deployment configuration. Test this
+This runbook covers the data required to recover Vigil365: the database (SQL
+Server or PostgreSQL), the Data Protection key ring, and deployment configuration. Test this
 procedure on a non-production host before relying on it during an incident.
 
 ## Recovery objective
@@ -19,17 +19,37 @@ application upgrade. Keep the SQL backup and its matching Data Protection key
 backup together; restoring only the database can leave saved encrypted settings
 unreadable.
 
+## Where an install keeps its data
+
+Read the real values from the install's `appsettings.Production.json`
+(`ConnectionStrings:DefaultConnection` and `DataProtection:KeyPath`) rather than
+assuming. The defaults:
+
+| Installed with | Configuration | Database | Key ring |
+|---|---|---|---|
+| `Vigil365-Setup.exe` | `C:\Program Files\Vigil365\appsettings.Production.json` | `Vigil365` | `C:\ProgramData\Vigil365\keys` |
+| `enterprise-install.ps1` | `<InstallPath>\appsettings.Production.json` | as given | `<InstallPath>\keys` |
+| `deploy.ps1` / `install.ps1` | `<publish folder>\appsettings.Production.json` | `M365SecurityDashboard` | `<publish folder>\keys` |
+| Docker | `.env` | `M365SecurityDashboard` (SQL Server), `vigil365` (PostgreSQL) | `dp-keys` volume (`/keys`) |
+
+The Setup-installed configuration (it holds the Graph client secret) and key ring
+are readable only by Administrators, SYSTEM and the service, so back up from an
+elevated prompt. Logs are in `C:\ProgramData\Vigil365\logs`.
+
 ## Windows / SQL Server backup
 
 1. Create a restricted backup directory, for example `D:\Vigil365Backups`.
 2. Use a SQL login or Windows account permitted to back up the database.
-3. Run the following from an elevated PowerShell prompt, changing the SQL Server
-   instance and output path for the deployment:
+3. Run the following from an elevated PowerShell prompt, with the paths and
+   database from the table above (the `Vigil365-Setup.exe` defaults are shown):
 
 ```powershell
-$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$backup = "D:\Vigil365Backups\M365SecurityDashboard-$stamp.bak"
-sqlcmd -S '.\SQLEXPRESS' -E -Q "BACKUP DATABASE [M365SecurityDashboard] TO DISK = N'$backup' WITH COPY_ONLY, COMPRESSION, CHECKSUM, STATS = 10"
+$config = 'C:\Program Files\Vigil365\appsettings.Production.json'
+$keys   = 'C:\ProgramData\Vigil365\keys'
+$db     = 'Vigil365'
+$stamp  = Get-Date -Format 'yyyyMMdd-HHmmss'
+$backup = "D:\Vigil365Backups\$db-$stamp.bak"
+sqlcmd -S '.\SQLEXPRESS' -E -Q "BACKUP DATABASE [$db] TO DISK = N'$backup' WITH COPY_ONLY, COMPRESSION, CHECKSUM, STATS = 10"
 ```
 
 4. Verify the backup before treating it as successful:
@@ -41,12 +61,11 @@ sqlcmd -S '.\SQLEXPRESS' -E -Q "RESTORE VERIFYONLY FROM DISK = N'$backup' WITH C
 5. Copy these files to the same protected backup set:
 
 ```powershell
-Copy-Item 'C:\Apps\Vigil365\keys' "D:\Vigil365Backups\keys-$stamp" -Recurse
-Copy-Item 'C:\Apps\Vigil365\appsettings.Production.json' "D:\Vigil365Backups\appsettings.Production-$stamp.json"
+Copy-Item $keys "D:\Vigil365Backups\keys-$stamp" -Recurse
+Copy-Item $config "D:\Vigil365Backups\appsettings.Production-$stamp.json"
 ```
 
-Use the actual publish directory if it differs from `C:\Apps\Vigil365`. Do not
-place backup sets in the application directory or a source-control checkout.
+Do not place backup sets in the application directory or a source-control checkout.
 
 ## Docker backup
 
@@ -67,6 +86,36 @@ Copy-Item .env "backups/.env-$stamp" # keep only in encrypted storage
 `MSSQL_SA_PASSWORD` must be available in the current shell; do not put it in
 shell history or source control. The `.env` file and key ring are secret
 material.
+
+## PostgreSQL backup
+
+Use the custom format (`-Fc`): compressed, and restorable table by table.
+
+```powershell
+$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$env:PGPASSWORD = '<from your secret store>'   # or use a pgpass file
+pg_dump -h <host> -U vigil365 -d vigil365 -Fc -f "D:\Vigil365Backups\vigil365-$stamp.dump"
+pg_restore --list "D:\Vigil365Backups\vigil365-$stamp.dump" | Select-Object -First 5   # proves the file is readable
+```
+
+Docker (`docker-compose.postgres.yml` mounts `./backups` into the db container):
+
+```bash
+stamp=$(date +%Y%m%d-%H%M%S)
+docker compose -f docker-compose.postgres.yml exec -T db pg_dump -U vigil365 -d vigil365 -Fc -f /backups/vigil365-$stamp.dump
+docker compose -f docker-compose.postgres.yml cp app:/keys backups/keys-$stamp
+```
+
+Back up the key ring and configuration with it, exactly as for SQL Server.
+
+**Restore** into an empty database (never over production during a drill):
+
+```bash
+createdb -h <host> -U postgres -O vigil365 vigil365_restore
+pg_restore -h <host> -U vigil365 -d vigil365_restore --no-owner "vigil365-<stamp>.dump"
+```
+
+Then follow steps 4–6 of the restore drill below.
 
 ## Restore drill
 
@@ -93,7 +142,15 @@ is only proven after a documented restore drill succeeds.
 
 1. Read the release notes and make a verified backup set.
 2. Stop the Windows service or scale the container down.
-3. Publish the new Windows build with `install.ps1` / `deploy.ps1`, or run:
+3. Install the new build the same way as the current one:
+   - **`Vigil365-Setup.exe`:** run the new one. It stops the service, replaces the
+     files, reuses the app registration, and keeps settings it does not manage
+     (the previous file is saved as `appsettings.Production.json.bak`). Do not use
+     `install.ps1 -InstallService` on such an install: it recreates the service as
+     LocalSystem with `--urls`, which drops the HTTPS endpoint.
+   - **`enterprise-install.ps1` / `deploy.ps1`:** re-run it with the same parameters.
+     It writes `appsettings.Production.json` afresh: re-apply any settings you added.
+   - **Docker:**
 
 ```powershell
 docker compose build app
@@ -105,6 +162,32 @@ docker compose up -d
 5. Keep the previous application artifact until the post-upgrade checks pass.
    Database rollback requires restoring the verified backup; do not use an
    arbitrary migration downgrade against production.
+
+**v1.2 migrations are one-way.** Upgrading to 1.2 adds the client-tenant columns and
+tables. An older build cannot run on the upgraded database; going back means
+restoring the pre-upgrade backup (and losing anything collected since). If you do
+step migrations back with `dotnet ef database update` (a test system, not
+production), reverting `AuditTrailOutlivesTenant` keeps a purged client's audit
+entries as MSP-level entries rather than deleting them, and entries written since
+the upgrade (hash version 1) no longer verify on the older build. The first
+collection after the upgrade resolves collected alerts that have dropped out of
+Graph's feeds (old failed sign-ins, closed advisories, remediated risky users), so
+counts may fall sharply; that is expected.
+
+## Convert to MSP
+
+1. Make a verified backup set (database, keys, configuration).
+2. **On SQL Server Express?** MSP mode refuses Express. Restore the backup to SQL
+   Server Standard/Enterprise or Azure SQL first and point the connection string
+   there. (Moving to PostgreSQL is a data migration, not a restore — plan it as a
+   fresh MSP install and re-onboard.)
+3. Re-run Setup and choose **MSP**. It reuses the existing app registration, makes it
+   multi-tenant, adds the `/consented` redirect, and sets `Edition:Mode=Msp`.
+4. Sign in. Your existing data is the first client ("Default" — rename it on the
+   Clients page). Add further clients with **Add client**.
+
+Converting back to Single is not a supported path; restore the
+pre-conversion backup instead.
 
 ## Post-incident checks
 

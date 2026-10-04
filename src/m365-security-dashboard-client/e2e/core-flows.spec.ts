@@ -1,38 +1,45 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
-test.describe('Core User Flows', () => {
+/**
+ * The real (non-e2e) build before sign-in. Nothing here needs a backend or a
+ * Microsoft account: /api/auth/config is stubbed with an app registration, which
+ * is what makes the app show its Microsoft sign-in screen. Without the stub the
+ * dev proxy's backend is unreachable, the sign-in screen never renders, and a
+ * broken login screen would go unnoticed.
+ */
+async function stubSignInConfig(page: Page) {
+  await page.route('**/api/**', route => {
+    const url = new URL(route.request().url());
+    if (url.pathname === '/api/auth/config')
+      return route.fulfill({ json: { instance: 'https://login.microsoftonline.com/', clientId: 'e2e-client', tenantId: 'e2e-tenant', redirectUri: url.origin, mode: 'Single' } });
+    return route.fulfill({ status: 401, json: { error: 'signed out' } });
+  });
+}
 
-  test('should load the application and show authentication or landing page', async ({ page }) => {
+test.describe('Before sign-in', () => {
+  test('an install with sign-in configured shows the Microsoft sign-in screen', async ({ page }) => {
+    await stubSignInConfig(page);
     await page.goto('/');
-    
-    // We expect the page to load without crashing and show some Vigil365 branding or login
-    await expect(page).toHaveTitle(/Vigil365|Login|Sign In/i);
-    
-    // Check if there's a sign-in button or redirect
-    const url = page.url();
-    if (url.includes('login.microsoftonline.com')) {
-      console.log('Redirected to Microsoft Login successfully.');
-      return;
-    }
-    
-    // Check for login button on our own UI
-    const loginBtn = page.locator('button:has-text("Sign in"), button:has-text("Login")');
-    if (await loginBtn.count() > 0) {
-      await expect(loginBtn.first()).toBeVisible();
-    }
+    await expect(page).toHaveTitle(/Vigil365/);
+    await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Sign in with Microsoft' })).toBeEnabled();
+    // None of the dashboard is shown before sign-in.
+    await expect(page.getByRole('navigation')).toHaveCount(0);
   });
 
-  test('should handle invalid paths gracefully', async ({ page }) => {
-    // Navigate to a random 404 path
+  test('an unknown path still lands on the sign-in screen, not a blank page', async ({ page }) => {
+    await stubSignInConfig(page);
     await page.goto('/some-invalid-path-12345');
-    
-    // It should either redirect to login, show a 404, or load the dashboard shell
-    const bodyText = await page.textContent('body');
-    expect(bodyText).toBeTruthy();
-    
-    // No blank white screens of death (React crashes)
-    const rootHasContent = await page.locator('#root').innerHTML();
-    expect(rootHasContent.length).toBeGreaterThan(0);
+    await expect(page.getByRole('button', { name: 'Sign in with Microsoft' })).toBeVisible();
   });
 
+  test('the sign-in screen loads without console errors or uncaught exceptions', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
+    page.on('pageerror', e => errors.push(e.message));
+    await stubSignInConfig(page);
+    await page.goto('/');
+    await expect(page.getByRole('button', { name: 'Sign in with Microsoft' })).toBeVisible();
+    expect(errors).toEqual([]);
+  });
 });

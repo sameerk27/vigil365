@@ -29,7 +29,13 @@ param(
     [string]$Database  = "M365SecurityDashboard",
     [string]$PublishPath,
     [switch]$Publish,
-    [switch]$NoRun
+    [switch]$NoRun,
+    # "Single" (one organisation, default) or "Msp" (several client tenants).
+    [ValidateSet("Single", "Msp")] [string]$Mode = "Single",
+    # "SqlServer" (default, built from -SqlServer/-Database) or "Postgres" (needs -ConnectionString).
+    [ValidateSet("SqlServer", "Postgres")] [string]$DatabaseProvider = "SqlServer",
+    # Full connection string; overrides -SqlServer/-Database. Required for Postgres.
+    [string]$ConnectionString
 )
 
 $ErrorActionPreference = "Stop"
@@ -125,8 +131,18 @@ if ($useHttps -and $Hostname) {
 
 # 3. Generate appsettings.Production.json (login + DB config; secrets stay out of source)
 Write-Host "[3/4] Writing appsettings.Production.json..." -ForegroundColor Yellow
-$conn = "Server=$SqlServer;Database=$Database;Trusted_Connection=True;Encrypt=True;TrustServerCertificate=True"
+if ($DatabaseProvider -eq "Postgres" -and -not $ConnectionString) {
+    throw "-DatabaseProvider Postgres needs -ConnectionString, e.g. 'Host=localhost;Database=vigil365;Username=vigil365;Password=...'"
+}
+$conn = if ($ConnectionString) { $ConnectionString } else { "Server=$SqlServer;Database=$Database;Trusted_Connection=True;Encrypt=True;TrustServerCertificate=True" }
+$ConnectionStringToUse = $conn
+
+if ($Mode -eq "Msp" -and $DatabaseProvider -eq "SqlServer" -and $ConnectionStringToUse -match "SQLEXPRESS") {
+    throw "MSP mode needs SQL Server Standard/Enterprise/Azure SQL or PostgreSQL - SQL Server Express stops accepting writes at 10 GB. See docs/MSP_V12_PLAN.md."
+}
 $config = [ordered]@{
+    Edition = [ordered]@{ Mode = $Mode }
+    Database = [ordered]@{ Provider = $DatabaseProvider }
     ConnectionStrings = [ordered]@{ DefaultConnection = $conn }
     AzureAd = [ordered]@{
         Instance = "https://login.microsoftonline.com/"

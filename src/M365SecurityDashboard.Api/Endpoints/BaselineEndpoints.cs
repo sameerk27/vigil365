@@ -18,7 +18,7 @@ public static class BaselineEndpoints
         // Current baseline + drift against the latest snapshot.
         app.MapGet("/api/baseline", async (AppDbContext db, CancellationToken ct) =>
         {
-            var baseline = await db.TenantBaselines.AsNoTracking().FirstOrDefaultAsync(b => b.Id == 1, ct);
+            var baseline = await db.TenantBaselines.AsNoTracking().FirstOrDefaultAsync(ct);
             var latest = await db.TrendSnapshots.AsNoTracking().OrderByDescending(s => s.CapturedAt).FirstOrDefaultAsync(ct);
 
             if (baseline is null || baseline.CapturedAt is null)
@@ -44,13 +44,13 @@ public static class BaselineEndpoints
             if (latest is null)
                 return Results.BadRequest(new { ok = false, message = "No trend snapshots collected yet — run a collection first." });
 
-            var baseline = await db.TenantBaselines.FirstOrDefaultAsync(b => b.Id == 1, ct);
-            if (baseline is null) { baseline = new TenantBaseline { Id = 1 }; db.TenantBaselines.Add(baseline); }
+            var baseline = await db.TenantBaselines.FirstOrDefaultAsync(ct);
+            if (baseline is null) { baseline = new TenantBaseline(); db.TenantBaselines.Add(baseline); }
 
             var by = caller.FindFirst(ClaimTypes.Email)?.Value ?? caller.Identity?.Name ?? "system";
             BaselineDrift.CaptureFrom(baseline, latest, by, DateTimeOffset.UtcNow);
             await db.SaveChangesAsync(ct);
-            await audit.WriteAsync("baseline.capture", "baseline", "1", $"tenant baseline captured from snapshot {latest.CapturedAt:u}", ct);
+            await audit.WriteAsync("baseline.capture", "baseline", baseline.TenantId.ToString(), $"tenant baseline captured from snapshot {latest.CapturedAt:u}", ct);
             return Results.Ok(new { ok = true, capturedAt = baseline.CapturedAt, capturedBy = baseline.CapturedBy });
         }).RequireAuthorization("RequireAdmin");
     }

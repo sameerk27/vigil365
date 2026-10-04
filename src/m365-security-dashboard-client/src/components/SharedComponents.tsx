@@ -3,7 +3,7 @@ import { Download, ChevronRight, Copy, ClipboardCheck, ExternalLink, AlertTriang
 import { Tone, SecurityAlert, AlertNote } from "../services/types";
 import { fmtService, fmtDate, fmtShort, relTime, fmtUtc, downloadCsv, copyToClipboard } from "../services/utils";
 import { showToast } from "../services/toast";
-import { useAuth, acApi, wbApi, openEntity, requestRefresh } from "../services/api";
+import { useAuth, acApi, wbApi, openEntity, requestRefresh, clientFileName } from "../services/api";
 
 // ─── Export dropdown ──────────────────────────────────────────────────────────
 /**
@@ -13,9 +13,11 @@ import { useAuth, acApi, wbApi, openEntity, requestRefresh } from "../services/a
  * a subset — a CSV that looks complete and is not is worse than no export.
  * Supplying it makes the menu and the confirmation toast state the real scope.
  */
-export function ExportDropdown({ rows, filename, scopeTotal }: {
+export function ExportDropdown({ rows, filename: baseName, scopeTotal }: {
   rows: Record<string, unknown>[]; filename: string; scopeTotal?: number;
 }) {
+  // MSP mode: exports carry the client in their filename (U5).
+  const filename = clientFileName(baseName);
   const partial = typeof scopeTotal === "number" && scopeTotal > rows.length;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -172,7 +174,9 @@ export function LineChart({ data, color = "var(--accent-light)", onClick }: { da
 
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className="line-chart-svg" style={{ width: "100%", height: "100%" }} data-inline-style="inline-ca8b563226" onMouseLeave={() => setHoverIdx(null)}
-      role="img" aria-label={`Line chart, ${data.length} points, from ${data[0].value} (${data[0].date}) to ${data.at(-1)!.value} (${data.at(-1)!.date}); min ${rawMin}, max ${rawMax}`}>
+      // "group", not "img": an image's children are presentational, and the
+      // focusable point buttons inside it were then hidden (nested-interactive).
+      role="group" aria-label={`Line chart, ${data.length} points, from ${data[0].value} (${data[0].date}) to ${data.at(-1)!.value} (${data.at(-1)!.date}); min ${rawMin}, max ${rawMax}`}>
       <defs>
         <linearGradient id={`grad-${chartId}`} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={color} stopOpacity="0.3" />
