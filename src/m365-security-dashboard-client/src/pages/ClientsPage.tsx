@@ -19,6 +19,10 @@ import type { Tone } from "../services/types";
  * hands the admin-consent link to the client's Global Administrator, and
  * proves the connection. Non-admins see the clients assigned to them.
  */
+/** How long the dialog keeps retrying a not-yet-provisioned test: 12 x 10 s = 2 minutes. */
+export const PROVISION_RETRY_MS = 10_000;
+const PROVISION_RETRIES = 12;
+
 export function ClientsPage() {
   const { isAdmin } = useAuth();
   const [rollup, setRollup] = useState<TenantRollupRow[] | null>(null);
@@ -403,7 +407,17 @@ function OnboardingDialog({ tenant, onClose, onChanged }: { tenant: ClientTenant
   const runTest = async () => {
     if (!saved) return;
     setBusy("test");
-    const r = await tenantApi.test(saved.id);
+    let r = await tenantApi.test(saved.id);
+    // Right after consent Microsoft needs seconds to a few minutes before Graph
+    // recognises the app in the client's tenant (401 Authorization_IdentityNotFound).
+    // The server flags that as retryable; wait it out here rather than leave the
+    // admin a failed-looking result to retry by hand.
+    for (let i = 1; !r.ok && r.retryable && i <= PROVISION_RETRIES && mounted.current; i++) {
+      setTestResult({ ok: false, text: `Consent recorded. Waiting for Microsoft to finish setting up the app in the client's tenant — checking again (${i}/${PROVISION_RETRIES})…` });
+      await new Promise(resolve => setTimeout(resolve, PROVISION_RETRY_MS));
+      if (!mounted.current) return;
+      r = await tenantApi.test(saved.id);
+    }
     // Read the row back either way: a pass records the Entra tenant id, and a
     // refusal may only mean the client's admin has not consented yet, which the
     // server reports as "no Graph credentials apply".

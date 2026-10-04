@@ -34,6 +34,21 @@ public static class GraphErrorHint
         ["Tenant audit events"]         = "AuditLog.Read.All",
     };
 
+    /// <summary>
+    /// Right after a client's admin grants consent, Graph answers 401
+    /// <c>Authorization_IdentityNotFound</c> ("the identity of the calling
+    /// application could not be established") until the app's new service principal
+    /// has replicated — seconds to a few minutes. It is not an expired secret, and it
+    /// clears by itself, so callers wait and retry rather than report a failure.
+    /// </summary>
+    public static bool IsNotYetProvisioned(string? rawMessage)
+        => (rawMessage ?? "").Contains("Authorization_IdentityNotFound", StringComparison.OrdinalIgnoreCase);
+
+    public const string NotYetProvisionedMessage =
+        "Microsoft has not finished setting up the Vigil365 app in this tenant yet. This normally clears within a few " +
+        "minutes of the admin consent, and Vigil365 keeps trying. If it is still failing after about 10 minutes, the app " +
+        "was not consented in this tenant (or its enterprise application was deleted) — run the consent again.";
+
     /// <summary>Required permission for a named collector source, if known.</summary>
     public static string? PermissionFor(string? sourceName)
         => sourceName is not null && PermissionBySource.TryGetValue(sourceName, out var p) ? p : null;
@@ -51,6 +66,9 @@ public static class GraphErrorHint
     public static string Describe(string? rawMessage, string? sourceName = null, int maxLength = 300)
     {
         var raw = rawMessage ?? "";
+
+        // First: the raw text carries request-id GUIDs that can contain "403" or "429".
+        if (IsNotYetProvisioned(raw)) return NotYetProvisionedMessage;
 
         if (IsPermissionDenied(raw))
         {
@@ -81,6 +99,8 @@ public static class GraphErrorHint
     public static string? DescribeOrNull(string? rawMessage, string? requiredPermission = null)
     {
         var raw = rawMessage ?? "";
+
+        if (IsNotYetProvisioned(raw)) return NotYetProvisionedMessage;
 
         if (IsPermissionDenied(raw))
             return requiredPermission is null

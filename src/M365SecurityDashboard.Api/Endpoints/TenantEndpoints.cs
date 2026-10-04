@@ -401,9 +401,10 @@ public static class TenantEndpoints
             }
             catch (Exception ex)
             {
-                t.LastError = Truncate(ex.Message, 1000);
+                var notYet = GraphErrorHint.IsNotYetProvisioned(ex.Message);
+                t.LastError = notYet ? GraphErrorHint.NotYetProvisionedMessage : Truncate(ex.Message, 1000);
                 await db.SaveChangesAsync(ct);
-                return Results.BadRequest(new { ok = false, message = t.LastError, hint = GraphErrorHint.DescribeOrNull(ex.Message) });
+                return Results.BadRequest(new { ok = false, message = t.LastError, retryable = notYet, hint = GraphErrorHint.DescribeOrNull(ex.Message) });
             }
         });
 
