@@ -1528,7 +1528,7 @@ namespace M365SecurityDashboard.GuiInstaller
         private void BtnNextToDone_Click(object sender, RoutedEventArgs e)
         {
             TxtDoneAddress.Text = $"Vigil365 is available at {installedUrl}";
-            TxtDoneNextSteps.Text = "Next:" + Environment.NewLine + string.Join(Environment.NewLine, InstallPlan.NextSteps(plannedEdition).Select((s, i) => $"{i + 1}. {s}"));
+            TxtDoneNextSteps.Text = "Next:" + Environment.NewLine + string.Join(Environment.NewLine, InstallPlan.NextSteps(plannedEdition, plannedAdminEmail).Select((s, i) => $"{i + 1}. {s}"));
 
             if (usedSelfSignedCertificate)
             {

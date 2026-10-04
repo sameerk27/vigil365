@@ -2,6 +2,7 @@
 import React from "react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { ClientGate } from "./ClientGate";
 import { AuthContext, apiFetch, setEditionMode, setSelectedTenantId, getSelectedTenantId, getActiveClientName, setActiveClientName, clientFileName } from "../services/api";
 import { resetMyTenantsCache } from "../services/tenants";
@@ -26,10 +27,14 @@ function rejectUnpermittedTenant(permitted: string[]) {
   }));
 }
 
-function renderGate() {
+const viewer = { email: "v@x.test", name: "V", role: "Viewer" as const, isAdmin: false, canMutate: false };
+
+function renderGate(opts: { as?: typeof admin | typeof viewer; onSignOut?: () => void; username?: string } = {}) {
   return render(
-    <AuthContext.Provider value={admin}>
-      <ClientGate><div>APP SHELL</div></ClientGate>
+    <AuthContext.Provider value={opts.as ?? admin}>
+      <ClientGate onSignOut={opts.onSignOut} account={opts.username ? { username: opts.username } : null}>
+        <div>APP SHELL</div>
+      </ClientGate>
     </AuthContext.Provider>
   );
 }
@@ -103,9 +108,57 @@ describe("ClientGate (U1, U5)", () => {
   it("no clients assigned: explains it instead of showing errors", async () => {
     setEditionMode("Msp");
     mockApi({ "/api/tenants/me": { body: { current: null, tenants: [] } } });
-    renderGate();
-    expect(await screen.findByText(/No client tenants are assigned to you yet/)).toBeInTheDocument();
+    renderGate({ as: viewer });
+    expect(await screen.findByText(/No client tenants are assigned to this account yet/)).toBeInTheDocument();
     expect(screen.queryByText("APP SHELL")).toBeNull();
+  });
+
+  // Landing here after signing in with an account other than the install's Admin
+  // (a new database makes everyone else a Viewer) was a dead end: no hint which
+  // account, and no way to switch — the app shell's user menu is not rendered.
+  it("no clients assigned: names the signed-in account and offers Sign out", async () => {
+    setEditionMode("Msp");
+    mockApi({ "/api/tenants/me": { body: { current: null, tenants: [] } } });
+    const onSignOut = vi.fn();
+    renderGate({ as: viewer, onSignOut });
+    expect(await screen.findByText("v@x.test")).toBeInTheDocument();
+    expect(screen.getByText(/sign in with the account you entered as Admin email in Setup/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    expect(onSignOut).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to the Microsoft account name when /api/auth/me gave no email", async () => {
+    setEditionMode("Msp");
+    mockApi({ "/api/tenants/me": { body: { current: null, tenants: [] } } });
+    renderGate({ as: { ...viewer, email: "" }, onSignOut: () => {}, username: "samir@contoso.test" });
+    expect(await screen.findByText("samir@contoso.test")).toBeInTheDocument();
+  });
+
+  it("an Admin with no active client reaches the Clients page, not a dead end", async () => {
+    setEditionMode("Msp");
+    mockApi({
+      "/api/tenants/me": { body: { current: null, tenants: [] } },
+      "/api/tenants/rollup": { body: [] },
+      "/api/tenants": { body: [] },
+      "/api/tenants/alerts": { body: [] },
+    });
+    renderGate({ as: admin, onSignOut: () => {} });
+    expect(await screen.findByText(/No clients yet\. Add the first one below\./)).toBeInTheDocument();
+    expect(screen.queryByText(/No client tenants are assigned/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
+  });
+
+  it("Choose a client also shows who is signed in", async () => {
+    setEditionMode("Msp");
+    mockApi({
+      "/api/tenants/me": { body: { current: null, tenants: [A, B] } },
+      "/api/tenants/rollup": { body: [] },
+      "/api/tenants": { body: [] },
+      "/api/tenants/alerts": { body: [] },
+    });
+    renderGate({ as: admin, onSignOut: () => {} });
+    expect(await screen.findByRole("heading", { name: "Choose a client" })).toBeInTheDocument();
+    expect(screen.getByText("a@x.test")).toBeInTheDocument();
   });
 });
 

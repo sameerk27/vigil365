@@ -962,7 +962,7 @@ function AuthGate() {
           client" screen, which renders without the app shell. */}
       <ToastContainer/>
       <ConfirmDialog/>
-      <ClientGate>
+      <ClientGate account={account} onSignOut={handleSignOut}>
         <App account={account} onSignOut={handleSignOut} />
       </ClientGate>
     </AuthContext.Provider>

@@ -393,18 +393,28 @@ namespace M365SecurityDashboard.GuiInstaller
         /// </summary>
         public static bool RestartAfterFailedUpgrade(ServiceState before) => before == ServiceState.Running;
 
+        /// <summary>
+        /// The first step: sign in. It names the account because only the exact
+        /// Admin email entered in Setup becomes Admin on a new database — any other
+        /// account starts as a Viewer with no clients and sees a dead-end screen.
+        /// </summary>
+        public static string SignInStep(string? adminEmail) => string.IsNullOrWhiteSpace(adminEmail)
+            ? "Open Vigil365 and sign in as the administrator."
+            : $"Open Vigil365 and sign in as {adminEmail.Trim()} — the Admin email you entered. " +
+              "Only that account starts as Admin; any other account starts as a Viewer with no access until an Admin promotes it in User Management.";
+
         /// <summary>Next steps shown on the completion page.</summary>
-        public static IReadOnlyList<string> NextSteps(EditionChoice edition) => edition == EditionChoice.Msp
+        public static IReadOnlyList<string> NextSteps(EditionChoice edition, string? adminEmail = null) => edition == EditionChoice.Msp
             ? new[]
             {
-                "Open Vigil365 and sign in as the administrator.",
+                SignInStep(adminEmail),
                 "Go to Clients → Add client.",
                 "Click \"Sign in as global admin & consent\" and have the client's Global Administrator approve.",
                 "Vigil365 tests the connection and starts collecting on the next cycle.",
             }
             : new[]
             {
-                "Open Vigil365 and sign in as the administrator.",
+                SignInStep(adminEmail),
                 "Collection starts on its own; the first results appear within one collection cycle.",
             };
     }

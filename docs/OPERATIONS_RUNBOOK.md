@@ -49,8 +49,12 @@ $keys   = 'C:\ProgramData\Vigil365\keys'
 $db     = 'Vigil365'
 $stamp  = Get-Date -Format 'yyyyMMdd-HHmmss'
 $backup = "D:\Vigil365Backups\$db-$stamp.bak"
-sqlcmd -S '.\SQLEXPRESS' -E -Q "BACKUP DATABASE [$db] TO DISK = N'$backup' WITH COPY_ONLY, COMPRESSION, CHECKSUM, STATS = 10"
+sqlcmd -S '.\SQLEXPRESS' -E -Q "BACKUP DATABASE [$db] TO DISK = N'$backup' WITH COPY_ONLY, CHECKSUM, STATS = 10"
 ```
+
+SQL Server **Express does not support `COMPRESSION`** — the backup fails with "WITH
+COMPRESSION is not supported on Express Edition". On Standard or Enterprise, add
+`COMPRESSION` to the `WITH` list to shrink the file.
 
 4. Verify the backup before treating it as successful:
 

@@ -96,6 +96,26 @@ public sealed class InstallPlanTests
     public void Msp_next_steps_point_to_onboarding()
         => Assert.Contains(InstallPlan.NextSteps(EditionChoice.Msp), s => s.Contains("Add client"));
 
+    // A new database makes only the exact Admin email an Admin; signing in with any
+    // other account lands on "no clients assigned". The last page must say which.
+    [Theory]
+    [InlineData(EditionChoice.Msp)]
+    [InlineData(EditionChoice.Single)]
+    public void Next_steps_name_the_admin_account_to_sign_in_with(EditionChoice edition)
+    {
+        var steps = InstallPlan.NextSteps(edition, "  samir@contoso.test ");
+        Assert.Contains("samir@contoso.test", steps[0]);
+        Assert.Contains("Viewer", steps[0]);
+        Assert.DoesNotContain("  samir", steps[0]); // trimmed
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Next_steps_fall_back_to_the_generic_sign_in_line_without_an_email(string? email)
+        => Assert.Equal("Open Vigil365 and sign in as the administrator.", InstallPlan.NextSteps(EditionChoice.Msp, email)[0]);
+
     // ── Re-running Setup: reuse this install's own app, keep what it does not own ──
 
     [Fact]
