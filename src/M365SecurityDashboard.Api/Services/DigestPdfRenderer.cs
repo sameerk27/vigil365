@@ -9,7 +9,7 @@ public sealed class DigestPdfRenderer
     {
         var lines = new List<(string Text, int Size, bool Bold)>
         {
-            ("Vigil365 - Executive Security Digest", 18, true),
+            ($"{digest.Brand} - Executive Security Digest", 18, true),
             ($"Generated {digest.GeneratedAt:yyyy-MM-dd HH:mm} UTC", 10, false),
             ("", 10, false),
             ("Posture", 13, true),

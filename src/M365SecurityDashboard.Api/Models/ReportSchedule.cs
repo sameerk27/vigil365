@@ -8,8 +8,11 @@ namespace M365SecurityDashboard.Api.Models;
 /// the existing SMTP configuration. The <see cref="Services.ReportScheduleWorker"/>
 /// checks every 15 minutes and dispatches any schedule whose next run is due.
 /// </summary>
-public sealed class ReportSchedule
+public sealed class ReportSchedule : ITenantOptional
 {
+    /// <summary>Null = the MSP-wide default; a value = this tenant's override. See ITenantOptional.</summary>
+    public Guid? TenantId { get; set; }
+
     public Guid Id { get; set; } = Guid.NewGuid();
 
     [MaxLength(120)]

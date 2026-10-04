@@ -45,6 +45,18 @@ public sealed class ApiTokenService(AppDbContext db)
         return token;
     }
 
+    /// <summary>A live token regardless of scope — for tenant resolution, which
+    /// happens before the endpoint's own scope check. Does not touch LastUsedAt.</summary>
+    public async Task<ApiToken?> LookupAsync(string? rawToken, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(rawToken) || !rawToken.StartsWith(TokenPrefix, StringComparison.Ordinal))
+            return null;
+        var hash = Hash(rawToken.Trim());
+        var now = DateTimeOffset.UtcNow;
+        return await db.ApiTokens.AsNoTracking()
+            .FirstOrDefaultAsync(t => t.TokenHash == hash && t.RevokedAt == null && (t.ExpiresAt == null || t.ExpiresAt > now), ct);
+    }
+
     public static bool HasScope(string? scopes, string requiredScope)
     {
         var set = (scopes ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);

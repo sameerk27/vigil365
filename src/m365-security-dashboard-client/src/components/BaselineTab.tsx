@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { Card, LoadingSkeleton } from "./SharedComponents";
+import { Card, LoadingSkeleton, InlineError } from "./SharedComponents";
 import { TableCard, DarkCard, Button, Pill, EmptyState } from "./ui";
 import { baselineApi, useAuth, type BaselineResponse } from "../services/api";
 import { relTime, fmtDate } from "../services/utils";
@@ -31,6 +31,8 @@ export function BaselineTab() {
   };
 
   if (loading) return <LoadingSkeleton type="card" />;
+  // A failed read is not "No baseline yet / run a collection first".
+  if (!data) return <Card title="Tenant Baseline"><InlineError title="Couldn't load the baseline" onRetry={load}/></Card>;
 
   const captured = data?.captured ?? null;
   const drift = data?.drift ?? [];

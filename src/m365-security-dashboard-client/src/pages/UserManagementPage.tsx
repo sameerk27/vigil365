@@ -1,11 +1,14 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { CheckCircle, AlertCircle } from "lucide-react";
 import { AppRole, Tone } from "../services/types";
-import { apiBase, apiFetch, useAuth } from "../services/api";
-import { showToast } from "../services/toast";
+import { apiBase, apiFetch, useAuth, isMspMode } from "../services/api";
+import { showInstallToast } from "../services/toast";
 import { confirmAction } from "../services/confirm";
-import { Card, Badge, EmptyState, LoadingSkeleton } from "../components/SharedComponents";
+import { Card, Badge, EmptyState, LoadingSkeleton, InlineError } from "../components/SharedComponents";
 import { relTime, fmtDate } from "../services/utils";
+import { TenantAssignmentPicker } from "../components/TenantAssignmentPicker";
+import { ApiTokensCard } from "../components/ApiTokensCard";
+import { tenantApi, type ClientTenant } from "../services/tenants";
 
 export interface ManagedUser {
   email: string;
@@ -26,6 +29,8 @@ export interface AuditRow {
   ipAddress?: string;
   userAgent?: string;
   entryHash?: string;
+  /** MSP mode: the client the action concerned; null = MSP-level. */
+  tenantName?: string | null;
 }
 
 interface VerifyResult {
@@ -40,6 +45,10 @@ export function UserManagementPage() {
   const { email: myEmail } = useAuth();
   const [users, setUsers] = useState<ManagedUser[] | null>(null);
   const [audit, setAudit] = useState<AuditRow[] | null>(null);
+  // A failed read is not an empty list: "No users yet" / "No activity recorded
+  // yet" would tell an Admin that nobody has access, or that nothing happened.
+  const [usersError, setUsersError] = useState<string | null>(null);
+  const [auditError, setAuditError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [addEmail, setAddEmail] = useState("");
@@ -47,16 +56,24 @@ export function UserManagementPage() {
   const [addName, setAddName] = useState("");
   const [addInvite, setAddInvite] = useState(false);
   const [adding, setAdding] = useState(false);
+  // MSP: which clients each non-Admin may see. Column only appears with >1 tenant.
+  const [tenants, setTenants] = useState<ClientTenant[]>([]);
+  const [assignments, setAssignments] = useState<Record<string, string[]>>({});
 
   const load = useCallback(async () => {
+    const [t, a] = await Promise.all([tenantApi.list(), tenantApi.assignments()]);
+    setTenants(t.ok ? t.value : []);
+    setAssignments(a.ok ? a.value : {});
+    setUsersError(null);
     try {
       const r = await apiFetch(`${apiBase}/api/admin/users`);
-      if (r.ok) setUsers(await r.json()); else setUsers([]);
-    } catch { setUsers([]); }
+      if (r.ok) setUsers(await r.json()); else setUsersError(`Users request failed (${r.status})`);
+    } catch { setUsersError("Could not reach the API"); }
+    setAuditError(null);
     try {
       const a = await apiFetch(`${apiBase}/api/admin/audit-log`);
-      if (a.ok) setAudit(await a.json()); else setAudit([]);
-    } catch { setAudit([]); }
+      if (a.ok) setAudit(await a.json()); else setAuditError(`Activity log request failed (${a.status})`);
+    } catch { setAuditError("Could not reach the API"); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -83,8 +100,8 @@ export function UserManagementPage() {
       const r = await apiFetch(`${apiBase}/api/admin/users/${encodeURIComponent(u.email)}/role`, {
         method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role }),
       });
-      if (r.ok) { showToast(`${u.email} is now ${role}`); await load(); }
-      else { const e = await r.json().catch(() => ({})); showToast(e.error ?? "Could not change role", "error"); }
+      if (r.ok) { showInstallToast(`${u.email} is now ${role}`); await load(); }
+      else { const e = await r.json().catch(() => ({})); showInstallToast(e.error ?? "Could not change role", "error"); }
     } finally { setBusy(null); }
   };
 
@@ -99,14 +116,14 @@ export function UserManagementPage() {
     setBusy(u.email);
     try {
       const r = await apiFetch(`${apiBase}/api/admin/users/${encodeURIComponent(u.email)}`, { method: "DELETE" });
-      if (r.ok) { showToast(`Removed ${u.email}`); await load(); }
-      else { const e = await r.json().catch(() => ({})); showToast(e.error ?? "Could not remove user", "error"); }
+      if (r.ok) { showInstallToast(`Removed ${u.email}`); await load(); }
+      else { const e = await r.json().catch(() => ({})); showInstallToast(e.error ?? "Could not remove user", "error"); }
     } finally { setBusy(null); }
   };
 
   const addUser = async () => {
     const email = addEmail.trim().toLowerCase();
-    if (!email || !email.includes("@")) { showToast("Enter a valid email address", "error"); return; }
+    if (!email || !email.includes("@")) { showInstallToast("Enter a valid email address", "error"); return; }
     setAdding(true);
     try {
       const r = await apiFetch(`${apiBase}/api/admin/users`, {
@@ -115,14 +132,14 @@ export function UserManagementPage() {
       });
       if (r.ok) {
         const d = await r.json().catch(() => ({}));
-        if (addInvite && d.inviteError) showToast(`Added ${email}, but email failed: ${d.inviteError}`, "error");
-        else if (addInvite && d.inviteSent) showToast(`Added ${email} as ${addRole} — invite sent`);
-        else showToast(`Added ${email} as ${addRole}`);
+        if (addInvite && d.inviteError) showInstallToast(`Added ${email}, but email failed: ${d.inviteError}`, "error");
+        else if (addInvite && d.inviteSent) showInstallToast(`Added ${email} as ${addRole} — invite sent`);
+        else showInstallToast(`Added ${email} as ${addRole}`);
         setAddEmail(""); setAddName(""); setAddRole("Viewer"); setAddInvite(false); setShowAdd(false);
         await load();
       } else {
         const e = await r.json().catch(() => ({}));
-        showToast(e.error ?? "Could not add user", "error");
+        showInstallToast(e.error ?? "Could not add user", "error");
       }
     } finally { setAdding(false); }
   };
@@ -131,8 +148,8 @@ export function UserManagementPage() {
     setBusy(u.email);
     try {
       const r = await apiFetch(`${apiBase}/api/admin/users/${encodeURIComponent(u.email)}/invite`, { method: "POST" });
-      if (r.ok) showToast(`Invite email sent to ${u.email}`);
-      else { const e = await r.json().catch(() => ({})); showToast(e.error ?? "Could not send invite", "error"); }
+      if (r.ok) showInstallToast(`Invite email sent to ${u.email}`);
+      else { const e = await r.json().catch(() => ({})); showInstallToast(e.error ?? "Could not send invite", "error"); }
     } finally { setBusy(null); }
   };
 
@@ -146,7 +163,7 @@ export function UserManagementPage() {
     setExporting(true);
     try {
       const r = await apiFetch(`${apiBase}/api/admin/audit-log/export`);
-      if (!r.ok) { showToast("Export failed", "error"); return; }
+      if (!r.ok) { showInstallToast("Export failed", "error"); return; }
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -154,8 +171,8 @@ export function UserManagementPage() {
       a.download = `vigil365-audit-log-${new Date().toISOString().slice(0, 10)}.csv`;
       a.click();
       URL.revokeObjectURL(url);
-      showToast("Audit log exported");
-    } catch { showToast("Export failed", "error"); }
+      showInstallToast("Audit log exported");
+    } catch { showInstallToast("Export failed", "error"); }
     finally { setExporting(false); }
   };
 
@@ -163,17 +180,17 @@ export function UserManagementPage() {
     setVerifying(true);
     try {
       const r = await apiFetch(`${apiBase}/api/admin/audit-log/verify`);
-      if (!r.ok) { showToast("Verification request failed", "error"); return; }
+      if (!r.ok) { showInstallToast("Verification request failed", "error"); return; }
       const d: VerifyResult = await r.json();
       setVerify(d);
       // Severity must match meaning: a broken chain is the single most serious
       // signal this product emits — it must never render as a green success toast.
-      showToast(
+      showInstallToast(
         d.valid
           ? `Chain intact — ${d.verified} entries verified`
           : `Tampering detected at entry #${d.firstBrokenId}`,
         d.valid ? "success" : "error");
-    } catch { showToast("Verification request failed", "error"); }
+    } catch { showInstallToast("Verification request failed", "error"); }
     finally { setVerifying(false); }
   };
 
@@ -205,7 +222,9 @@ export function UserManagementPage() {
             <button className="btn-export" onClick={() => setShowAdd(false)}>Cancel</button>
           </div>
         )}
-        {users === null
+        {usersError
+          ? <InlineError title="Couldn't load users" message={`${usersError}.`} onRetry={load}/>
+          : users === null
           ? <LoadingSkeleton type="table"/>
           : users.length === 0
           ? <EmptyState message="No users yet."/>
@@ -213,7 +232,7 @@ export function UserManagementPage() {
             <div className="tbl-wrap">
               <table className="data-tbl">
                 <thead>
-                  <tr><th scope="col">User</th><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Last seen</th><th scope="col">Actions</th></tr>
+                  <tr><th scope="col">User</th><th scope="col">Email</th><th scope="col">Role</th>{isMspMode() && tenants.length > 1 && <th scope="col">Clients</th>}<th scope="col">Last seen</th><th scope="col">Actions</th></tr>
                 </thead>
                 <tbody>
                   {users.map(u => (
@@ -224,6 +243,13 @@ export function UserManagementPage() {
                       </td>
                       <td className="al-date">{u.email}</td>
                       <td><Badge label={u.role} tone={roleTone(u.role)}/></td>
+                      {isMspMode() && tenants.length > 1 && (
+                        <td>
+                          <TenantAssignmentPicker email={u.email} role={u.role} tenants={tenants}
+                            assigned={assignments[u.email] ?? []}
+                            onChanged={(email, ids) => setAssignments(a => ({ ...a, [email]: ids }))} />
+                        </td>
+                      )}
                       <td className="al-date" title={new Date(u.lastSeenAt).getFullYear() <= 1 ? "Never signed in" : fmtDate(u.lastSeenAt)}>{new Date(u.lastSeenAt).getFullYear() <= 1 ? "Never" : (relTime(u.lastSeenAt) || fmtDate(u.lastSeenAt))}</td>
                       <td data-inline-style="inline-a0c5370730">
                         <select
@@ -252,6 +278,8 @@ export function UserManagementPage() {
             </div>
           )}
       </Card>
+
+      <ApiTokensCard />
 
       <Card title="Activity Log"
         badge={verify
@@ -282,7 +310,10 @@ export function UserManagementPage() {
             <span> Verified {verify.verified} hashed entries ({verify.legacyUnhashed} predate hashing).</span>
           )}
         </div>
-        {audit === null
+        {auditError
+          ? <InlineError title="Couldn't load the activity log" onRetry={load}
+              message={`${auditError}. Entries may exist — this does not mean nothing was recorded.`}/>
+          : audit === null
           ? <LoadingSkeleton type="table"/>
           : audit.length === 0
           ? <EmptyState message="No activity recorded yet."/>
@@ -290,12 +321,13 @@ export function UserManagementPage() {
             <div className="tbl-wrap">
               <table className="data-tbl">
                 <thead>
-                  <tr><th scope="col">When</th><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Target</th><th scope="col">Details</th><th scope="col">IP</th></tr>
+                  <tr><th scope="col">When</th>{isMspMode() && <th scope="col">Client</th>}<th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Target</th><th scope="col">Details</th><th scope="col">IP</th></tr>
                 </thead>
                 <tbody>
                   {audit.map(a => (
                     <tr key={a.id}>
                       <td className="al-date" title={fmtDate(a.timestamp)}>{relTime(a.timestamp) || fmtDate(a.timestamp)}</td>
+                      {isMspMode() && <td className="al-date">{a.tenantName ?? "MSP"}</td>}
                       <td className="al-date">{a.actorEmail}</td>
                       <td><Badge label={a.action} tone="neutral"/></td>
                       <td className="al-date">{a.targetId || a.targetType}</td>

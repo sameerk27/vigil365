@@ -42,12 +42,12 @@ public static class AdminEndpoints
             };
             db.AppUsers.Add(user);
             await db.SaveChangesAsync(ct);
-            await audit.WriteAsync("user.add", "user", email, $"added with role {user.Role}", ct);
+            await audit.WriteMspAsync("user.add", "user", email, $"added with role {user.Role}", ct);
 
             string? inviteError = null;
             if (input.SendInvite)
             {
-                var cfg = await db.NotificationSettings.FirstOrDefaultAsync(ct) ?? new NotificationSettings { Id = 1 };
+                var cfg = await db.InstallSettingsAsync(ct) ?? new NotificationSettings { Id = 1 };
                 var url = config["Auth:RedirectUri"] ?? "http://localhost:5000";
                 var (ok, error) = await sender.SendInviteEmailAsync(cfg, email, user.Role, url, ct);
                 if (!ok) inviteError = error;
@@ -63,10 +63,10 @@ public static class AdminEndpoints
             var user = await db.AppUsers.FirstOrDefaultAsync(u => u.Email == email, ct);
             if (user is null) return Results.NotFound();
 
-            var cfg = await db.NotificationSettings.FirstOrDefaultAsync(ct) ?? new NotificationSettings { Id = 1 };
+            var cfg = await db.InstallSettingsAsync(ct) ?? new NotificationSettings { Id = 1 };
             var url = config["Auth:RedirectUri"] ?? "http://localhost:5000";
             var (ok, error) = await sender.SendInviteEmailAsync(cfg, email, user.Role, url, ct);
-            if (ok) await audit.WriteAsync("user.invite", "user", email, "invite email sent", ct);
+            if (ok) await audit.WriteMspAsync("user.invite", "user", email, "invite email sent", ct);
             return ok ? Results.Ok(new { ok = true }) : Results.BadRequest(new { error });
         }).RequireAuthorization("RequireAdmin");
 
@@ -94,7 +94,7 @@ public static class AdminEndpoints
             user.Role = input.Role;
             await db.SaveChangesAsync(ct);
             cache.Remove(RoleClaimsTransformation.RoleCacheKey(email));
-            await audit.WriteAsync("user.role_change", "user", email, $"role {oldRole} -> {input.Role}", ct);
+            await audit.WriteMspAsync("user.role_change", "user", email, $"role {oldRole} -> {input.Role}", ct);
             return Results.Ok(user);
         }).RequireAuthorization("RequireAdmin");
 
@@ -117,19 +117,34 @@ public static class AdminEndpoints
             db.AppUsers.Remove(user);
             await db.SaveChangesAsync(ct);
             cache.Remove(RoleClaimsTransformation.RoleCacheKey(email));
-            await audit.WriteAsync("user.remove", "user", email, $"removed (was {removedRole})", ct);
+            await audit.WriteMspAsync("user.remove", "user", email, $"removed (was {removedRole})", ct);
             return Results.NoContent();
         }).RequireAuthorization("RequireAdmin");
 
         // Audit trail of security-relevant actions (Admin only).
-        app.MapGet("/api/admin/audit-log", async (AppDbContext db, CancellationToken ct) =>
-            Results.Ok(await db.AuditEntries.AsNoTracking().OrderByDescending(a => a.Timestamp).Take(200).ToListAsync(ct)))
-            .RequireAuthorization("RequireAdmin");
+        // MSP mode: an Admin sees one log across every client, each entry labelled
+        // with its client (MSP_V12_PLAN.md U9, decision Q4). Single mode: unchanged.
+        app.MapGet("/api/admin/audit-log", async (AppDbContext db, Microsoft.Extensions.Options.IOptions<EditionOptions> edition, CancellationToken ct) =>
+        {
+            var source = edition.Value.IsMsp ? db.CrossTenant<AuditEntry>() : db.AuditEntries;
+            var rows = await source.AsNoTracking().OrderByDescending(a => a.Timestamp).Take(200).ToListAsync(ct);
+            var names = edition.Value.IsMsp
+                ? await db.ClientTenants.AsNoTracking().ToDictionaryAsync(t => t.Id, t => t.Name, ct)
+                : new Dictionary<Guid, string>();
+            return Results.Ok(rows.Select(a => new
+            {
+                a.Id, a.Timestamp, a.ActorEmail, a.Action, a.TargetType, a.TargetId, a.Details, a.IpAddress, a.UserAgent, a.EntryHash,
+                a.TenantId,
+                // A purged client's entries are kept (they are the MSP's record)
+                // but its name is gone; they must not read as MSP-level.
+                tenantName = a.TenantId is Guid t ? (names.TryGetValue(t, out var n) ? n : (edition.Value.IsMsp ? "Removed client" : null)) : null,
+            }));
+        }).RequireAuthorization("RequireAdmin");
 
         // Full audit trail as CSV (Admin only). The export itself is audited.
         app.MapGet("/api/admin/audit-log/export", async (AppDbContext db, AuditLogger audit, CancellationToken ct) =>
         {
-            var entries = await db.AuditEntries.AsNoTracking()
+            var entries = await db.CrossTenant<AuditEntry>().AsNoTracking() /* whole chain, every tenant */
                 .OrderBy(a => a.Id)
                 .Take(100_000)
                 .ToListAsync(ct);
@@ -139,15 +154,18 @@ public static class AdminEndpoints
             static string Csv(string? v) => CsvSanitizer.Field(v);
 
             var sb = new System.Text.StringBuilder();
-            sb.AppendLine("Id,TimestampUtc,ActorEmail,Action,TargetType,TargetId,Details,IpAddress,UserAgent,PrevHash,EntryHash");
+            // TenantId and HashVersion last: version-1 hashes cover them, so an
+            // offline check of the export needs both.
+            sb.AppendLine("Id,TimestampUtc,ActorEmail,Action,TargetType,TargetId,Details,IpAddress,UserAgent,PrevHash,EntryHash,TenantId,HashVersion");
             foreach (var e in entries)
                 sb.AppendLine(string.Join(',',
                     e.Id,
                     e.Timestamp.UtcDateTime.ToString("O"),
                     Csv(e.ActorEmail), Csv(e.Action), Csv(e.TargetType), Csv(e.TargetId),
-                    Csv(e.Details), Csv(e.IpAddress), Csv(e.UserAgent), Csv(e.PrevHash), Csv(e.EntryHash)));
+                    Csv(e.Details), Csv(e.IpAddress), Csv(e.UserAgent), Csv(e.PrevHash), Csv(e.EntryHash),
+                    e.TenantId?.ToString("D") ?? "", e.HashVersion));
 
-            await audit.WriteAsync("audit.export", "audit_log", null, $"exported {entries.Count} entries as CSV", ct);
+            await audit.WriteMspAsync("audit.export", "audit_log", null, $"exported {entries.Count} entries as CSV", ct);
             return Results.File(
                 System.Text.Encoding.UTF8.GetBytes(sb.ToString()),
                 "text/csv",
@@ -155,43 +173,21 @@ public static class AdminEndpoints
         }).RequireAuthorization("RequireAdmin");
 
         // Verify the tamper-evident hash chain (Admin only). Recomputes every entry's
-        // hash and checks the PrevHash linkage in Id order. Entries written before the
-        // hash chain existed (EntryHash NULL) are counted as "legacy" and skipped —
-        // verification starts from the first hashed entry.
+        // hash and checks the PrevHash linkage in Id order (AuditLogger.VerifyChain).
+        // Entries written before the hash chain existed (EntryHash NULL) are counted
+        // as "legacy" and skipped — verification starts from the first hashed entry.
         app.MapGet("/api/admin/audit-log/verify", async (AppDbContext db, CancellationToken ct) =>
         {
-            var entries = await db.AuditEntries.AsNoTracking().OrderBy(a => a.Id).ToListAsync(ct);
-
-            var legacy = 0; var checked_ = 0;
-            long? firstBrokenId = null;
-            string? expectedPrev = null; var chainStarted = false;
-
-            foreach (var e in entries)
-            {
-                if (e.EntryHash is null) // pre-hash-chain row
-                {
-                    legacy++;
-                    if (chainStarted && firstBrokenId is null) firstBrokenId = e.Id; // gap inside the chain
-                    continue;
-                }
-
-                if (chainStarted && e.PrevHash != expectedPrev && firstBrokenId is null)
-                    firstBrokenId = e.Id;
-                if (AuditLogger.ComputeHash(e) != e.EntryHash && firstBrokenId is null)
-                    firstBrokenId = e.Id;
-
-                expectedPrev = e.EntryHash;
-                chainStarted = true;
-                checked_++;
-            }
+            var entries = await db.CrossTenant<AuditEntry>().AsNoTracking() /* whole chain, every tenant */.OrderBy(a => a.Id).ToListAsync(ct);
+            var result = AuditLogger.VerifyChain(entries);
 
             return Results.Ok(new
             {
-                valid = firstBrokenId is null,
-                total = entries.Count,
-                verified = checked_,
-                legacyUnhashed = legacy,
-                firstBrokenId,
+                valid = result.Valid,
+                total = result.Total,
+                verified = result.Verified,
+                legacyUnhashed = result.LegacyUnhashed,
+                firstBrokenId = result.FirstBrokenId,
                 verifiedAt = DateTimeOffset.UtcNow
             });
         }).RequireAuthorization("RequireAdmin");

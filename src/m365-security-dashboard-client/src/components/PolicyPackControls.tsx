@@ -1,7 +1,7 @@
 import React, { useRef, useState } from "react";
 import { Download, Upload } from "lucide-react";
-import { apiBase, apiFetch } from "../services/api";
-import { showToast } from "../services/toast";
+import { apiBase, apiFetch, useAuth, isMspMode } from "../services/api";
+import { showInstallToast } from "../services/toast";
 import { confirmAction } from "../services/confirm";
 
 type ImportResult = {
@@ -27,6 +27,10 @@ export function PolicyPackControls({ onChanged }: { onChanged: () => void | Prom
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
+  // A pack's new policies are install-wide. In MSP mode they would run for every
+  // client, so only an Admin may import one (the server refuses anyone else).
+  const { isAdmin } = useAuth();
+  const mayImport = !isMspMode() || isAdmin;
 
   const exportPack = async () => {
     const includeRecipients = await confirmAction({
@@ -38,7 +42,7 @@ export function PolicyPackControls({ onChanged }: { onChanged: () => void | Prom
     setBusy(true);
     try {
       const r = await apiFetch(`${apiBase}/api/alert-policies/export?includeRecipients=${includeRecipients}`);
-      if (!r.ok) { showToast("Could not export policies", "error"); return; }
+      if (!r.ok) { showInstallToast("Could not export policies", "error"); return; }
       const pack = await r.json();
       const blob = new Blob([JSON.stringify(pack, null, 2)], { type: "application/json" });
       const a = Object.assign(document.createElement("a"), {
@@ -47,9 +51,9 @@ export function PolicyPackControls({ onChanged }: { onChanged: () => void | Prom
       });
       a.click();
       URL.revokeObjectURL(a.href);
-      showToast(`Exported ${pack.policies?.length ?? 0} policies`);
+      showInstallToast(`Exported ${pack.policies?.length ?? 0} policies`);
     } catch {
-      showToast("Could not export policies", "error");
+      showInstallToast("Could not export policies", "error");
     } finally { setBusy(false); }
   };
 
@@ -63,13 +67,13 @@ export function PolicyPackControls({ onChanged }: { onChanged: () => void | Prom
     try {
       pack = JSON.parse(await file.text());
     } catch {
-      showToast("That file is not valid JSON", "error");
+      showInstallToast("That file is not valid JSON", "error");
       return;
     }
 
     const count = Array.isArray((pack as { policies?: unknown[] })?.policies)
       ? (pack as { policies: unknown[] }).policies.length : 0;
-    if (count === 0) { showToast("No policies found in that file", "error"); return; }
+    if (count === 0) { showInstallToast("No policies found in that file", "error"); return; }
 
     const update = await confirmAction({
       title: `Import ${count} polic${count === 1 ? "y" : "ies"}?`,
@@ -87,20 +91,20 @@ export function PolicyPackControls({ onChanged }: { onChanged: () => void | Prom
       });
       if (!r.ok) {
         const body = await r.json().catch(() => ({}));
-        showToast(body.error ?? "Import failed", "error");
+        showInstallToast(body.error ?? "Import failed", "error");
         return;
       }
       const res: ImportResult = await r.json();
       setResult(res);
       const changed = res.importedCount + res.updatedCount;
-      showToast(
+      showInstallToast(
         changed > 0
           ? `Imported ${res.importedCount}, updated ${res.updatedCount}`
           : "No policies changed",
         res.rejectedCount > 0 ? "error" : "success");
       if (changed > 0) await onChanged();
     } catch {
-      showToast("Import failed", "error");
+      showInstallToast("Import failed", "error");
     } finally { setBusy(false); }
   };
 
@@ -109,7 +113,8 @@ export function PolicyPackControls({ onChanged }: { onChanged: () => void | Prom
       <button type="button" className="btn-export" disabled={busy} onClick={exportPack}>
         <Download size={13}/> Export
       </button>
-      <button type="button" className="btn-export" disabled={busy} onClick={() => fileRef.current?.click()}>
+      <button type="button" className="btn-export" disabled={busy || !mayImport} onClick={() => fileRef.current?.click()}
+        title={mayImport ? undefined : "Only an Admin can import policies: imported policies apply to every client."}>
         <Upload size={13}/> Import
       </button>
       <input ref={fileRef} type="file" accept="application/json,.json"

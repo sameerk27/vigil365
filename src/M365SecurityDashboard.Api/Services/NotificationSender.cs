@@ -58,9 +58,7 @@ public sealed class NotificationSender(
 
         if (cfg.EmailEnabled && !cfg.EmailDigest && !string.IsNullOrWhiteSpace(cfg.SmtpHost))
         {
-            var to = alert.Status == "new"
-                ? (FirstNonEmpty(cfg.DefaultRecipient) ?? cfg.FromAddress)
-                : cfg.DefaultRecipient;
+            var to = alert.Status == "new" ? EmailRecipients(cfg) : cfg.DefaultRecipient;
             if (!string.IsNullOrWhiteSpace(to))
                 await SendEmailAsync(db, cfg, smtpPassword, to!, alert, ct);
         }
@@ -68,6 +66,10 @@ public sealed class NotificationSender(
 
     private static string? FirstNonEmpty(params string?[] vals)
         => vals.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+
+    /// <summary>The routed recipients; with none, the From mailbox — unless this client's routing leaves the MSP out.</summary>
+    private static string? EmailRecipients(NotificationSettings cfg)
+        => FirstNonEmpty(cfg.DefaultRecipient, cfg.FromAddressFallback ? cfg.FromAddress : null);
 
     /// <summary>
     /// Dispatches a delivery-failure heads-up, deliberately skipping the channels that
@@ -88,7 +90,7 @@ public sealed class NotificationSender(
             await SendWebhookAsync(db, webhookUrl!, webhookSecret, notice, ct);
         if (cfg.EmailEnabled && !failingChannels.Contains("email") && !string.IsNullOrWhiteSpace(cfg.SmtpHost))
         {
-            var to = FirstNonEmpty(cfg.DefaultRecipient, cfg.FromAddress);
+            var to = EmailRecipients(cfg);
             if (!string.IsNullOrWhiteSpace(to))
                 await SendEmailAsync(db, cfg, smtpPassword, to!, notice, ct);
         }
@@ -262,7 +264,7 @@ public sealed class NotificationSender(
 
         if (cfg.EmailEnabled && cfg.EmailDigest && !string.IsNullOrWhiteSpace(cfg.SmtpHost))
         {
-            var to = FirstNonEmpty(cfg.DefaultRecipient, cfg.FromAddress);
+            var to = EmailRecipients(cfg);
             if (!string.IsNullOrWhiteSpace(to) && await SendDigestEmailAsync(db, cfg, smtpPassword, to!, title, ordered, ct)) sent++;
         }
         return sent;

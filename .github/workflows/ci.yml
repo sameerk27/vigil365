@@ -39,6 +39,23 @@ jobs:
         shell: pwsh
         run: ./scripts/check-version.ps1
 
+      # The Linux installer: a syntax check, then the JSON it writes into
+      # appsettings.Production.json (a named SQL instance's backslash written raw
+      # left a config the service could not load). Installs nothing.
+      - name: Check enterprise-install.sh
+        run: |
+          bash -n enterprise-install.sh
+          bash scripts/tests/enterprise-install.test.sh
+
+      # register-app.ps1 against a fake az (failures reported, never "done";
+      # -MultiTenant's Application.Read.All grant) and the installers' sc.exe
+      # command line. Also run under Windows PowerShell 5.1 in build-installer.
+      - name: Test the PowerShell scripts (Pester)
+        shell: pwsh
+        run: |
+          if (-not (Get-Module -ListAvailable Pester)) { Install-Module Pester -Scope CurrentUser -Force -SkipPublisherCheck }
+          ./scripts/tests/Invoke-ScriptTests.ps1
+
       - name: Restore frontend dependencies
         working-directory: src/m365-security-dashboard-client
         run: npm ci
@@ -54,6 +71,38 @@ jobs:
       - name: Build frontend
         working-directory: src/m365-security-dashboard-client
         run: npm run build
+
+      # The e2e build bypasses Microsoft sign-in (VITE_E2E_FAKE_AUTH=1). That
+      # branch must never reach a shipped bundle — fail if its marker is there.
+      # This covers CI's own build; the builds that ship run the same check on
+      # their own output (Dockerfile, scripts/build-installer.ps1).
+      - name: Assert release bundle has no e2e auth bypass
+        run: |
+          if grep -rlE 'vigil365-e2e-fake-auth|VITE_E2E_FAKE_AUTH' src/M365SecurityDashboard.Api/wwwroot; then
+            echo "::error::Release bundle contains the e2e fake-auth bypass"; exit 1
+          fi
+
+      # The bypass exists only on the vite dev server (import.meta.env.DEV). A
+      # production build must drop it even with the flag set — as it is when a
+      # developer's client .env.local sets it — which covers every script that
+      # builds the SPA (install.ps1, enterprise-install.*), not just this one.
+      - name: Assert a production build drops the bypass even with the flag set
+        working-directory: src/m365-security-dashboard-client
+        run: |
+          VITE_E2E_FAKE_AUTH=1 npx vite build --outDir "$RUNNER_TEMP/bypass-check" --emptyOutDir
+          if grep -rlE 'vigil365-e2e-fake-auth|VITE_E2E_FAKE_AUTH' "$RUNNER_TEMP/bypass-check"; then
+            echo "::error::A production build with VITE_E2E_FAKE_AUTH=1 still contains the sign-in bypass"; exit 1
+          fi
+
+      # Signed-in journeys (e2e/signed-in) run against a dev server built with the
+      # bypass and fully stubbed APIs — no backend or Microsoft account needed.
+      - name: Install Playwright browser
+        working-directory: src/m365-security-dashboard-client
+        run: npx playwright install --with-deps chromium
+
+      - name: Run e2e tests
+        working-directory: src/m365-security-dashboard-client
+        run: npx playwright test
 
       # Supply-chain gates. A security product should not ship on top of
       # known-vulnerable dependencies; fail the build rather than warn.
@@ -72,6 +121,16 @@ jobs:
           dotnet build src/M365SecurityDashboard.Api/M365SecurityDashboard.Api.csproj --configuration Release --no-restore
           dotnet build src/M365SecurityDashboard.Api.Tests/M365SecurityDashboard.Api.Tests.csproj --configuration Release --no-restore
 
+      # Vigil365 runs on SQL Server and Postgres, and EF cannot share a migration
+      # set between them. A model change with a migration for only one engine
+      # breaks the other engine's upgrade; this makes that a CI failure. Needs no
+      # database — it compares the compiled model against each snapshot.
+      - name: Check migrations match the model on every engine
+        shell: pwsh
+        run: |
+          dotnet tool restore
+          ./scripts/check-migrations.ps1 -Configuration Release
+
       - name: Audit NuGet dependencies
         run: |
           dotnet list M365SecurityAlertDashboard.sln package --vulnerable --include-transitive 2>&1 | tee audit.txt
@@ -81,8 +140,29 @@ jobs:
 
       # Point at the test project, not the solution: `dotnet test <sln>` evaluates
       # every project, and the WPF installer does not resolve on Linux.
+      # The Relational/ parity suite starts real SQL Server and Postgres in
+      # Docker (present on ubuntu-latest). REQUIRE turns a Docker failure into a
+      # test failure instead of a silent skip — these are the only tests that
+      # touch a real database, so skipping them must never look like passing.
       - name: Run .NET tests
+        env:
+          VIGIL365_REQUIRE_DB_TESTS: "1"
         run: dotnet test src/M365SecurityDashboard.Api.Tests/M365SecurityDashboard.Api.Tests.csproj --configuration Release --no-build --verbosity normal
+
+  # Both compose stacks build this image, and nothing else in CI did: the API
+  # builds fine on the runner, where the whole repository is present, while the
+  # image's build stage only sees what the Dockerfile copies in. That is how
+  # the image stopped building unnoticed. Also runs the Dockerfile's own
+  # e2e-bypass check against the bundle it ships.
+  docker-image:
+    name: Build Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build --pull -t vigil365:ci .
 
   build-installer:
     name: Build installer (Windows)
@@ -101,3 +181,15 @@ jobs:
       # single-file exe (that is scripts/build-installer.ps1, run at release time).
       - name: Build the installer project
         run: dotnet build src/M365SecurityDashboard.GuiInstaller/M365SecurityDashboard.GuiInstaller.csproj --configuration Release
+
+      # install.ps1 / enterprise-install.ps1 pass sc.exe one verbatim command line;
+      # as separate arguments, Windows PowerShell 5.1 dropped binPath's quotes and
+      # the service was never created. The runner is elevated, so these also create,
+      # read back and delete a real service, in both shells.
+      - name: Test the PowerShell scripts under Windows PowerShell 5.1 (Pester)
+        shell: powershell
+        run: ./scripts/tests/Invoke-ScriptTests.ps1
+
+      - name: Test the PowerShell scripts under PowerShell 7 (Pester)
+        shell: pwsh
+        run: ./scripts/tests/Invoke-ScriptTests.ps1

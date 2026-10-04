@@ -15,8 +15,11 @@ namespace M365SecurityDashboard.Api.Models;
 ///   both set                          -> only that policy, for matching entities
 ///   PolicyId null, EntityPattern set  -> that entity, across every policy
 /// </summary>
-public class SuppressionRule
+public class SuppressionRule : ITenantScoped
 {
+    /// <summary>Owning tenant. Stamped from the tenant context on insert; see ITenantScoped.</summary>
+    public Guid TenantId { get; set; }
+
     public Guid Id { get; set; } = Guid.NewGuid();
 
     /// <summary>Policy this rule applies to. Null = all policies.</summary>

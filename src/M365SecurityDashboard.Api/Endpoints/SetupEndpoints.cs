@@ -15,9 +15,9 @@ public static class SetupEndpoints
         // First-run / setup progress. Drives the onboarding checklist so a fresh install
         // gets "do these things" instead of a dashboard full of empty cards. Analyst-
         // readable; every signal comes from state the app already persists.
-        app.MapGet("/api/setup/status", async (AppDbContext db, IOptions<GraphOptions> options, CancellationToken ct) =>
+        app.MapGet("/api/setup/status", async (AppDbContext db, TenantGraphCredentials graphCreds, CancellationToken ct) =>
         {
-            var graphConfigured = options.Value.IsConfigured();
+            var graphConfigured = await graphCreds.IsConfiguredAsync(ct);
 
             var lastRun = await db.CollectionRuns.AsNoTracking()
                 .OrderByDescending(r => r.Id)
@@ -156,18 +156,59 @@ public static class SetupEndpoints
             if (loginInstance != "") o.LoginInstance = loginInstance;
             if (baseUrl != "") o.BaseUrl = baseUrl;
 
-            await audit.WriteAsync("setup.graph", "settings", "graph", "Graph credentials updated", ct);
+            await audit.WriteMspAsync("setup.graph", "settings", "graph", "Graph credentials updated", ct);
 
-            // Test the connection with a fresh client (reads the just-mutated options).
+            // Test the connection with a fresh client (reads the just-mutated options),
+            // in a scope with no tenant: these are the install's own credentials, so the
+            // test must not run in whichever client is selected (as msp-app-status).
             string? testError = null;
             try
             {
-                var graph = services.GetRequiredService<GraphApiClient>();
+                using var scope = services.CreateScope();
+                var graph = scope.ServiceProvider.GetRequiredService<GraphApiClient>();
                 await graph.GetSinglePageAsync("/v1.0/organization", ct);
             }
             catch (Exception ex) { testError = ex.Message; }
 
             return Results.Ok(new { saved = true, testOk = testError is null, testError });
+        }).RequireAuthorization("RequireAdmin");
+
+        // Read-only readiness check of the install's own app registration for MSP
+        // onboarding (MSP_V12_PLAN.md M2): does it accept client consent, is the
+        // /consented landing registered, does it request every permission in
+        // graph-permissions.json? Always uses the install-wide credentials — the
+        // MSP's own tenant — never the selected client's. Needs Application.Read.All
+        // in the MSP tenant; without it the answer is "unknown" with the reason.
+        // (This replaces the old in-app "register the MSP app" endpoint, which
+        // shelled out to PowerShell and could not work on installed copies.)
+        app.MapGet("/api/setup/msp-app-status", async (IServiceProvider services, IConfiguration config, HttpContext ctx, CancellationToken ct) =>
+        {
+            var expected = $"{(config["Auth:RedirectUri"] ?? $"{ctx.Request.Scheme}://{ctx.Request.Host}").TrimEnd('/')}/consented";
+            using var scope = services.CreateScope(); // no tenant set → install-wide credentials
+            var creds = await scope.ServiceProvider.GetRequiredService<TenantGraphCredentials>().ResolveAsync(ct);
+            if (!creds.IsConfigured())
+                return Results.Ok(MspAppStatus.Unreadable(expected, "Install-wide Graph credentials are not configured (Setup)."));
+
+            var graph = scope.ServiceProvider.GetRequiredService<GraphApiClient>();
+            try
+            {
+                var appObj = (await graph.GetSinglePageAsync(
+                    $"/v1.0/applications(appId='{Uri.EscapeDataString(creds.ClientId)}')?$select=signInAudience,web,requiredResourceAccess", ct)).FirstOrDefault();
+                var graphSp = (await graph.GetSinglePageAsync(
+                    $"/v1.0/servicePrincipals(appId='{GraphPermissionList.GraphAppId}')?$select=appRoles", ct)).FirstOrDefault();
+                if (appObj.ValueKind != JsonValueKind.Object || graphSp.ValueKind != JsonValueKind.Object)
+                    return Results.Ok(MspAppStatus.Unreadable(expected, "Graph returned no application object for this install's client id."));
+                return Results.Ok(MspAppStatus.Evaluate(appObj, graphSp, GraphPermissionList.Required.Select(p => p.Name), expected));
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode is System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.Unauthorized)
+            {
+                return Results.Ok(MspAppStatus.Unreadable(expected,
+                    "Can't read the app registration: grant Application.Read.All to this app in your own tenant (not part of what clients consent to)."));
+            }
+            catch (Exception ex)
+            {
+                return Results.Ok(MspAppStatus.Unreadable(expected, $"Could not check the app registration: {ex.Message}"));
+            }
         }).RequireAuthorization("RequireAdmin");
     }
 }

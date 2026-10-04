@@ -18,6 +18,14 @@ public sealed class GraphOptions
     public string BaseUrl { get; set; } = "https://graph.microsoft.com";
     public string LoginInstance { get; set; } = "https://login.microsoftonline.com";
     public int CollectionIntervalMinutes { get; set; } = 15;
+
+    // ── MSP scale knobs ──
+    /// <summary>How many client tenants collect at once. 1 = sequential.</summary>
+    public int TenantParallelism { get; set; } = 2;
+    /// <summary>Seconds between tenant starts, so a burst of clients does not hit Graph together.</summary>
+    public int TenantStaggerSeconds { get; set; } = 3;
+    /// <summary>Longest a repeatedly failing tenant is left alone before the next attempt.</summary>
+    public int MaxBackoffMinutes { get; set; } = 240;
     public int DevicesNotCheckedInDays { get; set; } = 7;
     public int SignInLookbackHours { get; set; } = 24;
     public string ExchangeQuarantinePath { get; set; } = "";
