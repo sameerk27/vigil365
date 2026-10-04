@@ -24,6 +24,7 @@ this page and that file disagree.
 | Advanced hunting (Defender for Identity, Cloud Apps) | `ThreatHunting.Read.All` |
 | MFA method detail | `UserAuthenticationMethod.Read.All` |
 | SharePoint sharing posture | `SharePointTenantSettings.Read.All` |
+| Secure Score and quarantined messages | `SecurityEvents.Read.All` |
 
 ## Optional
 
@@ -34,6 +35,7 @@ phishing simulations; Vigil365 only reads results with it.
 | Feature | Permission |
 | --- | --- |
 | Attack simulation results (Graph has no read-only variant; a tenant may refuse it) | `AttackSimulation.ReadWrite.All` |
+| Defender for Identity sensor health | `SecurityIdentitiesHealth.Read.All` |
 
 Admin consent is required. In the MSP edition each client's Global Administrator grants it
 once, through the onboarding consent popup. Changing this list after clients have consented
