@@ -58,6 +58,15 @@ public sealed class TenantGraphCredentials(
 
     public async Task<bool> IsConfiguredAsync(CancellationToken ct) => (await ResolveAsync(ct)).IsConfigured();
 
+    /// <summary>
+    /// True when the client's own secret is stored but the key ring can no longer decrypt
+    /// it (keys lost or changed). Collection must not run with a blank secret: the operator
+    /// has to re-enter it, and back-off would only hide that.
+    /// </summary>
+    public bool OwnSecretUnreadable(ClientTenant row)
+        => row.HasOwnCredentials && !row.HasOwnCertificate && !string.IsNullOrEmpty(row.ClientSecret)
+           && string.IsNullOrEmpty(protector.Unprotect(row.ClientSecret));
+
     /// <summary>Pure decision, exposed for tests and for the tenants API's health view.</summary>
     public GraphOptions Resolve(ClientTenant row) { var o = Clone(global.Value); Apply(o, row); return o; }
 

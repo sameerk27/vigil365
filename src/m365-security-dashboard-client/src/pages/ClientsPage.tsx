@@ -174,7 +174,7 @@ export function ClientsPage() {
                         {t.consentGrantedAt ? <><ShieldCheck size={13} /> {relTime(t.consentGrantedAt) || fmtDate(t.consentGrantedAt)}</> : "Not verified"}
                       </td>
                       <td>
-                        <Badge label={t.lastCollectionStatus ?? (t.configured ? "Pending" : "Not connected")} tone={collectionTone(t)} />
+                        <Badge label={t.health?.label ?? t.lastCollectionStatus ?? (t.configured ? "Pending" : "Not connected")} tone={t.health?.tone ?? collectionTone(t)} />
                         {t.lastError && <div className="al-date client-error" title={t.lastError}><AlertTriangle size={12} /> {truncate(t.lastError, 80)}</div>}
                         {t.nextCollectionAfter && new Date(t.nextCollectionAfter) > new Date() && (
                           <div className="al-date" title={`${t.consecutiveFailures} consecutive failure(s)`}>Backing off until {fmtDate(t.nextCollectionAfter)}</div>

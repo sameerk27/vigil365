@@ -90,8 +90,12 @@ public sealed class TenantRollupService(AppDbContext db, TenantGraphCredentials 
 
     public static string HealthOf(bool configured, ClientTenant t, Open o) =>
         !configured ? "neutral"
-        : t.LastCollectionStatus == "Failed" ? "error"
-        : o.Critical > 0 || t.LastError is not null ? "error"
+        : t.LastCollectionStatus is "Failed" or "Unreadable" ? "error"
+        : o.Critical > 0 ? "error"
+        // Partly connected and waiting for Microsoft are not errors. They must not fall
+        // through to the LastError rule below, which is what made every partial client red.
+        : t.LastCollectionStatus is ClientHealth.Partial or ClientHealth.WaitingForConsent ? "warning"
+        : t.LastError is not null ? "error"
         : o.High > 0 ? "warning"
         : t.LastCollectionAt is null ? "neutral" : "good";
 

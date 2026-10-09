@@ -82,7 +82,8 @@ webhook endpoints to notify. There is no telemetry to the Vigil365 project.
 
 ## 5. Retention
 
-Data is pruned automatically per client on a nightly schedule. Defaults (configurable
+Data is pruned automatically per client on a nightly schedule, deactivated clients
+included. Defaults (configurable
 by the MSP in `Retention` settings):
 
 | Data | Default retention |
@@ -103,7 +104,8 @@ retention; the MSP should align backup retention with the DPA.
 Two operations exist, both Admin-only and audited:
 
 - **Deactivate** — collection stops, the client disappears from staff views, data is
-  kept (for a contractual retention period, or pending deletion).
+  kept and pruned on the same schedule as an active client's data (section 5), until
+  it is purged.
 - **Purge** — the client record is deleted and every row it owns is deleted with it by
   database cascade: alerts, directory audit events, runs, snapshots, notes,
   suppression rules, routing, policy overrides, staff assignments, client-restricted

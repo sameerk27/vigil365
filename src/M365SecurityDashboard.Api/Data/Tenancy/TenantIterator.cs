@@ -28,14 +28,17 @@ public static class TenantIterator
         CancellationToken ct,
         int maxParallel = 1,
         TimeSpan? stagger = null,
-        Func<ClientTenant, bool>? include = null)
+        Func<ClientTenant, bool>? include = null,
+        bool includeInactive = false)
     {
         List<ClientTenant> tenants;
         using (var listing = services.CreateScope())
         {
             var db = listing.ServiceProvider.GetRequiredService<AppDbContext>();
+            // Deactivated clients keep their data until purged, so retention still covers them
+            // (MSP_DATA_PROCESSING.md §5); collection and everything else skips them.
             tenants = await db.ClientTenants.AsNoTracking()
-                .Where(t => t.IsActive).OrderBy(t => t.CreatedAt).ToListAsync(ct);
+                .Where(t => includeInactive || t.IsActive).OrderBy(t => t.CreatedAt).ToListAsync(ct);
         }
         if (include is not null) tenants = tenants.Where(include).ToList();
 

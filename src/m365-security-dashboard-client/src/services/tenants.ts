@@ -22,6 +22,8 @@ export interface ClientTenant {
   lastCollectionAt: string | null;
   lastCollectionStatus: string | null;
   lastError: string | null;
+  /** The server's one answer per client: what state it is in, how urgent, and what to tell the operator. */
+  health?: { state: string; tone: "good" | "warning" | "error" | "neutral"; label: string } | null;
   openAlerts: number | null;
 }
 
