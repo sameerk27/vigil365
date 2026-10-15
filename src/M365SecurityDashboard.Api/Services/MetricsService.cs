@@ -104,23 +104,10 @@ public sealed class MetricsService(
             Prometheus: prometheus);
     }
 
-    /// <summary>Live database size in bytes from SQL Server system views. Null if unavailable.</summary>
     private async Task<long?> QueryDatabaseSizeBytesAsync(CancellationToken ct)
     {
-        try
-        {
-            var conn = db.Database.GetDbConnection();
-            if (conn.State != System.Data.ConnectionState.Open) await conn.OpenAsync(ct);
-            await using var cmd = conn.CreateCommand();
-            // size is in 8-KB pages; data + log files for the current database.
-            cmd.CommandText = "SELECT CAST(ISNULL(SUM(CAST(size AS bigint)), 0) * 8 * 1024 AS bigint) FROM sys.database_files WHERE type IN (0, 1);";
-            var result = await cmd.ExecuteScalarAsync(ct);
-            return result is long l ? l : result is not null && long.TryParse(result.ToString(), out var p) ? p : null;
-        }
-        catch (Exception ex)
-        {
-            logger.LogDebug(ex, "Database size query failed — reporting size as unavailable");
-            return null;
-        }
+        var size = await DatabaseProviderSetup.QueryDatabaseSizeBytesAsync(db, ct);
+        if (size is null) logger.LogDebug("Database size query failed — reporting size as unavailable");
+        return size;
     }
 }

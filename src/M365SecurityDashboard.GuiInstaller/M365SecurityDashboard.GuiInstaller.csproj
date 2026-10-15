@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -20,7 +20,7 @@
     <!-- Version and identity metadata — surfaced in the exe's Properties >
          Details tab. Version tracks the release; keep in step with the API and
          client via scripts/set-version.ps1. -->
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <AssemblyTitle>Vigil365 Setup</AssemblyTitle>
     <Product>Vigil365</Product>
     <Company>Vigil365</Company>
@@ -33,6 +33,8 @@
          Pinned to the version EF Core 8.0.11 resolves so the installer and the
          API do not disagree about the driver. -->
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.1.6" />
+    <!-- PostgreSQL validation in MSP mode; same version the API resolves. -->
+    <PackageReference Include="Npgsql" Version="8.0.6" />
     <!-- Transitive security override: Microsoft.Data.SqlClient 5.1.6 pulls
          System.Formats.Asn1 5.0.0, which has GHSA-447r-wph3-92pm (High). Pin the
          patched version to keep the CI vulnerability audit green. -->
@@ -44,6 +46,11 @@
        is why this is conditional. An installer built without it still compiles
        and tells the user at runtime rather than failing the build for everyone
        working on the wizard. -->
+  <!-- The single Graph permission list, shared with the API and register-app.ps1. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\graph-permissions.json" LogicalName="Vigil365.graph-permissions.json" />
+  </ItemGroup>
+
   <ItemGroup Condition="Exists('payload.zip')">
     <EmbeddedResource Include="payload.zip" LogicalName="Vigil365.payload.zip" />
   </ItemGroup>

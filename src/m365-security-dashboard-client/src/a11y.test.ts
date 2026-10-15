@@ -1,128 +1,87 @@
-import { describe, it, expect, beforeAll } from "vitest";
-import { JSDOM } from "jsdom";
+// @vitest-environment jsdom
+import React from "react";
+import { describe, it, expect, beforeEach } from "vitest";
+import { render, screen, within, act } from "@testing-library/react";
 import axe from "axe-core";
+import { AlertCenterPage } from "./pages/AlertCenterPage";
+import { ConfirmDialog } from "./components/ConfirmDialog";
+import { InlineError } from "./components/SharedComponents";
+import { AuthContext, setEditionMode } from "./services/api";
+import { confirmAction } from "./services/confirm";
+import { registerToastHandler } from "./services/toast";
+import { mockApi } from "./test/apiMock";
+import type { AppRole, TriggeredAlert } from "./services/types";
 
 /**
- * Automated accessibility checks over the markup patterns this app relies on.
- *
- * These assert the *shapes* the UI produces — the keyboard-activatable rows, the
- * skip link, the confirm dialog, the data tables — rather than mounting the full
- * React tree, which would drag in MSAL and a live API. The patterns are copied
- * from what the components render, so a regression in those shapes is caught
- * here before it reaches a screen reader.
- *
- * Rendering the real component tree under test is the natural next step once
- * there is a way to stub authentication; this covers the structural rules today.
+ * Accessibility of the real components, rendered — not markup copied from
+ * them, which stayed green whatever the components did. Colour contrast needs
+ * the stylesheet and a real browser, so it is left to e2e/signed-in/a11y.spec.ts,
+ * which runs axe over whole rendered pages.
  */
-
-/** Runs axe over a fragment and returns violations, ignoring colour contrast
- *  (the fragments carry no stylesheet, so contrast cannot be judged here). */
-async function violationsIn(html: string): Promise<axe.Result[]> {
-  const dom = new JSDOM(`<!doctype html><html lang="en"><body>${html}</body></html>`);
-  // axe needs real globals to walk the tree.
-  (globalThis as Record<string, unknown>).window = dom.window;
-  (globalThis as Record<string, unknown>).document = dom.window.document;
-  (globalThis as Record<string, unknown>).Node = dom.window.Node;
-  (globalThis as Record<string, unknown>).Element = dom.window.Element;
-  (globalThis as Record<string, unknown>).HTMLElement = dom.window.HTMLElement;
-
-  const results = await axe.run(dom.window.document.body, {
+async function violations(root: Element): Promise<string> {
+  const results = await axe.run(root, {
     rules: { "color-contrast": { enabled: false }, region: { enabled: false } },
   });
-  return results.violations;
+  return results.violations.map(v => `${v.id}: ${v.help} (${v.nodes.map(n => n.target.join(" ")).join(", ")})`).join("\n");
 }
 
-const describeViolations = (v: axe.Result[]) =>
-  v.map(x => `${x.id}: ${x.help} (${x.nodes.length} node(s))`).join("\n");
-
-beforeAll(() => {
-  // axe-core is chatty about unsupported environments; keep test output readable.
-  axe.configure({ reporter: "v2" });
+const as = (role: AppRole) => ({ email: "u@x.test", name: "U", role, isAdmin: role === "Admin", canMutate: role !== "Viewer" });
+const alert = (id: string, policyName: string): TriggeredAlert => ({
+  id, policyId: "p1", policyName, severity: "high", category: "identity", condition: "x >= 1", metricValue: 2, threshold: 1,
+  triggeredAt: "2026-10-02T08:00:00Z", status: "new",
 });
 
-describe("accessibility of core markup patterns", () => {
-  it("keyboard-activatable rows expose button semantics", async () => {
-    // What rowActivation() produces: role, tabindex, and an accessible name.
-    const html = `
-      <table>
-        <caption>Triggered alerts</caption>
-        <thead><tr><th scope="col">Severity</th><th scope="col">Policy</th></tr></thead>
-        <tbody>
-          <tr role="button" tabindex="0" aria-label="Open triggered alert Privileged role assigned">
-            <td>High</td><td>Privileged role assigned</td>
-          </tr>
-        </tbody>
-      </table>`;
-    const v = await violationsIn(html);
-    expect(describeViolations(v)).toBe("");
+beforeEach(() => {
+  setEditionMode("Single");
+  registerToastHandler(() => {});
+  mockApi();
+});
+
+describe("accessibility of rendered components", () => {
+  it("the axe harness flags a real violation, so a clean result means something", async () => {
+    const { container } = render(React.createElement("button", { type: "button" }, React.createElement("svg", { "aria-hidden": "true" })));
+    expect(await violations(container)).toMatch(/^button-name/);
   });
 
-  it("detects a real violation, so a passing suite means something", async () => {
-    // Guards the guard. An icon-only control with no accessible name is the
-    // exact defect this app had before the a11y pass, and axe must flag it —
-    // otherwise every "no violations" result above is meaningless.
-    //
-    // Note a <tr role="button"> WITHOUT aria-label is not a violation: it takes
-    // its name from the cell text. The aria-label rowActivation adds makes rows
-    // announce "Open alert X" rather than just "High", which is better but not
-    // something axe can require.
-    const v = await violationsIn(`<button type="button"><svg aria-hidden="true"></svg></button>`);
-    expect(v.map(x => x.id)).toContain("button-name");
+  it.each(["Viewer", "Analyst"] as const)("the Alert Center queue, as rendered for the %s role, has no violations", async (role) => {
+    const { container } = render(React.createElement(AuthContext.Provider, { value: as(role) },
+      React.createElement(AlertCenterPage, { policies: [], onChanged: async () => {}, triggeredAlerts: [alert("a1", "Privileged role assigned"), alert("a2", "MFA coverage drop")] })));
+    expect(await violations(container)).toBe("");
   });
 
-  it("the skip link is a valid in-page link with discernible text", async () => {
-    const html = `
-      <a class="skip-link" href="#main-content">Skip to main content</a>
-      <main id="main-content" tabindex="-1"><h1>Overview</h1></main>`;
-    expect(describeViolations(await violationsIn(html))).toBe("");
+  it("each queue alert opens from a real button named after it, and headers announce their sort", () => {
+    render(React.createElement(AuthContext.Provider, { value: as("Analyst") },
+      React.createElement(AlertCenterPage, { policies: [], onChanged: async () => {}, triggeredAlerts: [alert("a1", "Privileged role assigned")] })));
+    const open = screen.getByRole("button", { name: "Open triggered alert Privileged role assigned" });
+    expect(open.tagName).toBe("BUTTON");
+    // The row holds the Acknowledge/Resolve controls, so it is not itself a button.
+    expect(open.closest("tr")).not.toHaveAttribute("role");
+    const table = open.closest("table")!;
+    expect(within(table).getByRole("columnheader", { name: /Severity/ })).toHaveAttribute("aria-sort", "ascending");
+    expect(table.querySelector("caption")).toHaveTextContent(/Active alerts/);
   });
 
-  it("the confirm dialog is a labelled alertdialog", async () => {
-    const html = `
-      <div role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-msg">
-        <h2 id="confirm-title">Delete alert policy?</h2>
-        <p id="confirm-msg">This policy will stop evaluating.</p>
-        <button type="button">Cancel</button>
-        <button type="button">Delete policy</button>
-      </div>`;
-    expect(describeViolations(await violationsIn(html))).toBe("");
+  it("the alert detail opens as a named dialog with no violations", async () => {
+    render(React.createElement(AuthContext.Provider, { value: as("Analyst") },
+      React.createElement(AlertCenterPage, { policies: [], onChanged: async () => {}, triggeredAlerts: [alert("a1", "Privileged role assigned")] })));
+    act(() => screen.getByRole("button", { name: "Open triggered alert Privileged role assigned" }).click());
+    const dialog = await screen.findByRole("dialog", { name: "Privileged role assigned" });
+    expect(within(dialog).getAllByRole("button", { name: "Close" }).length).toBeGreaterThan(0);
+    expect(await violations(dialog)).toBe("");
   });
 
-  it("sortable table headers announce their sort state", async () => {
-    const html = `
-      <table>
-        <caption>Active alerts</caption>
-        <thead><tr>
-          <th scope="col" aria-sort="ascending"><button type="button">Severity</button></th>
-          <th scope="col"><button type="button">Policy</button></th>
-        </tr></thead>
-        <tbody><tr><td>High</td><td>MFA drop</td></tr></tbody>
-      </table>`;
-    expect(describeViolations(await violationsIn(html))).toBe("");
+  it("the confirm dialog is a labelled, described alertdialog that takes focus", async () => {
+    const { container } = render(React.createElement(ConfirmDialog));
+    act(() => { void confirmAction({ title: "Delete alert policy?", message: "This policy will stop evaluating.", confirmLabel: "Delete policy", danger: true }); });
+    const dialog = await screen.findByRole("alertdialog", { name: "Delete alert policy?" });
+    expect(dialog).toHaveAccessibleDescription("This policy will stop evaluating.");
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
+    expect(await violations(container)).toBe("");
   });
 
-  it("sort changes have a polite, atomic status announcement", async () => {
-    const html = `
-      <table>
-        <caption>Active alerts. Select a column heading to change the sort order.</caption>
-        <thead><tr><th scope="col" aria-sort="descending"><button type="button">Triggered</button></th></tr></thead>
-        <tbody><tr><td>Today</td></tr></tbody>
-      </table>
-      <div role="status" aria-live="polite" aria-atomic="true">Active alerts sorted by triggered time, descending</div>`;
-    expect(describeViolations(await violationsIn(html))).toBe("");
-  });
-
-  it("icon-only controls carry an accessible name", async () => {
-    const html = `
-      <button type="button" aria-label="Refresh data"><svg aria-hidden="true"><path d="M0 0"/></svg></button>
-      <button type="button" aria-label="Hide setup checklist"><svg aria-hidden="true"><path d="M0 0"/></svg></button>`;
-    expect(describeViolations(await violationsIn(html))).toBe("");
-  });
-
-  it("status regions are announced politely", async () => {
-    const html = `
-      <div role="status" aria-live="polite">Data collected 3m ago, all sources OK</div>
-      <div role="alert">2 of 25 dashboard panels failed to load</div>`;
-    expect(describeViolations(await violationsIn(html))).toBe("");
+  it("an inline error states its problem and offers a named Retry", async () => {
+    const { container } = render(React.createElement(InlineError, { title: "Couldn't load report schedules", message: "Request failed (500)", onRetry: () => {} }));
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(await violations(container)).toBe("");
   });
 });

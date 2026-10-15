@@ -5,8 +5,11 @@ namespace M365SecurityDashboard.Api.Models;
 /// <summary>
 /// A record created when an <see cref="AlertPolicy"/> condition is met.
 /// </summary>
-public sealed class TriggeredAlert
+public sealed class TriggeredAlert : ITenantScoped
 {
+    /// <summary>Owning tenant. Stamped from the tenant context on insert; see ITenantScoped.</summary>
+    public Guid TenantId { get; set; }
+
     public Guid Id { get; set; }
 
     public Guid PolicyId { get; set; }

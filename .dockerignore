@@ -5,10 +5,13 @@
 **/dist
 publish/
 
-# Local config & secrets — never bake into the image
+# Local config & secrets — never bake into the image. Includes the client's
+# .env.local etc.: vite reads them at build time, so a developer's
+# VITE_E2E_FAKE_AUTH=1 would otherwise ship a bundle that skips sign-in.
 **/appsettings.Production.json
 **/appsettings.*.local.json
-.env
+**/.env
+**/.env.*
 
 # Source control / IDE / docs
 .git

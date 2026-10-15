@@ -22,39 +22,29 @@ namespace M365SecurityDashboard.GuiInstaller
         public const string GraphAppId = "00000003-0000-0000-c000-000000000000";
 
         /// <summary>
-        /// Application (not delegated) permissions, matched to the table in the
-        /// README. Kept as names rather than GUIDs and resolved against the
-        /// tenant's own Graph service principal, because a wrong hard-coded GUID
-        /// fails as an opaque "invalid value" with nothing naming the permission.
+        /// Application (not delegated) permissions, from the embedded
+        /// graph-permissions.json at the repo root — the same file the API embeds
+        /// and register-app.ps1 reads, so they can no longer drift apart. Kept as
+        /// names and resolved against the tenant's own Graph service principal,
+        /// because a wrong hard-coded GUID fails as an opaque "invalid value".
         /// </summary>
-        public static readonly string[] Required =
-        [
-            "SecurityAlert.Read.All",                    // Defender XDR alerts
-            "SecurityIncident.Read.All",                 // Defender XDR incidents
-            "IdentityRiskyUser.Read.All",                // Entra ID risky users
-            "IdentityRiskEvent.Read.All",                // Risk detections
-            "AuditLog.Read.All",                         // Sign-in and audit logs
-            "Reports.Read.All",                          // MFA registration, auth methods
-            "DeviceManagementManagedDevices.Read.All",   // Intune devices
-            "ServiceHealth.Read.All",                    // M365 service health
-            "Policy.Read.All",                           // Conditional Access policies
-            "Directory.Read.All",                        // Users, groups, PIM
-            "PrivilegedAccess.Read.AzureAD",             // PIM assignments
-            "ThreatHunting.Read.All",                    // Advanced hunting / MDI
-            "UserAuthenticationMethod.Read.All",         // MFA method detail
-            "SharePointTenantSettings.Read.All",         // Sharing posture
-        ];
+        public static readonly string[] Required = Load("required");
 
         /// <summary>
         /// Permissions that are genuinely optional — the feature degrades to a
-        /// permission-error card rather than the install being broken. Graph has
-        /// no read-only variant of the attack-simulation permission, so a tenant
-        /// may reasonably refuse it.
+        /// permission-error card rather than the install being broken.
         /// </summary>
-        public static readonly string[] Optional =
-        [
-            "AttackSimulation.ReadWrite.All",
-        ];
+        public static readonly string[] Optional = Load("optional");
+
+        private static string[] Load(string key)
+        {
+            using var stream = typeof(GraphPermissions).Assembly.GetManifestResourceStream("Vigil365.graph-permissions.json")
+                ?? throw new InvalidOperationException("graph-permissions.json is not embedded in the installer.");
+            using var doc = JsonDocument.Parse(stream);
+            return doc.RootElement.GetProperty(key).EnumerateArray()
+                .Select(p => p.GetProperty("name").GetString()!)
+                .ToArray();
+        }
 
         /// <summary>
         /// Maps permission names to the role ids this tenant uses, from the Graph

@@ -1,4 +1,4 @@
-export type NavPage = "overview" | "recommendations" | "trends" | "reports" | "identity" | "devices" | "email" | "incidents" | "alertcenter" | "activityfeed" | "compliance" | "servicehealth" | "network" | "licenses" | "conditionalaccess" | "signinmap" | "users" | "setup";
+export type NavPage = "overview" | "recommendations" | "trends" | "reports" | "identity" | "devices" | "email" | "incidents" | "alertcenter" | "activityfeed" | "compliance" | "servicehealth" | "network" | "licenses" | "conditionalaccess" | "signinmap" | "users" | "setup" | "clients";
 export type AlertSeverity = "Informational" | "Low" | "Medium" | "High" | "Critical";
 export type ServiceArea = "EntraId" | "Intune" | "DefenderXdr" | "ExchangeOnline" | "ServiceHealth";
 export type Tone = "good" | "warning" | "error" | "neutral" | "info";
@@ -157,6 +157,8 @@ export interface AlertPolicy {
   id: string;
   name: string;
   enabled: boolean;
+  /** MSP: null = install-wide default every client inherits; a tenant id = that client only. */
+  tenantId?: string | null;
   category: "identity" | "devices" | "email" | "compliance" | "licenses";
   condition: string;
   /** "metric" = threshold count · "activity" = audit event match · "anomaly" = latest trend spike vs baseline */
@@ -219,6 +221,8 @@ export interface NotificationSettings {
   minSeverity: string;
   teamsDigest?: boolean; emailDigest?: boolean; webhookDigest?: boolean;
   digestFrequency?: string; digestHourUtc?: number; failureAlertThreshold?: number;
+  /** MSP: one email a day summarising every client (install-wide). */
+  mspDigestEnabled?: boolean; mspDigestHourUtc?: number; lastMspDigestAt?: string | null;
 }
 
 export interface ChannelHealth {
@@ -231,6 +235,8 @@ export interface NotificationHealth {
 
 export interface ReportSchedule {
   id: string;
+  /** MSP mode: the client the schedule belongs to; null = made before the install became MSP. */
+  tenantId?: string | null;
   name: string;
   reportType: string;
   cadence: "daily" | "weekly" | "monthly";
@@ -251,6 +257,8 @@ export interface ApiTokenInfo {
   id: string; name: string; prefix: string; scopes: string;
   createdAt: string; createdBy?: string | null; expiresAt?: string | null;
   lastUsedAt?: string | null; revokedAt?: string | null;
+  /** MSP: the one client this token may read; null = install-wide. */
+  tenantId?: string | null;
 }
 
 export interface ApiTokenCreated extends ApiTokenInfo {

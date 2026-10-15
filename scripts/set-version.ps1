@@ -41,6 +41,17 @@ $updatedPkg = [regex]::Replace($package, '"version":\s*"[^"]*"', """version"": "
 if ($updatedPkg -eq $package) { throw "No version field found in $packagePath" }
 Set-Content $packagePath $updatedPkg -NoNewline
 
+# package-lock.json repeats the version twice (top level and the root package
+# entry); left alone it drifts from package.json until the next npm install.
+$lockPath = Join-Path (Split-Path $packagePath) "package-lock.json"
+if (Test-Path $lockPath) {
+  $lock = Get-Content $lockPath -Raw
+  # Instance Replace: its 3rd argument really is a count (the static overload's
+  # 4th is RegexOptions), so only the first two - ours, not the dependencies'.
+  $lockRx = [regex]'"version":\s*"[^"]*"'
+  Set-Content $lockPath ($lockRx.Replace($lock, """version"": ""$Version""", 2)) -NoNewline
+}
+
 Write-Host "Set version to $Version in the API, installer and client.`n" -ForegroundColor Green
 & (Join-Path $PSScriptRoot "check-version.ps1")
 

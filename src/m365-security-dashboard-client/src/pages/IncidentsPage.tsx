@@ -305,7 +305,7 @@ export function IncidentsPage({ alerts, alertsTotal, serviceHealth, defenderAler
             <input value={search} onChange={e=>setSearch(e.target.value)}
               placeholder="Search title, user, source…" className="search-input"/>
           </label>
-          <select value={severity} onChange={e=>setSeverity(e.target.value)} className="filter-sel">
+          <select value={severity} onChange={e=>setSeverity(e.target.value)} className="filter-sel" aria-label="Filter by severity">
             <option value="">All severities</option>
             {allSeverities.map(s=><option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>)}
           </select>
@@ -339,7 +339,7 @@ export function IncidentsPage({ alerts, alertsTotal, serviceHealth, defenderAler
         <div className="tbl-wrap">
           <table className="data-tbl">
             <thead>
-              <tr><th scope="col">Severity</th><th scope="col">Source</th><th scope="col">Title</th><th scope="col">Details</th><th scope="col">Detected</th><th scope="col"></th></tr>
+              <tr><th scope="col">Severity</th><th scope="col">Source</th><th scope="col">Title</th><th scope="col">Details</th><th scope="col">Detected</th><th scope="col"><span className="sr-only">Open</span></th></tr>
             </thead>
             <tbody>
               {filtered.length===0&&<tr><td colSpan={6} className="td-empty">No items match current filters.</td></tr>}

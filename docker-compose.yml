@@ -6,6 +6,10 @@
 # TLS: this compose serves plain HTTP on :8080 (fine for localhost — Entra allows
 # http://localhost redirect URIs). For a real hostname, put a TLS reverse proxy
 # (Caddy/Nginx/Traefik) in front and set REDIRECT_URI to the https URL.
+# A proxy in another container or host is not trusted for X-Forwarded-For until
+# it is listed, e.g. ForwardedHeaders__KnownNetworks__0: "172.18.0.0/16" (or
+# ForwardedHeaders__KnownProxies__0: <its IP>). Otherwise the audit log records the
+# proxy's address and the per-address rate limit is shared by everyone behind it.
 
 services:
   db:

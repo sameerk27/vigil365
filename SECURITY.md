@@ -16,9 +16,14 @@ Actively developed; security fixes target the latest `master`. Pin to a released
 
 ## Design & Deployment Model
 
-Vigil365 is a **self-hosted, single-tenant** application meant to run on infrastructure the operating organisation controls — **not** a public multi-tenant SaaS.
+Vigil365 is a **self-hosted** application meant to run on infrastructure the operating organisation controls — **not** a public SaaS. It runs in one of two trust models, set by `Edition:Mode`:
 
-- **Read-only against your tenant** — Graph access is app-only (client credentials) with `*.Read.All` permissions only; the app never writes to the M365 tenant.
+- **Single organisation** — one organisation monitors its own Microsoft 365 tenant. The app registration is single-tenant; one tenant's data in one database.
+- **MSP** — a managed service provider monitors many client tenants. The app registration is multi-tenant so each client's Global Administrator can grant admin consent to the same permissions (read-only but one, below); the client can revoke it at any time in their own Entra admin center. **Sign-in is still pinned to the MSP's own tenant** — client users cannot sign in. Every row is tagged with its client; a global query filter and a write guard stop one client's data being read or written under another, enforced by an isolation test suite on SQL Server and PostgreSQL. Staff other than Admins see only the clients assigned to them. Client credentials (when a client uses its own) are encrypted at rest. See `docs/MSP_DATA_PROCESSING.md`.
+
+In both models:
+
+- **Read-only against your tenant** — Graph access is app-only (client credentials) and the app never writes to the M365 tenant. Every permission is read-only except the optional `AttackSimulation.ReadWrite.All`: Graph has no read-only permission for attack-simulation results. It also allows creating phishing simulations, so whoever holds the app's secret could; Vigil365 only reads with it. See `docs/graph-permissions.md`.
 - **Data stays in-tenant** — collected data is stored in the operator's own SQL database; nothing is sent to any third-party service.
 - **Network isolation is a primary control** — designed to sit on a private network / behind a reverse proxy, not exposed directly to the internet.
 
@@ -26,12 +31,12 @@ Vigil365 is a **self-hosted, single-tenant** application meant to run on infrast
 
 ## Current Security Controls
 
-- **Secrets encrypted at rest** — SMTP password, webhook URLs, and the Graph client secret are DPAPI-encrypted; secrets are never returned by the API.
+- **Secrets encrypted at rest** — secrets kept in the database (SMTP password, webhook URLs, per-client credentials, a Graph client secret entered on the Setup page) are encrypted with ASP.NET Core Data Protection. Its key ring (`DataProtection:KeyPath`) is not itself encrypted: file permissions protect it, so back it up with the database and guard it the same way. The Graph client secret the Windows installer creates is written to `appsettings.Production.json`, readable only by Administrators, SYSTEM and the service account. The SMTP password and credentials are never returned by the API; webhook URLs are returned only to Admins, for editing.
 - **Database transport encryption** — SQL connections use `Encrypt=True`.
 - **TLS in production** — HSTS + HTTPS redirection enforced outside Development; TLS via reverse proxy or Kestrel certificate (see README "HTTPS / TLS").
 - **Safe error handling** — API errors return generic messages; detail goes to server logs only.
 - **Security headers** — `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`.
-- **Least privilege** — read-only Graph permission set scoped to the monitored services.
+- **Least privilege** — Graph permission set scoped to the monitored services (read-only but one, above).
 
 ## Hardening In Progress
 

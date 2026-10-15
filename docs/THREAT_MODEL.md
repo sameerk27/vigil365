@@ -26,7 +26,8 @@ described in `SECURITY.md`.
 
 1. **Browser ↔ App** — authenticated user session; should always be HTTPS in
    production. Untrusted input crosses here.
-2. **App ↔ Microsoft Graph** — outbound, app-only OAuth2; read-only scopes.
+2. **App ↔ Microsoft Graph** — outbound, app-only OAuth2; read-only scopes except
+   `AttackSimulation.ReadWrite.All` (no read-only variant exists; the app only reads).
 3. **App ↔ Database** — trusted, same-network; transport-encrypted.
 4. **App ↔ SMTP/webhooks** — outbound notifications; secrets decrypted in memory
    only at send time.
@@ -45,23 +46,24 @@ described in `SECURITY.md`.
 |--------|-----------|
 | **Spoofing** — unauthorised access to the dashboard | Entra ID sign-in (in progress); network isolation; tenant-scoped login |
 | **Tampering** — modifying data/config | Server-side authorization; read-only Graph (no tenant writes); append-only audit trail |
-| **Repudiation** — denying an action | Audit entries capture actor identity from the validated token |
-| **Information disclosure** — leaking secrets or data | Secrets DPAPI-encrypted at rest and never returned by the API; generic error messages; data stays in-tenant; HTTPS in production |
+| **Repudiation** — denying an action | Audit entries capture actor identity from the validated token, and the client IP: behind a reverse proxy, `X-Forwarded-For` is believed only from proxies listed in `ForwardedHeaders:KnownProxies`/`KnownNetworks` (loopback by default), so a caller cannot forge it |
+| **Information disclosure** — leaking secrets or data | Secrets in the database encrypted with ASP.NET Core Data Protection (key ring protected by file permissions); config file with the Graph secret readable only by Administrators and the service; SMTP password and credentials never returned by the API; generic error messages; data stays in-tenant; HTTPS in production |
 | **Denial of service** | Self-hosted/internal exposure limits blast radius; Graph 429 handling with backoff |
 | **Elevation of privilege** | Role policies enforced on the server, not just hidden in the UI; last-admin lockout guards |
 
 ## Out of scope / assumptions
 
 - The host OS, SQL Server, and network are administered and patched by the operator.
-- The Entra app registration is correctly configured with least-privilege,
-  read-only permissions.
+- The Entra app registration is correctly configured with least-privilege
+  permissions (read-only except `AttackSimulation.ReadWrite.All`).
 - Vigil365 is **not** a SIEM and does not ingest raw logs; visibility is bounded
   by what Microsoft Graph exposes.
 - Physical security and tenant-admin trust are assumed.
 
 ## Residual risks
 
-- A compromised Graph credential exposes read access to tenant security data —
+- A compromised Graph credential exposes read access to tenant security data, and
+  can create attack simulations (in MSP mode, in every consenting client's tenant) —
   hence credential storage in a vault and rotation are operator responsibilities.
 - Until identity sign-in is merged to the released branch, network isolation is
   the primary access control for the public release.

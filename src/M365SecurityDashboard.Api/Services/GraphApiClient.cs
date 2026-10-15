@@ -4,23 +4,52 @@ using System.Text.Json;
 using Azure.Core;
 using Azure.Identity;
 using M365SecurityDashboard.Api.Models;
-using Microsoft.Extensions.Options;
 
 namespace M365SecurityDashboard.Api.Services;
 
+/// <summary>
+/// Calls Graph as the current tenant. Credentials come from
+/// <see cref="TenantGraphCredentials"/> and are resolved on first use, so the
+/// same client type serves a single-tenant install (install-wide credentials)
+/// and an MSP install (per-client credentials) with no caller changes.
+/// </summary>
 public sealed class GraphApiClient
 {
     private readonly HttpClient _http;
-    private readonly GraphOptions _options;
-    private readonly TokenCredential _credential;
+    private readonly TenantGraphCredentials _credentials;
     private readonly GraphMetrics _metrics;
+    private GraphOptions? _options;
+    private TokenCredential? _credential;
 
-    public GraphApiClient(HttpClient http, IOptions<GraphOptions> options, GraphMetrics metrics)
+    public GraphApiClient(HttpClient http, TenantGraphCredentials credentials, GraphMetrics metrics)
     {
         _http = http;
-        _options = options.Value;
-        _credential = BuildCredential(_options);
+        _credentials = credentials;
         _metrics = metrics;
+    }
+
+    /// <summary>Tests: fixed options and token, no credential resolution. Not visible to DI.</summary>
+    internal GraphApiClient(HttpClient http, GraphOptions options, TokenCredential credential, GraphMetrics metrics)
+        : this(http, credentials: null!, metrics)
+    {
+        _options = options;
+        _credential = credential;
+    }
+
+    /// <summary>A paged read. Complete is false when a later page failed and only the pages before it came back.</summary>
+    public sealed record GraphCollection(IReadOnlyList<JsonElement> Items, bool Complete);
+
+    private async Task<(GraphOptions Options, TokenCredential Credential)> EnsureAsync(CancellationToken ct)
+    {
+        if (_options is null || _credential is null)
+        {
+            var o = await _credentials.ResolveAsync(ct);
+            if (!o.IsConfigured())
+                throw new InvalidOperationException("Graph credentials are not configured for this tenant.");
+            _credential = BuildCredential(o);
+            _options = o;
+        }
+        return (_options, _credential);
     }
 
     /// <summary>
@@ -87,12 +116,22 @@ public sealed class GraphApiClient
     }
 
     public async Task<IReadOnlyList<JsonElement>> GetCollectionAsync(string path, CancellationToken ct)
+        => (await ReadCollectionAsync(path, ct)).Items;
+
+    /// <summary>
+    /// Every page of a collection. A failure on the first page throws; a failure
+    /// on a later page keeps the pages already read and reports Complete = false,
+    /// so a caller never mistakes a truncated read for the whole collection.
+    /// </summary>
+    public async Task<GraphCollection> ReadCollectionAsync(string path, CancellationToken ct)
     {
+        var (options, credential) = await EnsureAsync(ct);
         var items = new List<JsonElement>();
         var next = path.StartsWith("http", StringComparison.OrdinalIgnoreCase)
             ? path
-            : $"{_options.BaseUrl.TrimEnd('/')}/{path.TrimStart('/')}";
+            : $"{options.BaseUrl.TrimEnd('/')}/{path.TrimStart('/')}";
 
+        var complete = true;
         var isFirstPage = true;
         var throttleRetries = 0;
         const int maxThrottleRetries = 3; // a persistently throttling tenant must fail, not hang forever
@@ -103,7 +142,7 @@ public sealed class GraphApiClient
             {
                 using var request = new HttpRequestMessage(HttpMethod.Get, next);
                 request.Headers.TryAddWithoutValidation("User-Agent", "M365SecurityDashboard/1.0");
-                var token = await _credential.GetTokenAsync(new TokenRequestContext(new[] { $"{_options.BaseUrl.TrimEnd('/')}/.default" }), ct);
+                var token = await credential.GetTokenAsync(new TokenRequestContext(new[] { $"{options.BaseUrl.TrimEnd('/')}/.default" }), ct);
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
 
                 _metrics.RecordRequest();
@@ -113,7 +152,7 @@ public sealed class GraphApiClient
                     _metrics.RecordThrottle();
                     if (++throttleRetries > maxThrottleRetries)
                     {
-                        if (!isFirstPage) break; // keep the pages we already have
+                        if (!isFirstPage) { complete = false; break; } // keep the pages we already have
                         throw new HttpRequestException(
                             $"Graph throttled the request {maxThrottleRetries} times in a row (429). Try again later.",
                             null, response.StatusCode);
@@ -125,7 +164,7 @@ public sealed class GraphApiClient
                 else if (!response.IsSuccessStatusCode)
                 {
                     var body = await response.Content.ReadAsStringAsync(ct);
-                    if (!isFirstPage) break;
+                    if (!isFirstPage) { complete = false; break; }
                     throw new HttpRequestException($"{(int)response.StatusCode} {response.StatusCode}: {body}", null, response.StatusCode);
                 }
                 else
@@ -150,22 +189,23 @@ public sealed class GraphApiClient
                         : null;
                 }
             }
-            catch when (!isFirstPage) { break; } // pagination failure — return what we have
+            catch when (!isFirstPage) { complete = false; break; } // pagination failure — return what we have
             next = nextForIteration;
         }
 
-        return items;
+        return new GraphCollection(items, complete);
     }
 
     public async Task<IReadOnlyList<JsonElement>> GetSinglePageAsync(string path, CancellationToken ct)
     {
+        var (options, credential) = await EnsureAsync(ct);
         var url = path.StartsWith("http", StringComparison.OrdinalIgnoreCase)
             ? path
-            : $"{_options.BaseUrl.TrimEnd('/')}/{path.TrimStart('/')}";
+            : $"{options.BaseUrl.TrimEnd('/')}/{path.TrimStart('/')}";
 
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.TryAddWithoutValidation("User-Agent", "M365SecurityDashboard/1.0");
-        var token = await _credential.GetTokenAsync(new TokenRequestContext(new[] { $"{_options.BaseUrl.TrimEnd('/')}/.default" }), ct);
+        var token = await credential.GetTokenAsync(new TokenRequestContext(new[] { $"{options.BaseUrl.TrimEnd('/')}/.default" }), ct);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
 
         _metrics.RecordRequest();

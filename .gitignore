@@ -64,3 +64,7 @@ certs/
 
 # Installer build output — superseded by dist/, which is also ignored
 installer-bin/
+
+# Playwright output
+src/m365-security-dashboard-client/test-results/
+src/m365-security-dashboard-client/playwright-report/

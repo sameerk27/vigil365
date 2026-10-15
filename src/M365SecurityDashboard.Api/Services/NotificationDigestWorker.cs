@@ -29,10 +29,20 @@ public sealed class NotificationDigestWorker(
         {
             try
             {
-                using var scope = services.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                var sender = scope.ServiceProvider.GetRequiredService<NotificationSender>();
-                await TickAsync(db, sender, DateTimeOffset.UtcNow, stoppingToken);
+                await Data.Tenancy.TenantIterator.ForEachActiveTenantAsync(services, logger, "Notification digest", async (sp, tenant, ct) =>
+                {
+                    var db = sp.GetRequiredService<AppDbContext>();
+                    var sender = sp.GetRequiredService<NotificationSender>();
+                    await TickAsync(db, sender, DateTimeOffset.UtcNow, ct);
+                }, stoppingToken);
+
+                // Then the MSP-level pass, deliberately with no tenant in scope.
+                using (var scope = services.CreateScope())
+                {
+                    var sp = scope.ServiceProvider;
+                    await MspTickAsync(sp.GetRequiredService<AppDbContext>(), sp.GetRequiredService<NotificationSender>(),
+                        sp.GetRequiredService<TenantRollupService>(), sp.GetRequiredService<IConfiguration>(), DateTimeOffset.UtcNow, stoppingToken);
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception ex)
@@ -48,12 +58,44 @@ public sealed class NotificationDigestWorker(
     /// <summary>One maintenance pass. Public + parameterized on `now` for testability.</summary>
     public async Task TickAsync(AppDbContext db, NotificationSender sender, DateTimeOffset now, CancellationToken ct)
     {
-        var cfg = await db.NotificationSettings.FirstOrDefaultAsync(ct);
-        if (cfg is null) return;
+        var install = await db.InstallSettingsAsync(ct);
+        if (install is null) return;
+
+        // Digest/failure timestamps advance per tenant, on the routing row; the
+        // effective settings carry them in for the checks below.
+        var routing = await db.TenantNotificationRoutings.FirstOrDefaultAsync(ct);
+        if (routing is null) { routing = new TenantNotificationRouting(); db.TenantNotificationRoutings.Add(routing); }
+        var cfg = NotificationRouting.Apply(install, routing);
 
         await MaybeSendDigestAsync(db, sender, cfg, now, ct);
         await MaybeAlertOnFailuresAsync(db, sender, cfg, now, ct);
+        routing.LastDigestAt = cfg.LastDigestAt;
+        routing.LastFailureAlertAt = cfg.LastFailureAlertAt;
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// The MSP digest: one email a day summarising every active client, worst
+    /// first. Runs outside any tenant (cross-tenant by design) and only when the
+    /// install has more than one active tenant — a single-tenant install has the
+    /// per-tenant digest for that.
+    /// </summary>
+    public async Task MspTickAsync(AppDbContext db, NotificationSender sender, TenantRollupService rollup, IConfiguration config, DateTimeOffset now, CancellationToken ct)
+    {
+        var install = await db.InstallSettingsAsync(ct);
+        if (install is null || !TenantRollupService.IsMspDigestDue(install, now)) return;
+
+        var tenants = await db.ClientTenants.AsNoTracking().Where(t => t.IsActive).OrderBy(t => t.Name).ToListAsync(ct);
+        install.LastMspDigestAt = now;
+        await db.SaveChangesAsync(ct);
+        if (tenants.Count < 2) { logger.LogDebug("MSP digest due but only {Count} active tenant(s); skipping.", tenants.Count); return; }
+        if (string.IsNullOrWhiteSpace(install.DefaultRecipient)) { logger.LogWarning("MSP digest enabled but no default recipient is set."); return; }
+
+        var rows = await rollup.BuildAsync(tenants, ct);
+        var html = TenantRollupService.MspDigestHtml(rows, now, config["Auth:RedirectUri"]);
+        var (ok, error) = await sender.SendReportEmailAsync(install, install.DefaultRecipient.Split(','), TenantRollupService.MspDigestSubject(rows), html, [], ct);
+        if (ok) logger.LogInformation("MSP digest sent for {Count} clients.", rows.Count);
+        else logger.LogWarning("MSP digest failed: {Error}", error);
     }
 
     private async Task MaybeSendDigestAsync(AppDbContext db, NotificationSender sender, NotificationSettings cfg, DateTimeOffset now, CancellationToken ct)

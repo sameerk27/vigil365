@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { X, Bell, Activity, CheckCircle, Search, ExternalLink, ArrowRight, AlertTriangle, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { AlertPolicy, TriggeredAlert, NotificationSettings, NotificationLogEntry, Tone, AlertCoverageScorecard, AlertBaselineRule } from "../services/types";
-import { acApi, recApi, wbApi, useAuth, crossNavigate, consumeNavTab } from "../services/api";
-import { showToast } from "../services/toast";
+import { acApi, recApi, wbApi, useAuth, crossNavigate, consumeNavTab, getSelectedTenantId, setSelectedTenantId, isMspMode } from "../services/api";
+import { showToast, showInstallToast } from "../services/toast";
+import { routingApi, queueApi, type TenantRouting } from "../services/tenants";
 import { confirmAction } from "../services/confirm";
-import { DetailField, Card, Badge, EmptyState, ExportDropdown, ProgressBar, CopyButton, LoadingSkeleton, TriageSection, rowActivation, SeverityFilter} from "../components/SharedComponents";
+import { DetailField, Card, Badge, EmptyState, ExportDropdown, ProgressBar, CopyButton, LoadingSkeleton, TriageSection, SeverityFilter, InlineError, StateMessage} from "../components/SharedComponents";
 import { CollectionStatusBanner } from "../components/CollectionStatusBanner";
 import { CollectionRunHistory } from "../components/CollectionRunHistory";
 import { AlertMetricsTab } from "../components/AlertMetricsTab";
@@ -104,12 +105,17 @@ function SortTh<T extends string>({ label, col, sortBy, sortDir, onSort }: {
   );
 }
 
-function PolicyModal({ policy, onSave, onClose }: {
+function PolicyModal({ policy, clientOnly, onSave, onClose }: {
   policy: Partial<AlertPolicy> | null;
+  /** MSP non-Admin: a new policy can only belong to the selected client. */
+  clientOnly?: boolean;
   onSave: (p: AlertPolicy) => void;
   onClose: () => void;
 }) {
-  const [form, setForm] = useState<Partial<AlertPolicy>>(policy ?? { enabled: true, severity: "Medium", category: "identity", threshold: 1, triggerCount: 0, notifyEmail: "" });
+  const [form, setForm] = useState<Partial<AlertPolicy>>(() => {
+    const initial = policy ?? { enabled: true, severity: "Medium", category: "identity", threshold: 1, triggerCount: 0, notifyEmail: "" };
+    return clientOnly && !initial.id ? { ...initial, tenantId: getSelectedTenantId() } : initial;
+  });
   const set = (k: keyof AlertPolicy, v: unknown) => setForm(f => ({ ...f, [k]: v }));
 
   const metricOptions: Record<string, { label: string; value: string }[]> = {
@@ -149,6 +155,7 @@ function PolicyModal({ policy, onSave, onClose }: {
       threshold,
       severity: form.severity ?? "Medium",
       notifyEmail: form.notifyEmail ?? "",
+      tenantId: form.tenantId ?? null,
       createdAt: form.createdAt ?? new Date().toISOString(),
       lastTriggered: form.lastTriggered,
       triggerCount: form.triggerCount ?? 0,
@@ -169,19 +176,27 @@ function PolicyModal({ policy, onSave, onClose }: {
 
   return (
     <div className="detail-modal-backdrop" onClick={onClose}>
-      <div className="detail-modal policy-modal" onClick={e => e.stopPropagation()}>
+      <div className="detail-modal policy-modal" onClick={e => e.stopPropagation()}
+        role="dialog" aria-modal="true" aria-label={form.id ? "Edit Policy" : "New Policy"}>
         <div className="detail-modal-hdr">
           <div className="dm-title">{form.id ? "Edit Policy" : "New Policy"}</div>
-          <button className="modal-close" onClick={onClose}><X size={16}/></button>
+          {!form.id && getSelectedTenantId() && (
+            <label className="toggle-label" title={clientOnly
+              ? "Only an Admin can create install-wide policies, so this one belongs to the selected client."
+              : "Only the currently selected client evaluates this policy. Leave off for an install-wide default every client inherits."}>
+              <input type="checkbox" checked={!!form.tenantId} disabled={clientOnly} onChange={e => set("tenantId", e.target.checked ? getSelectedTenantId() : null)} /> This client only
+            </label>
+          )}
+          <button className="modal-close" onClick={onClose} aria-label="Close"><X size={16}/></button>
         </div>
         <div className="detail-modal-body">
           <div className="policy-field">
             <label className="policy-label">Policy Name</label>
-            <input className="policy-input" value={form.name ?? ""} onChange={e => set("name", e.target.value)} placeholder="e.g. Critical Alert Monitor"/>
+            <input aria-label="Policy Name" className="policy-input" value={form.name ?? ""} onChange={e => set("name", e.target.value)} placeholder="e.g. Critical Alert Monitor"/>
           </div>
           <div className="policy-field">
             <label className="policy-label">Category</label>
-            <select className="policy-input" value={form.category ?? "identity"} onChange={e => set("category", e.target.value)}>
+            <select aria-label="Category" className="policy-input" value={form.category ?? "identity"} onChange={e => set("category", e.target.value)}>
               <option value="identity">Identity</option>
               <option value="devices">Devices</option>
               <option value="email">Email</option>
@@ -191,7 +206,7 @@ function PolicyModal({ policy, onSave, onClose }: {
           </div>
           <div className="policy-field">
             <label className="policy-label">Policy Type</label>
-            <select className="policy-input" value={kind} onChange={e => set("kind", e.target.value)}>
+            <select aria-label="Policy Type" className="policy-input" value={kind} onChange={e => set("kind", e.target.value)}>
               <option value="metric">Metric threshold — fire when a count crosses a limit</option>
               <option value="activity">Tenant activity — fire when something happens (audit event)</option>
               <option value="anomaly">Anomaly — fire when a trend spikes above baseline</option>
@@ -201,23 +216,23 @@ function PolicyModal({ policy, onSave, onClose }: {
             <>
               <div className="policy-field">
                 <label className="policy-label">Activity to Match (* = wildcard, e.g. "*conditional access policy")</label>
-                <input className="policy-input" value={form.activityPattern ?? ""} onChange={e => set("activityPattern", e.target.value)}
+                <input aria-label="Activity to match (* = wildcard)" className="policy-input" value={form.activityPattern ?? ""} onChange={e => set("activityPattern", e.target.value)}
                   placeholder='e.g. "Add member to role" or "Consent to application"'/>
               </div>
               <div className="policy-field">
                 <label className="policy-label">Time Window (minutes)</label>
-                <input type="number" className="policy-input" min={1} value={form.windowMinutes ?? 60} onChange={e => set("windowMinutes", Number(e.target.value))}/>
+                <input aria-label="Time Window (minutes)" type="number" className="policy-input" min={1} value={form.windowMinutes ?? 60} onChange={e => set("windowMinutes", Number(e.target.value))}/>
               </div>
               <div className="policy-field">
                 <label className="policy-label">Threshold (fire when &ge; this many matching events in the window)</label>
-                <input type="number" className="policy-input" min={1} value={form.threshold ?? 1} onChange={e => set("threshold", Number(e.target.value))}/>
+                <input aria-label="Threshold (fire when ≥ this many matching events in the window)" type="number" className="policy-input" min={1} value={form.threshold ?? 1} onChange={e => set("threshold", Number(e.target.value))}/>
               </div>
             </>
           ) : kind === "anomaly" ? (
             <>
               <div className="policy-field">
                 <label className="policy-label">Trend Metric to Watch</label>
-                <select className="policy-input" value={form.metric ?? ""} onChange={e => set("metric", e.target.value)}>
+                <select aria-label="Trend Metric to Watch" className="policy-input" value={form.metric ?? ""} onChange={e => set("metric", e.target.value)}>
                   <option value="">Select metric…</option>
                   {(metricOptions[form.category ?? "identity"] ?? []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   <option value="complianceIssuesCount">Compliance issues</option>
@@ -226,35 +241,35 @@ function PolicyModal({ policy, onSave, onClose }: {
               </div>
               <div className="policy-field">
                 <label className="policy-label">Absolute Floor (latest value must be ≥ this)</label>
-                <input type="number" className="policy-input" min={1} value={form.threshold ?? 1} onChange={e => set("threshold", Number(e.target.value))}/>
+                <input aria-label="Absolute Floor (latest value must be ≥ this)" type="number" className="policy-input" min={1} value={form.threshold ?? 1} onChange={e => set("threshold", Number(e.target.value))}/>
               </div>
               <div className="policy-field">
                 <label className="policy-label">Baseline Multiplier</label>
-                <input type="number" className="policy-input" min={1} step={0.5} value={form.baselineMultiplier ?? 3} onChange={e => set("baselineMultiplier", Number(e.target.value))}/>
+                <input aria-label="Baseline Multiplier" type="number" className="policy-input" min={1} step={0.5} value={form.baselineMultiplier ?? 3} onChange={e => set("baselineMultiplier", Number(e.target.value))}/>
               </div>
               <div className="policy-field">
                 <label className="policy-label">Baseline Lookback (days, excluding last 24h)</label>
-                <input type="number" className="policy-input" min={1} value={form.baselineDays ?? 30} onChange={e => set("baselineDays", Number(e.target.value))}/>
+                <input aria-label="Baseline Lookback (days, excluding last 24h)" type="number" className="policy-input" min={1} value={form.baselineDays ?? 30} onChange={e => set("baselineDays", Number(e.target.value))}/>
               </div>
             </>
           ) : (
             <>
               <div className="policy-field">
                 <label className="policy-label">Metric to Watch</label>
-                <select className="policy-input" value={form.metric ?? ""} onChange={e => set("metric", e.target.value)}>
+                <select aria-label="Metric to Watch" className="policy-input" value={form.metric ?? ""} onChange={e => set("metric", e.target.value)}>
                   <option value="">Select metric…</option>
                   {(metricOptions[form.category ?? "identity"] ?? []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
               <div className="policy-field">
                 <label className="policy-label">Threshold (trigger when metric &ge; this value)</label>
-                <input type="number" className="policy-input" min={1} value={form.threshold ?? 1} onChange={e => set("threshold", Number(e.target.value))}/>
+                <input aria-label="Threshold (trigger when metric ≥ this value)" type="number" className="policy-input" min={1} value={form.threshold ?? 1} onChange={e => set("threshold", Number(e.target.value))}/>
               </div>
             </>
           )}
           <div className="policy-field">
             <label className="policy-label">Severity</label>
-            <select className="policy-input" value={form.severity ?? "Medium"} onChange={e => set("severity", e.target.value)}>
+            <select aria-label="Severity" className="policy-input" value={form.severity ?? "Medium"} onChange={e => set("severity", e.target.value)}>
               <option value="Critical">Critical</option>
               <option value="High">High</option>
               <option value="Medium">Medium</option>
@@ -263,7 +278,7 @@ function PolicyModal({ policy, onSave, onClose }: {
           </div>
           <div className="policy-field">
             <label className="policy-label">Notify Email (overrides global SMTP recipient for this policy)</label>
-            <input className="policy-input" type="email" value={form.notifyEmail ?? ""} onChange={e => set("notifyEmail", e.target.value)} placeholder="admin@contoso.com"/>
+            <input aria-label="Notify Email (overrides global SMTP recipient for this policy)" className="policy-input" type="email" value={form.notifyEmail ?? ""} onChange={e => set("notifyEmail", e.target.value)} placeholder="admin@contoso.com"/>
           </div>
         </div>
         <PolicyDryRun buildDraft={buildDraft}/>
@@ -277,30 +292,44 @@ function PolicyModal({ policy, onSave, onClose }: {
 }
 
 function NotificationSettingsTab() {
+  // Server-side the channels (and their test) are Admin-only and the delivery
+  // history Analyst-only, so a lower role is told so rather than shown a 403 as
+  // an empty "nothing configured" form.
+  const { isAdmin, canMutate } = useAuth();
   const [cfg, setCfg] = useState<NotificationSettings | null>(null);
-  const [log, setLog] = useState<NotificationLogEntry[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [log, setLog] = useState<NotificationLogEntry[] | null>(null);
+  const [logError, setLogError] = useState<string | null>(null);
   const [health, setHealth] = useState<import("../services/types").NotificationHealth | null>(null);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
 
-  const reload = useCallback(async () => {
-    const [s, l, h] = await Promise.all([acApi.getSettings(), acApi.getLog(), acApi.getHealth()]);
-    setCfg(s ?? { teamsEnabled:false, emailEnabled:false, smtpPort:587, smtpUseSsl:true, webhookEnabled:false, minSeverity:"low" });
-    setLog(l);
-    setHealth(h);
-  }, []);
-  useEffect(() => { reload(); }, [reload]);
-
-  if (!cfg) return <Card title="Notification Channels"><EmptyState icon={<Bell size={28}/>} message="Loading settings…"/></Card>;
+  // No defaults on failure: the form only ever shows (and saves over) settings
+  // that actually loaded.
+  const loadSettings = useCallback(async () => {
+    if (!isAdmin) return;
+    setLoadError(null);
+    try { setCfg(await acApi.getSettings()); }
+    catch (e) { setCfg(null); setLoadError(e instanceof Error ? e.message : "Request failed"); }
+  }, [isAdmin]);
+  const loadHistory = useCallback(async () => {
+    if (!canMutate) return;
+    setLogError(null);
+    acApi.getHealth().then(setHealth);
+    try { setLog(await acApi.getLog()); }
+    catch (e) { setLogError(e instanceof Error ? e.message : "Request failed"); }
+  }, [canMutate]);
+  useEffect(() => { loadSettings(); loadHistory(); }, [loadSettings, loadHistory]);
 
   const set = <K extends keyof NotificationSettings>(k: K, v: NotificationSettings[K]) => setCfg(c => c ? { ...c, [k]: v } : c);
 
   const save = async () => {
+    if (!cfg) return;
     setSaving(true);
     const ok = await acApi.saveSettings(cfg);
     setSaving(false);
-    showToast(ok ? "Notification settings saved" : "Failed to save", ok ? "success" : "error");
-    if (ok) reload();
+    showInstallToast(ok ? "Notification settings saved" : "Failed to save", ok ? "success" : "error");
+    if (ok) loadSettings();
   };
 
   const test = async () => {
@@ -309,16 +338,16 @@ function NotificationSettingsTab() {
     setTesting(false);
     if (res.results?.length) {
       const summary = res.results.map(r => `${r.channel}: ${r.success ? "✓" : "✗"}`).join("  ");
-      showToast(`Test sent — ${summary}`, res.ok ? "success" : "error");
+      showInstallToast(`Test sent — ${summary}`, res.ok ? "success" : "error");
     } else {
-      showToast("No channels enabled to test", "error");
+      showInstallToast(res.message ?? "No channels enabled to test", "error");
     }
-    reload();
+    loadHistory(); // not the settings: that would discard unsaved edits
   };
 
   const digestChip = (key: "teamsDigest"|"emailDigest"|"webhookDigest") => (
     <label className="toggle-label" data-inline-style="inline-94b6caffd5" title="Batch this channel's alerts into a single rollup instead of sending each one instantly.">
-      <input type="checkbox" checked={!!cfg[key]} onChange={e=>set(key, e.target.checked)}/> Rollup digest
+      <input type="checkbox" checked={!!cfg?.[key]} onChange={e=>set(key, e.target.checked)}/> Rollup digest
     </label>
   );
 
@@ -330,11 +359,27 @@ function NotificationSettingsTab() {
           Notification delivery is failing on: {health.channels.filter(c=>c.consecutiveFailures>=health.threshold).map(c=>`${c.channel} (${c.consecutiveFailures}×)`).join(", ")}. Check the endpoint URL/credentials below.
         </div>
       )}
+      {!isAdmin ? (
+        <Card title="Notification Channels">
+          <StateMessage type="permission" title="Managed by an Admin"
+            message={canMutate
+              ? "Only an Admin can view or change the install-wide channels (Teams, webhook, email) and delivery rules. Delivery history is below."
+              : "Only an Admin can view or change the notification channels, and the delivery history needs the Analyst role."}/>
+        </Card>
+      ) : loadError ? (
+        <Card title="Notification Channels">
+          <InlineError title="Couldn't load notification settings" onRetry={loadSettings}
+            message={`${loadError}. Nothing is shown, and nothing can be saved, until the saved settings load.`}/>
+        </Card>
+      ) : !cfg ? (
+        <Card title="Notification Channels"><LoadingSkeleton type="table"/></Card>
+      ) : (
+      <>
       <div className="two-col">
         <Card title="Microsoft Teams / Slack" badge={<label className="toggle-label"><input type="checkbox" checked={cfg.teamsEnabled} onChange={e=>set("teamsEnabled", e.target.checked)}/> Enabled</label>}>
           <div className="policy-field">
             <span className="policy-label">Incoming Webhook URL</span>
-            <input className="policy-input" placeholder="https://outlook.office.com/webhook/…" value={cfg.teamsWebhookUrl ?? ""} onChange={e=>set("teamsWebhookUrl", e.target.value)}/>
+            <input aria-label="Incoming Webhook URL" className="policy-input" placeholder="https://outlook.office.com/webhook/…" value={cfg.teamsWebhookUrl ?? ""} onChange={e=>set("teamsWebhookUrl", e.target.value)}/>
           </div>
           <div data-inline-style="inline-5313025c2e">{digestChip("teamsDigest")}</div>
           <p className="hdr-sub">Paste a Teams channel "Incoming Webhook" connector URL (or a Slack incoming webhook). A formatted alert card is posted on each trigger.</p>
@@ -343,7 +388,7 @@ function NotificationSettingsTab() {
         <Card title="Generic Webhook / SIEM" badge={<label className="toggle-label"><input type="checkbox" checked={cfg.webhookEnabled} onChange={e=>set("webhookEnabled", e.target.checked)}/> Enabled</label>}>
           <div className="policy-field">
             <span className="policy-label">Endpoint URL</span>
-            <input className="policy-input" placeholder="https://…  (Sentinel, Splunk HEC, Power Automate)" value={cfg.webhookUrl ?? ""} onChange={e=>set("webhookUrl", e.target.value)}/>
+            <input aria-label="Endpoint URL" className="policy-input" placeholder="https://…  (Sentinel, Splunk HEC, Power Automate)" value={cfg.webhookUrl ?? ""} onChange={e=>set("webhookUrl", e.target.value)}/>
           </div>
           <div data-inline-style="inline-5313025c2e">{digestChip("webhookDigest")}</div>
           <p className="hdr-sub">Each alert is POSTed as JSON. Use for SIEM ingestion or custom automation.</p>
@@ -352,13 +397,13 @@ function NotificationSettingsTab() {
 
       <Card title="Email (SMTP)" badge={<div data-inline-style="inline-2b63254f19">{digestChip("emailDigest")}<label className="toggle-label"><input type="checkbox" checked={cfg.emailEnabled} onChange={e=>set("emailEnabled", e.target.checked)}/> Enabled</label></div>}>
         <div className="settings-grid">
-          <div className="policy-field"><span className="policy-label">SMTP Host</span><input className="policy-input" placeholder="smtp.office365.com" value={cfg.smtpHost ?? ""} onChange={e=>set("smtpHost", e.target.value)}/></div>
-          <div className="policy-field"><span className="policy-label">Port</span><input className="policy-input" type="number" value={cfg.smtpPort} onChange={e=>set("smtpPort", Number(e.target.value))}/></div>
+          <div className="policy-field"><span className="policy-label">SMTP Host</span><input aria-label="SMTP Host" className="policy-input" placeholder="smtp.office365.com" value={cfg.smtpHost ?? ""} onChange={e=>set("smtpHost", e.target.value)}/></div>
+          <div className="policy-field"><span className="policy-label">Port</span><input aria-label="Port" className="policy-input" type="number" value={cfg.smtpPort} onChange={e=>set("smtpPort", Number(e.target.value))}/></div>
           <div className="policy-field"><span className="policy-label">Use SSL/TLS</span><label className="toggle-label" data-inline-style="inline-5313025c2e"><input type="checkbox" checked={cfg.smtpUseSsl} onChange={e=>set("smtpUseSsl", e.target.checked)}/> Enabled</label></div>
-          <div className="policy-field"><span className="policy-label">Username</span><input className="policy-input" value={cfg.smtpUsername ?? ""} onChange={e=>set("smtpUsername", e.target.value)}/></div>
-          <div className="policy-field"><span className="policy-label">Password</span><input className="policy-input" type="password" placeholder={cfg.hasSmtpPassword ? "•••••• (unchanged)" : ""} value={cfg.smtpPassword ?? ""} onChange={e=>set("smtpPassword", e.target.value)}/></div>
-          <div className="policy-field"><span className="policy-label">From Address</span><input className="policy-input" placeholder="vigil365@yourdomain.com" value={cfg.fromAddress ?? ""} onChange={e=>set("fromAddress", e.target.value)}/></div>
-          <div className="policy-field"><span className="policy-label">Default Recipient</span><input className="policy-input" placeholder="secops@yourdomain.com" value={cfg.defaultRecipient ?? ""} onChange={e=>set("defaultRecipient", e.target.value)}/></div>
+          <div className="policy-field"><span className="policy-label">Username</span><input aria-label="Username" className="policy-input" value={cfg.smtpUsername ?? ""} onChange={e=>set("smtpUsername", e.target.value)}/></div>
+          <div className="policy-field"><span className="policy-label">Password</span><input aria-label="Password" className="policy-input" type="password" placeholder={cfg.hasSmtpPassword ? "•••••• (unchanged)" : ""} value={cfg.smtpPassword ?? ""} onChange={e=>set("smtpPassword", e.target.value)}/></div>
+          <div className="policy-field"><span className="policy-label">From Address</span><input aria-label="From Address" className="policy-input" placeholder="vigil365@yourdomain.com" value={cfg.fromAddress ?? ""} onChange={e=>set("fromAddress", e.target.value)}/></div>
+          <div className="policy-field"><span className="policy-label">Default Recipient</span><input aria-label="Default Recipient" className="policy-input" placeholder="secops@yourdomain.com" value={cfg.defaultRecipient ?? ""} onChange={e=>set("defaultRecipient", e.target.value)}/></div>
         </div>
       </Card>
 
@@ -369,7 +414,7 @@ function NotificationSettingsTab() {
         <div className="settings-grid">
           <div className="policy-field">
             <span className="policy-label">Minimum severity to notify</span>
-            <select className="policy-input" value={cfg.minSeverity} onChange={e=>set("minSeverity", e.target.value)}>
+            <select aria-label="Minimum severity to notify" className="policy-input" value={cfg.minSeverity} onChange={e=>set("minSeverity", e.target.value)}>
               <option value="low">Low and above</option>
               <option value="medium">Medium and above</option>
               <option value="high">High and above</option>
@@ -378,25 +423,47 @@ function NotificationSettingsTab() {
           </div>
           <div className="policy-field">
             <span className="policy-label">Digest Frequency</span>
-            <select className="policy-input" value={cfg.digestFrequency ?? "daily"} onChange={e=>set("digestFrequency", e.target.value)}>
+            <select aria-label="Digest Frequency" className="policy-input" value={cfg.digestFrequency ?? "daily"} onChange={e=>set("digestFrequency", e.target.value)}>
               <option value="daily">Daily</option>
               <option value="weekly">Weekly (Monday)</option>
             </select>
           </div>
           <div className="policy-field">
             <span className="policy-label">Digest send hour (UTC)</span>
-            <input className="policy-input" type="number" min={0} max={23} value={cfg.digestHourUtc ?? 8} onChange={e=>set("digestHourUtc", Number(e.target.value))}/>
+            <input aria-label="Digest send hour (UTC)" className="policy-input" type="number" min={0} max={23} value={cfg.digestHourUtc ?? 8} onChange={e=>set("digestHourUtc", Number(e.target.value))}/>
           </div>
           <div className="policy-field">
             <span className="policy-label">Alert after N consecutive channel failures</span>
-            <input className="policy-input" type="number" min={1} value={cfg.failureAlertThreshold ?? 3} onChange={e=>set("failureAlertThreshold", Number(e.target.value))}/>
+            <input aria-label="Alert after N consecutive channel failures" className="policy-input" type="number" min={1} value={cfg.failureAlertThreshold ?? 3} onChange={e=>set("failureAlertThreshold", Number(e.target.value))}/>
+          </div>
+          <div className="policy-field">
+            <span className="policy-label">MSP digest (one email a day, every client, worst first)</span>
+            <label className="toggle-label"><input type="checkbox" checked={!!cfg.mspDigestEnabled} onChange={e=>set("mspDigestEnabled", e.target.checked)}/> Enabled — sent to the default recipient when two or more clients are active</label>
+          </div>
+          <div className="policy-field">
+            <span className="policy-label">MSP digest hour (UTC)</span>
+            <input aria-label="MSP digest hour (UTC)" className="policy-input" type="number" min={0} max={23} value={cfg.mspDigestHourUtc ?? 7} onChange={e=>set("mspDigestHourUtc", Number(e.target.value))}/>
           </div>
         </div>
         <p className="hdr-sub">Digest channels batch their alerts into one rollup message. If a channel fails to deliver this many times in a row, Vigil365 raises a high-severity delivery-failure alert on the still-working channels.</p>
       </Card>
+      </>
+      )}
 
-      <Card title="Notification History" badge={<Badge label={`${log.length} sent`} tone="neutral"/>}>
-        {log.length === 0 ? (
+      {/* Routing is Analyst-readable server-side, like the history below. */}
+      {getSelectedTenantId() && (canMutate ? <ClientRoutingCard /> : (
+        <Card title="This client's routing">
+          <StateMessage type="permission" title="Analyst role needed" message="Where this client's alerts go is visible to Analysts and Admins."/>
+        </Card>
+      ))}
+
+      {canMutate && (
+      <Card title="Notification History" badge={log ? <Badge label={`${log.length} sent`} tone="neutral"/> : undefined}>
+        {logError ? (
+          <InlineError title="Couldn't load notification history" message={logError} onRetry={loadHistory}/>
+        ) : !log ? (
+          <LoadingSkeleton type="table"/>
+        ) : log.length === 0 ? (
           <EmptyState icon={<Bell size={28}/>} message="No notifications sent yet. They appear here once an alert fires with a channel enabled."/>
         ) : (
           <div className="tbl-wrap">
@@ -418,6 +485,7 @@ function NotificationSettingsTab() {
           </div>
         )}
       </Card>
+      )}
     </>
   );
 }
@@ -430,7 +498,11 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
   deepLinkAlertId?: string | null;
   onDeepLinkConsumed?: () => void;
 }) {
-  const { canMutate } = useAuth();
+  const { canMutate, isAdmin } = useAuth();
+  // Install-wide policies apply to every client, so in MSP mode only an Admin
+  // may change them (the server enforces it); a client's own policy needs Analyst.
+  const mspAnalyst = isMspMode() && !isAdmin;
+  const canEditPolicy = (p: AlertPolicy) => canMutate && !(mspAnalyst && !p.tenantId);
 
   // The product is alert-first: land an analyst in the open, worst-first queue.
   // A cross-navigation may request a specific tab (e.g. "show me the collection
@@ -457,6 +529,15 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
   const [assignedFilter, setAssignedFilter] = useState("");
   const [ageFilter, setAgeFilter] = useState("");
   const [editPolicy, setEditPolicy] = useState<Partial<AlertPolicy> | null>(null);
+  // MSP: per-client overrides of install-wide policies, keyed by policy id.
+  const clientSelected = !!getSelectedTenantId();
+  const [overrides, setOverrides] = useState<Record<string, { enabled: boolean | null; threshold: number | null }>>({});
+  const loadOverrides = useCallback(async () => {
+    if (!clientSelected) return;
+    const rows = await acApi.getTenantOverrides();
+    setOverrides(Object.fromEntries(rows.map(o => [o.policyId, { enabled: o.enabled, threshold: o.threshold }])));
+  }, [clientSelected]);
+  useEffect(() => { loadOverrides(); }, [loadOverrides]);
   const [showModal, setShowModal] = useState(false);
   const [selectedTriggered, setSelectedTriggered] = useState<TriggeredAlert | null>(null);
   const [noteVersion, setNoteVersion] = useState(0);
@@ -464,21 +545,45 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
   // Notification permalink (#/alertcenter?alert={guid}): open that alert's
   // detail directly once the data is available.
   useEffect(() => {
-    if (!deepLinkAlertId || triggeredAlerts.length === 0) return;
-    const target = triggeredAlerts.find(a => a.id.toLowerCase() === deepLinkAlertId.toLowerCase());
+    if (!deepLinkAlertId) return;
+    const id = deepLinkAlertId.toLowerCase();
+    const target = triggeredAlerts.find(a => a.id.toLowerCase() === id);
     if (target) {
       setTab("alerts");
       setSelectedTriggered(target);
-    } else {
+      onDeepLinkConsumed?.();
+      return;
+    }
+    const gone = () => {
       // The link came from a Teams card or email and the alert is not in the
       // loaded set — usually resolved since, or aged out. Silently swallowing it
       // left the user staring at the queue wondering if the link was broken.
+      // No client name: the alert is not open in the selected one, or any other.
       setTab("alerts");
       showToast(
         "That alert is no longer in the active queue — it may have been resolved or aged out. Showing all alerts instead.",
-        "info");
+        "info", undefined, { client: null });
+      onDeepLinkConsumed?.();
+    };
+    if (!isMspMode()) {
+      if (triggeredAlerts.length > 0) gone();
+      return;
     }
-    onDeepLinkConsumed?.();
+    // MSP: notification links carry no client, so the alert may belong to a
+    // client other than the selected one (which may have no alerts at all).
+    // The cross-client queue knows: switch to that client and reopen the link.
+    let cancelled = false;
+    queueApi.list().then(r => {
+      if (cancelled) return;
+      const elsewhere = r.ok ? r.value.find(i => i.id.toLowerCase() === id && i.tenantId !== getSelectedTenantId()) : undefined;
+      if (elsewhere) {
+        onDeepLinkConsumed?.();
+        setSelectedTenantId(elsewhere.tenantId);
+        window.location.hash = `#/alertcenter?alert=${elsewhere.id}`;
+        window.location.reload();
+      } else if (triggeredAlerts.length > 0) gone();
+    });
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deepLinkAlertId, triggeredAlerts]);
 
@@ -575,24 +680,32 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
     try {
       const targets = filteredTA.filter(a => selected.has(a.id) && a.status !== "resolved" && a.status !== "auto_resolved");
       let ok = 0;
+      // Resolved meanwhile (another analyst, or automatically): the server
+      // answers 409. Those are closed, not failed — never "still open".
+      let alreadyResolved = 0;
       // Keyed by id, not policyName — several alerts can share a policy name.
       const failedIds = new Set<string>();
       const failed: string[] = [];
       for (const a of targets) {
-        if (action === "acknowledge" ? await acApi.acknowledge(a.id) : await acApi.resolve(a.id)) ok++;
+        const r = action === "acknowledge" ? await acApi.acknowledge(a.id) : await acApi.resolve(a.id);
+        if (r.ok) ok++;
+        else if (r.alreadyResolved) alreadyResolved++;
         else { failedIds.add(a.id); failed.push(a.policyName); }
       }
 
       // Counting only successes meant "Acknowledged 7 alerts" after 3 silently
       // failed — the analyst believes the queue is clear when it is not.
       const verb = action === "acknowledge" ? "Acknowledged" : "Resolved";
+      const counted = ok + alreadyResolved === targets.length ? `${ok} alert${ok !== 1 ? "s" : ""}` : `${ok} of ${targets.length}`;
+      const resolvedNote = alreadyResolved > 0
+        ? ` ${alreadyResolved} ${alreadyResolved === 1 ? "was" : "were"} already resolved.` : "";
       if (failed.length === 0) {
-        showToast(`${verb} ${ok} alert${ok !== 1 ? "s" : ""}`);
+        showToast(`${verb} ${counted}${resolvedNote ? `.${resolvedNote}` : ""}`, alreadyResolved > 0 ? "info" : "success");
       } else {
         const names = failed.slice(0, 3).join(", ");
         const more = failed.length > 3 ? ` and ${failed.length - 3} more` : "";
         showToast(
-          `${verb} ${ok} of ${targets.length}. Failed: ${names}${more}. Those alerts are still open.`,
+          `${verb} ${counted}.${resolvedNote} Failed: ${names}${more}. Those alerts are still open.`,
           "error");
       }
 
@@ -608,18 +721,20 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
     else showToast("Could not reopen alert", "error");
   };
 
+  // A refusal is said, and the list refreshed either way: an alert resolved
+  // meanwhile (409) must stop offering Acknowledge/Resolve.
   const acknowledge = async (id: string) => {
-    if (await acApi.acknowledge(id)) {
-      showToast("Alert acknowledged", "success", { label: "Undo", onAction: () => undoTo(id) });
-      await onChanged();
-    }
+    const r = await acApi.acknowledge(id);
+    if (r.ok) showToast("Alert acknowledged", "success", { label: "Undo", onAction: () => undoTo(id) });
+    else showToast(r.error ?? "Could not acknowledge the alert", r.alreadyResolved ? "info" : "error");
+    await onChanged();
   };
 
   const resolve = async (id: string) => {
-    if (await acApi.resolve(id)) {
-      showToast("Alert resolved", "success", { label: "Undo", onAction: () => undoTo(id) });
-      await onChanged();
-    }
+    const r = await acApi.resolve(id);
+    if (r.ok) showToast("Alert resolved", "success", { label: "Undo", onAction: () => undoTo(id) });
+    else showToast(r.error ?? "Could not resolve the alert", r.alreadyResolved ? "info" : "error");
+    await onChanged();
   };
 
   const snooze = async (id: string, durationHours: 4 | 24 | 168) => {
@@ -632,10 +747,11 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
 
   const handleSavePolicy = async (p: AlertPolicy) => {
     const exists = policies.some(x => x.id === p.id);
-    const ok = exists ? await acApi.updatePolicy(p) : !!(await acApi.createPolicy(p));
+    // MSP: a policy drafted as "this client only" is created in the selected tenant's scope.
+    const res = exists ? await acApi.updatePolicy(p) : await acApi.createPolicy(p, p.tenantId ? "tenant" : "default");
     setShowModal(false);
-    if (ok) { showToast("Policy saved"); await onChanged(); }
-    else showToast("Failed to save policy", "error");
+    if (res.ok) { showToast("Policy saved"); await onChanged(); }
+    else showToast(res.error ?? "Failed to save policy", "error");
   };
 
   const handleDeletePolicy = async (id: string) => {
@@ -649,13 +765,17 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
       danger: true,
     });
     if (!ok) return;
-    if (await acApi.deletePolicy(id)) { showToast("Policy deleted"); await onChanged(); }
+    const res = await acApi.deletePolicy(id);
+    if (res.ok) { showToast("Policy deleted"); await onChanged(); }
+    else showToast(res.error ?? "Failed to delete policy", "error");
   };
 
   const togglePolicy = async (id: string) => {
     const p = policies.find(x => x.id === id);
     if (!p) return;
-    if (await acApi.updatePolicy({ ...p, enabled: !p.enabled })) await onChanged();
+    const res = await acApi.updatePolicy({ ...p, enabled: !p.enabled });
+    if (res.ok) await onChanged();
+    else showToast(res.error ?? `Failed to ${p.enabled ? "disable" : "enable"} policy`, "error");
   };
 
   const useTemplate = (t: typeof POLICY_TEMPLATES_CATALOG[0]) => {
@@ -679,16 +799,18 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
       {showModal && (
         <PolicyModal
           policy={editPolicy}
+          clientOnly={mspAnalyst}
           onSave={handleSavePolicy}
           onClose={() => { setShowModal(false); setEditPolicy(null); }}
         />
       )}
       {selectedTriggered && (
         <div className="detail-modal-backdrop" onClick={() => setSelectedTriggered(null)}>
-          <div className="detail-modal" onClick={e => e.stopPropagation()}>
+          <div className="detail-modal" onClick={e => e.stopPropagation()}
+            role="dialog" aria-modal="true" aria-label={selectedTriggered.policyName}>
             <div className="detail-modal-hdr">
               <div className="dm-title">{selectedTriggered.policyName}</div>
-              <button className="modal-close" onClick={() => setSelectedTriggered(null)}><X size={16}/></button>
+              <button className="modal-close" onClick={() => setSelectedTriggered(null)} aria-label="Close"><X size={16}/></button>
             </div>
             <div className="detail-modal-body">
               <DetailField label="Policy ID" value={selectedTriggered.policyId} copy/>
@@ -830,7 +952,12 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
       />
 
       {/* ── TAB: Baseline (drift against a captured baseline) ── */}
-      {tab === "baseline" && <BaselineTab/>}
+      {/* The server reads it to Analysts only; a Viewer's 403 read as "No baseline yet". */}
+      {tab === "baseline" && (canMutate ? <BaselineTab/> : (
+        <Card title="Tenant Baseline">
+          <StateMessage type="permission" title="Analyst role needed" message="The baseline and its drift are visible to Analysts and Admins."/>
+        </Card>
+      ))}
 
       {/* ── TAB: Notifications ── */}
       {tab === "notifications" && <NotificationSettingsTab/>}
@@ -855,13 +982,13 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                 <Search size={14}/>
                 <input className="search-input" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search policy…"/>
               </label>
-              <input type="date" className="filter-sel" value={dateFilter} onChange={e=>setDateFilter(e.target.value)} title="Filter by date"/>
+              <input type="date" className="filter-sel" value={dateFilter} onChange={e=>setDateFilter(e.target.value)} title="Filter by date" aria-label="Filter by date"/>
               <SeverityFilter value={sevFilter} onChange={setSevFilter}/>
-              <select className="filter-sel" value={catFilter} onChange={e=>setCatFilter(e.target.value)}>
+              <select className="filter-sel" aria-label="Filter by category" value={catFilter} onChange={e=>setCatFilter(e.target.value)}>
                 <option value="">All categories</option>
                 {["identity","devices","email","compliance","licenses"].map(c=><option key={c} value={c}>{c.charAt(0).toUpperCase()+c.slice(1)}</option>)}
               </select>
-              <select className="filter-sel" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
+              <select className="filter-sel" aria-label="Filter by status" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
                 <option value="">All statuses</option>
                 <option value="new">New</option>
                 <option value="acknowledged">Acknowledged</option>
@@ -869,11 +996,11 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                 <option value="auto_resolved">Auto-resolved</option>
                 <option value="resolved">Resolved</option>
               </select>
-              <select className="filter-sel" value={assignedFilter} onChange={e=>setAssignedFilter(e.target.value)}>
+              <select className="filter-sel" aria-label="Filter by owner" value={assignedFilter} onChange={e=>setAssignedFilter(e.target.value)}>
                 <option value="">All owners</option>
                 {assignees.map(email => <option key={email} value={email}>{email}</option>)}
               </select>
-              <select className="filter-sel" value={ageFilter} onChange={e=>setAgeFilter(e.target.value)}>
+              <select className="filter-sel" aria-label="Filter by age" value={ageFilter} onChange={e=>setAgeFilter(e.target.value)}>
                 <option value="">Any age</option>
                 <option value="under4">Under 4 hours</option>
                 <option value="4to24">4–24 hours</option>
@@ -897,7 +1024,10 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
             </div>
           )}
           {filteredTA.length === 0 ? (
-            <EmptyState icon={<CheckCircle size={28} color="var(--status-good-icon)"/>} message="No alerts triggered yet. Your policies are monitoring the environment."/>
+            // Filters hiding every alert (the default status filter is "New") is not an all-clear.
+            triggeredAlerts.length > 0
+              ? <EmptyState message={`No alerts match these filters — ${triggeredAlerts.length} alert${triggeredAlerts.length !== 1 ? "s are" : " is"} hidden by them.`}/>
+              : <EmptyState icon={<CheckCircle size={28} color="var(--status-good-icon)"/>} message="No alerts triggered yet. Your policies are monitoring the environment."/>
           ) : (
             <>
             <div className="tbl-wrap">
@@ -923,12 +1053,18 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                   {pagedTA.map(a => {
                     const sla = slaAge(a);
                     return (
-                    <tr key={a.id} className="clickable" {...rowActivation(() => setSelectedTriggered(a), `Open triggered alert ${a.policyName}`)}>
+                    // The row holds its own controls, so it cannot also be a button
+                    // (nested-interactive): a click anywhere opens it, and keyboard
+                    // and screen-reader users open it from the policy name.
+                    <tr key={a.id} className="clickable" onClick={() => setSelectedTriggered(a)}>
                       {canMutate && <td onClick={e=>e.stopPropagation()}>
                         <input type="checkbox" checked={selected.has(a.id)} onChange={() => toggleSelect(a.id)} aria-label={`Select ${a.policyName}`}/>
                       </td>}
                       <td><Badge label={a.severity} tone={sevToneAC(a.severity)}/></td>
-                      <td data-inline-style="inline-7ba9bad628">{a.policyName}</td>
+                      <td data-inline-style="inline-7ba9bad628">
+                        <button type="button" className="card-link-btn" aria-label={`Open triggered alert ${a.policyName}`}
+                          onClick={e => { e.stopPropagation(); setSelectedTriggered(a); }}>{a.policyName}</button>
+                      </td>
                       <td data-inline-style="inline-af7da65b76">{a.condition}</td>
                       <td data-inline-style="inline-3d9df89ef8">{a.metricValue} <span data-inline-style="inline-3984b68182">/ {a.threshold}</span></td>
                       <td className="al-date">{relTime(a.triggeredAt)}</td>
@@ -946,7 +1082,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                         {canMutate && a.status !== "resolved" && a.status !== "auto_resolved" && (
                           <select className="filter-sel" data-inline-style="inline-ceabc00151" defaultValue=""
                             onChange={e => { const h = Number(e.target.value); if (h) snooze(a.id, h as 4|24|168); e.currentTarget.value = ""; }}
-                            title="Snooze for…">
+                            title="Snooze for…" aria-label={`Snooze ${a.policyName} for…`}>
                             <option value="" disabled>Snooze…</option>
                             <option value="4">4h</option>
                             <option value="24">24h</option>
@@ -1003,40 +1139,49 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
           <StatCard label="Noisiest" value={noisiest[1] > 0 ? noisiest[0] : "—"} sub={noisiest[1] > 0 ? `${noisiest[1]} of the ${fired7.length} alerts` : "no alerts in 7 days"}/>
         </div>
         <Card title="Alert Policies" badge={<Badge label={`${policies.length} policies`} tone="neutral"/>}
-          action={
+          action={canMutate ? (
             <div data-inline-style="inline-f8df590e45">
               <PolicyPackControls onChanged={onChanged}/>
               <button className="btn-run" data-inline-style="inline-6d8e211e39" onClick={() => { setEditPolicy(null); setShowModal(true); }}><Bell size={13}/> New Policy</button>
             </div>
-          }>
+          ) : undefined}>
           {policies.length === 0 ? (
             <EmptyState icon={<Bell size={28}/>} message="No policies yet. Create one or use a template."/>
           ) : (
             <div className="tbl-wrap">
               <table className="data-tbl">
                 <thead>
-                  <tr><th scope="col">Name</th><th scope="col">Category</th><th scope="col">Condition</th><th scope="col">Severity</th><th scope="col">Status</th><th scope="col">Last Triggered</th><th scope="col">Count</th><th scope="col">Actions</th></tr>
+                  <tr><th scope="col">Name</th><th scope="col">Category</th><th scope="col">Condition</th><th scope="col">Severity</th><th scope="col">Status</th>{clientSelected && <th scope="col">This client</th>}<th scope="col">Last Triggered</th><th scope="col">Count</th><th scope="col">Actions</th></tr>
                 </thead>
                 <tbody>
                   {policies.map(p => (
                     <tr key={p.id}>
-                      <td data-inline-style="inline-7ba9bad628">{p.name}</td>
+                      <td data-inline-style="inline-7ba9bad628">{p.name}{p.tenantId && <> <Badge label="This client" tone="info"/></>}</td>
                       <td data-inline-style="inline-b7b96646ae">{p.category}</td>
                       <td data-inline-style="inline-e1acedac9b">{p.condition}</td>
                       <td><Badge label={p.severity} tone={sevToneAC(p.severity)}/></td>
                       <td>
+                        {canEditPolicy(p) ? (
                         <button
                           onClick={() => togglePolicy(p.id)}
                           style={{ padding:"2px 10px", borderRadius:5, border:"1px solid", fontSize:11, fontWeight:600, cursor:"pointer",
                             borderColor: p.enabled?"var(--status-good-border)":"var(--color-border)", background: p.enabled?"var(--status-good-bg)":"var(--color-raised)", color: p.enabled?"var(--status-good-text)":"var(--color-muted)" }}>
                           {p.enabled ? "Enabled" : "Disabled"}
                         </button>
+                        ) : <Badge label={p.enabled ? "Enabled" : "Disabled"} tone={p.enabled ? "good" : "neutral"}/>}
                       </td>
+                      {clientSelected && (
+                        <td>{p.tenantId ? <span className="al-date">Client policy</span>
+                          : isAdmin ? <PolicyOverrideControl policy={p} override={overrides[p.id]} onChanged={loadOverrides}/>
+                          : <span className="al-date">{overrideText(overrides[p.id])}</span>}</td>
+                      )}
                       <td className="al-date">{p.lastTriggered ? relTime(p.lastTriggered) : "Never"}</td>
                       <td data-inline-style="inline-3d9df89ef8">{p.triggerCount}</td>
                       <td data-inline-style="inline-95e7b1fc4c">
-                        <button className="btn-export" data-inline-style="inline-fcd3bb7174" onClick={() => { setEditPolicy(p); setShowModal(true); }}>Edit</button>
-                        <button className="btn-ack" onClick={() => handleDeletePolicy(p.id)}>Delete</button>
+                        {canEditPolicy(p) && <>
+                          <button className="btn-export" data-inline-style="inline-fcd3bb7174" onClick={() => { setEditPolicy(p); setShowModal(true); }}>Edit</button>
+                          <button className="btn-ack" onClick={() => handleDeletePolicy(p.id)}>Delete</button>
+                        </>}
                       </td>
                     </tr>
                   ))}
@@ -1072,9 +1217,11 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                     <Badge label={t.severity} tone={sevToneAC(t.severity)}/>
                     <Badge label={t.category} tone="neutral"/>
                   </div>
-                  <button className="btn-run" data-inline-style="inline-ead46142c8" onClick={() => useTemplate(t)}>
-                    {applied ? "Re-apply" : "Use Template"}
-                  </button>
+                  {canMutate && (
+                    <button className="btn-run" data-inline-style="inline-ead46142c8" onClick={() => useTemplate(t)}>
+                      {applied ? "Re-apply" : "Use Template"}
+                    </button>
+                  )}
                 </div>
               </div>
               );
@@ -1083,5 +1230,124 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
         </Card>
       )}
     </div>
+  );
+}
+
+
+// ─── MSP: per-client routing (shown only with a client selected) ───────────────
+function ClientRoutingCard() {
+  const { isAdmin } = useAuth();
+  const [r, setR] = useState<TenantRouting | null>(null);
+  const [webhookUrl, setWebhookUrl] = useState<string>("");
+  // The saved webhook is write-only (never sent back), so an empty field means
+  // "keep it"; removing it needs its own control, which sends "" (= clear).
+  const [removeWebhook, setRemoveWebhook] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const res = await routingApi.get();
+    if (res.ok) { setR(res.value); setError(null); setWebhookUrl(""); setRemoveWebhook(false); } else setError(res.error);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  // Was silently blank on failure (MSP_V12_PLAN.md U12).
+  if (error) return <Card title="This client's routing"><InlineError title="Couldn't load this client's routing" message={error} onRetry={load}/></Card>;
+  if (!r) return <Card title="This client's routing"><LoadingSkeleton type="table"/></Card>;
+  const set = <K extends keyof TenantRouting>(k: K, v: TenantRouting[K]) => setR(x => x ? { ...x, [k]: v } : x);
+
+  const save = async () => {
+    if (!r.notifyMsp && !r.notifyClient) { showToast("Alerts must go somewhere: the MSP, the client, or both", "error"); return; }
+    setSaving(true);
+    const res = await routingApi.save({
+      notifyMsp: r.notifyMsp, notifyClient: r.notifyClient, recipientEmail: r.recipientEmail, teamsWebhookUrl: r.teamsWebhookUrl,
+      webhookUrl: removeWebhook ? "" : webhookUrl === "" ? null : webhookUrl, minSeverity: r.minSeverity,
+    });
+    setSaving(false);
+    showToast(res.ok ? "Client routing saved" : res.error, res.ok ? "success" : "error");
+    if (res.ok) load();
+  };
+
+  return (
+    <Card title="This client's routing"
+      badge={<Badge label={r.notifyMsp && r.notifyClient ? "MSP + client" : r.notifyClient ? "Client only" : "MSP only"} tone="info"/>}
+      action={isAdmin ? <button className="btn-run" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save routing"}</button> : undefined}>
+      {!isAdmin && <p className="al-date">Read-only — only an Admin can change routing.</p>}
+      <p className="hdr-sub">Where alerts for the selected client go. The MSP's channels above are the default; the client's own destinations are used when enabled here.</p>
+      <div className="settings-grid">
+        <div className="policy-field"><span className="policy-label">Notify the MSP</span><label className="toggle-label"><input type="checkbox" disabled={!isAdmin} checked={r.notifyMsp} onChange={e=>set("notifyMsp", e.target.checked)}/> MSP default recipient and channels</label></div>
+        <div className="policy-field"><span className="policy-label">Notify the client</span><label className="toggle-label"><input type="checkbox" disabled={!isAdmin} checked={r.notifyClient} onChange={e=>set("notifyClient", e.target.checked)}/> Client's own destinations below</label></div>
+        <div className="policy-field"><span className="policy-label">Client recipient email(s)</span><input aria-label="Client recipient email(s)" className="policy-input" disabled={!isAdmin} placeholder="it@client.example, soc@client.example" value={r.recipientEmail ?? ""} onChange={e=>set("recipientEmail", e.target.value)}/></div>
+        <div className="policy-field"><span className="policy-label">Client Teams webhook (optional)</span><input aria-label="Client Teams webhook (optional)" className="policy-input" disabled={!isAdmin}
+          // Non-Admins are not sent the URL (it lets its holder post into the client's channel), only whether one is set.
+          placeholder={!isAdmin ? (r.hasTeamsWebhookUrl ? "Set (only an Admin can see it)" : "Not set") : "https://…webhook.office.com/…"}
+          value={r.teamsWebhookUrl ?? ""} onChange={e=>set("teamsWebhookUrl", e.target.value)}/></div>
+        <div className="policy-field"><span className="policy-label">Client webhook URL (optional)</span><input aria-label="Client webhook URL (optional)" className="policy-input" disabled={!isAdmin || removeWebhook}
+          placeholder={!isAdmin ? (r.hasWebhookUrl ? "Set (only an Admin can see it)" : "Not set")
+            : removeWebhook ? "Removed when you save routing" : r.hasWebhookUrl ? "•••••• (unchanged; type to replace)" : "https://…"} value={webhookUrl} onChange={e=>setWebhookUrl(e.target.value)}/>
+          {isAdmin && r.hasWebhookUrl && (
+            <button type="button" className="btn-export" onClick={() => { setRemoveWebhook(v => !v); setWebhookUrl(""); }}>
+              {removeWebhook ? "Keep the saved webhook" : "Remove webhook"}
+            </button>
+          )}
+        </div>
+        <div className="policy-field">
+          <span className="policy-label">Minimum severity for this client</span>
+          <select aria-label="Minimum severity for this client" className="policy-input" disabled={!isAdmin} value={r.minSeverity ?? ""} onChange={e=>set("minSeverity", e.target.value || null)}>
+            <option value="">Inherit the MSP setting</option>
+            <option value="low">Low and above</option>
+            <option value="medium">Medium and above</option>
+            <option value="high">High and above</option>
+            <option value="critical">Critical only</option>
+          </select>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// Read-only summary of a client override, for non-admins (MSP_V12_PLAN.md U13).
+function overrideText(o: { enabled: boolean | null; threshold: number | null } | undefined): string {
+  if (o?.enabled === false) return "Off for this client";
+  if (o?.threshold != null) return `Threshold ${o.threshold}`;
+  return "Inherits";
+}
+
+// ─── MSP: per-client override of an install-wide policy ──────────────────────
+function PolicyOverrideControl({ policy, override, onChanged }: {
+  policy: AlertPolicy;
+  override: { enabled: boolean | null; threshold: number | null } | undefined;
+  onChanged: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const off = override?.enabled === false;
+  const threshold = override?.threshold ?? null;
+  // Typed into a local draft and saved on blur or Enter. Saving per keystroke
+  // stored 2 on the way to 25, and the field locked mid-save and lost the 5.
+  const [draft, setDraft] = useState(threshold == null ? "" : String(threshold));
+  useEffect(() => { setDraft(threshold == null ? "" : String(threshold)); }, [threshold]);
+  const apply = async (next: { enabled?: boolean | null; threshold?: number | null }) => {
+    setBusy(true);
+    const ok = await acApi.setTenantOverride(policy.id, { enabled: next.enabled === undefined ? (off ? false : null) : next.enabled, threshold: next.threshold === undefined ? threshold : next.threshold });
+    setBusy(false);
+    if (ok) await onChanged(); else showToast("Could not save the client override", "error");
+    return ok;
+  };
+  const commitThreshold = async () => {
+    const saved = threshold == null ? "" : String(threshold);
+    const value = draft.trim() === "" ? null : Math.max(1, Math.round(Number(draft)));
+    if (Number.isNaN(value)) { setDraft(saved); return; }
+    if (value === threshold) { setDraft(saved); return; }
+    setDraft(value == null ? "" : String(value));
+    // A refused save must not leave the unsaved number on screen as if it applied.
+    if (!await apply({ threshold: value })) setDraft(saved);
+  };
+  return (
+    <span className="override-ctl" title="Applies to the selected client only; the install-wide policy is unchanged">
+      <label className="toggle-label"><input type="checkbox" disabled={busy} checked={off} onChange={e => apply({ enabled: e.target.checked ? false : null })}/> Off for this client</label>
+      <input className="policy-input override-threshold" type="number" min={1} disabled={off} placeholder={String(policy.threshold)}
+        aria-label={`${policy.name} threshold for this client`}
+        value={draft} onChange={e => setDraft(e.target.value)} onBlur={commitThreshold}
+        onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); }}/>
+    </span>
   );
 }

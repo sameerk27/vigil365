@@ -6,8 +6,11 @@ namespace M365SecurityDashboard.Api.Models;
 /// A point-in-time snapshot of key security posture metrics. 
 /// Captured at the end of each collection cycle for historical trend analysis.
 /// </summary>
-public sealed class TrendSnapshot
+public sealed class TrendSnapshot : ITenantScoped
 {
+    /// <summary>Owning tenant. Stamped from the tenant context on insert; see ITenantScoped.</summary>
+    public Guid TenantId { get; set; }
+
     public Guid Id { get; set; } = Guid.NewGuid();
 
     public DateTimeOffset CapturedAt { get; set; } = DateTimeOffset.UtcNow;

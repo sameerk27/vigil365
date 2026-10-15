@@ -8,7 +8,7 @@
     <!-- Release version. Must match the client's package.json "version" — CI
          fails the build if they drift (scripts/check-version.ps1). Surfaced by
          /health and by the sidebar chip, so a support report names a real build. -->
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
 
     <!-- Brand icon + identity for the service exe (Task Manager, Services,
          Explorer). Same navy-shield mark as the installer and the web favicon. -->
@@ -22,6 +22,7 @@
   <ItemGroup>
     <PackageReference Include="Azure.Identity" Version="1.17.2" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.11" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.11" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.11">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -33,6 +34,16 @@
     <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.9.0" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+  </ItemGroup>
+
+  <!-- Test-only seams (e.g. GraphApiClient's fixed-token constructor) stay internal. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="M365SecurityDashboard.Api.Tests" />
+  </ItemGroup>
+
+  <!-- One permission list for API, installer and register-app.ps1 (see the file's comment). -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\graph-permissions.json" LogicalName="Vigil365.graph-permissions.json" />
   </ItemGroup>
 
   <!-- Transitive-dependency security overrides. These are pulled in by the

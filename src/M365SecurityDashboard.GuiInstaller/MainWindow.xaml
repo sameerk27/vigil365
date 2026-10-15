@@ -52,6 +52,25 @@
               <StackPanel>
                 <TextBlock Text="Application Settings" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,16" />
 
+                <!-- Edition (docs/MSP_V12_PLAN.md M3). Preselected from an existing
+                     install's config on re-run; choosing MSP over a Single install is
+                     the "convert to MSP" path (same app registration, same data). -->
+                <TextBlock Text="What kind of install is this?" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,8" />
+                <RadioButton x:Name="RadModeSingle" GroupName="Mode" IsChecked="True" Margin="0,4" Checked="Mode_Changed">
+                    <StackPanel>
+                        <TextBlock Text="One organisation" FontWeight="SemiBold" />
+                        <TextBlock Text="Monitor your own Microsoft 365 tenant." FontSize="11" Foreground="#475569" />
+                    </StackPanel>
+                </RadioButton>
+                <RadioButton x:Name="RadModeMsp" GroupName="Mode" Margin="0,8" Checked="Mode_Changed">
+                    <StackPanel>
+                        <TextBlock Text="MSP - several client tenants" FontWeight="SemiBold" />
+                        <TextBlock Text="Your staff sign in with your own tenant; each client's Global Administrator approves access once. Needs full SQL Server or PostgreSQL."
+                                   TextWrapping="Wrap" FontSize="11" Foreground="#475569" />
+                    </StackPanel>
+                </RadioButton>
+                <TextBlock x:Name="TxtModeNote" Text="" TextWrapping="Wrap" FontSize="11" Foreground="#B45309" Margin="0,4,0,18" />
+
                 <!-- Everything below keys off this. Evaluating on one box needs no
                      hostname, no certificate and no firewall hole, so asking for
                      them is pure friction. -->
@@ -126,8 +145,19 @@
                 <TextBox x:Name="TxtTenant" Height="30" Padding="5" />
 
                 <TextBlock Text="Database" FontSize="16" FontWeight="SemiBold" Margin="0,22,0,6" />
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                    <RadioButton x:Name="RadDbSql" GroupName="Db" Content="SQL Server" IsChecked="True" Margin="0,0,18,0" Checked="Db_Changed" />
+                    <RadioButton x:Name="RadDbPostgres" GroupName="Db" Content="PostgreSQL (existing server)" Checked="Db_Changed" />
+                </StackPanel>
                 <TextBlock x:Name="TxtSqlDetected" Text="" TextWrapping="Wrap" FontSize="11" Foreground="#475569" Margin="0,0,0,6" />
                 <CheckBox x:Name="ChkInstallSql" Content="Install SQL Server Express locally" IsChecked="True" Checked="ChkInstallSql_Checked" Unchecked="ChkInstallSql_Unchecked" />
+
+                <StackPanel x:Name="PanelPgString" Visibility="Collapsed" Margin="0,10,0,0">
+                    <TextBlock Text="PostgreSQL connection string" FontWeight="SemiBold" Margin="0,5,0,5" />
+                    <TextBox x:Name="TxtPgString" Height="30" Padding="5" Text="Host=localhost;Port=5432;Database=vigil365;Username=vigil365;Password=" />
+                    <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="#475569" Margin="0,6,0,0"
+                        Text="PostgreSQL 14 or later. The service connects as this user, which must own the database (or be allowed to create it). Setup checks this before installing." />
+                </StackPanel>
 
                 <StackPanel x:Name="PanelSqlString" Visibility="Collapsed" Margin="0,10,0,0">
                     <TextBlock Text="SQL Server connection string" FontWeight="SemiBold" Margin="0,5,0,5" />
@@ -178,6 +208,7 @@
                 <TextBlock Text="The Microsoft Entra App Registration was also provisioned automatically." TextWrapping="Wrap" FontSize="14" Margin="0,0,0,30" />
                 
                 <TextBlock x:Name="TxtDoneAddress" Text="" TextWrapping="Wrap" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,12" />
+                <TextBlock x:Name="TxtDoneNextSteps" Text="" TextWrapping="Wrap" FontSize="13" Margin="0,0,0,16" />
 
                 <Border x:Name="PanelCertWarning" Background="#FEF3C7" BorderBrush="#F59E0B" BorderThickness="1" Padding="12" Margin="0,0,0,20" Visibility="Collapsed">
                     <StackPanel>

@@ -48,12 +48,17 @@ namespace M365SecurityDashboard.Api.Data.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("Text")
                         .IsRequired()
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
 
                     b.HasIndex("TargetKind", "TargetId");
 
@@ -122,6 +127,9 @@ namespace M365SecurityDashboard.Api.Data.Migrations
                     b.Property<int>("SuppressionMinutes")
                         .HasColumnType("int");
 
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<int>("Threshold")
                         .HasColumnType("int");
 
@@ -135,7 +143,43 @@ namespace M365SecurityDashboard.Api.Data.Migrations
 
                     b.HasIndex("Enabled");
 
+                    b.HasIndex("TenantId");
+
                     b.ToTable("AlertPolicies");
+                });
+
+            modelBuilder.Entity("M365SecurityDashboard.Api.Models.AlertPolicyTenantOverride", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("PolicyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool?>("Enabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("NotifyEmail")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<int?>("Threshold")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.HasKey("TenantId", "PolicyId");
+
+                    b.HasIndex("PolicyId");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("AlertPolicyTenantOverrides");
                 });
 
             modelBuilder.Entity("M365SecurityDashboard.Api.Models.ApiToken", b =>
@@ -175,6 +219,9 @@ namespace M365SecurityDashboard.Api.Data.Migrations
                         .HasMaxLength(400)
                         .HasColumnType("nvarchar(400)");
 
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -185,6 +232,8 @@ namespace M365SecurityDashboard.Api.Data.Migrations
                     b.HasIndex("Prefix");
 
                     b.HasIndex("RevokedAt");
+
+                    b.HasIndex("TenantId");
 
                     b.HasIndex("TokenHash")
                         .IsUnique();
@@ -244,6 +293,9 @@ namespace M365SecurityDashboard.Api.Data.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<int>("HashVersion")
+                        .HasColumnType("int");
+
                     b.Property<string>("IpAddress")
                         .HasMaxLength(45)
                         .HasColumnType("nvarchar(45)");
@@ -261,6 +313,9 @@ namespace M365SecurityDashboard.Api.Data.Migrations
                         .HasMaxLength(40)
                         .HasColumnType("nvarchar(40)");
 
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTimeOffset>("Timestamp")
                         .HasColumnType("datetimeoffset");
 
@@ -269,6 +324,8 @@ namespace M365SecurityDashboard.Api.Data.Migrations
                         .HasColumnType("nvarchar(300)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
 
                     b.HasIndex("Timestamp");
 
@@ -328,16 +385,125 @@ namespace M365SecurityDashboard.Api.Data.Migrations
                         .HasMaxLength(320)
                         .HasColumnType("nvarchar(320)");
 
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Activity");
 
                     b.HasIndex("OccurredAt");
 
-                    b.HasIndex("Source", "ExternalId")
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "Source", "ExternalId")
                         .IsUnique();
 
                     b.ToTable("AuditEvents");
+                });
+
+            modelBuilder.Entity("M365SecurityDashboard.Api.Models.ClientTenant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("BaseUrl")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("BrandAccentColor")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("BrandName")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("CertificatePassword")
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
+                    b.Property<string>("CertificatePath")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("CertificateThumbprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ClientId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ClientSecret")
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
+                    b.Property<int>("ConsecutiveFailures")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("ConsentGrantedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ConsentNonce")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset?>("LastCollectionAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("LastCollectionStatus")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("LoginInstance")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("MicrosoftTenantId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset?>("NextCollectionAfter")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsActive");
+
+                    b.HasIndex("MicrosoftTenantId");
+
+                    b.ToTable("ClientTenants");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000001"),
+                            ConsecutiveFailures = 0,
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            IsActive = true,
+                            Name = "Default"
+                        });
                 });
 
             modelBuilder.Entity("M365SecurityDashboard.Api.Models.CollectionRun", b =>
@@ -376,9 +542,14 @@ namespace M365SecurityDashboard.Api.Data.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.HasKey("Id");
 
                     b.HasIndex("StartedAt");
+
+                    b.HasIndex("TenantId");
 
                     b.ToTable("CollectionRuns");
                 });
@@ -427,7 +598,12 @@ namespace M365SecurityDashboard.Api.Data.Migrations
                     b.Property<long>("GraphThrottledTotal")
                         .HasColumnType("bigint");
 
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
 
                     b.ToTable("MetricsCounters");
                 });
@@ -464,12 +640,17 @@ namespace M365SecurityDashboard.Api.Data.Migrations
                         .HasMaxLength(320)
                         .HasColumnType("nvarchar(320)");
 
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<Guid>("TriggeredAlertId")
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
 
                     b.HasIndex("SentAt");
+
+                    b.HasIndex("TenantId");
 
                     b.ToTable("NotificationLogs");
                 });
@@ -510,10 +691,19 @@ namespace M365SecurityDashboard.Api.Data.Migrations
                     b.Property<DateTimeOffset?>("LastFailureAlertAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<DateTimeOffset?>("LastMspDigestAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<string>("MinSeverity")
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
+
+                    b.Property<bool>("MspDigestEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("MspDigestHourUtc")
+                        .HasColumnType("int");
 
                     b.Property<string>("SmtpHost")
                         .HasMaxLength(256)
@@ -543,6 +733,9 @@ namespace M365SecurityDashboard.Api.Data.Migrations
                         .HasMaxLength(2048)
                         .HasColumnType("nvarchar(2048)");
 
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<bool>("WebhookDigest")
                         .HasColumnType("bit");
 
@@ -558,6 +751,8 @@ namespace M365SecurityDashboard.Api.Data.Migrations
                         .HasColumnType("nvarchar(2048)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
 
                     b.ToTable("NotificationSettings");
                 });
@@ -620,7 +815,12 @@ namespace M365SecurityDashboard.Api.Data.Migrations
                         .HasMaxLength(40)
                         .HasColumnType("nvarchar(40)");
 
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
 
                     b.ToTable("ReportSchedules");
                 });
@@ -681,6 +881,9 @@ namespace M365SecurityDashboard.Api.Data.Migrations
                     b.Property<int>("Severity")
                         .HasColumnType("int");
 
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(512)
@@ -694,11 +897,13 @@ namespace M365SecurityDashboard.Api.Data.Migrations
 
                     b.HasIndex("DetectedAt");
 
-                    b.HasIndex("Service", "AlertType", "ExternalId")
-                        .IsUnique()
-                        .HasFilter("[ExternalId] IS NOT NULL");
+                    b.HasIndex("TenantId");
 
                     b.HasIndex("Service", "Severity", "IsResolved");
+
+                    b.HasIndex("TenantId", "Service", "AlertType", "ExternalId")
+                        .IsUnique()
+                        .HasFilter("[ExternalId] IS NOT NULL");
 
                     b.ToTable("SecurityAlerts");
                 });
@@ -740,19 +945,24 @@ namespace M365SecurityDashboard.Api.Data.Migrations
                     b.Property<int>("SuppressedCount")
                         .HasColumnType("int");
 
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Enabled");
 
                     b.HasIndex("PolicyId");
 
+                    b.HasIndex("TenantId");
+
                     b.ToTable("SuppressionRules");
                 });
 
             modelBuilder.Entity("M365SecurityDashboard.Api.Models.TenantBaseline", b =>
                 {
-                    b.Property<int>("Id")
-                        .HasColumnType("int");
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTimeOffset?>("CapturedAt")
                         .HasColumnType("datetimeoffset");
@@ -781,9 +991,51 @@ namespace M365SecurityDashboard.Api.Data.Migrations
                     b.Property<double>("SecureScorePct")
                         .HasColumnType("float");
 
-                    b.HasKey("Id");
+                    b.HasKey("TenantId");
+
+                    b.HasIndex("TenantId");
 
                     b.ToTable("TenantBaselines");
+                });
+
+            modelBuilder.Entity("M365SecurityDashboard.Api.Models.TenantNotificationRouting", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("LastDigestAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("LastFailureAlertAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("MinSeverity")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<bool>("NotifyClient")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("NotifyMsp")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("RecipientEmail")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("TeamsWebhookUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
+                    b.Property<string>("WebhookUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
+                    b.HasKey("TenantId");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("TenantNotificationRoutings");
                 });
 
             modelBuilder.Entity("M365SecurityDashboard.Api.Models.TrendSnapshot", b =>
@@ -816,9 +1068,14 @@ namespace M365SecurityDashboard.Api.Data.Migrations
                     b.Property<double>("SecureScorePct")
                         .HasColumnType("float");
 
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CapturedAt");
+
+                    b.HasIndex("TenantId");
 
                     b.ToTable("TrendSnapshots");
                 });
@@ -897,6 +1154,9 @@ namespace M365SecurityDashboard.Api.Data.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<int>("Threshold")
                         .HasColumnType("int");
 
@@ -909,9 +1169,194 @@ namespace M365SecurityDashboard.Api.Data.Migrations
 
                     b.HasIndex("Status");
 
+                    b.HasIndex("TenantId");
+
                     b.HasIndex("TriggeredAt");
 
                     b.ToTable("TriggeredAlerts");
+                });
+
+            modelBuilder.Entity("M365SecurityDashboard.Api.Models.UserTenantAssignment", b =>
+                {
+                    b.Property<string>("UserEmail")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("AssignedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("AssignedBy")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.HasKey("UserEmail", "TenantId");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("UserTenantAssignments");
+                });
+
+            modelBuilder.Entity("M365SecurityDashboard.Api.Models.AlertNote", b =>
+                {
+                    b.HasOne("M365SecurityDashboard.Api.Models.ClientTenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("M365SecurityDashboard.Api.Models.AlertPolicy", b =>
+                {
+                    b.HasOne("M365SecurityDashboard.Api.Models.ClientTenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade);
+                });
+
+            modelBuilder.Entity("M365SecurityDashboard.Api.Models.AlertPolicyTenantOverride", b =>
+                {
+                    b.HasOne("M365SecurityDashboard.Api.Models.AlertPolicy", null)
+                        .WithMany()
+                        .HasForeignKey("PolicyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("M365SecurityDashboard.Api.Models.ClientTenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("M365SecurityDashboard.Api.Models.ApiToken", b =>
+                {
+                    b.HasOne("M365SecurityDashboard.Api.Models.ClientTenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade);
+                });
+
+            modelBuilder.Entity("M365SecurityDashboard.Api.Models.AuditEvent", b =>
+                {
+                    b.HasOne("M365SecurityDashboard.Api.Models.ClientTenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("M365SecurityDashboard.Api.Models.CollectionRun", b =>
+                {
+                    b.HasOne("M365SecurityDashboard.Api.Models.ClientTenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("M365SecurityDashboard.Api.Models.MetricsCounters", b =>
+                {
+                    b.HasOne("M365SecurityDashboard.Api.Models.ClientTenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade);
+                });
+
+            modelBuilder.Entity("M365SecurityDashboard.Api.Models.NotificationLog", b =>
+                {
+                    b.HasOne("M365SecurityDashboard.Api.Models.ClientTenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("M365SecurityDashboard.Api.Models.NotificationSettings", b =>
+                {
+                    b.HasOne("M365SecurityDashboard.Api.Models.ClientTenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade);
+                });
+
+            modelBuilder.Entity("M365SecurityDashboard.Api.Models.ReportSchedule", b =>
+                {
+                    b.HasOne("M365SecurityDashboard.Api.Models.ClientTenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade);
+                });
+
+            modelBuilder.Entity("M365SecurityDashboard.Api.Models.SecurityAlert", b =>
+                {
+                    b.HasOne("M365SecurityDashboard.Api.Models.ClientTenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("M365SecurityDashboard.Api.Models.SuppressionRule", b =>
+                {
+                    b.HasOne("M365SecurityDashboard.Api.Models.ClientTenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("M365SecurityDashboard.Api.Models.TenantBaseline", b =>
+                {
+                    b.HasOne("M365SecurityDashboard.Api.Models.ClientTenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("M365SecurityDashboard.Api.Models.TenantNotificationRouting", b =>
+                {
+                    b.HasOne("M365SecurityDashboard.Api.Models.ClientTenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("M365SecurityDashboard.Api.Models.TrendSnapshot", b =>
+                {
+                    b.HasOne("M365SecurityDashboard.Api.Models.ClientTenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("M365SecurityDashboard.Api.Models.TriggeredAlert", b =>
+                {
+                    b.HasOne("M365SecurityDashboard.Api.Models.ClientTenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("M365SecurityDashboard.Api.Models.UserTenantAssignment", b =>
+                {
+                    b.HasOne("M365SecurityDashboard.Api.Models.ClientTenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("M365SecurityDashboard.Api.Models.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserEmail")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 #pragma warning restore 612, 618
         }

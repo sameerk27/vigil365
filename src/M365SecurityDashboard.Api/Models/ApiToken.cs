@@ -32,4 +32,8 @@ public sealed class ApiToken
     public DateTimeOffset? LastUsedAt { get; set; }
 
     public DateTimeOffset? RevokedAt { get; set; }
+
+    /// <summary>MSP: restricts this token to one client tenant. Null = install-wide;
+    /// in a multi-tenant install such a token must send X-Vigil-Tenant.</summary>
+    public Guid? TenantId { get; set; }
 }

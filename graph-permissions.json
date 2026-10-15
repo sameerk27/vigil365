@@ -1,0 +1,22 @@
+{
+  "$comment": "The single source of truth for the Microsoft Graph APPLICATION permissions Vigil365 requests. Embedded in the installer (GraphPermissions.cs) and the API (GraphPermissionList.cs), read by register-app.ps1, and docs/graph-permissions.md is checked against it by a test. Changing this list after clients have consented means every client's Global Administrator must consent again.",
+  "required": [
+    { "name": "SecurityAlert.Read.All", "feature": "Defender XDR alerts" },
+    { "name": "SecurityIncident.Read.All", "feature": "Defender XDR incidents" },
+    { "name": "IdentityRiskyUser.Read.All", "feature": "Entra ID risky users" },
+    { "name": "IdentityRiskEvent.Read.All", "feature": "Risk detections" },
+    { "name": "AuditLog.Read.All", "feature": "Sign-in and directory audit logs" },
+    { "name": "Reports.Read.All", "feature": "MFA registration and authentication-method reports" },
+    { "name": "DeviceManagementManagedDevices.Read.All", "feature": "Intune managed devices" },
+    { "name": "ServiceHealth.Read.All", "feature": "Microsoft 365 service health" },
+    { "name": "Policy.Read.All", "feature": "Conditional Access policies" },
+    { "name": "Directory.Read.All", "feature": "Users, groups and directory roles" },
+    { "name": "PrivilegedAccess.Read.AzureAD", "feature": "PIM role assignments" },
+    { "name": "ThreatHunting.Read.All", "feature": "Advanced hunting (Defender for Identity, Cloud Apps)" },
+    { "name": "UserAuthenticationMethod.Read.All", "feature": "MFA method detail" },
+    { "name": "SharePointTenantSettings.Read.All", "feature": "SharePoint sharing posture" }
+  ],
+  "optional": [
+    { "name": "AttackSimulation.ReadWrite.All", "feature": "Attack simulation results (Graph has no read-only variant; a tenant may refuse it)" }
+  ]
+}

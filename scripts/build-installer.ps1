@@ -71,6 +71,15 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed for the API" }
 if (-not (Test-Path (Join-Path $staging "wwwroot\index.html"))) { throw "Published output has no wwwroot - refusing to ship a payload with no UI." }
 if (-not (Test-Path (Join-Path $staging "hostfxr.dll")))        { throw "Published output is not self-contained (no hostfxr.dll)." }
 
+# The e2e build skips Microsoft sign-in (VITE_E2E_FAKE_AUTH=1), and vite also
+# reads it from a client .env.local or a stale -SkipClient wwwroot. Nobody could
+# sign in to an install carrying it, so check the bundle that ships, not CI's.
+$bypass = Get-ChildItem (Join-Path $staging "wwwroot") -Recurse -File |
+  Select-String -Pattern 'vigil365-e2e-fake-auth|VITE_E2E_FAKE_AUTH' -List
+if ($bypass) {
+  throw "The SPA contains the e2e sign-in bypass ($($bypass[0].Path)). Unset VITE_E2E_FAKE_AUTH (environment and src/m365-security-dashboard-client/.env*) and build again without -SkipClient."
+}
+
 # appsettings.Production.json is written by the wizard at install time from the
 # customer's answers. Shipping one would overwrite theirs on every upgrade.
 Remove-Item (Join-Path $staging "appsettings.Production.json") -Force -ErrorAction SilentlyContinue

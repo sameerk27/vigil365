@@ -7,8 +7,12 @@ namespace M365SecurityDashboard.Api.Models;
 /// what, to what, and when. Provides the admin/action audit trail expected by
 /// SOC 2 / ISO 27001 logging controls. Append-only: rows are never updated.
 /// </summary>
-public sealed class AuditEntry
+public sealed class AuditEntry : ITenantOptional
 {
+    /// <summary>The client the action concerned; null = an MSP-level action. Not a
+    /// foreign key: the audit trail outlives a purged client (see AppDbContext).</summary>
+    public Guid? TenantId { get; set; }
+
     public long Id { get; set; }
 
     public DateTimeOffset Timestamp { get; set; }
@@ -33,7 +37,8 @@ public sealed class AuditEntry
     [MaxLength(500)]
     public string? Details { get; set; }
 
-    /// <summary>Client IP the request came from (first X-Forwarded-For hop behind a proxy).</summary>
+    /// <summary>Client IP the request came from. Behind a trusted reverse proxy
+    /// (ForwardedHeaders), the address the proxy forwarded; otherwise the socket's.</summary>
     [MaxLength(45)]
     public string? IpAddress { get; set; }
 
@@ -49,4 +54,10 @@ public sealed class AuditEntry
     /// historical row breaks every later hash, which /verify detects.</summary>
     [MaxLength(64)]
     public string? EntryHash { get; set; }
+
+    /// <summary>Which canonical form <see cref="EntryHash"/> was computed over (see
+    /// AuditLogger.ComputeHash). 0 = the original form, without TenantId: every
+    /// entry written before 1.2.0, kept so existing chains still verify.
+    /// 1 = also covers TenantId and this version.</summary>
+    public int HashVersion { get; set; }
 }

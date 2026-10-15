@@ -7,8 +7,11 @@ namespace M365SecurityDashboard.Api.Models;
 /// triage loop needs. Covers both alert kinds via (TargetKind, TargetId):
 /// "security" + SecurityAlert.Id, or "policy" + TriggeredAlert.Id. Append-only.
 /// </summary>
-public sealed class AlertNote
+public sealed class AlertNote : ITenantScoped
 {
+    /// <summary>Owning tenant. Stamped from the tenant context on insert; see ITenantScoped.</summary>
+    public Guid TenantId { get; set; }
+
     public long Id { get; set; }
 
     /// <summary>"security" (collected M365 alert) or "policy" (triggered policy alert).</summary>

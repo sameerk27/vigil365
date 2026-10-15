@@ -2,8 +2,11 @@ using System.ComponentModel.DataAnnotations;
 
 namespace M365SecurityDashboard.Api.Models;
 
-public sealed class SecurityAlert
+public sealed class SecurityAlert : ITenantScoped
 {
+    /// <summary>Owning tenant. Stamped from the tenant context on insert; see ITenantScoped.</summary>
+    public Guid TenantId { get; set; }
+
     public long Id { get; set; }
 
     [MaxLength(256)]

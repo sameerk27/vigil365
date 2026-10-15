@@ -19,7 +19,7 @@ public class NotificationSenderTests : IDisposable
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
-        _db = new AppDbContext(options);
+        _db = new AppDbContext(options, TestTenancy.For(TestTenancy.Default));
         _protector = new SecretProtector(new EphemeralDataProtectionProvider(), NullLogger<SecretProtector>.Instance);
     }
 
@@ -99,6 +99,26 @@ public class NotificationSenderTests : IDisposable
         Assert.False(log.Success);
         Assert.NotNull(log.Error);
         Assert.Contains("500", log.Error);
+    }
+
+    [Fact]
+    public async Task DispatchAsync_ClientOnlyRoutingWithNoClientEmail_NeverFallsBackToTheMspFromMailbox()
+    {
+        var handler = new MockHttpMessageHandler();
+        var sender = new NotificationSender(new MockHttpClientFactory(handler), _protector, NullLogger<NotificationSender>.Instance);
+        var install = new NotificationSettings
+        {
+            MinSeverity = "low", EmailEnabled = true, SmtpHost = "127.0.0.1", SmtpPort = 1, SmtpUseSsl = false,
+            FromAddress = "alerts@msp.test", DefaultRecipient = "soc@msp.test",
+        };
+        // The MSP opted out of this client; the client has only a Teams channel.
+        var cfg = NotificationRouting.Apply(install, new TenantNotificationRouting { NotifyMsp = false, NotifyClient = true, TeamsWebhookUrl = "https://client.webhook.test/x" });
+        var alert = new TriggeredAlert { Id = Guid.NewGuid(), PolicyId = Guid.NewGuid(), PolicyName = "Risky Users", Severity = "high", Status = "new", Condition = "c", MetricValue = 2, Threshold = 1, TriggeredAt = DateTimeOffset.UtcNow };
+
+        await sender.DispatchAsync(_db, cfg, alert, CancellationToken.None);
+        await _db.SaveChangesAsync();
+
+        Assert.Empty(_db.NotificationLogs.Where(l => l.Channel == "email"));
     }
 
     [Fact]

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { TrendingUp, TrendingDown, Minus, Info, Shield, Users, Smartphone, ShieldAlert, Activity, Download, Printer, FileText, ChevronDown, ChevronUp, BarChart3, AlertTriangle, CheckCircle } from "lucide-react";
 import { Card, LineChart, StateMessage, LoadingSkeleton, InlineError, CircleGauge, Badge } from "../components/SharedComponents";
-import { useAuth, apiFetch, apiBase } from "../services/api";
+import { useAuth, apiFetch, apiBase, clientFileName } from "../services/api";
 import { fmtDate } from "../services/utils";
 import { selectTrendWindow } from "../services/trendWindow";
 
@@ -125,7 +125,8 @@ export function TrendsPage() {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.setAttribute("href", url);
-    a.setAttribute("download", `vigil365-trends-${timeRange}days-${new Date().toISOString().slice(0,10)}.csv`);
+    // MSP mode: the client's name leads the filename, as on every other export.
+    a.setAttribute("download", clientFileName(`vigil365-trends-${timeRange}days-${new Date().toISOString().slice(0,10)}.csv`));
     a.click();
     window.URL.revokeObjectURL(url);
   };

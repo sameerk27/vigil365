@@ -1,23 +1,19 @@
 namespace M365SecurityDashboard.Api.Models;
 
 /// <summary>
-/// A frozen snapshot of the tenant's posture metrics at a point in time.
-/// Policies with a drift condition, and the Baseline tab, compare the latest
-/// <see cref="TrendSnapshot"/> against these values so an alert means
-/// "something changed" rather than "something crossed a fixed threshold".
-///
-/// Singleton row (Id = 1). The metric columns mirror <see cref="TrendSnapshot"/>
-/// exactly — a capture copies the newest snapshot into this row, so the numbers
-/// are always real collected data, never fabricated.
+/// A frozen copy of one tenant's newest TrendSnapshot, captured by an admin so
+/// later snapshots can be measured against it (see BaselineDrift). One row per
+/// tenant, keyed by the tenant: there is nothing else to key it on, and it
+/// removes the fixed "Id = 1" singleton that could not coexist across tenants.
 /// </summary>
-public sealed class TenantBaseline
+public sealed class TenantBaseline : ITenantScoped
 {
-    public int Id { get; set; } = 1;
+    public Guid TenantId { get; set; }
 
     /// <summary>When this baseline was captured. Null = never captured.</summary>
     public DateTimeOffset? CapturedAt { get; set; }
 
-    /// <summary>Email of the admin who captured it (or "system").</summary>
+    /// <summary>Who captured it (email).</summary>
     public string? CapturedBy { get; set; }
 
     public int RiskyUsersCount { get; set; }

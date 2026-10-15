@@ -5,8 +5,11 @@ namespace M365SecurityDashboard.Api.Models;
 /// <summary>
 /// Audit record of an outbound notification attempt (Teams / email / webhook).
 /// </summary>
-public sealed class NotificationLog
+public sealed class NotificationLog : ITenantScoped
 {
+    /// <summary>Owning tenant. Stamped from the tenant context on insert; see ITenantScoped.</summary>
+    public Guid TenantId { get; set; }
+
     public long Id { get; set; }
 
     public Guid TriggeredAlertId { get; set; }

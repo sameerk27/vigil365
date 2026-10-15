@@ -19,7 +19,7 @@ public class RoleClaimsTransformationTests : IDisposable
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
-        _db = new AppDbContext(options);
+        _db = new AppDbContext(options, TestTenancy.For(TestTenancy.Default));
         _cache = new MemoryCache(new MemoryCacheOptions());
         _transformer = new RoleClaimsTransformation(_db, _cache);
     }

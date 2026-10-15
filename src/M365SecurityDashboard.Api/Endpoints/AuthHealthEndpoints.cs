@@ -15,10 +15,12 @@ public static class AuthHealthEndpoints
         // uptime monitors). Reports DB connectivity, Graph configuration, and freshness of
         // the last collection run. No Graph call is made — probes fire frequently and must
         // stay cheap. 200 = healthy/degraded (app can serve traffic), 503 = DB unreachable.
-        app.MapGet("/health", async (AppDbContext db, IOptions<GraphOptions> options, CancellationToken ct) =>
+        app.MapGet("/health", async (AppDbContext db, IOptions<GraphOptions> options, IOptions<DatabaseOptions> dbOptions, CancellationToken ct) =>
         {
             var dbOk = false;
             string? dbError = null;
+            long? dbSize = null;
+            var sizeWarning = false;
             object? lastCollection = null;
             var collectionFresh = (bool?)null;
 
@@ -27,7 +29,12 @@ public static class AuthHealthEndpoints
                 dbOk = await db.Database.CanConnectAsync(ct);
                 if (dbOk)
                 {
-                    var lastRun = await db.CollectionRuns.AsNoTracking()
+                    dbSize = await Data.DatabaseProviderSetup.QueryDatabaseSizeBytesAsync(db, ct);
+                    var limit = dbOptions.Value.SizeWarningBytes;
+                    sizeWarning = limit > 0 && dbSize is long size && size >= limit;
+                    // Anonymous probe, no tenant context: install-level freshness is
+                    // "has ANY tenant collected recently", hence the cross-tenant read.
+                    var lastRun = await db.CrossTenant<CollectionRun>().AsNoTracking()
                         .OrderByDescending(r => r.StartedAt).FirstOrDefaultAsync(ct);
                     if (lastRun is not null)
                     {
@@ -38,7 +45,10 @@ public static class AuthHealthEndpoints
                             startedAt = lastRun.StartedAt,
                             status = lastRun.Status.ToString(),
                             alertsUpserted = lastRun.AlertsUpserted,
-                            fresh = collectionFresh
+                            fresh = collectionFresh,
+                            // The window "fresh" uses, so a signed-in view can judge one
+                            // client's own last run by it: this run may be another client's.
+                            staleAfterMinutes = (int)staleAfter.TotalMinutes
                         };
                     }
                 }
@@ -47,7 +57,7 @@ public static class AuthHealthEndpoints
 
             var graphConfigured = options.Value.IsConfigured();
             var status = !dbOk ? "unhealthy"
-                : !graphConfigured || collectionFresh == false ? "degraded"
+                : !graphConfigured || collectionFresh == false || sizeWarning ? "degraded"
                 : "healthy";
 
             var body = new
@@ -56,7 +66,7 @@ public static class AuthHealthEndpoints
                 version = typeof(Program).Assembly.GetName().Version?.ToString(3),
                 checks = new
                 {
-                    database = new { ok = dbOk, error = dbError },
+                    database = new { ok = dbOk, error = dbError, sizeBytes = dbSize, sizeWarning, sizeWarningBytes = dbOptions.Value.SizeWarningBytes },
                     graph = new { configured = graphConfigured },
                     collection = lastCollection
                 },
@@ -82,7 +92,9 @@ public static class AuthHealthEndpoints
                 instance = config["AzureAd:Instance"] ?? "https://login.microsoftonline.com/",
                 clientId = Pick("AzureAd:ClientId", "Graph:ClientId"),
                 tenantId = Pick("AzureAd:TenantId", "Graph:TenantId"),
-                redirectUri = config["Auth:RedirectUri"] ?? "http://localhost:5173"
+                redirectUri = config["Auth:RedirectUri"] ?? "http://localhost:5173",
+                // "Single" | "Msp" — the client gates the MSP surface on it.
+                mode = (config.GetSection(EditionOptions.SectionName).Get<EditionOptions>() ?? new EditionOptions()).Mode.ToString(),
             });
         }).AllowAnonymous();
 
@@ -129,9 +141,9 @@ public static class AuthHealthEndpoints
             await db.SaveChangesAsync(ct);
 
             if (isFirstSignIn)
-                await audit.WriteAsync("auth.first_signin", "user", email, $"first sign-in, role {user.Role}", ct);
+                await audit.WriteMspAsync("auth.first_signin", "user", email, $"first sign-in, role {user.Role}", ct);
             else if (isNewSession)
-                await audit.WriteAsync("auth.signin", "user", email, $"signed in as {user.Role}", ct);
+                await audit.WriteMspAsync("auth.signin", "user", email, $"signed in as {user.Role}", ct);
 
             return Results.Ok(new { name = user.DisplayName ?? "", email = user.Email, role = user.Role });
         });

@@ -24,10 +24,17 @@ public static class ReportsEndpoints
             return Results.Ok(new { digest.Subject, digest.HtmlBody, digest.Csv, digest.GeneratedAt, digest.HasData, digest.Metrics, digest.TopAlerts });
         }).RequireAuthorization("RequireAnalyst");
 
-        app.MapPost("/api/report-schedules", async (AppDbContext db, AuditLogger audit, System.Security.Claims.ClaimsPrincipal user, ReportSchedule input, CancellationToken ct) =>
+        app.MapPost("/api/report-schedules", async (AppDbContext db, AuditLogger audit, System.Security.Claims.ClaimsPrincipal user, ReportSchedule input,
+            Data.Tenancy.ITenantContext tenant, IOptions<EditionOptions> edition, CancellationToken ct) =>
         {
+            // MSP mode: a digest is one client's posture, so a schedule belongs to
+            // the selected client and the worker builds it in that client only.
+            // Single mode: the install-wide (null) schedule, as before.
+            if (edition.Value.IsMsp && tenant.Current is null)
+                return Results.BadRequest(new { error = "Select a client first: in MSP mode each report schedule belongs to one client." });
             var s = new ReportSchedule
             {
+                TenantId = edition.Value.IsMsp ? tenant.Current : null,
                 Id = Guid.NewGuid(),
                 Name = string.IsNullOrWhiteSpace(input.Name) ? "Weekly executive digest" : input.Name.Trim(),
                 ReportType = "exec-digest",
@@ -77,10 +84,16 @@ public static class ReportsEndpoints
         }).RequireAuthorization("RequireAdmin");
 
         // Send this report immediately, regardless of cadence.
-        app.MapPost("/api/report-schedules/{id:guid}/run-now", async (IServiceProvider sp, AppDbContext db, AuditLogger audit, Guid id, CancellationToken ct) =>
+        app.MapPost("/api/report-schedules/{id:guid}/run-now", async (IServiceProvider sp, AppDbContext db, AuditLogger audit, Guid id, IOptions<EditionOptions> edition, CancellationToken ct) =>
         {
             var s = await db.ReportSchedules.FirstOrDefaultAsync(x => x.Id == id, ct);
             if (s is null) return Results.NotFound();
+            // An MSP-mode schedule with no client (made before the install became an
+            // MSP install) has recipients of no particular client: sending it the
+            // selected client's digest could hand one client's posture to another's
+            // people. The worker skips it too.
+            if (edition.Value.IsMsp && s.TenantId is null)
+                return Results.BadRequest(new { ok = false, status = ReportScheduleWorker.UnassignedStatus });
             var (ok, status) = await ReportScheduleWorker.DispatchAsync(sp, db, s, ct);
             s.LastRunAt = DateTimeOffset.UtcNow;
             s.LastRunStatus = status;

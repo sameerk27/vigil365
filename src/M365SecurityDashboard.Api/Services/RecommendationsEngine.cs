@@ -199,12 +199,36 @@ public static class RecommendationsEngine
         };
     }
 
-    public static async Task<AlertPolicy?> EnableCoverageRuleAsync(AppDbContext db, string ruleId, CancellationToken ct = default)
+    /// <summary>
+    /// Whether enabling this rule would switch on, or create, an install-wide
+    /// policy (TenantId null) rather than one belonging to the current client.
+    /// False for an unknown rule (enabling it changes nothing).
+    /// </summary>
+    public static async Task<bool> CoverageRuleIsInstallWideAsync(AppDbContext db, string ruleId, CancellationToken ct = default)
+    {
+        var target = FindEnableableRule(ruleId);
+        if (target == null) return false;
+        var existing = await FindCoveragePolicyAsync(db, target, ct);
+        return existing is null || existing.TenantId is null;
+    }
+
+    private static AlertBaselineRule? FindEnableableRule(string ruleId)
     {
         var target = BaselineCatalog.FirstOrDefault(r => r.Id.Equals(ruleId, StringComparison.OrdinalIgnoreCase));
-        if (target == null || target.RuleType != "Vigil365") return null;
+        return target == null || target.RuleType != "Vigil365" ? null : target;
+    }
 
-        var existing = await db.AlertPolicies.FirstOrDefaultAsync(p => p.Name.Equals(target.Title, StringComparison.OrdinalIgnoreCase), ct);
+    // Matched by name, case-insensitively. ToLower rather than an Equals overload
+    // with a StringComparison, which EF cannot translate to SQL.
+    private static Task<AlertPolicy?> FindCoveragePolicyAsync(AppDbContext db, AlertBaselineRule target, CancellationToken ct)
+        => db.AlertPolicies.FirstOrDefaultAsync(p => p.Name.ToLower() == target.Title.ToLower(), ct);
+
+    public static async Task<AlertPolicy?> EnableCoverageRuleAsync(AppDbContext db, string ruleId, CancellationToken ct = default)
+    {
+        var target = FindEnableableRule(ruleId);
+        if (target == null) return null;
+
+        var existing = await FindCoveragePolicyAsync(db, target, ct);
         if (existing != null)
         {
             existing.Enabled = true;
