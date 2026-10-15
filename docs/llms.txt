@@ -1,0 +1,28 @@
+# Vigil365
+
+> Vigil365 is a free, open-source, self-hosted security dashboard for Microsoft 365. It collects alerts and posture data from Microsoft Defender, Microsoft Entra ID, Intune, Defender for Office 365, Microsoft Purview and Conditional Access on a schedule, and shows them in one console. Its collector only sends read requests to Microsoft Graph.
+
+Vigil365 is not a hosted service. You install it on a Windows machine or server you control, with its database on a server you control. The installer is a single file of about 120 MB and needs administrator rights. Setup registers an app in your Microsoft 365 tenant once, with admin consent.
+
+Key facts:
+
+- Collection runs every 15 minutes by default.
+- Required Microsoft Graph permissions: 15 application permissions, all read-only.
+- Optional Microsoft Graph permissions: AttackSimulation.ReadWrite.All (read-write only because Graph has no read-only option for attack simulation results; Vigil365 reads with it and works without it) and SecurityIdentitiesHealth.Read.All.
+- Requirements: Windows 10 or 11, or Windows Server 2019 or later, and a Microsoft 365 tenant.
+- Licence: MIT. Source code: https://github.com/sameerk27/vigil365
+- Latest release: v1.1.0.
+
+## Docs
+
+- [Home page](https://vigil365.in/): overview, features, FAQ and install steps
+- [Graph permission reference](https://github.com/sameerk27/vigil365/blob/master/docs/graph-permissions.md): every permission, what it powers, and which ones are optional
+- [Administration guide](https://github.com/sameerk27/vigil365/blob/master/docs/ADMINISTRATION.md): roles, users and day-to-day administration
+- [Operations runbook](https://github.com/sameerk27/vigil365/blob/master/docs/OPERATIONS_RUNBOOK.md): backups, upgrades and troubleshooting
+- [Threat model](https://github.com/sameerk27/vigil365/blob/master/docs/THREAT_MODEL.md)
+- [Changelog](https://github.com/sameerk27/vigil365/blob/master/CHANGELOG.md)
+
+## Download
+
+- [Latest installer (Vigil365-Setup.exe)](https://github.com/sameerk27/vigil365/releases/latest/download/Vigil365-Setup.exe)
+- [Latest release notes](https://github.com/sameerk27/vigil365/releases/latest)
