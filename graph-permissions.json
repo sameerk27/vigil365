@@ -14,9 +14,11 @@
     { "name": "PrivilegedAccess.Read.AzureAD", "feature": "PIM role assignments" },
     { "name": "ThreatHunting.Read.All", "feature": "Advanced hunting (Defender for Identity, Cloud Apps)" },
     { "name": "UserAuthenticationMethod.Read.All", "feature": "MFA method detail" },
-    { "name": "SharePointTenantSettings.Read.All", "feature": "SharePoint sharing posture" }
+    { "name": "SharePointTenantSettings.Read.All", "feature": "SharePoint sharing posture" },
+    { "name": "SecurityEvents.Read.All", "feature": "Secure Score and quarantined messages" }
   ],
   "optional": [
-    { "name": "AttackSimulation.ReadWrite.All", "feature": "Attack simulation results (Graph has no read-only variant; a tenant may refuse it)" }
+    { "name": "AttackSimulation.ReadWrite.All", "feature": "Attack simulation results (Graph has no read-only variant; a tenant may refuse it)" },
+    { "name": "SecurityIdentitiesHealth.Read.All", "feature": "Defender for Identity sensor health" }
   ]
 }

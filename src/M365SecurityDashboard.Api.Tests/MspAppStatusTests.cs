@@ -15,17 +15,20 @@ public sealed class MspAppStatusTests
     public void Embedded_permission_list_is_the_expected_shape()
     {
         var names = GraphPermissionList.Required.Select(p => p.Name).ToList();
-        Assert.Equal(14, names.Count);
+        Assert.Equal(15, names.Count);
         Assert.Equal(names.Count, names.Distinct(StringComparer.OrdinalIgnoreCase).Count());
         // The three the old register-app.ps1 list was missing — clients would have lost these features.
         Assert.Contains("SecurityAlert.Read.All", names);
         Assert.Contains("SharePointTenantSettings.Read.All", names);
         Assert.Contains("PrivilegedAccess.Read.AzureAD", names);
+        // Dropped by the single-list refactor, then found missing on the first live install: Secure Score
+        // (/security/secureScores) needs it, and the released 1.1.0 register-app.ps1 requested it.
+        Assert.Contains("SecurityEvents.Read.All", names);
         // Read-only product: no write permission may be required.
         Assert.DoesNotContain(names, n => n.Contains("Write", StringComparison.OrdinalIgnoreCase));
         // Never something clients would be asked to consent to just for the MSP status card.
         Assert.DoesNotContain("Application.Read.All", names);
-        Assert.Single(GraphPermissionList.Optional);
+        Assert.Equal(2, GraphPermissionList.Optional.Count);
     }
 
     [Fact]

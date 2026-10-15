@@ -10,6 +10,35 @@ namespace M365SecurityDashboard.Api.Tests;
 /// </summary>
 public class GraphErrorHintTests
 {
+    // Seen on the first live onboarding: consent succeeded, and the immediate test got this.
+    // The request-id GUIDs deliberately contain "403" and "429" to prove the match wins first.
+    private const string NotProvisioned =
+        "401 Unauthorized: {\"error\":{\"code\":\"Authorization_IdentityNotFound\",\"message\":\"The identity of the calling " +
+        "application could not be established.\",\"innerError\":{\"date\":\"2026-10-04T07:47:08\",\"request-id\":\"4034aa29-c5b5-4296-9ebf-23cabbd88719\"}}}";
+
+    [Fact]
+    public void Identity_not_found_right_after_consent_is_recognised_as_a_wait_not_a_failure()
+    {
+        Assert.True(GraphErrorHint.IsNotYetProvisioned(NotProvisioned));
+        Assert.False(GraphErrorHint.IsNotYetProvisioned("401 Unauthorized: invalid_client"));
+        Assert.False(GraphErrorHint.IsNotYetProvisioned(null));
+    }
+
+    [Fact]
+    public void Identity_not_found_is_not_described_as_an_expired_secret_or_a_denied_permission()
+    {
+        foreach (var msg in new[] { GraphErrorHint.Describe(NotProvisioned), GraphErrorHint.DescribeOrNull(NotProvisioned) })
+        {
+            Assert.Equal(GraphErrorHint.NotYetProvisionedMessage, msg);
+            Assert.DoesNotContain("expired", msg!, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("Permission denied", msg!, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
+    public void A_plain_401_still_points_at_the_credentials()
+        => Assert.Contains("expired", GraphErrorHint.DescribeOrNull("401 Unauthorized: invalid_client")!, StringComparison.OrdinalIgnoreCase);
+
     // The exact shape Graph returns when an application permission is missing.
     private const string Real403 =
         "403 Forbidden: {\"error\":{\"code\":\"accessDenied\",\"message\":\"Caller does not have required permissions for this API\"}}";

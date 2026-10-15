@@ -3,21 +3,91 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Vigil365 — Self-hosted Microsoft 365 security monitoring</title>
-<meta name="description" content="Vigil365 is a free, self-hosted, read-only Microsoft 365 security dashboard. It watches identity, devices, email and compliance on a schedule — and never has permission to change your tenant.">
+<title>Vigil365 — Free self-hosted Microsoft 365 security dashboard</title>
+<meta name="description" content="Free, open-source, self-hosted Microsoft 365 security dashboard: Defender, Entra ID, Intune and Purview alerts in one console. It only reads from your tenant.">
+<meta name="robots" content="index,follow,max-image-preview:large">
+<link rel="canonical" href="https://vigil365.in/">
 <meta name="theme-color" content="#0a1526">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="apple-touch-icon" href="favicon.svg">
 <meta property="og:type" content="website">
+<meta property="og:site_name" content="Vigil365">
+<meta property="og:locale" content="en_US">
 <meta property="og:url" content="https://vigil365.in/">
-<meta property="og:title" content="Vigil365 — Self-hosted Microsoft 365 security monitoring">
-<meta property="og:description" content="Free, self-hosted, read-only Microsoft 365 security dashboard. Identity, devices, email and compliance in one console — it reports and recommends, and never touches your tenant.">
+<meta property="og:title" content="Vigil365 — Free self-hosted Microsoft 365 security dashboard">
+<meta property="og:description" content="Free, open-source, self-hosted Microsoft 365 security dashboard. Defender, Entra ID, Intune and Purview alerts in one console. It only reads from your tenant.">
 <meta property="og:image" content="https://vigil365.in/og-banner.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Vigil365 — See everything. Change nothing. Self-hosted, read-only Microsoft 365 security.">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Vigil365 — Free self-hosted Microsoft 365 security dashboard">
+<meta name="twitter:description" content="Free, open-source, self-hosted Microsoft 365 security dashboard. It only reads from your tenant.">
 <meta name="twitter:image" content="https://vigil365.in/og-banner.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://vigil365.in/#software",
+      "name": "Vigil365",
+      "description": "Free, open-source, self-hosted security dashboard for Microsoft 365. It collects alerts and posture data from Microsoft Defender, Microsoft Entra ID, Intune, Defender for Office 365, Microsoft Purview and Conditional Access on a schedule, and shows them in one console. It only sends read requests to Microsoft Graph.",
+      "applicationCategory": "SecurityApplication",
+      "operatingSystem": "Windows 10, Windows 11, Windows Server 2019 or later",
+      "softwareVersion": "1.1.0",
+      "dateModified": "2026-10-15",
+      "url": "https://vigil365.in/",
+      "downloadUrl": "https://github.com/sameerk27/vigil365/releases/latest/download/Vigil365-Setup.exe",
+      "codeRepository": "https://github.com/sameerk27/vigil365",
+      "license": "https://opensource.org/licenses/MIT",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "author": { "@type": "Person", "name": "Samir Khan", "url": "https://www.linkedin.com/in/sameerkhan27" }
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://vigil365.in/#website",
+      "name": "Vigil365",
+      "url": "https://vigil365.in/"
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What is Vigil365?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Vigil365 is a free, open-source security dashboard for Microsoft 365. It collects alerts and posture data from Microsoft Defender, Microsoft Entra ID, Intune, Defender for Office 365, Microsoft Purview and Conditional Access on a schedule, every 15 minutes by default, and shows them in one console on a Windows machine you control." }
+        },
+        {
+          "@type": "Question",
+          "name": "Does Vigil365 change anything in my Microsoft 365 tenant?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. After setup, its collector only sends read requests (GET) to Microsoft Graph. No code path changes a setting, disables a user or remediates an alert. Setup registers the app in your tenant once, when you sign in as an administrator. Every required permission is read-only. One optional permission, AttackSimulation.ReadWrite.All, is read-write only because Graph has no read-only option for attack simulation results. Vigil365 reads with it and works without it." }
+        },
+        {
+          "@type": "Question",
+          "name": "What permissions does Vigil365 request?",
+          "acceptedAnswer": { "@type": "Answer", "text": "15 required Microsoft Graph application permissions, granted once with admin consent, and 2 optional ones. Each permission and the feature it powers is listed in the Graph permission reference on GitHub." }
+        },
+        {
+          "@type": "Question",
+          "name": "Where is my data stored?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Vigil365 has no cloud service of its own. Its database lives on a server you control, and alerts leave that server only through the Teams, email or webhook channels you configure." }
+        },
+        {
+          "@type": "Question",
+          "name": "Is Vigil365 free?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. It is released under the MIT license, and the source code is on GitHub." }
+        },
+        {
+          "@type": "Question",
+          "name": "Is there a hosted version?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. You run Vigil365 yourself, on a Windows 10 or 11 machine or a Windows Server 2019 or later. The installer is a single file of about 120 MB and needs administrator rights." }
+        }
+      ]
+    }
+  ]
+}
+</script>
 <style>
   :root{
     --bg:#0a1526; --surface:#0f1e38; --surface-2:#132849; --line:#1e3a5f; --line-soft:#16294733;
@@ -170,6 +240,13 @@
   .final .hero-cta{justify-content:center}
   .final .meta{margin-top:22px; font-family:var(--mono); font-size:12.5px; color:var(--faint)}
 
+  /* ---- faq ---- */
+  .faq{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+  @media(max-width:760px){ .faq{grid-template-columns:1fr} }
+  .qa{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:22px}
+  .qa h3{font-size:16px; letter-spacing:-.01em}
+  .qa p{color:var(--muted); font-size:14.5px; margin:10px 0 0; line-height:1.6}
+
   /* ---- footer ---- */
   footer{border-top:1px solid var(--line); padding:36px 0; color:var(--faint); font-size:13.5px}
   .foot{display:flex; align-items:center; gap:16px; flex-wrap:wrap}
@@ -198,9 +275,10 @@
       <a href="#watches">What it watches</a>
       <a href="#readonly">Read-only</a>
       <a href="#install">Install</a>
+      <a href="#faq">FAQ</a>
       <a href="https://github.com/sameerk27/vigil365">GitHub</a>
     </nav>
-    <a class="btn btn-primary cta" href="https://github.com/sameerk27/vigil365/releases/tag/Vigil365v1.0.0">Download</a>
+    <a class="btn btn-primary cta" href="https://github.com/sameerk27/vigil365/releases/latest/download/Vigil365-Setup.exe">Download</a>
   </div>
 </header>
 
@@ -210,9 +288,9 @@
     <div>
       <span class="eyebrow">Self-hosted · Microsoft 365 security</span>
       <h1>See everything.<br><span class="dim">Change nothing.</span></h1>
-      <p class="lede">Vigil365 watches identity, devices, email and compliance across your Microsoft&nbsp;365 tenant — collected on a schedule, in one dashboard you host yourself. It <b>reports and recommends</b>, and never has permission to touch your tenant.</p>
+      <p class="lede">Vigil365 watches identity, devices, email and compliance across your Microsoft&nbsp;365 tenant — collected on a schedule, in one dashboard you host yourself. It <b>reports and recommends</b>, and it only ever reads from your tenant.</p>
       <div class="hero-cta">
-        <a class="btn btn-primary" href="https://github.com/sameerk27/vigil365/releases/tag/Vigil365v1.0.0">
+        <a class="btn btn-primary" href="https://github.com/sameerk27/vigil365/releases/latest/download/Vigil365-Setup.exe">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16"/></svg>
           Download for Windows
         </a>
@@ -222,7 +300,7 @@
         </a>
       </div>
       <div class="trust">
-        <span>Read-only Graph scopes</span>
+        <span>Read-only Graph calls</span>
         <span>Collects every 15 min</span>
         <span>One .exe, no dependencies</span>
       </div>
@@ -301,10 +379,10 @@
     <div>
       <span class="eyebrow">Safe by design</span>
       <h2 style="font-size:clamp(27px,3.6vw,38px);margin-top:14px">It watches. It never touches.</h2>
-      <p style="color:var(--muted);font-size:17px;margin:14px 0 0">Vigil365 authenticates to Microsoft Graph with <b style="color:var(--ink)">app-only, read-only permissions</b>. There is no code path that changes a setting, disables a user, or remediates an alert — so it is safe to run against production from day one.</p>
+      <p style="color:var(--muted);font-size:17px;margin:14px 0 0">Vigil365 authenticates to Microsoft Graph with <b style="color:var(--ink)">app-only permissions</b> and sends only read requests. No code path changes a setting, disables a user, or remediates an alert.</p>
       <ul>
-        <li><span class="chk">&#10003;</span><span><b>Read-only Graph scopes</b> — every permission it requests is a <code style="font-family:var(--mono);font-size:12px">.Read.All</code>. No write access is ever granted.</span></li>
-        <li><span class="chk">&#10003;</span><span><b>Self-hosted</b> — runs on a Windows box you control, against your own SQL Server. Your tenant data never leaves your walls.</span></li>
+        <li><span class="chk">&#10003;</span><span><b>Read-only Graph calls</b> — every required permission is a read permission. One optional permission, for attack simulation results, is read-write only because Graph has no read-only option for it. Vigil365 reads with it and runs without it.</span></li>
+        <li><span class="chk">&#10003;</span><span><b>Self-hosted</b> — runs on a Windows machine you control, with its database on a server you control. Vigil365 has no cloud service of its own.</span></li>
         <li><span class="chk">&#10003;</span><span><b>Tamper-evident audit trail</b> — every privileged action in-app is recorded in a SHA-256 hash-chained log.</span></li>
       </ul>
     </div>
@@ -342,13 +420,29 @@
     </div>
   </div></section>
 
+  <!-- FAQ -->
+  <section id="faq"><div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">FAQ</span>
+      <h2>Frequently asked questions</h2>
+    </div>
+    <div class="faq">
+      <div class="qa"><h3>What is Vigil365?</h3><p>Vigil365 is a free, open-source security dashboard for Microsoft 365. It collects alerts and posture data from Microsoft Defender, Microsoft Entra ID, Intune, Defender for Office 365, Microsoft Purview and Conditional Access on a schedule, every 15 minutes by default, and shows them in one console on a Windows machine you control.</p></div>
+      <div class="qa"><h3>Does Vigil365 change anything in my Microsoft 365 tenant?</h3><p>No. After setup, its collector only sends read requests (GET) to Microsoft Graph. No code path changes a setting, disables a user or remediates an alert. Setup registers the app in your tenant once, when you sign in as an administrator. Every required permission is read-only. One optional permission, AttackSimulation.ReadWrite.All, is read-write only because Graph has no read-only option for attack simulation results. Vigil365 reads with it and works without it.</p></div>
+      <div class="qa"><h3>What permissions does Vigil365 request?</h3><p>15 required Microsoft Graph application permissions, granted once with admin consent, and 2 optional ones. Each permission and the feature it powers is listed in the <a href="https://github.com/sameerk27/vigil365/blob/master/docs/graph-permissions.md" style="color:var(--accent-ink)">Graph permission reference</a> on GitHub.</p></div>
+      <div class="qa"><h3>Where is my data stored?</h3><p>Vigil365 has no cloud service of its own. Its database lives on a server you control, and alerts leave that server only through the Teams, email or webhook channels you configure.</p></div>
+      <div class="qa"><h3>Is Vigil365 free?</h3><p>Yes. It is released under the MIT license, and the source code is on <a href="https://github.com/sameerk27/vigil365" style="color:var(--accent-ink)">GitHub</a>.</p></div>
+      <div class="qa"><h3>Is there a hosted version?</h3><p>No. You run Vigil365 yourself, on a Windows 10 or 11 machine or a Windows Server 2019 or later. The installer is a single file of about 120 MB and needs administrator rights.</p></div>
+    </div>
+  </div></section>
+
   <!-- FINAL CTA -->
   <div class="wrap"><div class="final">
-    <span class="eyebrow" style="justify-content:center">Vigil365 1.0.0 · out now</span>
+    <span class="eyebrow" style="justify-content:center">Latest release v1.1.0 · free and open source</span>
     <h2 style="margin-top:16px">Put your Microsoft 365<br>security posture on one screen</h2>
     <p>Free, open source, and self-hosted. Download it, point it at your tenant, and see what your admin portals have been keeping apart.</p>
     <div class="hero-cta">
-      <a class="btn btn-primary" href="https://github.com/sameerk27/vigil365/releases/tag/Vigil365v1.0.0">
+      <a class="btn btn-primary" href="https://github.com/sameerk27/vigil365/releases/latest/download/Vigil365-Setup.exe">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16"/></svg>
         Download for Windows
       </a>
@@ -360,7 +454,7 @@
 </main>
 
 <footer><div class="wrap foot">
-  <span class="brand" style="display:flex;align-items:center;gap:10px"><span class="mark" style="width:26px;height:26px;border-radius:7px;background:#fff;display:grid;place-items:center"><svg width="17" height="17" viewBox="0 0 24 24"><use href="#shield"/></svg></span>Vigil365 · v1.0.0</span>
+  <span class="brand" style="display:flex;align-items:center;gap:10px"><span class="mark" style="width:26px;height:26px;border-radius:7px;background:#fff;display:grid;place-items:center"><svg width="17" height="17" viewBox="0 0 24 24"><use href="#shield"/></svg></span>Vigil365 · v1.1.0</span>
   <span style="color:var(--faint)">Self-hosted · Read-only · Open source</span>
   <span class="fl">
     <a href="mailto:samir@vigil365.in">samir@vigil365.in</a>

@@ -3,7 +3,7 @@ import React from "react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ClientsPage } from "./ClientsPage";
+import { ClientsPage, PROVISION_RETRY_MS } from "./ClientsPage";
 import { AuthContext, setEditionMode, setSelectedTenantId, getSelectedTenantId, setActiveClientName } from "../services/api";
 import { registerToastHandler } from "../services/toast";
 import { registerConfirmHandler } from "../services/confirm";
@@ -173,6 +173,40 @@ describe("onboarding dialog", () => {
     await waitFor(() => expect(api.calls.some(c => c.method === "PUT" && c.path === "/api/tenants/bbbb")).toBe(true));
     expect(api.calls.find(c => c.method === "PUT" && c.path === "/api/tenants/bbbb")!.body)
       .toMatchObject({ microsoftTenantId: entraId, brandName: "Fabrikam Security" });
+    vi.useRealTimers();
+  });
+
+  it("right after consent, Microsoft not having provisioned the app yet is waited out, then it connects", async () => {
+    // First live onboarding: consent worked, then the immediate test got 401
+    // Authorization_IdentityNotFound until Microsoft finished replicating the app.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const entraId = "0f000000-0000-0000-0000-00000000000f";
+    const pending = row("bbbb", "Fabrikam Inc", { configured: false, credentialSource: "none" });
+    let consented = false;
+    let tests = 0;
+    const notYet = { status: 400, body: { ok: false, retryable: true, message: "Microsoft has not finished setting up the Vigil365 app in this tenant yet." } };
+    mockApi({
+      "/api/tenants/rollup": { body: [] },
+      "GET /api/tenants": { body: [pending] },
+      "GET /api/tenants/bbbb/consent-url": { body: { ok: true, url: "https://login.example/consent" } },
+      "GET /api/tenants/bbbb": () => ({ body: consented ? { ...pending, configured: true, credentialSource: "install", consentGrantedAt: "2026-10-04T10:00:00Z", microsoftTenantId: entraId } : pending }),
+      "POST /api/tenants/bbbb/test": () => (++tests < 3 ? notYet : { body: { ok: true, microsoftTenantId: entraId, displayName: "Fabrikam Inc" } }),
+    });
+    vi.stubGlobal("open", vi.fn(() => ({ closed: false, close: vi.fn() })));
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderPage();
+
+    await user.click(within(await rosterRow("Fabrikam Inc")).getByRole("button", { name: /Connect/ }));
+    await user.click(await screen.findByRole("button", { name: /Sign in as global admin & consent/ }));
+    consented = true;
+    await vi.advanceTimersByTimeAsync(3000); // the poll sees consent and the automatic test starts
+    await waitFor(() => expect(screen.getByText(/Waiting for Microsoft to finish setting up the app/)).toBeInTheDocument());
+    expect(screen.queryByText(/401|Authorization_IdentityNotFound/)).toBeNull(); // never the raw JSON
+
+    await vi.advanceTimersByTimeAsync(PROVISION_RETRY_MS); // still not ready
+    await vi.advanceTimersByTimeAsync(PROVISION_RETRY_MS); // ready
+    await waitFor(() => expect(screen.getByText(/Connected to Fabrikam Inc\./)).toBeInTheDocument());
+    expect(tests).toBe(3);
     vi.useRealTimers();
   });
 

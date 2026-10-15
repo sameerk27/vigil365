@@ -43,7 +43,7 @@ public sealed class DataRetentionWorker(
                     {
                         logger.LogDebug("Retention prune: nothing to remove.");
                     }
-                }, stoppingToken);
+                }, stoppingToken, includeInactive: true);
 
                 // The audit chain is one sequence across every client, so it is
                 // pruned once, with no tenant, rather than in each client's pass.

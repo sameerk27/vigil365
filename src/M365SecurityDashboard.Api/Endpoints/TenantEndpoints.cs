@@ -395,15 +395,21 @@ public static class TenantEndpoints
                 if (string.IsNullOrWhiteSpace(t.MicrosoftTenantId)) t.MicrosoftTenantId = entraId;
                 t.ConsentGrantedAt = DateTimeOffset.UtcNow;
                 t.LastError = null;
+                // A working connection ends the backoff and the failed state now, so the roster
+                // stops saying "Backing off" while the next collection is still to come.
+                t.ConsecutiveFailures = 0;
+                t.NextCollectionAfter = null;
+                if (t.LastCollectionStatus is "Failed" or "Unreadable" or ClientHealth.WaitingForConsent) t.LastCollectionStatus = null;
                 await db.SaveChangesAsync(ct);
                 await audit.WriteForTenantAsync(t.Id, "tenant.test", "tenant", t.Id.ToString(), $"connected to {display ?? entraId}", ct);
                 return Results.Ok(new { ok = true, microsoftTenantId = t.MicrosoftTenantId, displayName = display });
             }
             catch (Exception ex)
             {
-                t.LastError = Truncate(ex.Message, 1000);
+                var notYet = GraphErrorHint.IsNotYetProvisioned(ex.Message);
+                t.LastError = notYet ? GraphErrorHint.NotYetProvisionedMessage : Truncate(ex.Message, 1000);
                 await db.SaveChangesAsync(ct);
-                return Results.BadRequest(new { ok = false, message = t.LastError, hint = GraphErrorHint.DescribeOrNull(ex.Message) });
+                return Results.BadRequest(new { ok = false, message = t.LastError, retryable = notYet, hint = GraphErrorHint.DescribeOrNull(ex.Message) });
             }
         });
 
@@ -438,6 +444,8 @@ public static class TenantEndpoints
     private static object View(ClientTenant t, TenantGraphCredentials creds, int? openAlerts)
     {
         var effective = creds.Resolve(t);
+        var health = ClientHealth.Of(new ClientStatusInput(
+            t.IsActive, effective.IsConfigured(), creds.OwnSecretUnreadable(t), t.LastCollectionStatus, t.NextCollectionAfter, DateTimeOffset.UtcNow));
         return new
         {
             t.Id, t.Name, t.MicrosoftTenantId, t.IsActive, t.Notes, t.CreatedAt,
@@ -450,6 +458,7 @@ public static class TenantEndpoints
             credentialSource = t.HasOwnCredentials ? "tenant" : effective.IsConfigured() ? "install" : "none",
             configured = effective.IsConfigured(),
             t.ConsentGrantedAt, t.LastCollectionAt, t.LastCollectionStatus, t.LastError,
+            health = new { state = health.State, tone = health.Tone, label = health.Label },
             openAlerts,
         };
     }

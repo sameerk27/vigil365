@@ -36,35 +36,72 @@ public sealed class GraphCollectionWorker(
                         return;
                     }
                     var credentials = sp.GetRequiredService<TenantGraphCredentials>();
+                    var db = sp.GetRequiredService<AppDbContext>();
+                    var health = await db.ClientTenants.FirstOrDefaultAsync(t => t.Id == tenant.Id, ct);
+
+                    // A stored secret the key ring can no longer decrypt is an operator fix,
+                    // not a transient fault: backing off would only hide it. Say so and stop.
+                    if (health is not null && credentials.OwnSecretUnreadable(health))
+                    {
+                        health.LastCollectionStatus = ClientHealth.Unreadable;
+                        health.LastError = "The stored client secret cannot be decrypted (the encryption key ring changed or was lost). Re-enter this client's credentials on Clients.";
+                        await db.SaveChangesAsync(ct);
+                        logger.LogWarning("Skipping tenant {TenantName}: its stored client secret cannot be decrypted.", tenant.Name);
+                        return;
+                    }
+
                     if (!await credentials.IsConfiguredAsync(ct))
                     {
                         logger.LogDebug("Skipping tenant {TenantName}: no Graph credentials apply.", tenant.Name);
                         return;
                     }
 
-                    var db = sp.GetRequiredService<AppDbContext>();
-                    var health = await db.ClientTenants.FirstOrDefaultAsync(t => t.Id == tenant.Id, ct);
                     try
                     {
                         var collector = sp.GetRequiredService<GraphCollector>();
                         var run = await collector.CollectAsync(ct);
                         Interlocked.Increment(ref collected);
-                        // Every source failed (revoked consent, expired secret): a failed
-                        // collection that backs off, not a success that resets the backoff.
                         if (run.Status == CollectionStatus.Failed)
+                        {
+                            // Right after consent Microsoft needs a few minutes before Graph knows
+                            // the app in the client's tenant. That is not a failure: no backoff,
+                            // retry on the next cycle, and say why.
+                            if (health is not null && ClientHealth.AllFailuresAreConsentPending(run.SourceFailureDetails))
+                            {
+                                health.LastCollectionAt = DateTimeOffset.UtcNow;
+                                health.LastCollectionStatus = ClientHealth.WaitingForConsent;
+                                health.LastError = GraphErrorHint.NotYetProvisionedMessage;
+                                health.NextCollectionAfter = null;
+                                await db.SaveChangesAsync(ct);
+                                logger.LogInformation("Tenant {TenantName}: Microsoft has not finished setting up the app yet; retrying next cycle.", tenant.Name);
+                                return;
+                            }
+                            // Every source failed (revoked consent, expired secret): a failed
+                            // collection that backs off, not a success that resets the backoff.
                             throw new InvalidOperationException(run.Error ?? "Every Graph source failed.");
+                        }
                         logger.LogInformation(
                             "Collection run {RunId} completed: {Upserted} alerts, {Failures} source failures",
                             run.Id, run.AlertsUpserted, run.SourceFailures);
                         if (health is not null)
                         {
+                            // Some sources failing is a partial success: the client shows as partly
+                            // connected with the failing sources named, not as healthy.
+                            var (status, error) = ClientHealth.OutcomeOf(run.SourceFailures, run.SourceFailureDetails);
                             health.LastCollectionAt = DateTimeOffset.UtcNow;
-                            health.LastCollectionStatus = run.Status.ToString();
-                            health.LastError = run.SourceFailures > 0 ? run.Error : null;
+                            health.LastCollectionStatus = status;
+                            health.LastError = error;
                             health.ConsecutiveFailures = 0;
                             health.NextCollectionAfter = null;
                             await db.SaveChangesAsync(ct);
                         }
+                    }
+                    catch (CollectionBusyException)
+                    {
+                        // A manual run is already collecting this client: not a failure, so no
+                        // backoff and no error on the client. The other pass will report it.
+                        logger.LogInformation("Tenant {TenantName}: a collection is already running; skipped this cycle.", tenant.Name);
+                        return;
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
@@ -72,7 +109,7 @@ public sealed class GraphCollectionWorker(
                         {
                             var now = DateTimeOffset.UtcNow;
                             health.LastCollectionAt = now;
-                            health.LastCollectionStatus = "Failed";
+                            health.LastCollectionStatus = nameof(CollectionStatus.Failed);
                             health.LastError = ex.Message.Length > 1000 ? ex.Message[..1000] : ex.Message;
                             health.ConsecutiveFailures++;
                             health.NextCollectionAfter = CollectionBackoff.NextAttempt(now, health.ConsecutiveFailures, interval, maxBackoff);

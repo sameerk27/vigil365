@@ -23,6 +23,8 @@ public static class AuthHealthEndpoints
             var sizeWarning = false;
             object? lastCollection = null;
             var collectionFresh = (bool?)null;
+            // A count only: this endpoint is anonymous, so client names stay out of it.
+            var failingClients = 0;
 
             try
             {
@@ -32,6 +34,10 @@ public static class AuthHealthEndpoints
                     dbSize = await Data.DatabaseProviderSetup.QueryDatabaseSizeBytesAsync(db, ct);
                     var limit = dbOptions.Value.SizeWarningBytes;
                     sizeWarning = limit > 0 && dbSize is long size && size >= limit;
+                    // One client that keeps failing is enough to need attention, even when
+                    // another client collected a minute ago (the freshness check below).
+                    failingClients = await db.ClientTenants.AsNoTracking().CountAsync(t => t.IsActive
+                        && (t.LastCollectionStatus == ClientHealth.Failed || t.LastCollectionStatus == ClientHealth.Unreadable), ct);
                     // Anonymous probe, no tenant context: install-level freshness is
                     // "has ANY tenant collected recently", hence the cross-tenant read.
                     var lastRun = await db.CrossTenant<CollectionRun>().AsNoTracking()
@@ -57,7 +63,7 @@ public static class AuthHealthEndpoints
 
             var graphConfigured = options.Value.IsConfigured();
             var status = !dbOk ? "unhealthy"
-                : !graphConfigured || collectionFresh == false || sizeWarning ? "degraded"
+                : !graphConfigured || collectionFresh == false || sizeWarning || failingClients > 0 ? "degraded"
                 : "healthy";
 
             var body = new
@@ -68,6 +74,7 @@ public static class AuthHealthEndpoints
                 {
                     database = new { ok = dbOk, error = dbError, sizeBytes = dbSize, sizeWarning, sizeWarningBytes = dbOptions.Value.SizeWarningBytes },
                     graph = new { configured = graphConfigured },
+                    clients = new { failing = failingClients },
                     collection = lastCollection
                 },
                 checkedAt = DateTimeOffset.UtcNow

@@ -36,8 +36,11 @@ public sealed class SecretProtector
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Protect failed; storing value unprotected");
-            return plaintext;
+            // Fail closed: a secret is never written unencrypted. An unwritable key ring
+            // is an operator fix (permissions on the key folder), so say so.
+            _logger.LogError(ex, "Could not encrypt a secret; nothing was saved.");
+            throw new InvalidOperationException(
+                "Could not encrypt the value, so nothing was saved. Check that the Data Protection key folder is writable by the Vigil365 service.", ex);
         }
     }
 

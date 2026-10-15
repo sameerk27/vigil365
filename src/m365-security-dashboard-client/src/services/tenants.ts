@@ -22,6 +22,8 @@ export interface ClientTenant {
   lastCollectionAt: string | null;
   lastCollectionStatus: string | null;
   lastError: string | null;
+  /** The server's one answer per client: what state it is in, how urgent, and what to tell the operator. */
+  health?: { state: string; tone: "good" | "warning" | "error" | "neutral"; label: string } | null;
   openAlerts: number | null;
 }
 
@@ -44,14 +46,16 @@ export interface TenantRollupRow {
   health: "good" | "warning" | "error" | "neutral";
 }
 
-type Result<T = void> = { ok: true; value: T } | { ok: false; error: string };
+/** `retryable`: the server says this failure clears by itself (e.g. Microsoft still provisioning the app after consent). */
+type Result<T = void> = { ok: true; value: T } | { ok: false; error: string; retryable?: boolean };
 
 async function call<T = unknown>(url: string, init?: RequestInit): Promise<Result<T>> {
   try {
     const r = await apiFetch(`${apiBase}${url}`, init);
     const body = await r.json().catch(() => ({}));
     if (r.ok) return { ok: true, value: body as T };
-    return { ok: false, error: (body as { message?: string; error?: string }).message ?? (body as { error?: string }).error ?? `Request failed (${r.status})` };
+    const b = body as { message?: string; error?: string; retryable?: boolean };
+    return { ok: false, error: b.message ?? b.error ?? `Request failed (${r.status})`, retryable: b.retryable === true };
   } catch {
     return { ok: false, error: "Could not reach the API." };
   }

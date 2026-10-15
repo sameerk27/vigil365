@@ -27,7 +27,7 @@ public sealed class GraphCollector(
     {
         var gate = Gates.GetOrAdd(db.CurrentTenantIdOrNull ?? Guid.Empty, _ => new SemaphoreSlim(1, 1));
         if (!await gate.WaitAsync(TimeSpan.Zero, ct))
-            throw new InvalidOperationException("A collection run is already in progress for this tenant.");
+            throw new CollectionBusyException();
         try
         {
             return await CollectCoreAsync(ct);
