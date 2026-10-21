@@ -16,7 +16,8 @@ import { FilterPresets } from "../components/FilterPresets";
 import { SegmentedTabs, StatCard } from "../components/ui";
 import { BaselineTab } from "../components/BaselineTab";
 import { SystemMetricsTab } from "../components/SystemMetricsTab";
-import { relTime, fmtDate, sevTone } from "../services/utils";
+import { relTime, fmtDate, sevTone, POLICY_CATEGORIES, policyCategoryLabel } from "../services/utils";
+import { PurviewAuditPanel } from "../components/PurviewAuditPanel";
 
 /** Human-readable status labels — raw enums like "auto_resolved" never reach the UI. */
 const STATUS_LABELS: Record<string, string> = {
@@ -197,11 +198,7 @@ function PolicyModal({ policy, clientOnly, onSave, onClose }: {
           <div className="policy-field">
             <label className="policy-label">Category</label>
             <select aria-label="Category" className="policy-input" value={form.category ?? "identity"} onChange={e => set("category", e.target.value)}>
-              <option value="identity">Identity</option>
-              <option value="devices">Devices</option>
-              <option value="email">Email</option>
-              <option value="compliance">Compliance</option>
-              <option value="licenses">Licenses</option>
+              {POLICY_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
             </select>
           </div>
           <div className="policy-field">
@@ -815,7 +812,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
             <div className="detail-modal-body">
               <DetailField label="Policy ID" value={selectedTriggered.policyId} copy/>
               <DetailField label="Severity" value={selectedTriggered.severity.charAt(0).toUpperCase() + selectedTriggered.severity.slice(1)}/>
-              <DetailField label="Category" value={selectedTriggered.category.charAt(0).toUpperCase() + selectedTriggered.category.slice(1)}/>
+              <DetailField label="Category" value={policyCategoryLabel(selectedTriggered.category)}/>
               <DetailField label="Condition" value={selectedTriggered.condition}/>
               <DetailField label="Metric Value" value={String(selectedTriggered.metricValue)}/>
               <DetailField label="Threshold" value={String(selectedTriggered.threshold)}/>
@@ -986,7 +983,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
               <SeverityFilter value={sevFilter} onChange={setSevFilter}/>
               <select className="filter-sel" aria-label="Filter by category" value={catFilter} onChange={e=>setCatFilter(e.target.value)}>
                 <option value="">All categories</option>
-                {["identity","devices","email","compliance","licenses"].map(c=><option key={c} value={c}>{c.charAt(0).toUpperCase()+c.slice(1)}</option>)}
+                {POLICY_CATEGORIES.map(c=><option key={c.value} value={c.value}>{c.label}</option>)}
               </select>
               <select className="filter-sel" aria-label="Filter by status" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
                 <option value="">All statuses</option>
@@ -1132,6 +1129,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
         })();
         return (
         <>
+        <PurviewAuditPanel/>
         <div className="stat-row-4">
           <StatCard label="Total policies" value={policies.length} sub={`across ${catCount} categor${catCount === 1 ? "y" : "ies"}`}/>
           <StatCard label="Enabled" value={enabled} sub={policies.length - enabled > 0 ? `${policies.length - enabled} disabled` : "all active"}/>
@@ -1157,7 +1155,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                   {policies.map(p => (
                     <tr key={p.id}>
                       <td data-inline-style="inline-7ba9bad628">{p.name}{p.tenantId && <> <Badge label="This client" tone="info"/></>}</td>
-                      <td data-inline-style="inline-b7b96646ae">{p.category}</td>
+                      <td data-inline-style="inline-b7b96646ae">{policyCategoryLabel(p.category)}</td>
                       <td data-inline-style="inline-e1acedac9b">{p.condition}</td>
                       <td><Badge label={p.severity} tone={sevToneAC(p.severity)}/></td>
                       <td>
@@ -1215,7 +1213,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
                 <div className="template-card-footer">
                   <div data-inline-style="inline-95e7b1fc4c">
                     <Badge label={t.severity} tone={sevToneAC(t.severity)}/>
-                    <Badge label={t.category} tone="neutral"/>
+                    <Badge label={policyCategoryLabel(t.category)} tone="neutral"/>
                   </div>
                   {canMutate && (
                     <button className="btn-run" data-inline-style="inline-ead46142c8" onClick={() => useTemplate(t)}>

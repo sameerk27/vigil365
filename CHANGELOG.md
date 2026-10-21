@@ -10,6 +10,64 @@ version lives in exactly two places — the API's `<Version>` and the client's
 
 ## [Unreleased]
 
+### Added
+- **Copilot agent and Power Platform alerts.** Vigil365 now reads Copilot Studio agent,
+  Power Automate, Power Apps and Power Platform admin activity from the Microsoft Purview
+  audit log (`PurviewAuditCollector`) and alerts on it through 19 new built-in rules in two
+  categories, Copilot agents and Power Platform. They cover:
+  - agent authentication changed, shared, published or given a new action
+  - a flow created or edited with a high-risk connector, or shared outside the organisation
+  - consent bypass turned on for an app, and third-party apps allowed
+  - Power Platform DLP policy and environment changes
+
+  Noisy rules (agent created, app published) ship off. The high-risk connector list is
+  `Graph:PowerPlatformHighRiskConnectors` (default `HTTP*`, `FTP*`, `SFTP*`, Gmail, Dropbox).
+- New optional permission `AuditLogsQuery.Read.All` (read-only). Without it these rules stay
+  idle and Rules & Notifications says so; no client is marked as partly connected. Tenants
+  that already consented must consent again to get it.
+- The audit search runs hourly (`Graph:PurviewAuditIntervalMinutes`, 0 turns it off) and
+  re-reads a 120-minute overlap, because audit records can reach the log hours after the
+  action. Purview events count toward an activity rule's window from when Vigil365
+  collected them.
+- Tenant Activity filters by source: Entra ID, Copilot agents, Power Automate, Power Apps,
+  Power Platform admin.
+- **Copilot usage page.** Shows who holds a Microsoft 365 Copilot licence, who used it in the
+  last 28 days and in which apps, and how many paid seats do nothing, with a recommendation
+  to reassign idle licences. It reads Microsoft's Copilot usage report (Graph beta) and the
+  tenant's licences with the existing `Reports.Read.All` and `Directory.Read.All`; no new
+  permission. A banner explains when the tenant hides user names in usage reports. It uses
+  28-day windows: Microsoft's v2 Copilot reports reject 30 days (MC1423101).
+- **Power Platform inventory (optional, per tenant).** A new Power Platform page lists every
+  environment, canvas app and cloud flow, and flags apps that bypass the consent prompt, use a
+  custom, on-premises or high-risk connector, or are shared with many people (default 25,
+  `Graph:PowerPlatformWideSharingUsers`), and flows that use a high-risk connector. It reads
+  the Power Platform API (`api.powerplatform.com`), not Graph. A tenant turns it on by giving
+  Vigil365's app Microsoft's read-only **Power Platform reader** role (preview at Microsoft):
+  the new `grant-power-platform-reader.ps1` does that for one tenant, and `-Remove` takes it
+  away. Until then the page shows the command for that tenant, filled in. No Graph permission
+  or consent changes. The inventory is read when the page opens and cached for 15 minutes;
+  nothing collects it in the background. It reads at most 50 environments
+  (`Graph:PowerPlatformMaxEnvironments`) and says when it skipped some. Cloud flows are listed
+  only in environments with Dataverse, which is all Microsoft's API covers.
+
+### Security
+- The audit search is started with a POST. It is the only Graph POST Vigil365 makes: the
+  Graph client refuses any other path, and a test fails if code anywhere else builds a POST.
+- The Power Platform client sends GET only, and only to the Power Platform API host: it never
+  follows a next-page link to another host, and a test fails if its code names any other HTTP
+  method. The role it relies on grants read permissions only. The grant script makes the one
+  change (the role assignment, plus registering Microsoft's Power Platform API service
+  principal if the tenant lacks it), run by that tenant's Power Platform administrator.
+
+### Notes
+- Power Automate and Power Apps document friendly event names, not the operation strings
+  in the audit log. Those records are classified by their fields and by keywords; tune them
+  against a live tenant (`docs/COPILOT_POWER_PLATFORM_PLAN.md` §6). Unmatched operations
+  are logged.
+- Microsoft's REST reference doesn't document the cloud-flow list response. Vigil365 reads it
+  with the field names of Microsoft's .NET SDK model, case-insensitively; confirm them on a
+  live tenant (same section).
+
 ## [1.2.0] — not yet released (pending the release walkthrough, `docs/MSP_V12_PLAN.md` §6)
 
 ### Added

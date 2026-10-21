@@ -65,6 +65,14 @@ const HELP: Partial<Record<NavPage, HelpEntry>> = {
   licenses: {
     what: "License SKU consumption, inactive users, and expiring/expired passwords.",
   },
+  copilot: {
+    what: "Who holds a Microsoft 365 Copilot licence, who used it in the last 28 days and in which apps, and how many paid seats do nothing. From Microsoft's Copilot usage report, which lags a day or two.",
+    links: [{ label: "Copilot usage report", url: "https://admin.microsoft.com/#/reportsUsage/MicrosoftCopilotUsage" }],
+  },
+  powerplatform: {
+    what: "Every Power Platform environment, canvas app and cloud flow, with the apps and flows that bypass the consent prompt, use custom or high-risk connectors, or are shared with many people. Optional: it needs Microsoft's read-only Power Platform reader role for Vigil365's app, and the page shows how to grant it. Read live when you open the page; cached for 15 minutes.",
+    links: [{ label: "Power Platform admin center", url: "https://admin.powerplatform.microsoft.com/" }],
+  },
   users: {
     what: "In-app access control: assign Admin / Analyst / Viewer roles, invite users, and verify the tamper-evident audit trail. Roles are Vigil365's own — they do not change anyone's Microsoft account.",
   },

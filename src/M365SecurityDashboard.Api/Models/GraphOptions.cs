@@ -31,6 +31,46 @@ public sealed class GraphOptions
     public string ExchangeQuarantinePath { get; set; } = "";
     public string MailFlowIssuesPath { get; set; } = "";
 
+    /// <summary>
+    /// How often the Purview audit search (Copilot agents, Power Platform) runs, in
+    /// minutes. Microsoft limits audit searches per tenant per day, so this runs on its
+    /// own cadence, not every collection. 0 turns it off.
+    /// </summary>
+    public int PurviewAuditIntervalMinutes { get; set; } = 60;
+
+    /// <summary>How far back the first Purview audit search looks.</summary>
+    public int PurviewAuditLookbackHours { get; set; } = 24;
+
+    /// <summary>
+    /// Each search re-reads this much of the previous window: audit records can reach
+    /// the log hours after the action. Duplicates are dropped on the record id.
+    /// </summary>
+    public int PurviewAuditOverlapMinutes { get; set; } = 120;
+
+    /// <summary>A search Microsoft has not finished after this long is abandoned and submitted again.</summary>
+    public int PurviewAuditQueryTimeoutMinutes { get; set; } = 180;
+
+    /// <summary>
+    /// Power Automate connectors that make a flow high-risk. Matched against the
+    /// connector names in the flow's audit record, ignoring case; a trailing * matches
+    /// any name that starts with the rest ("HTTP*" covers "HTTP with Microsoft Entra ID").
+    /// An array, so configuration replaces the list instead of appending to it.
+    /// </summary>
+    public string[] PowerPlatformHighRiskConnectors { get; set; } = ["HTTP*", "FTP*", "SFTP*", "Gmail", "Dropbox"];
+
+    // ── Power Platform inventory (optional; docs/COPILOT_POWER_PLATFORM_PLAN.md phase D) ──
+    /// <summary>
+    /// The Power Platform API. Read only when a tenant's admin has given Vigil365's app
+    /// the Power Platform reader role; otherwise the inventory page explains how.
+    /// </summary>
+    public string PowerPlatformApiBaseUrl { get; set; } = "https://api.powerplatform.com";
+
+    /// <summary>Most environments read per inventory, so a tenant full of developer environments stays quick.</summary>
+    public int PowerPlatformMaxEnvironments { get; set; } = 50;
+
+    /// <summary>An app shared with at least this many people is flagged as widely shared.</summary>
+    public int PowerPlatformWideSharingUsers { get; set; } = 25;
+
     public bool HasCertificate() =>
         !string.IsNullOrWhiteSpace(CertificateThumbprint) ||
         !string.IsNullOrWhiteSpace(CertificatePath);

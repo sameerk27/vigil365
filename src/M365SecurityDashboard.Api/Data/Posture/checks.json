@@ -1,0 +1,188 @@
+{
+  "$comment": "Licence posture checks. Titles, minimums and fixes are Vigil365's own words. Baseline references are identifiers only: SCuBA IDs from CISA ScubaGear (CC0, see baselineSources). CIS recommendation numbers stay empty until CIS's licence terms are checked, and Secure Score control names stay empty until verified (docs/LICENSE_POSTURE_PLAN.md section 6). 'reads' is where the evidence comes from: graph, or exchange (Exchange Online PowerShell, phase 2).",
+  "baselineSources": {
+    "scuba": "https://github.com/cisagov/ScubaGear/tree/main/PowerShell/ScubaGear/baselines",
+    "retrieved": "2026-10-19"
+  },
+  "checks": [
+    {
+      "id": "PST-AAD-001",
+      "title": "Conditional Access requires MFA for all users",
+      "workload": "Entra ID",
+      "feature": "conditional-access",
+      "reads": "graph",
+      "rule": "caMfaAllUsers",
+      "whyItMatters": "A password alone is the most common way into a Microsoft 365 tenant. A policy that asks everyone for a second factor stops most of those sign-ins.",
+      "minimum": "An enabled Conditional Access policy for all users that requires MFA or an authentication strength.",
+      "fix": [
+        "In the Microsoft Entra admin center, open Conditional Access and create a policy for all users and all resources.",
+        "Grant access only with multifactor authentication, and exclude two break-glass accounts.",
+        "Turn it on in report-only first, check the sign-in logs, then switch it to On."
+      ],
+      "portalUrl": "https://entra.microsoft.com/#view/Microsoft_AAD_ConditionalAccess/ConditionalAccessBlade/~/Policies",
+      "baselines": { "scuba": ["MS.AAD.3.2v2"], "cis": [], "secureScore": [] }
+    },
+    {
+      "id": "PST-AAD-002",
+      "title": "Legacy authentication is blocked",
+      "workload": "Entra ID",
+      "feature": "conditional-access",
+      "reads": "graph",
+      "rule": "caBlockLegacyAuth",
+      "whyItMatters": "Old sign-in protocols can't do MFA, so attackers use them to try stolen passwords without being challenged.",
+      "minimum": "An enabled Conditional Access policy for all users that blocks Exchange ActiveSync and other legacy clients.",
+      "fix": [
+        "Create a Conditional Access policy for all users and all resources.",
+        "Under Conditions, Client apps, select Exchange ActiveSync clients and Other clients.",
+        "Set Grant to Block access, test in report-only, then turn it on."
+      ],
+      "portalUrl": "https://entra.microsoft.com/#view/Microsoft_AAD_ConditionalAccess/ConditionalAccessBlade/~/Policies",
+      "baselines": { "scuba": ["MS.AAD.1.1v1"], "cis": [], "secureScore": [] }
+    },
+    {
+      "id": "PST-AAD-003",
+      "title": "MFA is enforced by Security Defaults or Conditional Access",
+      "workload": "Entra ID",
+      "feature": "free",
+      "reads": "graph",
+      "rule": "mfaEnforced",
+      "whyItMatters": "Every tenant can enforce MFA at no extra cost. Without Security Defaults or a Conditional Access policy, nobody is asked for a second factor.",
+      "minimum": "Security Defaults on, or a Conditional Access policy that requires MFA for all users.",
+      "fix": [
+        "With Microsoft Entra ID P1, use Conditional Access (see 'Conditional Access requires MFA for all users').",
+        "Without it, turn on Security Defaults in the Microsoft Entra admin center, under Overview, Properties."
+      ],
+      "portalUrl": "https://entra.microsoft.com/",
+      "baselines": { "scuba": [], "cis": [], "secureScore": [] }
+    },
+    {
+      "id": "PST-AAD-004",
+      "title": "At least 95% of users are registered for MFA",
+      "workload": "Entra ID",
+      "feature": "free",
+      "reads": "graph",
+      "rule": "mfaRegistration",
+      "threshold": 95,
+      "whyItMatters": "A user who never registered a second factor can't be protected by MFA, and the first person to register it may be an attacker.",
+      "minimum": "95% or more of member users registered for MFA.",
+      "fix": [
+        "Run a registration campaign in the Microsoft Entra admin center, under Authentication methods.",
+        "Follow up with the users listed on Vigil365's Identity page."
+      ],
+      "portalUrl": "https://entra.microsoft.com/#view/Microsoft_AAD_IAM/AuthenticationMethodsMenuBlade/~/AdminAuthMethods",
+      "baselines": { "scuba": [], "cis": [], "secureScore": [] }
+    },
+    {
+      "id": "PST-AAD-005",
+      "title": "High-risk users and sign-ins are blocked",
+      "workload": "Entra ID",
+      "feature": "identity-protection",
+      "reads": "graph",
+      "rule": "caBlockHighRisk",
+      "whyItMatters": "Microsoft scores users and sign-ins that look compromised. Blocking the high-risk ones stops an attacker who already has the password.",
+      "minimum": "Enabled Conditional Access policies that block high user risk and high sign-in risk.",
+      "fix": [
+        "Create a Conditional Access policy for all users with User risk set to High, and Grant set to Block.",
+        "Create a second policy with Sign-in risk set to High, and Grant set to Block."
+      ],
+      "portalUrl": "https://entra.microsoft.com/#view/Microsoft_AAD_ConditionalAccess/ConditionalAccessBlade/~/Policies",
+      "baselines": { "scuba": ["MS.AAD.2.1v1", "MS.AAD.2.3v1"], "cis": [], "secureScore": [] }
+    },
+    {
+      "id": "PST-AAD-006",
+      "title": "Admin roles are granted just in time with PIM",
+      "workload": "Entra ID",
+      "feature": "pim",
+      "reads": "graph",
+      "rule": "pimInUse",
+      "whyItMatters": "Permanent admin rights are a standing target. With PIM, admins activate a role only when they need it, for a limited time.",
+      "minimum": "Highly privileged roles have eligible assignments in PIM and no permanent active ones.",
+      "fix": [
+        "In Privileged Identity Management, make admins eligible for their roles instead of permanently active.",
+        "Require approval to activate Global Administrator."
+      ],
+      "portalUrl": "https://entra.microsoft.com/",
+      "baselines": { "scuba": ["MS.AAD.7.4v1", "MS.AAD.7.5v1"], "cis": [], "secureScore": [] }
+    },
+    {
+      "id": "PST-INT-001",
+      "title": "Intune has a device compliance policy",
+      "workload": "Intune",
+      "feature": "intune",
+      "reads": "graph",
+      "rule": "intuneCompliancePolicy",
+      "whyItMatters": "Compliance policies define what a healthy device is. Without one, Conditional Access can't tell a managed, patched laptop from any other.",
+      "minimum": "At least one device compliance policy.",
+      "fix": [
+        "In the Intune admin center, open Devices, Compliance, and create a policy for each platform in use.",
+        "Then require a compliant device in Conditional Access for the apps that matter."
+      ],
+      "portalUrl": "https://intune.microsoft.com/",
+      "baselines": { "scuba": [], "cis": [], "secureScore": [] }
+    },
+    {
+      "id": "PST-SPO-001",
+      "title": "External sharing is limited to existing guests",
+      "workload": "SharePoint",
+      "feature": "sharepoint",
+      "reads": "graph",
+      "rule": "sharepointSharing",
+      "whyItMatters": "When anyone can be sent a link, files can leave the organisation with no sign-in and no record of who opened them.",
+      "minimum": "SharePoint and OneDrive sharing set to existing guests or people in the organisation only.",
+      "fix": [
+        "In the SharePoint admin center, open Policies, Sharing.",
+        "Set the SharePoint and OneDrive sharing level to Existing guests or Only people in your organization."
+      ],
+      "portalUrl": "https://admin.microsoft.com/sharepoint",
+      "baselines": { "scuba": ["MS.SHAREPOINT.1.1v1", "MS.SHAREPOINT.1.2v1"], "cis": [], "secureScore": [] }
+    },
+    {
+      "id": "PST-MDO-001",
+      "title": "Safe Links protects all users",
+      "workload": "Exchange and Defender for Office 365",
+      "feature": "mdo-p1",
+      "reads": "exchange",
+      "rule": "safeLinks",
+      "whyItMatters": "Safe Links checks a link when it's clicked, not just when the email arrives, so a link that turns malicious later is still caught.",
+      "minimum": "A Safe Links policy, or the Standard or Strict preset, applied to all recipients.",
+      "fix": [
+        "In Microsoft Defender, open Email & collaboration, Policies & rules, Threat policies.",
+        "Turn on the Standard preset security policy for all recipients, or create a Safe Links policy for all recipient domains."
+      ],
+      "portalUrl": "https://security.microsoft.com/",
+      "baselines": { "scuba": ["MS.SECURITYSUITE.7.1v1", "MS.SECURITYSUITE.7.2v1", "MS.SECURITYSUITE.7.3v1"], "cis": [], "secureScore": [] }
+    },
+    {
+      "id": "PST-MDO-002",
+      "title": "Preset security policies are turned on",
+      "workload": "Exchange and Defender for Office 365",
+      "feature": "mdo-p1",
+      "reads": "exchange",
+      "rule": "presetPolicies",
+      "whyItMatters": "The Standard and Strict presets apply Microsoft's recommended email protection in one step and keep it current as Microsoft updates it.",
+      "minimum": "The Standard or Strict preset security policy applied to all recipients.",
+      "fix": [
+        "In Microsoft Defender, open Email & collaboration, Policies & rules, Threat policies, Preset security policies.",
+        "Turn on Standard protection for all recipients, and Strict for high-risk users."
+      ],
+      "portalUrl": "https://security.microsoft.com/",
+      "baselines": { "scuba": ["MS.SECURITYSUITE.1.1v1", "MS.SECURITYSUITE.1.2v1", "MS.SECURITYSUITE.1.3v1", "MS.SECURITYSUITE.6.1v1"], "cis": [], "secureScore": [] }
+    },
+    {
+      "id": "PST-MDO-003",
+      "title": "Attack simulation training is in use",
+      "workload": "Exchange and Defender for Office 365",
+      "feature": "mdo-p2",
+      "reads": "graph",
+      "rule": "attackSimulation",
+      "whyItMatters": "Phishing simulations show who would click, and train them before a real attack does.",
+      "minimum": "At least one simulation in the last 90 days.",
+      "fix": [
+        "In Microsoft Defender, open Email & collaboration, Attack simulation training.",
+        "Schedule a simulation with training for people who click."
+      ],
+      "portalUrl": "https://security.microsoft.com/",
+      "baselines": { "scuba": [], "cis": [], "secureScore": [] }
+    }
+  ]
+}

@@ -1,0 +1,69 @@
+{
+  "$comment": "Which service plans each posture feature needs. Every row names the page it comes from and when it was read. Service plan names must exist in entitlements.json (Microsoft's licensing CSV); a test fails otherwise.",
+  "features": [
+    {
+      "id": "free",
+      "name": "Every Microsoft 365 tenant",
+      "requiresAnyServicePlan": [],
+      "source": "https://learn.microsoft.com/en-us/entra/identity/conditional-access/overview#license-requirements",
+      "note": "Security defaults are available for all customers.",
+      "retrieved": "2026-10-19"
+    },
+    {
+      "id": "conditional-access",
+      "name": "Microsoft Entra ID P1 (Conditional Access)",
+      "requiresAnyServicePlan": ["AAD_PREMIUM", "AAD_PREMIUM_P2"],
+      "source": "https://learn.microsoft.com/en-us/entra/identity/conditional-access/overview#license-requirements",
+      "note": "Using Conditional Access requires Microsoft Entra ID P1 licences; Business Premium includes it.",
+      "retrieved": "2026-10-19"
+    },
+    {
+      "id": "identity-protection",
+      "name": "Microsoft Entra ID P2 (risk-based Conditional Access)",
+      "requiresAnyServicePlan": ["AAD_PREMIUM_P2"],
+      "source": "https://learn.microsoft.com/en-us/entra/identity/conditional-access/overview#license-requirements",
+      "note": "Sign-in risk and user risk policies need Microsoft Entra ID Protection, a P2 feature.",
+      "retrieved": "2026-10-19"
+    },
+    {
+      "id": "pim",
+      "name": "Microsoft Entra ID P2 (Privileged Identity Management)",
+      "requiresAnyServicePlan": ["AAD_PREMIUM_P2"],
+      "source": "https://github.com/cisagov/ScubaGear/blob/main/PowerShell/ScubaGear/baselines/aad.md",
+      "note": "ScubaGear section 7: the PIM policies require a Microsoft Entra ID P2 licence.",
+      "retrieved": "2026-10-19"
+    },
+    {
+      "id": "intune",
+      "name": "Microsoft Intune Plan 1",
+      "requiresAnyServicePlan": ["INTUNE_A"],
+      "source": "https://learn.microsoft.com/en-us/intune/fundamentals/licensing",
+      "note": "Plan 1 is the base Intune service; compliance policies are part of it.",
+      "retrieved": "2026-10-19"
+    },
+    {
+      "id": "sharepoint",
+      "name": "SharePoint Online",
+      "requiresAnyServicePlan": ["SHAREPOINTSTANDARD", "SHAREPOINTENTERPRISE"],
+      "source": "https://learn.microsoft.com/en-us/entra/identity/users/licensing-service-plan-reference",
+      "note": "External sharing is a SharePoint Online tenant setting; any SharePoint plan has it.",
+      "retrieved": "2026-10-19"
+    },
+    {
+      "id": "mdo-p1",
+      "name": "Defender for Office 365 Plan 1",
+      "requiresAnyServicePlan": ["ATP_ENTERPRISE", "THREAT_INTELLIGENCE"],
+      "source": "https://learn.microsoft.com/en-us/office365/servicedescriptions/microsoft-365-service-descriptions/microsoft-365-tenantlevel-services-licensing-guidance/microsoft-defender-service-description#microsoft-defender-for-office-365",
+      "note": "Plan 1: Safe Links, Safe Attachments, anti-phishing. Plan 2 includes Plan 1.",
+      "retrieved": "2026-10-19"
+    },
+    {
+      "id": "mdo-p2",
+      "name": "Defender for Office 365 Plan 2",
+      "requiresAnyServicePlan": ["THREAT_INTELLIGENCE"],
+      "source": "https://learn.microsoft.com/en-us/office365/servicedescriptions/microsoft-365-service-descriptions/microsoft-365-tenantlevel-services-licensing-guidance/microsoft-defender-service-description#microsoft-defender-for-office-365",
+      "note": "Plan 2 adds attack simulation training and automated investigation and response.",
+      "retrieved": "2026-10-19"
+    }
+  ]
+}

@@ -100,6 +100,8 @@ builder.Services.AddScoped<TenantRollupService>();
 builder.Services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<TenantContext>());
 builder.Services.AddScoped<TenantGraphCredentials>();
 builder.Services.AddHttpClient<GraphApiClient>();
+builder.Services.AddHttpClient<M365SecurityDashboard.Api.Services.PowerPlatform.PowerPlatformApiClient>();
+builder.Services.AddScoped<M365SecurityDashboard.Api.Services.PowerPlatform.PowerPlatformInventoryService>();
 builder.Services.AddHttpClient();
 
 // Cross-platform secret encryption key ring. Persisted to disk so secrets survive
@@ -116,6 +118,8 @@ builder.Services.AddSingleton<SecretProtector>();
 builder.Services.AddSingleton<GraphMetrics>();
 builder.Services.AddSingleton<MetricsState>();
 builder.Services.AddScoped<MetricsService>();
+builder.Services.AddScoped<PurviewAuditCollector>();
+builder.Services.AddScoped<M365SecurityDashboard.Api.Services.Posture.PostureCollector>();
 builder.Services.AddScoped<GraphCollector>();
 builder.Services.AddScoped<NotificationSender>();
 builder.Services.AddScoped<DigestBuilder>();
@@ -414,6 +418,8 @@ app.MapMetricsEndpoints();
 app.MapReportsEndpoints();
 app.MapIntegrationsEndpoints();
 app.MapPlatformEndpoints();
+app.MapPostureEndpoints();
+app.MapPowerPlatformEndpoints();
 app.MapTenantEndpoints();
 
 app.Map("/api/{**rest}", (HttpContext ctx) =>

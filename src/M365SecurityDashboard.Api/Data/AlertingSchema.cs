@@ -191,6 +191,38 @@ public static class AlertingSchema
         ("Account disabled",                  "identity",   "Disable account",                                 "medium"),
     ];
 
+    public const string CopilotCategory = "copilot";
+    public const string PowerPlatformCategory = "powerplatform";
+
+    /// <summary>
+    /// Copilot agent and Power Platform pack, over the activity names
+    /// PurviewAuditNormalizer writes. Noisy ones ship disabled. Seeded once, keyed on
+    /// its own categories, so existing installs receive it and a rule an operator
+    /// deletes is not brought back.
+    /// </summary>
+    internal static readonly (string Name, string Category, string Pattern, string Severity, bool Enabled)[] CopilotPowerPlatformDefaults =
+    [
+        ("Agent authentication changed",          CopilotCategory,       "Agent authentication changed*",          "high",   true),
+        ("Agent shared",                          CopilotCategory,       "Agent shared*",                          "medium", true),
+        ("Agent published",                       CopilotCategory,       "Agent published*",                       "medium", true),
+        ("Agent actions changed",                 CopilotCategory,       "Agent action *",                         "medium", true),
+        ("Agent created",                         CopilotCategory,       "Agent created*",                         "low",    false),
+        ("Agent deleted",                         CopilotCategory,       "Agent deleted*",                         "low",    false),
+        ("Flow uses a high-risk connector",       PowerPlatformCategory, "Flow * (high-risk connector:*",          "high",   true),
+        ("Flow shared outside the organisation",  PowerPlatformCategory, "Flow shared (external:*",                "high",   true),
+        ("Flow co-owner added",                   PowerPlatformCategory, "Flow co-owner added*",                   "medium", true),
+        ("Flow deleted by an admin",              PowerPlatformCategory, "Flow deleted by admin*",                 "low",    false),
+        ("App consent bypass changed",            PowerPlatformCategory, "App consent bypass*",                    "high",   true),
+        ("Third-party apps allowed",              PowerPlatformCategory, "Third-party apps allowed*",              "high",   true),
+        ("App permissions changed",               PowerPlatformCategory, "App permissions changed*",               "medium", true),
+        ("App owner changed",                     PowerPlatformCategory, "App owner changed*",                     "medium", true),
+        ("App quarantine state changed",          PowerPlatformCategory, "App quarantine*",                        "medium", true),
+        ("App published",                         PowerPlatformCategory, "App published*",                         "low",    false),
+        ("Power Platform DLP policy changed",     PowerPlatformCategory, "Power Platform DLP policy changed*",     "high",   true),
+        ("Power Platform environment created",    PowerPlatformCategory, "Environment created*",                   "medium", true),
+        ("Power Platform environment deleted",    PowerPlatformCategory, "Environment deleted*",                   "medium", true),
+    ];
+
     public static void SeedDefaultPolicies(AppDbContext db)
     {
         var now = DateTimeOffset.UtcNow;
@@ -227,6 +259,30 @@ public static class AlertingSchema
                     Id = Guid.NewGuid(),
                     Name = a.Name,
                     Enabled = true,
+                    Kind = "activity",
+                    Category = a.Category,
+                    Metric = "",
+                    ActivityPattern = a.Pattern,
+                    WindowMinutes = 60,
+                    Threshold = 1,
+                    Severity = a.Severity,
+                    Condition = $"Activity \"{a.Pattern}\" ≥ 1 in 60m",
+                    SuppressionMinutes = 60,
+                    CreatedAt = now,
+                    TriggerCount = 0,
+                });
+            }
+        }
+
+        if (!db.AlertPolicies.Any(p => p.Category == CopilotCategory || p.Category == PowerPlatformCategory))
+        {
+            foreach (var a in CopilotPowerPlatformDefaults)
+            {
+                db.AlertPolicies.Add(new AlertPolicy
+                {
+                    Id = Guid.NewGuid(),
+                    Name = a.Name,
+                    Enabled = a.Enabled,
                     Kind = "activity",
                     Category = a.Category,
                     Metric = "",

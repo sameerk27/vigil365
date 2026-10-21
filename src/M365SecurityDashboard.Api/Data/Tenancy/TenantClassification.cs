@@ -23,6 +23,7 @@ public static class TenantClassification
         typeof(AlertNote),
         typeof(SuppressionRule),
         typeof(AuditEvent),
+        typeof(PurviewAuditState),
         typeof(TenantBaseline),
         typeof(TenantNotificationRouting),
         typeof(AlertPolicyTenantOverride),

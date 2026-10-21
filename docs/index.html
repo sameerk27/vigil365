@@ -32,7 +32,7 @@
       "@type": "SoftwareApplication",
       "@id": "https://vigil365.in/#software",
       "name": "Vigil365",
-      "description": "Free, open-source, self-hosted security dashboard for Microsoft 365. It collects alerts and posture data from Microsoft Defender, Microsoft Entra ID, Intune, Defender for Office 365, Microsoft Purview and Conditional Access on a schedule, and shows them in one console. It only sends read requests to Microsoft Graph.",
+      "description": "Free, open-source, self-hosted security dashboard for Microsoft 365. It collects alerts and posture data from Microsoft Defender, Microsoft Entra ID, Intune, Defender for Office 365, Microsoft Purview and Conditional Access on a schedule, and shows them in one console. It only reads from Microsoft Graph.",
       "applicationCategory": "SecurityApplication",
       "operatingSystem": "Windows 10, Windows 11, Windows Server 2019 or later",
       "softwareVersion": "1.1.0",
@@ -61,7 +61,7 @@
         {
           "@type": "Question",
           "name": "Does Vigil365 change anything in my Microsoft 365 tenant?",
-          "acceptedAnswer": { "@type": "Answer", "text": "No. After setup, its collector only sends read requests (GET) to Microsoft Graph. No code path changes a setting, disables a user or remediates an alert. Setup registers the app in your tenant once, when you sign in as an administrator. Every required permission is read-only. One optional permission, AttackSimulation.ReadWrite.All, is read-write only because Graph has no read-only option for attack simulation results. Vigil365 reads with it and works without it." }
+          "acceptedAnswer": { "@type": "Answer", "text": "No. After setup, Vigil365 only reads: from Microsoft Graph and, if you turn on the Power Platform inventory, the Power Platform API. No code path changes a setting, disables a user or remediates an alert. Setup registers the app in your tenant once, when you sign in as an administrator. Every required permission is read-only. One optional permission, AttackSimulation.ReadWrite.All, is read-write only because Graph has no read-only option for attack simulation results. Vigil365 reads with it and works without it." }
         },
         {
           "@type": "Question",
@@ -300,7 +300,7 @@
         </a>
       </div>
       <div class="trust">
-        <span>Read-only Graph calls</span>
+        <span>Read-only against your tenant</span>
         <span>Collects every 15 min</span>
         <span>One .exe, no dependencies</span>
       </div>
@@ -379,9 +379,9 @@
     <div>
       <span class="eyebrow">Safe by design</span>
       <h2 style="font-size:clamp(27px,3.6vw,38px);margin-top:14px">It watches. It never touches.</h2>
-      <p style="color:var(--muted);font-size:17px;margin:14px 0 0">Vigil365 authenticates to Microsoft Graph with <b style="color:var(--ink)">app-only permissions</b> and sends only read requests. No code path changes a setting, disables a user, or remediates an alert.</p>
+      <p style="color:var(--muted);font-size:17px;margin:14px 0 0">Vigil365 authenticates to Microsoft Graph with <b style="color:var(--ink)">app-only permissions</b> and only reads. No code path changes a setting, disables a user, or remediates an alert.</p>
       <ul>
-        <li><span class="chk">&#10003;</span><span><b>Read-only Graph calls</b> — every required permission is a read permission. One optional permission, for attack simulation results, is read-write only because Graph has no read-only option for it. Vigil365 reads with it and runs without it.</span></li>
+        <li><span class="chk">&#10003;</span><span><b>Read-only permissions</b> — every required permission is a read permission. One optional permission, for attack simulation results, is read-write only because Graph has no read-only option for it. Vigil365 reads with it and runs without it.</span></li>
         <li><span class="chk">&#10003;</span><span><b>Self-hosted</b> — runs on a Windows machine you control, with its database on a server you control. Vigil365 has no cloud service of its own.</span></li>
         <li><span class="chk">&#10003;</span><span><b>Tamper-evident audit trail</b> — every privileged action in-app is recorded in a SHA-256 hash-chained log.</span></li>
       </ul>
@@ -428,7 +428,7 @@
     </div>
     <div class="faq">
       <div class="qa"><h3>What is Vigil365?</h3><p>Vigil365 is a free, open-source security dashboard for Microsoft 365. It collects alerts and posture data from Microsoft Defender, Microsoft Entra ID, Intune, Defender for Office 365, Microsoft Purview and Conditional Access on a schedule, every 15 minutes by default, and shows them in one console on a Windows machine you control.</p></div>
-      <div class="qa"><h3>Does Vigil365 change anything in my Microsoft 365 tenant?</h3><p>No. After setup, its collector only sends read requests (GET) to Microsoft Graph. No code path changes a setting, disables a user or remediates an alert. Setup registers the app in your tenant once, when you sign in as an administrator. Every required permission is read-only. One optional permission, AttackSimulation.ReadWrite.All, is read-write only because Graph has no read-only option for attack simulation results. Vigil365 reads with it and works without it.</p></div>
+      <div class="qa"><h3>Does Vigil365 change anything in my Microsoft 365 tenant?</h3><p>No. After setup, Vigil365 only reads: from Microsoft Graph and, if you turn on the Power Platform inventory, the Power Platform API. No code path changes a setting, disables a user or remediates an alert. Setup registers the app in your tenant once, when you sign in as an administrator. Every required permission is read-only. One optional permission, AttackSimulation.ReadWrite.All, is read-write only because Graph has no read-only option for attack simulation results. Vigil365 reads with it and works without it.</p></div>
       <div class="qa"><h3>What permissions does Vigil365 request?</h3><p>15 required Microsoft Graph application permissions, granted once with admin consent, and 2 optional ones. Each permission and the feature it powers is listed in the <a href="https://github.com/sameerk27/vigil365/blob/master/docs/graph-permissions.md" style="color:var(--accent-ink)">Graph permission reference</a> on GitHub.</p></div>
       <div class="qa"><h3>Where is my data stored?</h3><p>Vigil365 has no cloud service of its own. Its database lives on a server you control, and alerts leave that server only through the Teams, email or webhook channels you configure.</p></div>
       <div class="qa"><h3>Is Vigil365 free?</h3><p>Yes. It is released under the MIT license, and the source code is on <a href="https://github.com/sameerk27/vigil365" style="color:var(--accent-ink)">GitHub</a>.</p></div>

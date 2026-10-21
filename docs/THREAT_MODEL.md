@@ -28,9 +28,17 @@ described in `SECURITY.md`.
    production. Untrusted input crosses here.
 2. **App ↔ Microsoft Graph** — outbound, app-only OAuth2; read-only scopes except
    `AttackSimulation.ReadWrite.All` (no read-only variant exists; the app only reads).
+   The only POST starts a Purview audit search (optional `AuditLogsQuery.Read.All`),
+   enforced by an allow-list in the Graph client and a test.
 3. **App ↔ Database** — trusted, same-network; transport-encrypted.
 4. **App ↔ SMTP/webhooks** — outbound notifications; secrets decrypted in memory
    only at send time.
+5. **App ↔ Power Platform API** (optional, per tenant) — outbound, app-only OAuth2 to
+   `api.powerplatform.com` with the same app credentials, only when the Power Platform
+   page is opened. Access comes from Microsoft's read-only "Power Platform reader" role,
+   which the tenant's Power Platform admin assigns with `grant-power-platform-reader.ps1`.
+   GET only, enforced by a test; next-page links to any other host are not followed, so
+   the bearer token stays on that host.
 
 ## Data flows
 
@@ -55,7 +63,8 @@ described in `SECURITY.md`.
 
 - The host OS, SQL Server, and network are administered and patched by the operator.
 - The Entra app registration is correctly configured with least-privilege
-  permissions (read-only except `AttackSimulation.ReadWrite.All`).
+  permissions (read-only except `AttackSimulation.ReadWrite.All`), and holds no
+  Power Platform role beyond "Power Platform reader".
 - Vigil365 is **not** a SIEM and does not ingest raw logs; visibility is bounded
   by what Microsoft Graph exposes.
 - Physical security and tenant-admin trust are assumed.

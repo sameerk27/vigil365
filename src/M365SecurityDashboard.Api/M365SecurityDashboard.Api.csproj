@@ -44,6 +44,9 @@
   <!-- One permission list for API, installer and register-app.ps1 (see the file's comment). -->
   <ItemGroup>
     <EmbeddedResource Include="..\..\graph-permissions.json" LogicalName="Vigil365.graph-permissions.json" />
+    <EmbeddedResource Include="Data\Posture\entitlements.json" LogicalName="Vigil365.posture.entitlements.json" />
+    <EmbeddedResource Include="Data\Posture\features.json" LogicalName="Vigil365.posture.features.json" />
+    <EmbeddedResource Include="Data\Posture\checks.json" LogicalName="Vigil365.posture.checks.json" />
   </ItemGroup>
 
   <!-- Transitive-dependency security overrides. These are pulled in by the

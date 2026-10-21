@@ -143,3 +143,27 @@ test('Trends with snapshots', async ({ page }) => {
   await expect(page.locator('.line-chart-svg').first()).toBeVisible();
   expect(await axeViolations(page, 'main')).toBe('');
 });
+
+test('Power Platform: the turn-on steps and the inventory', async ({ page }) => {
+  const setup = { tenantId: 't', appId: 'a', role: 'Power Platform reader', roleId: 'r', script: 'grant-power-platform-reader.ps1', command: '.\grant-power-platform-reader.ps1 -TenantId t -AppId a' };
+  let opted = false;
+  await signIn(page, single({
+    'GET /api/power-platform/inventory': () => opted
+      ? { configured: true, status: 'Partial', reason: null, readAt: '2026-10-21T09:00:00Z', setup,
+          summary: { environments: 2, environmentsRead: 1, environmentsSkipped: 0, apps: 1, flows: 1, consentBypassed: 1, highRiskConnector: 1, widelyShared: 0, customConnector: 0 },
+          environments: [
+            { id: 'e1', name: 'Contoso (default)', type: 'Default', state: 'Ready', region: 'europe', hasDataverse: true, created: null, apps: 1, flows: 1, problem: null },
+            { id: 'e2', name: 'Finance', type: 'Production', state: 'Ready', region: 'europe', hasDataverse: true, created: null, apps: 0, flows: 0, problem: "apps couldn't be read (access refused)" }],
+          apps: [{ id: 'a1', name: 'Expense approvals', environmentId: 'e1', environmentName: 'Contoso (default)', owner: 'Priya Shah', created: null, modified: null, sharedUsers: 4, sharedGroups: 0, bypassConsent: true, connectors: ['SharePoint'], flags: [{ label: 'Consent prompt bypassed', severity: 'high' }] }],
+          flows: [{ id: 'f1', name: 'Sync invoices', environmentId: 'e1', environmentName: 'Contoso (default)', state: 'On', created: null, modified: null, connectors: ['HTTP'], flags: [{ label: 'High-risk connector: HTTP', severity: 'high' }] }] }
+      : { configured: true, status: 'NotEnabled', reason: 'RoleMissing', setup },
+  }));
+  await page.goto('/#/powerplatform');
+  await expect(page.getByText('Power Platform inventory is off for this tenant')).toBeVisible();
+  expect(await axeViolations(page, 'main')).toBe('');
+
+  opted = true;
+  await page.getByRole('button', { name: 'Check again' }).click();
+  await expect(page.getByText('Expense approvals')).toBeVisible();
+  expect(await axeViolations(page, 'main')).toBe('');
+});
