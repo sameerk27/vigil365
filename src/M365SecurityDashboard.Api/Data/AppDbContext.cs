@@ -60,6 +60,7 @@ public class AppDbContext : DbContext
     public DbSet<AlertNote> AlertNotes => Set<AlertNote>();
     public DbSet<SuppressionRule> SuppressionRules => Set<SuppressionRule>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
+    public DbSet<PurviewAuditState> PurviewAuditStates => Set<PurviewAuditState>();
     public DbSet<ReportSchedule> ReportSchedules => Set<ReportSchedule>();
     public DbSet<ApiToken> ApiTokens => Set<ApiToken>();
     public DbSet<TenantBaseline> TenantBaselines => Set<TenantBaseline>();
@@ -214,6 +215,11 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<TenantNotificationRouting>(entity =>
         {
             entity.HasKey(r => r.TenantId); // one per tenant
+        });
+
+        modelBuilder.Entity<PurviewAuditState>(entity =>
+        {
+            entity.HasKey(s => new { s.TenantId, s.Feed }); // one per tenant and feed
         });
 
         modelBuilder.Entity<AlertPolicyTenantOverride>(entity =>

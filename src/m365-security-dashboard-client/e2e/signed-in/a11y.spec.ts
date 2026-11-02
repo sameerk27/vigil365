@@ -143,3 +143,12 @@ test('Trends with snapshots', async ({ page }) => {
   await expect(page.locator('.line-chart-svg').first()).toBeVisible();
   expect(await axeViolations(page, 'main')).toBe('');
 });
+
+test('Power Platform: reading with your own sign-in', async ({ page }) => {
+  await signIn(page, single({
+    'GET /api/power-platform/settings': { configured: true, tenantId: 't', powerPlatformApi: 'https://api.powerplatform.com', graphApi: 'https://graph.microsoft.com', maxEnvironments: 50 },
+  }));
+  await page.goto('/#/powerplatform');
+  await expect(page.getByRole('button', { name: 'Read with Microsoft sign-in' })).toBeVisible();
+  expect(await axeViolations(page, 'main')).toBe('');
+});

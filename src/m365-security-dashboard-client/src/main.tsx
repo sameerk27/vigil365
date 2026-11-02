@@ -5,7 +5,7 @@ import {
   Home, Users, Monitor, Mail, AlertTriangle, Bell, CheckSquare, Activity, Wifi,
   Package, ShieldCheck, BookOpen, MapPin, UserCheck, Settings, ChevronRight, ChevronLeft,
   Clock, RefreshCw, Rows2, Rows3, LogIn, LogOut, ShieldAlert, UserX, TrendingUp, Lightbulb, Lock,
-  Search as SearchIcon, Pause, Play, Globe, Building2
+  Search as SearchIcon, Pause, Play, Globe, Building2, Sparkles, Workflow
 } from "lucide-react";
 import "./styles.css";
 
@@ -50,6 +50,9 @@ import { ReportsPage } from "./pages/ReportsPage";
 import { EntityPage } from "./pages/EntityPage";
 import { ActivityFeedPage } from "./pages/ActivityFeedPage";
 import { ClientsPage } from "./pages/ClientsPage";
+import { CopilotPage } from "./pages/CopilotPage";
+import { PowerPlatformPage } from "./pages/PowerPlatformPage";
+import { isMsalPopupResponse, finishMsalPopup } from "./services/msalPopup";
 import { TenantSwitcher } from "./components/TenantSwitcher";
 import { ClientGate } from "./components/ClientGate";
 import { DbSizeBanner } from "./components/DbSizeBanner";
@@ -106,6 +109,8 @@ const SECTIONS: SectionDef[] = [
       { id:"incidents",    label:"Alert Queue" },
       { id:"alertcenter",  label:"Rules & Notifications" },
       { id:"activityfeed", label:"Tenant Activity" }] },
+  { id:"copilot",  label:"Copilot",        icon:<Sparkles size={17}/>,      pages:[{ id:"copilot", label:"Copilot usage" }] },
+  { id:"powerplatform", label:"Power Platform", icon:<Workflow size={17}/>, pages:[{ id:"powerplatform", label:"Power Platform" }] },
   { id:"identity", label:"Identity",       icon:<Users size={17}/>,         pages:[
       { id:"identity",          label:"Overview" },
       { id:"signinmap",         label:"Sign-in Locations" },
@@ -712,6 +717,8 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
             {page==="alertcenter"&&<AlertCenterPage policies={alertPolicies} triggeredAlerts={triggeredAlerts} onChanged={refreshAlertCenter}
               deepLinkAlertId={pendingTriggeredId} onDeepLinkConsumed={() => setPendingTriggeredId(null)}/>}
             {page==="activityfeed"&&<ActivityFeedPage/>}
+            {page==="copilot"&&<CopilotPage/>}
+            {page==="powerplatform"&&<PowerPlatformPage/>}
             {page==="compliance"&&<CompliancePage secureScore={secureScore} overview={overview} dlpAlerts={dlpAlerts} purview={purview} mcasAlerts={mcasAlerts} insiderRisk={insiderRisk} attackSimulation={attackSimulation} identity={identity} devices={devices} ca={conditionalAccess} securityIncidents={securityIncidents} privilegedRoles={privilegedRoles} emailProtection={emailProtection}/>}
             {page==="servicehealth"&&<ServiceHealthPage serviceHealth={serviceHealth}/>}
             {page==="network"&&<NetworkPage serviceHealth={serviceHealth} signInLocations={signInLocations}/>}
@@ -1010,5 +1017,12 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
   }
 }
 
-createRoot(document.getElementById("root")!).render(<ErrorBoundary><AuthGate /></ErrorBoundary>);
+if (isMsalPopupResponse()) {
+  // This window is a Microsoft sign-in popup (Power Platform "Turn on") coming back to
+  // Vigil365: hand the result to the page that opened it instead of starting the app.
+  document.getElementById("root")!.textContent = "Finishing Microsoft sign-in…";
+  finishMsalPopup().catch(() => { try { window.close(); } catch { /* not closable */ } });
+} else {
+  createRoot(document.getElementById("root")!).render(<ErrorBoundary><AuthGate /></ErrorBoundary>);
+}
 

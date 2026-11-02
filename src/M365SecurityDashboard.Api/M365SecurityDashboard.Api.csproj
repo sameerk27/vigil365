@@ -44,6 +44,9 @@
   <!-- One permission list for API, installer and register-app.ps1 (see the file's comment). -->
   <ItemGroup>
     <EmbeddedResource Include="..\..\graph-permissions.json" LogicalName="Vigil365.graph-permissions.json" />
+    <EmbeddedResource Include="Data\Posture\entitlements.json" LogicalName="Vigil365.posture.entitlements.json" />
+    <EmbeddedResource Include="Data\Posture\features.json" LogicalName="Vigil365.posture.features.json" />
+    <EmbeddedResource Include="Data\Posture\checks.json" LogicalName="Vigil365.posture.checks.json" />
   </ItemGroup>
 
   <!-- Transitive-dependency security overrides. These are pulled in by the
@@ -52,7 +55,9 @@
        the CI vulnerability audit green. Revisit when the parent packages are
        upgraded — they may then satisfy these directly. -->
   <ItemGroup>
-    <!-- GHSA-g8r8-53c2-pm3f (via Microsoft.Identity.Web) -->
-    <PackageReference Include="System.Security.Cryptography.Xml" Version="8.0.4" />
+    <!-- GHSA-r955-8q5j-3h83 and others (via Microsoft.Identity.Web) -->
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="8.0.5" />
+    <!-- GHSA-846f-f764-76mx (transitive) -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="8.0.2" />
   </ItemGroup>
 </Project>

@@ -79,6 +79,7 @@ public sealed class TenantIsolationTests(RelationalEngines engines)
         db.TrendSnapshots.Add(new TrendSnapshot { CapturedAt = DateTimeOffset.UtcNow });
         db.SuppressionRules.Add(new SuppressionRule { Reason = "s-" + tag, CreatedBy = "t" });
         db.AuditEvents.Add(new AuditEvent { ExternalId = "ev-" + tag, Activity = "a", OccurredAt = DateTimeOffset.UtcNow });
+        db.PurviewAuditStates.Add(new PurviewAuditState { Feed = "feed-" + tag });
         // One-per-tenant rows (keyed by tenant), so only the first seed adds them.
         if (!db.TenantBaselines.Local.Any() && !await db.TenantBaselines.AnyAsync())
             db.TenantBaselines.Add(new TenantBaseline());

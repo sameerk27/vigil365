@@ -1,4 +1,4 @@
-export type NavPage = "overview" | "recommendations" | "trends" | "reports" | "identity" | "devices" | "email" | "incidents" | "alertcenter" | "activityfeed" | "compliance" | "servicehealth" | "network" | "licenses" | "conditionalaccess" | "signinmap" | "users" | "setup" | "clients";
+export type NavPage = "overview" | "recommendations" | "trends" | "reports" | "identity" | "devices" | "email" | "incidents" | "alertcenter" | "activityfeed" | "compliance" | "servicehealth" | "network" | "licenses" | "conditionalaccess" | "signinmap" | "users" | "setup" | "clients" | "copilot" | "powerplatform";
 export type AlertSeverity = "Informational" | "Low" | "Medium" | "High" | "Critical";
 export type ServiceArea = "EntraId" | "Intune" | "DefenderXdr" | "ExchangeOnline" | "ServiceHealth";
 export type Tone = "good" | "warning" | "error" | "neutral" | "info";
@@ -159,7 +159,7 @@ export interface AlertPolicy {
   enabled: boolean;
   /** MSP: null = install-wide default every client inherits; a tenant id = that client only. */
   tenantId?: string | null;
-  category: "identity" | "devices" | "email" | "compliance" | "licenses";
+  category: "identity" | "devices" | "email" | "compliance" | "licenses" | "copilot" | "powerplatform";
   condition: string;
   /** "metric" = threshold count · "activity" = audit event match · "anomaly" = latest trend spike vs baseline */
   kind?: "metric" | "activity" | "anomaly";
