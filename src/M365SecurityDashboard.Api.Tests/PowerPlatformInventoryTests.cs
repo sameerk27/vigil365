@@ -2,339 +2,296 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using Azure.Core;
-using Azure.Identity;
-using M365SecurityDashboard.Api.Data.Tenancy;
 using M365SecurityDashboard.Api.Models;
+using M365SecurityDashboard.Api.Services;
 using M365SecurityDashboard.Api.Services.PowerPlatform;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace M365SecurityDashboard.Api.Tests;
 
 /// <summary>
-/// The optional Power Platform inventory (plan phase D): a tenant that hasn't given the
-/// app the Power Platform reader role sees how to turn it on, not an error; a tenant
-/// that has gets its environments, apps and flows with the risky ones flagged; one
-/// environment failing never hides the rest; and the client only ever sends GET.
-/// Response shapes follow Microsoft's REST reference for environments and apps. The
-/// cloud-flow shape isn't documented there, so these samples follow the .NET SDK model.
+/// The Power Platform inventory (plan phase D). The browser reads Microsoft's inventory
+/// with the signed-in person's own access; the server turns it into environments, apps,
+/// flows and agents, flags the ones that need a look, and names owners through Graph.
+/// Row shapes follow Microsoft's inventory schema, the Copilot Studio agent inventory
+/// schema and the "Get AdminApps" response.
 /// </summary>
 public sealed class PowerPlatformInventoryTests
 {
-    private const string Base = "https://pp.test";
-
-    private static GraphOptions Options(int maxEnvironments = 50) => new()
+    private static GraphOptions Options() => new()
     {
-        TenantId = "11111111-1111-1111-1111-111111111111", ClientId = "c", ClientSecret = "s",
-        PowerPlatformApiBaseUrl = Base, PowerPlatformMaxEnvironments = maxEnvironments,
+        TenantId = "11111111-1111-1111-1111-111111111111", ClientId = "c", ClientSecret = "s", BaseUrl = "https://graph.test",
     };
+
+    private static readonly DateTimeOffset Now = new(2026, 10, 23, 9, 0, 0, TimeSpan.Zero);
+
+    private const string Priya = "aaaaaaaa-0000-0000-0000-000000000001";
+    private const string Lena = "aaaaaaaa-0000-0000-0000-000000000002";
+    private const string Gone = "aaaaaaaa-0000-0000-0000-000000000003";
+
+    private static JsonElement J(string json) => JsonDocument.Parse(json).RootElement.Clone();
+
+    private static List<JsonElement> Resources() =>
+    [
+        J("""{"name":"env-prod","type":"microsoft.powerplatform/environments","location":"europe","properties":{"displayName":"Contoso (default)","environmentType":"Default","isManaged":false}}"""),
+        J("""{"name":"env-fin","type":"microsoft.powerplatform/environments","location":"europe","properties":{"displayName":"Finance","environmentType":"Production","isManaged":true}}"""),
+        J($$$"""{"name":"app-1","type":"microsoft.powerapps/canvasapps","properties":{"displayName":"Expense approvals","environmentId":"env-prod","ownerId":"{{{Priya}}}","createdAt":"2025-01-10T09:00:00Z","lastModifiedAt":"2026-10-01T09:00:00Z","isQuarantined":false,"powerPlatformConnectors":[{"connectorId":"shared_sharepointonline","operations":[]}]}}"""),
+        J($$$"""{"name":"app-2","type":"microsoft.powerapps/canvasapps","properties":{"displayName":"Dropbox uploader","environmentId":"env-fin","ownerId":"{{{Gone}}}","powerPlatformConnectors":[{"connectorId":"shared_dropbox","operations":[]}]}}"""),
+        J($$$"""{"name":"flow-1","type":"microsoft.powerautomate/cloudflows","properties":{"displayName":"Send files to partner","environmentId":"env-prod","ownerId":"{{{Lena}}}","trigger":"sharepointonline","powerPlatformConnectors":[{"connectorId":"shared_sftpwithssh","operations":[{"operationId":"CreateFile"}]}]}}"""),
+        J($$$"""{"name":"flow-2","type":"microsoft.powerautomate/cloudflows","properties":{"displayName":"Weekly digest","environmentId":"env-prod","ownerId":"{{{Priya}}}","powerPlatformConnectors":[{"connectorId":"shared_office365","operations":[]}]}}"""),
+        J($$$"""{"name":"agent-1","type":"microsoft.copilotstudio/agents","properties":{"displayName":"HR helper","environmentId":"env-prod","ownerId":"{{{Priya}}}","createdAt":"2026-09-01T08:00:00Z","lastPublishedAt":"2026-10-20T08:00:00Z","createdIn":"Copilot Studio","authentication":"None","channels":["Teams","Website"],"sharedWithViewers":{"userCount":0,"groupCount":0,"entireTenant":true},"powerPlatformConnectors":[{"connectorId":"shared_excelonlinebusiness","operations":[{"operationId":"RunScriptProd","usedAs":"Tool","isEnabled":true,"connectionProvider":"Maker"}]}]}}"""),
+        J($$$$"""{"name":"agent-2","type":"microsoft.copilotstudio/agents","properties":{"displayName":"Draft bot","environmentId":"env-fin","ownerId":"{{{{Lena}}}}","authentication":"None","sharedWithViewers":{"userCount":3,"groupCount":1,"entireTenant":false}}}"""),
+        J("""{"name":"conn-1","type":"microsoft.powerplatformconnector/connectors","properties":{"displayName":"SharePoint"}}"""),
+    ];
+
+    private static PowerPlatformAppDetails ProdDetails() => new()
+    {
+        EnvironmentId = "env-prod",
+        Items =
+        [
+            J("""{"name":"app-1","properties":{"displayName":"Expense approvals","owner":{"displayName":"Priya Shah"},"bypassConsent":true,"sharedUsersCount":120,"sharedGroupsCount":1,"connectionReferences":[{"displayName":"Contoso ERP","isCustomApiConnection":true,"isOnPremiseConnection":true}]}}"""),
+        ],
+    };
+
+    private static Dictionary<string, PowerPlatformOwner> Owners() => new()
+    {
+        [Priya] = new(Priya, "Priya Shah", "priya@contoso.com", true, true),
+        [Lena] = new(Lena, "Lena Novak", "lena@contoso.com", false, true),
+        [Gone] = new(Gone, null, null, null, false),
+    };
+
+    private static PowerPlatformInventoryResult Evaluate(PowerPlatformEvaluateRequest? request = null, IReadOnlyDictionary<string, PowerPlatformOwner>? owners = null) =>
+        PowerPlatformEvaluator.Evaluate(request ?? new PowerPlatformEvaluateRequest { Resources = Resources(), AppDetails = [ProdDetails()] },
+            Options(), owners ?? Owners(), Now);
+
+    [Fact]
+    public void Environments_are_counted_with_what_they_hold_and_connectors_rows_are_ignored()
+    {
+        var r = Evaluate();
+
+        Assert.Equal(["Contoso (default)", "Finance"], r.Environments.Select(e => e.Name));
+        var prod = r.Environments[0];
+        Assert.Equal(("Default", "europe", false), (prod.Type, prod.Region, prod.IsManaged));
+        Assert.Equal((1, 2, 1), (prod.Apps, prod.Flows, prod.Agents));
+        Assert.Equal(2, r.Apps.Count);
+    }
+
+    [Fact]
+    public void Apps_take_sharing_and_consent_from_the_admin_detail_and_connectors_from_both()
+    {
+        var expense = Assert.Single(Evaluate().Apps, a => a.Id == "app-1");
+
+        Assert.Equal("Contoso (default)", expense.EnvironmentName);
+        Assert.Equal("Priya Shah", expense.Owner);
+        Assert.Equal((120, 1, true), (expense.SharedUsers, expense.SharedGroups, expense.BypassConsent));
+        Assert.Equal(["shared_sharepointonline", "Contoso ERP"], expense.Connectors);
+        Assert.Equal(
+            [PowerPlatformEvaluator.ConsentBypassedFlag, PowerPlatformEvaluator.CustomConnectorFlag, PowerPlatformEvaluator.GatewayFlag,
+             "Shared with 120 people", PowerPlatformEvaluator.SharedWithGroupFlag],
+            expense.Flags.Select(f => f.Label));
+    }
+
+    [Fact]
+    public void An_app_without_admin_detail_still_gets_connector_and_owner_flags()
+    {
+        var uploader = Assert.Single(Evaluate().Apps, a => a.Id == "app-2");
+
+        Assert.Null(uploader.SharedUsers);
+        Assert.Null(uploader.BypassConsent);
+        Assert.Equal(["High-risk connector: shared_dropbox", PowerPlatformEvaluator.OwnerGoneFlag], uploader.Flags.Select(f => f.Label));
+    }
+
+    [Fact]
+    public void Sharing_counts_the_admin_detail_leaves_out_stay_unknown_rather_than_zero()
+    {
+        var details = new PowerPlatformAppDetails
+        {
+            EnvironmentId = "env-prod",
+            Items = [J("""{"name":"app-1","properties":{"displayName":"Expense approvals","bypassConsent":false}}""")],
+        };
+        var expense = Assert.Single(Evaluate(new PowerPlatformEvaluateRequest { Resources = Resources(), AppDetails = [details] }).Apps, a => a.Id == "app-1");
+
+        Assert.Equal(((int?)null, (int?)null, (bool?)false), (expense.SharedUsers, expense.SharedGroups, expense.BypassConsent));
+    }
+
+    [Fact]
+    public void Flows_flag_high_risk_connectors_and_a_disabled_creator()
+    {
+        var r = Evaluate();
+
+        var send = Assert.Single(r.Flows, f => f.Id == "flow-1");
+        Assert.Equal("sharepointonline", send.Trigger);
+        Assert.Equal("Lena Novak", send.Owner);
+        Assert.Equal(["High-risk connector: shared_sftpwithssh", PowerPlatformEvaluator.CreatorDisabledFlag], send.Flags.Select(f => f.Label));
+        Assert.Empty(Assert.Single(r.Flows, f => f.Id == "flow-2").Flags);
+    }
+
+    [Fact]
+    public void Agents_flag_no_sign_in_whole_organisation_sharing_and_tools_on_the_makers_connection()
+    {
+        var r = Evaluate();
+
+        var hr = Assert.Single(r.Agents, a => a.Id == "agent-1");
+        Assert.Equal(("None", true, "Copilot Studio"), (hr.Authentication, hr.SharedWithTenant, hr.CreatedIn));
+        Assert.Equal(["Teams", "Website"], hr.Channels);
+        Assert.NotNull(hr.Published);
+        Assert.Equal(
+            [PowerPlatformEvaluator.NoSignInFlag, PowerPlatformEvaluator.WholeOrganisationFlag, PowerPlatformEvaluator.MakerConnectionFlag],
+            hr.Flags.Select(f => f.Label));
+        Assert.Equal("high", hr.Flags[0].Severity);
+
+        // Unpublished: no sign-in is noted, not raised; its owner is disabled.
+        var draft = Assert.Single(r.Agents, a => a.Id == "agent-2");
+        Assert.Null(draft.Published);
+        Assert.Equal((3, 1), (draft.SharedUsers, draft.SharedGroups));
+        Assert.Equal([PowerPlatformEvaluator.NoSignInDraftFlag, PowerPlatformEvaluator.OwnerDisabledFlag], draft.Flags.Select(f => f.Label));
+    }
+
+    [Fact]
+    public void The_summary_counts_what_needs_a_look()
+    {
+        Assert.Equal(new PowerPlatformSummary(Environments: 2, Apps: 2, Flows: 2, Agents: 2, NeedALook: 5, ConsentBypassed: 1,
+            HighRiskConnector: 2, AgentsWithoutSignIn: 1, SharedWithEveryone: 1, OwnerGone: 3), Evaluate().Summary);
+    }
+
+    [Fact]
+    public void Without_owner_names_nothing_is_flagged_as_gone_and_ids_stay()
+    {
+        var r = PowerPlatformEvaluator.Evaluate(new PowerPlatformEvaluateRequest { Resources = Resources() }, Options(), owners: null, Now);
+
+        Assert.False(r.OwnersResolved);
+        string[] ownerFlags = [PowerPlatformEvaluator.OwnerGoneFlag, PowerPlatformEvaluator.OwnerDisabledFlag,
+                               PowerPlatformEvaluator.CreatorGoneFlag, PowerPlatformEvaluator.CreatorDisabledFlag];
+        var all = r.Apps.SelectMany(a => a.Flags).Concat(r.Flows.SelectMany(f => f.Flags)).Concat(r.Agents.SelectMany(a => a.Flags));
+        Assert.DoesNotContain(all, f => ownerFlags.Contains(f.Label));
+        Assert.Equal(0, r.Summary.OwnerGone);
+        Assert.Equal(Gone, Assert.Single(r.Apps, a => a.Id == "app-2").OwnerId);
+    }
+
+    [Fact]
+    public void Partial_reads_are_explained()
+    {
+        var details = ProdDetails();
+        details.Complete = false;
+        var r = Evaluate(new PowerPlatformEvaluateRequest
+        {
+            Resources = Resources(), ResourcesComplete = false,
+            AppDetails = [details, new PowerPlatformAppDetails { EnvironmentId = "env-fin", Error = "access refused" }],
+            AppDetailsSkipped = 4,
+        });
+
+        Assert.Contains(r.Notes, n => n.Contains("stopped before its last page"));
+        Assert.Contains("Contoso (default): only part of the app detail could be read.", r.Notes);
+        Assert.Contains("Finance: app sharing and consent detail couldn't be read (access refused).", r.Notes);
+        Assert.Contains(r.Notes, n => n.Contains("4 more weren't"));
+    }
+
+    [Fact]
+    public void Owner_ids_to_resolve_are_distinct_guids_only()
+    {
+        var ids = PowerPlatformEvaluator.OwnerIds(new PowerPlatformEvaluateRequest
+        {
+            Resources = [.. Resources(), J("""{"name":"x","type":"microsoft.powerapps/canvasapps","properties":{"ownerId":"not-a-guid"}}""")],
+        });
+        Assert.Equal([Priya, Gone, Lena], ids);
+    }
+
+    [Theory]
+    [InlineData("HTTP with Microsoft Entra ID", true)]
+    [InlineData("shared_ftp", true)]
+    [InlineData("shared_sftpwithssh", true)]
+    [InlineData("shared_gmail", true)]
+    [InlineData("shared_sharepointonline", false)]
+    [InlineData("Dropbox Business", false)] // no trailing * on Dropbox: exact match only
+    public void High_risk_matching_uses_the_configured_list_on_names_and_ids(string connector, bool risky) =>
+        Assert.Equal(risky, PowerPlatformEvaluator.HighRiskFlags([connector], Options()).Any());
+
+    // ── Owner names through Graph ──────────────────────────────────────────────
 
     private sealed class FixedToken : TokenCredential
     {
-        public readonly List<string> Scopes = [];
-        public override AccessToken GetToken(TokenRequestContext c, CancellationToken ct) { Scopes.AddRange(c.Scopes); return new("token", DateTimeOffset.MaxValue); }
+        public override AccessToken GetToken(TokenRequestContext c, CancellationToken ct) => new("token", DateTimeOffset.MaxValue);
         public override ValueTask<AccessToken> GetTokenAsync(TokenRequestContext c, CancellationToken ct) => new(GetToken(c, ct));
     }
 
-    private sealed class FailingToken(string message) : TokenCredential
+    private sealed class FakeGraph(Func<string, HttpResponseMessage> respond) : HttpMessageHandler
     {
-        public override AccessToken GetToken(TokenRequestContext c, CancellationToken ct) => throw new AuthenticationFailedException(message);
-        public override ValueTask<AccessToken> GetTokenAsync(TokenRequestContext c, CancellationToken ct) => throw new AuthenticationFailedException(message);
-    }
-
-    /// <summary>A scripted Power Platform API that records every request. Unscripted URLs answer an empty list.</summary>
-    private sealed class FakeApi : HttpMessageHandler
-    {
-        public readonly List<(HttpMethod Method, string Url, bool HasToken)> Requests = [];
-        public Func<string, HttpResponseMessage?> Respond { get; set; } = _ => null;
-
+        public readonly List<(HttpMethod Method, string Url)> Requests = [];
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             var url = Uri.UnescapeDataString(request.RequestUri!.ToString());
-            Requests.Add((request.Method, url, request.Headers.Authorization is not null));
-            return Task.FromResult(Respond(url) ?? Json("""{"value":[]}"""));
+            lock (Requests) Requests.Add((request.Method, url));
+            return Task.FromResult(respond(url));
         }
     }
 
     private static HttpResponseMessage Json(string body) => new(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
-    private static HttpResponseMessage Status(HttpStatusCode code, string body = "") => new(code) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
 
-    private static PowerPlatformInventoryService Service(FakeApi api, GraphOptions? options = null, TokenCredential? token = null, IMemoryCache? cache = null)
+    private static PowerPlatformOwners Lookup(FakeGraph graph) =>
+        new(new GraphApiClient(new HttpClient(graph), Options(), new FixedToken(), new GraphMetrics()), NullLogger<PowerPlatformOwners>.Instance);
+
+    [Fact]
+    public async Task Owners_are_read_15_at_a_time_and_an_id_Graph_doesnt_return_is_gone()
     {
-        var o = options ?? Options();
-        var client = new PowerPlatformApiClient(new HttpClient(api), o, token ?? new FixedToken());
-        return new PowerPlatformInventoryService(client, new TenantContext(Guid.Parse("22222222-2222-2222-2222-222222222222")),
-            cache ?? new MemoryCache(new MemoryCacheOptions()), Microsoft.Extensions.Options.Options.Create(o),
-            NullLogger<PowerPlatformInventoryService>.Instance);
-    }
+        var ids = Enumerable.Range(1, 20).Select(i => $"bbbbbbbb-0000-0000-0000-{i:D12}").ToList();
+        var graph = new FakeGraph(url => url.Contains(ids[0])
+            ? Json($$"""{"value":[{"id":"{{ids[0]}}","displayName":"Priya Shah","userPrincipalName":"priya@contoso.com","accountEnabled":true}]}""")
+            : Json("""{"value":[]}"""));
 
-    private const string Environments = """
-        {"value":[
-          {"id":"env-prod","displayName":"Contoso (default)","type":"Default","state":"Ready","azureRegion":"europe","dataverseId":"org-1","createdDateTime":"2024-02-01T10:00:00Z"},
-          {"id":"env-trial","displayName":"Sam's trial","type":"Trial","state":"Ready","geo":"unitedstates"}
-        ]}
-        """;
+        var owners = await Lookup(graph).ResolveAsync(ids, CancellationToken.None);
 
-    private const string ProdApps = """
-        {"value":[
-          {"id":"/providers/Microsoft.PowerApps/apps/app-1","name":"app-1","type":"Microsoft.PowerApps/apps","properties":{
-            "displayName":"Expense approvals","createdTime":"2025-01-10T09:00:00Z","lastModifiedTime":"2026-10-01T09:00:00Z",
-            "owner":{"displayName":"Priya Shah","userPrincipalName":"priya@contoso.com"},
-            "sharedUsersCount":120,"sharedGroupsCount":1,"bypassConsent":true,
-            "connectionReferences":[
-              {"id":"/providers/microsoft.powerapps/apis/shared_sharepointonline","displayName":"SharePoint"},
-              {"id":"/providers/microsoft.powerapps/apis/shared_custom-erp","displayName":"Contoso ERP","isCustomApiConnection":true,"isOnPremiseConnection":true}
-            ]}},
-          {"id":"/providers/Microsoft.PowerApps/apps/app-2","name":"app-2","properties":{"displayName":"Room booking","sharedUsersCount":3,"sharedGroupsCount":0,"connectionReferences":[]}}
-        ]}
-        """;
-
-    private const string TrialApps = """
-        {"value":[{"name":"app-3","properties":{"displayName":"Dropbox uploader","connectionReferences":{"x":{"id":"/providers/microsoft.powerapps/apis/shared_dropbox","displayName":"Dropbox"}}}}]}
-        """;
-
-    // definition = the workflow's client data, a JSON string.
-    private static readonly string ProdFlows = $$"""
-        {"value":[
-          {"workflowId":"f-1","name":"Sync invoices to partner API","stateCode":1,"createdOn":"2026-09-01T08:00:00Z","modifiedOn":"2026-10-18T08:00:00Z",
-           "definition":{{JsonSerializer.Serialize("""{"properties":{"connectionReferences":{"shared_webcontents":{"api":{"name":"shared_webcontents","displayName":"HTTP with Microsoft Entra ID"}},"shared_office365":{"api":{"name":"shared_office365","displayName":"Office 365 Outlook"}}}}}""")}}},
-          {"workflowId":"f-2","name":"Old reminder","stateCode":2,"definition":"not json"}
-        ]}
-        """;
-
-    private static Func<string, HttpResponseMessage?> Tenant(string? prodApps = ProdApps, string? trialApps = TrialApps, string? prodFlows = null) => url =>
-    {
-        if (url.Contains("/environmentmanagement/environments")) return Json(Environments);
-        if (url.Contains("/powerapps/environments/env-prod/apps")) return prodApps is null ? Status(HttpStatusCode.InternalServerError, """{"error":{"code":"x","message":"boom"}}""") : Json(prodApps);
-        if (url.Contains("/powerapps/environments/env-trial/apps")) return trialApps is null ? Status(HttpStatusCode.Forbidden) : Json(trialApps);
-        if (url.Contains("/powerautomate/environments/env-prod/cloudFlows")) return Json(prodFlows ?? ProdFlows);
-        return null;
-    };
-
-    // ── Not turned on ──────────────────────────────────────────────────────────
-
-    [Theory]
-    [InlineData(HttpStatusCode.Forbidden)]
-    [InlineData(HttpStatusCode.Unauthorized)]
-    public async Task Without_the_reader_role_the_inventory_says_NotEnabled_not_error(HttpStatusCode code)
-    {
-        var api = new FakeApi { Respond = _ => Status(code, """{"error":{"code":"Forbidden","message":"The caller has no role assignment."}}""") };
-
-        var r = await Service(api).ReadAsync(CancellationToken.None);
-
-        Assert.Equal(PowerPlatformInventoryResult.NotEnabled, r.Status);
-        Assert.Equal("RoleMissing", r.Reason);
-        Assert.Single(api.Requests); // stops at the environment list
+        Assert.NotNull(owners);
+        Assert.Equal(2, graph.Requests.Count(r => r.Url.Contains("/v1.0/users?")));
+        Assert.All(graph.Requests, r => Assert.Equal(HttpMethod.Get, r.Method));
+        Assert.Contains("/v1.0/users?$filter=id in (", graph.Requests[0].Url);
+        Assert.Equal(("Priya Shah", true, true), (owners![ids[0]].Name, owners[ids[0]].Enabled, owners[ids[0]].Found));
+        Assert.False(owners[ids[19]].Found);
     }
 
     [Fact]
-    public async Task A_tenant_without_the_Power_Platform_API_registered_says_NotEnabled_and_sends_nothing()
+    public async Task A_Graph_failure_means_no_owner_names_rather_than_everyone_gone()
     {
-        var api = new FakeApi();
-        var token = new FailingToken("AADSTS500011: The resource principal named https://api.powerplatform.com was not found in the tenant.");
-
-        var r = await Service(api, token: token).ReadAsync(CancellationToken.None);
-
-        Assert.Equal(PowerPlatformInventoryResult.NotEnabled, r.Status);
-        Assert.Equal("ApiNotInTenant", r.Reason);
-        Assert.Empty(api.Requests);
+        var graph = new FakeGraph(_ => new HttpResponseMessage(HttpStatusCode.Forbidden) { Content = new StringContent("{}") });
+        Assert.Null(await Lookup(graph).ResolveAsync([Priya], CancellationToken.None));
     }
 
     [Fact]
-    public async Task Another_environment_list_failure_is_an_error_with_Microsofts_message()
+    public async Task A_creator_that_is_a_service_principal_is_named_not_gone()
     {
-        var api = new FakeApi { Respond = _ => Status(HttpStatusCode.BadRequest, """{"error":{"code":"BadRequest","message":"api-version is not supported"}}""") };
+        var graph = new FakeGraph(url => url.Contains("/v1.0/servicePrincipals?")
+            ? Json($$"""{"value":[{"id":"{{Lena}}","displayName":"Flow automation","accountEnabled":true}]}""")
+            : Json("""{"value":[]}"""));
 
-        var r = await Service(api).ReadAsync(CancellationToken.None);
+        var owners = await Lookup(graph).ResolveAsync([Lena, Gone], CancellationToken.None);
 
-        Assert.Equal(PowerPlatformInventoryResult.Error, r.Status);
-        Assert.Contains("api-version is not supported", r.Reason);
-    }
-
-    // ── Turned on ──────────────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task Reads_environments_apps_and_flows_and_flags_the_risky_ones()
-    {
-        var api = new FakeApi { Respond = Tenant() };
-        var token = new FixedToken();
-
-        var r = await Service(api, token: token).ReadAsync(CancellationToken.None);
-
-        Assert.Equal(PowerPlatformInventoryResult.Ready, r.Status);
-        Assert.All(token.Scopes, s => Assert.Equal("https://pp.test/.default", s));
-
-        var prod = Assert.Single(r.Environments, e => e.Id == "env-prod");
-        Assert.True(prod.HasDataverse);
-        Assert.Equal((2, 2), (prod.Apps, prod.Flows));
-        var trial = Assert.Single(r.Environments, e => e.Id == "env-trial");
-        Assert.False(trial.HasDataverse);
-        Assert.Equal("unitedstates", trial.Region);
-        // Flows are only asked for where Dataverse exists (elsewhere Microsoft answers 404).
-        Assert.DoesNotContain(api.Requests, q => q.Url.Contains("env-trial/cloudFlows"));
-
-        var expense = Assert.Single(r.Apps, a => a.Name == "Expense approvals");
-        Assert.Equal("Priya Shah", expense.Owner);
-        Assert.Equal("Contoso (default)", expense.EnvironmentName);
-        Assert.Equal(["SharePoint", "Contoso ERP"], expense.Connectors);
-        Assert.Equal(
-            [PowerPlatformInventoryService.ConsentBypassedFlag, PowerPlatformInventoryService.CustomConnectorFlag,
-             PowerPlatformInventoryService.GatewayFlag, "Shared with 120 people", PowerPlatformInventoryService.SharedWithGroupFlag],
-            expense.Flags.Select(f => f.Label));
-        Assert.Empty(Assert.Single(r.Apps, a => a.Name == "Room booking").Flags);
-        // Connection references as an object keyed by id are read too.
-        Assert.Contains(Assert.Single(r.Apps, a => a.Name == "Dropbox uploader").Flags, f => f.Label == "High-risk connector: Dropbox");
-
-        var sync = Assert.Single(r.Flows, f => f.Id == "f-1");
-        Assert.Equal("On", sync.State);
-        Assert.Equal(["HTTP with Microsoft Entra ID", "Office 365 Outlook"], sync.Connectors);
-        Assert.Equal("High-risk connector: HTTP with Microsoft Entra ID", Assert.Single(sync.Flags).Label);
-        var old = Assert.Single(r.Flows, f => f.Id == "f-2");
-        Assert.Equal("Suspended", old.State);
-        Assert.Empty(old.Connectors); // an unreadable definition costs the connectors, not the flow
-
-        Assert.Equal(new PowerPlatformSummary(Environments: 2, EnvironmentsRead: 2, EnvironmentsSkipped: 0, Apps: 3, Flows: 2,
-            ConsentBypassed: 1, HighRiskConnector: 2, WidelyShared: 1, CustomConnector: 1), r.Summary);
+        Assert.Equal(("Flow automation", true), (owners![Lena].Name, owners[Lena].Found));
+        Assert.False(owners[Gone].Found);
+        // Only the ids users didn't return are asked of service principals.
+        Assert.Contains(graph.Requests, r => r.Url.Contains("/v1.0/servicePrincipals?") && r.Url.Contains(Gone));
     }
 
     [Fact]
-    public async Task One_environment_failing_marks_it_and_keeps_the_rest()
+    public async Task A_Graph_timeout_means_no_owner_names_rather_than_a_failed_evaluation()
     {
-        var api = new FakeApi { Respond = Tenant(prodApps: null, trialApps: null) };
-
-        var r = await Service(api).ReadAsync(CancellationToken.None);
-
-        Assert.Equal(PowerPlatformInventoryResult.Partial, r.Status);
-        Assert.Contains("apps couldn't be read (error 500)", Assert.Single(r.Environments, e => e.Id == "env-prod").Problem);
-        Assert.Contains("access refused", Assert.Single(r.Environments, e => e.Id == "env-trial").Problem);
-        Assert.Equal(2, r.Flows.Count); // the prod flows still came back
-        Assert.Equal(0, r.Summary.EnvironmentsRead);
+        var graph = new FakeGraph(_ => throw new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout"));
+        Assert.Null(await Lookup(graph).ResolveAsync([Priya], CancellationToken.None));
     }
 
     [Fact]
-    public async Task No_flows_is_204_or_404_and_neither_is_a_problem()
+    public async Task Cancelling_the_request_still_cancels()
     {
-        foreach (var code in new[] { HttpStatusCode.NoContent, HttpStatusCode.NotFound })
-        {
-            var api = new FakeApi
-            {
-                Respond = url => url.Contains("/cloudFlows") ? Status(code) : Tenant()(url),
-            };
-
-            var r = await Service(api).ReadAsync(CancellationToken.None);
-
-            Assert.Equal(PowerPlatformInventoryResult.Ready, r.Status);
-            Assert.Empty(r.Flows);
-        }
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var graph = new FakeGraph(_ => Json("""{"value":[]}"""));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Lookup(graph).ResolveAsync([Priya], cts.Token));
     }
 
     [Fact]
-    public async Task Environments_past_the_cap_are_counted_as_skipped()
+    public async Task Ids_that_arent_guids_never_reach_the_filter()
     {
-        var api = new FakeApi { Respond = Tenant() };
-
-        var r = await Service(api, Options(maxEnvironments: 1)).ReadAsync(CancellationToken.None);
-
-        Assert.Equal(PowerPlatformInventoryResult.Partial, r.Status);
-        Assert.Equal((2, 1), (r.Summary.Environments, r.Summary.EnvironmentsSkipped));
-        Assert.Single(r.Environments);
-        Assert.DoesNotContain(api.Requests, q => q.Url.Contains("env-trial"));
-    }
-
-    // ── Paging, caching, read-only ─────────────────────────────────────────────
-
-    [Fact]
-    public async Task Next_links_are_followed_on_the_Power_Platform_host_only()
-    {
-        var api = new FakeApi
-        {
-            Respond = url =>
-            {
-                if (url.Contains("/environmentmanagement/environments")) return Json("""{"value":[{"id":"env-a","displayName":"A"}]}""");
-                if (url.Contains("$skiptoken=page2")) return Json("""{"value":[{"name":"app-2","properties":{"displayName":"Two"}}],"nextLink":"https://evil.test/steal?$skiptoken=page3"}""");
-                if (url.Contains("/powerapps/environments/env-a/apps")) return Json("""{"value":[{"name":"app-1","properties":{"displayName":"One"}}],"nextLink":"https://pp.test/powerapps/environments/env-a/apps?api-version=2024-10-01&$skiptoken=page2"}""");
-                return null;
-            },
-        };
-
-        var r = await Service(api).ReadAsync(CancellationToken.None);
-
-        Assert.Equal(["One", "Two"], r.Apps.Select(a => a.Name));
-        Assert.All(api.Requests, q => Assert.StartsWith("https://pp.test/", q.Url)); // the token never left the host
-    }
-
-    [Fact]
-    public async Task The_inventory_is_cached_until_refresh_is_asked_for()
-    {
-        var api = new FakeApi { Respond = Tenant() };
-        var service = Service(api);
-
-        await service.GetAsync(refresh: false, CancellationToken.None);
-        var afterFirst = api.Requests.Count;
-        await service.GetAsync(refresh: false, CancellationToken.None);
-        Assert.Equal(afterFirst, api.Requests.Count);
-
-        await service.GetAsync(refresh: true, CancellationToken.None);
-        Assert.Equal(afterFirst * 2, api.Requests.Count);
-    }
-
-    [Fact]
-    public async Task Every_request_is_a_GET_with_a_token()
-    {
-        var api = new FakeApi { Respond = Tenant() };
-
-        await Service(api).ReadAsync(CancellationToken.None);
-
-        Assert.NotEmpty(api.Requests);
-        Assert.All(api.Requests, q => { Assert.Equal(HttpMethod.Get, q.Method); Assert.True(q.HasToken); });
-    }
-
-    [Fact]
-    public void The_Power_Platform_code_has_no_HTTP_method_but_GET()
-    {
-        var dir = Path.Combine(ApiDir(), "Services", "PowerPlatform");
-        var methods = Directory.EnumerateFiles(dir, "*.cs")
-            .SelectMany(f => System.Text.RegularExpressions.Regex.Matches(File.ReadAllText(f), @"HttpMethod\.(\w+)").Select(m => m.Groups[1].Value))
-            .Distinct().ToList();
-        Assert.Equal(["Get"], methods);
-    }
-
-    // ── Parsing details ────────────────────────────────────────────────────────
-
-    [Theory]
-    [InlineData("0", "Off")]
-    [InlineData("1", "On")]
-    [InlineData("2", "Suspended")]
-    [InlineData("\"Published\"", "On")]
-    [InlineData("\"Draft\"", "Off")]
-    [InlineData("null", "Unknown")]
-    public void Flow_state_follows_Microsofts_WorkflowStateCode(string json, string expected) =>
-        Assert.Equal(expected, PowerPlatformInventoryService.FlowState(JsonDocument.Parse(json).RootElement));
-
-    [Theory]
-    [InlineData("HTTP", true)]
-    [InlineData("HTTP with Microsoft Entra ID", true)]
-    [InlineData("shared_sftpwithssh", true)]
-    [InlineData("gmail", true)]
-    [InlineData("SharePoint", false)]
-    [InlineData("Dropbox Business", false)] // no trailing * on Dropbox: exact match only
-    public void High_risk_matching_uses_the_configured_list(string connector, bool risky) =>
-        Assert.Equal(risky, PowerPlatformInventoryService.HighRisk([connector], Options()).Any());
-
-    [Fact]
-    public void A_flow_definition_given_as_an_object_is_read_too()
-    {
-        var def = JsonDocument.Parse("""{"properties":{"connectionReferences":{"shared_ftp":{"api":{"name":"shared_ftp"}}}}}""").RootElement;
-        Assert.Equal(["shared_ftp"], PowerPlatformInventoryService.FlowConnectors(def));
-    }
-
-    private static string ApiDir()
-    {
-        for (var d = new DirectoryInfo(AppContext.BaseDirectory); d is not null; d = d.Parent)
-        {
-            var api = Path.Combine(d.FullName, "src", "M365SecurityDashboard.Api");
-            if (Directory.Exists(api)) return api;
-        }
-        throw new DirectoryNotFoundException("src/M365SecurityDashboard.Api not found above the test output folder.");
+        var graph = new FakeGraph(_ => Json("""{"value":[]}"""));
+        var owners = await Lookup(graph).ResolveAsync(["x') or startswith(displayName,'a"], CancellationToken.None);
+        Assert.Empty(owners!);
+        Assert.Empty(graph.Requests);
     }
 }

@@ -33,12 +33,14 @@ described in `SECURITY.md`.
 3. **App ↔ Database** — trusted, same-network; transport-encrypted.
 4. **App ↔ SMTP/webhooks** — outbound notifications; secrets decrypted in memory
    only at send time.
-5. **App ↔ Power Platform API** (optional, per tenant) — outbound, app-only OAuth2 to
-   `api.powerplatform.com` with the same app credentials, only when the Power Platform
-   page is opened. Access comes from Microsoft's read-only "Power Platform reader" role,
-   which the tenant's Power Platform admin assigns with `grant-power-platform-reader.ps1`.
-   GET only, enforced by a test; next-page links to any other host are not followed, so
-   the bearer token stays on that host.
+5. **Viewer's browser ↔ Power Platform API / Graph** (Power Platform page, on demand) —
+   delegated OAuth2 from a Microsoft sign-in popup; the browser reads Microsoft's Power
+   Platform inventory and app detail (and, once, may register Microsoft's Power Platform
+   API) with the viewer's own access. The token never reaches the Vigil365 server, which
+   only evaluates the rows it is sent; next-page links are followed only on Microsoft's
+   host; CSP `connect-src` allows only those two origins beyond sign-in. Vigil365's app has
+   no Power Platform access. The delegated consent persists on Vigil365's app registration
+   until revoked.
 
 ## Data flows
 
@@ -63,8 +65,8 @@ described in `SECURITY.md`.
 
 - The host OS, SQL Server, and network are administered and patched by the operator.
 - The Entra app registration is correctly configured with least-privilege
-  permissions (read-only except `AttackSimulation.ReadWrite.All`), and holds no
-  Power Platform role beyond "Power Platform reader".
+  permissions (read-only except `AttackSimulation.ReadWrite.All`), and is not enrolled
+  as a Power Platform management application.
 - Vigil365 is **not** a SIEM and does not ingest raw logs; visibility is bounded
   by what Microsoft Graph exposes.
 - Physical security and tenant-admin trust are assumed.

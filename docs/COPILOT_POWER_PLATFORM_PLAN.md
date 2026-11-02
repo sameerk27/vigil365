@@ -1,6 +1,6 @@
 # Copilot and Power Platform: plan
 
-Status: **phases A and B built on `feat/copilot-power-platform` (2026-10-19); phase D built as an opt-in option (2026-10-21); none yet checked against a live tenant; phase C waits for a licensed tenant** (plan revised 2026-10-18, phase D revised 2026-10-21). Microsoft's APIs and audit schemas were
+Status: **phases A and B built on `feat/copilot-power-platform` (2026-10-19); phase D built 2026-10-23 as a read with the viewer's own sign-in; A, B and D not yet checked against a live tenant; phase C waits for a licensed tenant** (plan revised 2026-10-18, phase D revised 2026-10-21). Microsoft's APIs and audit schemas were
 checked on that date; re-check section 2 before building, because some of the sources are beta or
 preview.
 
@@ -45,8 +45,8 @@ not the `Operation` strings. Capture those from a live tenant before writing tem
 | Defender runtime protection for Copilot Studio agents (for example, blocked prompt injection) | Defender alerts, already collected by the "Defender alerts" source (`/v1.0/security/alerts_v2`) | `SecurityAlert.Read.All`, **already granted** | **Preview** | Unverified how these alerts identify themselves. Check on a licensed tenant, then tag them as agent alerts. |
 | Copilot usage per user (last activity per app) | `GET /beta/reports/getMicrosoft365CopilotUsageUserDetail(period='D28')` | `Reports.Read.All`, **already granted** | Beta | Licensed users only. Names are hashed if the tenant conceals report names. Microsoft points to the newer `/copilot` report path. |
 | Copilot seats bought and assigned | `GET /v1.0/subscribedSkus` | `Directory.Read.All`, **already granted** | v1.0 | Already read by the licences endpoint. Confirm the Copilot SKU part number on a real tenant. |
-| Power Platform inventory (environments, apps, flows) | `api.powerplatform.com`, api-version `2024-10-01`: `GET /environmentmanagement/environments`, `GET /powerapps/environments/{id}/apps` (as administrator), `GET /powerautomate/environments/{id}/cloudFlows` | **Power Platform reader** RBAC role (`c886ad2e-27f7-4874-8381-5849b8d8a090`, "all permissions that end with .Read") at tenant scope, per tenant | Role **preview**; endpoints documented | Not Graph and not granted by admin consent. A Power Platform admin assigns it in each tenant (`POST /authorization/roleAssignments`). App-only token: client credentials, scope `https://api.powerplatform.com/.default`; Power Platform API uses no application permissions, the RBAC role decides access. **Built as an opt-in option (phase D).** Rechecked 2026-10-21. |
-| (Rejected) Power Platform inventory API (Azure Resource Graph, `POST /resourcequery/resources/query`) | `api.powerplatform.com` | Delegated user only | — | Microsoft: app-only identities get 403. Covers agents too, but Vigil365 collects as an app. |
+| Power Platform inventory, read by a person (environments, apps, flows, agents) | Power Platform inventory `POST /resourcequery/resources/query` and `GET /powerapps/environments/{id}/apps`, api-version `2024-10-01` | Delegated: `ResourceQuery.Resources.Read`, `PowerApps.Apps.Read`; the person needs Global Administrator, Power Platform Administrator, Dynamics 365 Administrator or Global Reader | Inventory GA (connector fields and some agent fields preview) | **Built (phase D).** Delegated only: Microsoft returns 403 to apps. Rechecked 2026-10-23. |
+| (Tried, removed) Power Platform reader RBAC role for Vigil365's app | `api.powerplatform.com` app-only | Power Platform reader role (preview) | — | Role assigned fine, but every app-only call got 403 "Caller is not an authorized app": the app must also be enrolled as a management application, which Microsoft treats as Power Platform Administrator (can't be limited). Owner declined (2026-10-23). |
 | (Rejected) Power Platform admin (BAP) API via management-app registration | `api.bap.microsoft.com` | The app is treated as a Power Platform Administrator | GA | **Breaks the read-only promise. Do not use.** |
 
 ## 3. Alert catalogue
@@ -178,27 +178,48 @@ About 1–2 days.
 Only useful on tenants with the licences in section 2. About 1–2 days after a licensed tenant confirms
 the alert shape.
 
-**D. Power Platform inventory (built as an option, 2026-10-21).** The owner chose not to wait for
-the reader role to reach general availability: each tenant opts in.
-- **Turning it on:** `grant-power-platform-reader.ps1 -TenantId -AppId` (repository root, Az.Accounts),
-  run by that tenant's Power Platform administrator. It finds Vigil365's service principal, registers
-  Microsoft's Power Platform API service principal (`8578e004-a5c6-46e7-913e-12f58912df43`) if the tenant
-  lacks it, and assigns the reader role at `/tenants/{id}`. `-Remove` deletes the assignment; `-WhatIf`
-  changes nothing. Pester tests: `scripts/tests/grant-power-platform-reader.Tests.ps1`.
-- **Reading:** `PowerPlatformApiClient` (GET only, same host only, same app credentials as Graph) and
-  `PowerPlatformInventoryService` (`Services/PowerPlatform/`). Read when the page opens, cached 15 minutes
-  per tenant, no background collection and no database tables. At most `Graph:PowerPlatformMaxEnvironments`
-  (50) environments, four at a time; one failing environment is reported, the rest still read.
-- **States:** `NotEnabled` (403/401, or AADSTS500011 when the tenant has no Power Platform API service
-  principal) shows the turn-on steps with the tenant's command filled in; `Ready`; `Partial`; `Error`.
-- **Flags:** apps that bypass consent (high), use a high-risk connector (high, the same
-  `Graph:PowerPlatformHighRiskConnectors` list as phase A), a custom connector or the on-premises gateway
-  (medium), are shared with `Graph:PowerPlatformWideSharingUsers` (25) people or more (medium) or with a
-  group (low); flows with a high-risk connector (high) or suspended (low).
-- **Page:** Power Platform (own sidebar entry): tiles, apps and flows tables with search, filters and CSV
-  export, environments table. `GET /api/power-platform/inventory[?refresh=true]`.
-- **Not in it:** Copilot Studio agents (no app-only list in Power Platform API; the inventory API that has
-  them is delegated only, so agents stay with phase C), DLP policies, alerts on inventory changes.
+**D. Power Platform inventory (built 2026-10-23: read with the viewer's own sign-in).**
+
+*What happened first (2026-10-21/22):* the reader-role route was built (Power Platform reader RBAC role for
+Vigil365's app, assigned from the page or a script) and tried on the owner's tenant. The role was assigned,
+but every app-only call got 403 "Caller is not an authorized app". Microsoft requires an app to be enrolled
+as a Power Platform management application first, and "service principal applications are treated within
+Power Platform like how normal users are with the Power Platform Administrator role assigned. Granular roles
+and permissions can't be assigned to limit their capabilities" (powerplatform-api-create-service-principal).
+The owner chose not to give Vigil365's app those rights; that code was removed (it is in a1e1e22).
+
+*As built:*
+- **Who reads:** the person viewing the page, with their own access, in their browser. "Read with Microsoft
+  sign-in" opens an MSAL popup in the tenant (`prompt=select_account`) for delegated
+  `ResourceQuery.Resources.Read` and `PowerApps.Apps.Read` on the Power Platform API; a person who already
+  consented in the same tenant is read without a popup (`acquireTokenSilent`). Roles Microsoft lets read the
+  inventory: Global Administrator, Power Platform Administrator, Dynamics 365 Administrator, Global Reader.
+  Apps-as-administrator detail needs Power Platform Administrator; without it the page says so and shows the
+  rest.
+- **What is read:** Microsoft's Power Platform inventory (`POST /resourcequery/resources/query`, api-version
+  2024-10-01, Azure Resource Graph table `PowerPlatformResources`, delegated only; types environments,
+  canvas apps, cloud flows, Copilot Studio agents; paged by skip token, at most 50 pages), then
+  `GET /powerapps/environments/{id}/apps` for the `Graph:PowerPlatformMaxEnvironments` (50) environments with
+  the most apps, four at a time, for sharing counts and the consent bypass.
+- **Server:** `POST /api/power-platform/inventory/evaluate` takes the rows (the browser keeps only the fields
+  used), names owners with a Graph GET (`users?$filter=id in (...)`, 15 ids per call, at most 600 owners) and
+  returns them flagged (`PowerPlatformEvaluator`). It never calls the Power Platform API and never sees the
+  token. `GET /api/power-platform/settings` gives the tenant id and API origins. Nothing is stored; the
+  browser keeps the last read in memory while the app is open.
+- **Flags:** agents with authentication "None" (high if published, low if draft), shared with the entire
+  tenant (medium), tools on the maker's connection (medium), web search (low); apps that bypass consent
+  (high), custom connector or gateway (medium), shared with 25+ people (medium) or a group (low); high-risk
+  connectors on apps, flows and agents (high; `Graph:PowerPlatformHighRiskConnectors` matched on names and on
+  connector ids without "shared_"); owners (for flows, creators) not in the directory or disabled (medium);
+  quarantined (low).
+- **Register step:** AADSTS650052/500011 means the tenant lacks Microsoft's Power Platform API service
+  principal; the page offers "Register the Power Platform API" (Graph `POST /servicePrincipals` in the
+  browser, delegated `Application.ReadWrite.All`, Application or Cloud Application Administrator).
+- **MSAL 5 popups:** the redirect page must hand the result back (`broadcastResponseToMainFrame`); the app
+  does that at start-up when it detects it was loaded as a popup (`services/msalPopup.ts`).
+- **Limits:** the inventory has no flow on/off state and doesn't list built-in actions (a flow using the
+  built-in HTTP action shows no connector); the "HTTP with Microsoft Entra ID" connector id isn't documented,
+  so `HTTP*` matches its display name (app detail) but not an id; no alerts on inventory changes.
 
 ## 6. Must be checked on a live tenant before building
 
@@ -212,16 +233,14 @@ the reader role to reach general availability: each tenant opts in.
 - The delay between an action and its audit record, which sets how quickly an alert can fire.
 - The audit query limits on that tenant, to confirm the 60-minute default.
 - For phase C: a tenant with Agent 365, or Defender for Cloud Apps plus Copilot Studio.
-- For phase D, after running the grant script on a test tenant:
-  - that the reader role lets the app call all three endpoints (the docs say RBAC coverage of Power
-    Platform API is still growing), including "Get AdminApps", and how long a new assignment takes;
-  - the cloud-flow response: the REST reference gives no schema, so the fields (`workflowId`, `name`,
-    `stateCode`, `createdOn`, `modifiedOn`, `definition`) follow the .NET SDK's `CloudFlow` model, and
-    connectors are read from `properties.connectionReferences` in `definition`. Confirm both;
-  - whether `connectionReferences` on an app is an array (as documented) or an object (both are read);
-  - that the environment `id` is the value the apps and flows paths take (the apps reference calls it the
-    environment's "name field");
-  - sovereign clouds: `Graph:PowerPlatformApiBaseUrl` defaults to the commercial host only.
+- For phase D, on a test tenant with a Power Platform Administrator and a Global Reader:
+  - whether the delegated scopes need admin consent in tenants that block user consent;
+  - that the inventory's app `name` matches the apps-as-administrator `name` (the merge key);
+  - the agent fields in practice (`authentication`, `sharedWithViewers`, `powerPlatformConnectors[].operations[]
+    .connectionProvider`, `isWebSearchEnabledForKnowledge` casing);
+  - the response shape (`data` as objects, `skipToken`) and the request size for a large tenant;
+  - a Conditional Access policy requiring MFA for Azure Resource Manager (Microsoft says it can block the
+    inventory).
 
 ## 7. Decisions for the owner
 

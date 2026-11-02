@@ -55,7 +55,9 @@
        the CI vulnerability audit green. Revisit when the parent packages are
        upgraded — they may then satisfy these directly. -->
   <ItemGroup>
-    <!-- GHSA-g8r8-53c2-pm3f (via Microsoft.Identity.Web) -->
-    <PackageReference Include="System.Security.Cryptography.Xml" Version="8.0.4" />
+    <!-- GHSA-r955-8q5j-3h83 and others (via Microsoft.Identity.Web) -->
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="8.0.5" />
+    <!-- GHSA-846f-f764-76mx (transitive) -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="8.0.2" />
   </ItemGroup>
 </Project>

@@ -37,36 +37,49 @@ version lives in exactly two places — the API's `<Version>` and the client's
   tenant's licences with the existing `Reports.Read.All` and `Directory.Read.All`; no new
   permission. A banner explains when the tenant hides user names in usage reports. It uses
   28-day windows: Microsoft's v2 Copilot reports reject 30 days (MC1423101).
-- **Power Platform inventory (optional, per tenant).** A new Power Platform page lists every
-  environment, canvas app and cloud flow, and flags apps that bypass the consent prompt, use a
-  custom, on-premises or high-risk connector, or are shared with many people (default 25,
-  `Graph:PowerPlatformWideSharingUsers`), and flows that use a high-risk connector. It reads
-  the Power Platform API (`api.powerplatform.com`), not Graph. A tenant turns it on by giving
-  Vigil365's app Microsoft's read-only **Power Platform reader** role (preview at Microsoft):
-  the new `grant-power-platform-reader.ps1` does that for one tenant, and `-Remove` takes it
-  away. Until then the page shows the command for that tenant, filled in. No Graph permission
-  or consent changes. The inventory is read when the page opens and cached for 15 minutes;
-  nothing collects it in the background. It reads at most 50 environments
-  (`Graph:PowerPlatformMaxEnvironments`) and says when it skipped some. Cloud flows are listed
-  only in environments with Dataverse, which is all Microsoft's API covers.
+- **Power Platform inventory, read with your own sign-in.** A new Power Platform page lists
+  every environment, Copilot Studio agent, canvas app and cloud flow from Microsoft's Power
+  Platform inventory, and flags the ones that need a look:
+  - agents anyone can use without signing in, agents shared with the whole organisation, and
+    agents whose tools run on the maker's connection
+  - apps that bypass the consent prompt, use a custom, on-premises or high-risk connector, or
+    are shared with many people (default 25, `Graph:PowerPlatformWideSharingUsers`)
+  - flows and agents with a high-risk connector (`Graph:PowerPlatformHighRiskConnectors`)
+  - owners (flow creators) who are no longer in the directory or are disabled
+  The person viewing selects **Read with Microsoft sign-in**: a Microsoft popup signs them in to
+  that tenant and the browser reads the inventory, and app sharing and consent detail, with
+  their own access (Global Administrator, Power Platform Administrator, Dynamics 365
+  Administrator or Global Reader). Vigil365's server evaluates the rows the browser sends and
+  names owners through Graph; it never calls the Power Platform API. Microsoft refuses apps
+  ("Caller is not an authorized app") unless they are enrolled with Power Platform
+  Administrator rights, so Vigil365's app gets no Power Platform access. Nothing is stored; a
+  read is kept in memory while the app is open, and a person who already consented gets it
+  without a popup. If the tenant hasn't registered Microsoft's Power Platform API, the page
+  offers that step first (an Application Administrator's sign-in).
 
 ### Security
+- **Dependency security updates.** `System.Security.Cryptography.Xml` to 8.0.5 and `System.Security.Cryptography.Pkcs` to 8.0.2 (both ship with the server), and the client's build and test tools (vite, vitest and their dependencies).
 - The audit search is started with a POST. It is the only Graph POST Vigil365 makes: the
   Graph client refuses any other path, and a test fails if code anywhere else builds a POST.
-- The Power Platform client sends GET only, and only to the Power Platform API host: it never
-  follows a next-page link to another host, and a test fails if its code names any other HTTP
-  method. The role it relies on grants read permissions only. The grant script makes the one
-  change (the role assignment, plus registering Microsoft's Power Platform API service
-  principal if the tenant lacks it), run by that tenant's Power Platform administrator.
+- The Power Platform page's Microsoft calls run in the viewer's browser with the viewer's own
+  delegated token (`ResourceQuery.Resources.Read` and `PowerApps.Apps.Read` on the Power
+  Platform API; `Application.ReadWrite.All` on Graph only for the one-time register step).
+  The token never reaches the Vigil365 server, and next-page links are followed only on
+  Microsoft's host. That consent stays on Vigil365's app registration until revoked under
+  Enterprise applications; a popup account other than the Vigil365 session's is dropped from
+  the browser's sign-in cache afterwards.
+- The Content Security Policy's `connect-src` now also allows the configured Graph and Power
+  Platform API origins, for those calls.
+- The owner lookup is a Graph GET (`users?$filter=id in (...)`, Directory.Read.All, already
+  granted); ids that aren't GUIDs never reach the filter.
 
 ### Notes
 - Power Automate and Power Apps document friendly event names, not the operation strings
   in the audit log. Those records are classified by their fields and by keywords; tune them
   against a live tenant (`docs/COPILOT_POWER_PLATFORM_PLAN.md` §6). Unmatched operations
   are logged.
-- Microsoft's REST reference doesn't document the cloud-flow list response. Vigil365 reads it
-  with the field names of Microsoft's .NET SDK model, case-insensitively; confirm them on a
-  live tenant (same section).
+- Microsoft's inventory lists the connectors a flow uses, not built-in actions: a flow using the
+  built-in HTTP action shows no connector for it (the phase A audit alerts still see those).
 
 ## [1.2.0] — not yet released (pending the release walkthrough, `docs/MSP_V12_PLAN.md` §6)
 

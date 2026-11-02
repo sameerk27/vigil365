@@ -58,14 +58,14 @@ public sealed class GraphOptions
     /// </summary>
     public string[] PowerPlatformHighRiskConnectors { get; set; } = ["HTTP*", "FTP*", "SFTP*", "Gmail", "Dropbox"];
 
-    // ── Power Platform inventory (optional; docs/COPILOT_POWER_PLATFORM_PLAN.md phase D) ──
+    // ── Power Platform inventory (docs/COPILOT_POWER_PLATFORM_PLAN.md phase D) ──
     /// <summary>
-    /// The Power Platform API. Read only when a tenant's admin has given Vigil365's app
-    /// the Power Platform reader role; otherwise the inventory page explains how.
+    /// The Power Platform API. The page's browser code reads it with the viewer's own
+    /// sign-in; the server only allows it in the Content Security Policy.
     /// </summary>
     public string PowerPlatformApiBaseUrl { get; set; } = "https://api.powerplatform.com";
 
-    /// <summary>Most environments read per inventory, so a tenant full of developer environments stays quick.</summary>
+    /// <summary>Most environments whose app sharing and consent detail is read per read, busiest first.</summary>
     public int PowerPlatformMaxEnvironments { get; set; } = 50;
 
     /// <summary>An app shared with at least this many people is flagged as widely shared.</summary>

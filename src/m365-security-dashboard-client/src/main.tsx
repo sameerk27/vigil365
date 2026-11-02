@@ -52,6 +52,7 @@ import { ActivityFeedPage } from "./pages/ActivityFeedPage";
 import { ClientsPage } from "./pages/ClientsPage";
 import { CopilotPage } from "./pages/CopilotPage";
 import { PowerPlatformPage } from "./pages/PowerPlatformPage";
+import { isMsalPopupResponse, finishMsalPopup } from "./services/msalPopup";
 import { TenantSwitcher } from "./components/TenantSwitcher";
 import { ClientGate } from "./components/ClientGate";
 import { DbSizeBanner } from "./components/DbSizeBanner";
@@ -1016,5 +1017,12 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
   }
 }
 
-createRoot(document.getElementById("root")!).render(<ErrorBoundary><AuthGate /></ErrorBoundary>);
+if (isMsalPopupResponse()) {
+  // This window is a Microsoft sign-in popup (Power Platform "Turn on") coming back to
+  // Vigil365: hand the result to the page that opened it instead of starting the app.
+  document.getElementById("root")!.textContent = "Finishing Microsoft sign-in…";
+  finishMsalPopup().catch(() => { try { window.close(); } catch { /* not closable */ } });
+} else {
+  createRoot(document.getElementById("root")!).render(<ErrorBoundary><AuthGate /></ErrorBoundary>);
+}
 

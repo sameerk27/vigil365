@@ -70,7 +70,7 @@ const HELP: Partial<Record<NavPage, HelpEntry>> = {
     links: [{ label: "Copilot usage report", url: "https://admin.microsoft.com/#/reportsUsage/MicrosoftCopilotUsage" }],
   },
   powerplatform: {
-    what: "Every Power Platform environment, canvas app and cloud flow, with the apps and flows that bypass the consent prompt, use custom or high-risk connectors, or are shared with many people. Optional: it needs Microsoft's read-only Power Platform reader role for Vigil365's app, and the page shows how to grant it. Read live when you open the page; cached for 15 minutes.",
+    what: "Every Power Platform environment, Copilot Studio agent, canvas app and cloud flow, with the ones that need a look flagged: agents without sign-in or shared with everyone, apps that skip the consent prompt or are shared widely, high-risk connectors, and owners who left. Read in your browser with your own Microsoft sign-in (Global Administrator, Power Platform Administrator, Dynamics 365 Administrator or Global Reader); Vigil365's app has no Power Platform access and nothing is stored.",
     links: [{ label: "Power Platform admin center", url: "https://admin.powerplatform.microsoft.com/" }],
   },
   users: {

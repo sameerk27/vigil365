@@ -90,65 +90,21 @@ test('Copilot usage: seats, idle licences and the user list', async ({ page }) =
   await page.screenshot({ path: test.info().outputPath('copilot.png'), fullPage: true });
 });
 
-/** Phase D: the optional Power Platform inventory. */
+/** Phase D: the Power Platform inventory, read with the viewer's own Microsoft sign-in. */
 
-const ppSetup = {
-  tenantId: '11111111-1111-1111-1111-111111111111', appId: '22222222-2222-2222-2222-222222222222',
-  role: 'Power Platform reader', roleId: 'c886ad2e-27f7-4874-8381-5849b8d8a090', script: 'grant-power-platform-reader.ps1',
-  command: '.\\grant-power-platform-reader.ps1 -TenantId 11111111-1111-1111-1111-111111111111 -AppId 22222222-2222-2222-2222-222222222222',
-};
-
-const ppInventory = {
-  configured: true, status: 'Ready', reason: null, readAt: new Date().toISOString(), setup: ppSetup,
-  summary: { environments: 3, environmentsRead: 3, environmentsSkipped: 0, apps: 3, flows: 3, consentBypassed: 1, highRiskConnector: 2, widelyShared: 1, customConnector: 1 },
-  environments: [
-    { id: 'env-prod', name: 'Contoso (default)', type: 'Default', state: 'Ready', region: 'europe', hasDataverse: true, created: null, apps: 2, flows: 3, problem: null },
-    { id: 'env-fin', name: 'Finance', type: 'Production', state: 'Ready', region: 'europe', hasDataverse: true, created: null, apps: 1, flows: 0, problem: null },
-    { id: 'env-trial', name: "Sam's trial", type: 'Trial', state: 'Ready', region: 'unitedstates', hasDataverse: false, created: null, apps: 0, flows: 0, problem: null },
-  ],
-  apps: [
-    { id: 'app-1', name: 'Expense approvals', environmentId: 'env-prod', environmentName: 'Contoso (default)', owner: 'Priya Shah', created: null, modified: '2026-10-01T09:00:00Z',
-      sharedUsers: 120, sharedGroups: 1, bypassConsent: true, connectors: ['SharePoint', 'Contoso ERP'],
-      flags: [{ label: 'Consent prompt bypassed', severity: 'high' }, { label: 'Custom connector', severity: 'medium' }, { label: 'Shared with 120 people', severity: 'medium' }, { label: 'Shared with a group', severity: 'low' }] },
-    { id: 'app-2', name: 'Room booking', environmentId: 'env-prod', environmentName: 'Contoso (default)', owner: 'Lena Novak', created: null, modified: '2026-08-12T09:00:00Z',
-      sharedUsers: 3, sharedGroups: 0, bypassConsent: false, connectors: ['Office 365 Outlook'], flags: [] },
-    { id: 'app-3', name: 'Dropbox uploader', environmentId: 'env-fin', environmentName: 'Finance', owner: 'Daniel Okafor', created: null, modified: '2026-10-15T09:00:00Z',
-      sharedUsers: 2, sharedGroups: 0, bypassConsent: false, connectors: ['Dropbox'], flags: [{ label: 'High-risk connector: Dropbox', severity: 'high' }] },
-  ],
-  flows: [
-    { id: 'f-1', name: 'Sync invoices to partner API', environmentId: 'env-prod', environmentName: 'Contoso (default)', state: 'On', created: null, modified: '2026-10-18T08:00:00Z',
-      connectors: ['HTTP with Microsoft Entra ID', 'Office 365 Outlook'], flags: [{ label: 'High-risk connector: HTTP with Microsoft Entra ID', severity: 'high' }] },
-    { id: 'f-2', name: 'Weekly sales digest', environmentId: 'env-prod', environmentName: 'Contoso (default)', state: 'On', created: null, modified: '2026-09-02T08:00:00Z',
-      connectors: ['Dataverse', 'Office 365 Outlook'], flags: [] },
-    { id: 'f-3', name: 'Old reminder', environmentId: 'env-prod', environmentName: 'Contoso (default)', state: 'Suspended', created: null, modified: null,
-      connectors: [], flags: [{ label: 'Suspended', severity: 'low' }] },
-  ],
-};
-
-test('Power Platform: a tenant that has not opted in sees how, then the inventory after Check again', async ({ page }) => {
-  const asked: string[] = [];
+test('Power Platform: the page offers to read with the viewer’s own Microsoft sign-in', async ({ page }) => {
   await signIn(page, {
-    mode: 'Single', role: 'Admin',
+    mode: 'Single', role: 'Analyst',
     api: {
-      'GET /api/power-platform/inventory': (route: any) => {
-        const url = route.request().url();
-        asked.push(url);
-        return url.includes('refresh=true') ? ppInventory : { configured: true, status: 'NotEnabled', reason: 'RoleMissing', setup: ppSetup };
-      },
+      'GET /api/power-platform/settings': { configured: true, tenantId: '11111111-1111-1111-1111-111111111111',
+        powerPlatformApi: 'https://api.powerplatform.com', graphApi: 'https://graph.microsoft.com', maxEnvironments: 50 },
     },
   });
   await page.goto('/#/powerplatform');
 
-  await expect(page.getByText('Power Platform inventory is off for this tenant')).toBeVisible();
-  await expect(page.getByText(ppSetup.command)).toBeVisible();
-  await page.screenshot({ path: test.info().outputPath('power-platform-off.png'), fullPage: true });
-
-  await page.getByRole('button', { name: 'Check again' }).click();
-  await expect(page.getByText('Expense approvals')).toBeVisible();
-  expect(asked.some(u => u.includes('refresh=true'))).toBe(true);
-
-  await page.getByLabel('Filter apps').selectOption('flagged');
-  await expect(page.getByText('Room booking')).toHaveCount(0);
-  await page.getByLabel('Filter apps').selectOption('');
+  await expect(page.getByText('Read Power Platform with your Microsoft sign-in')).toBeVisible();
+  await expect(page.getByText(/Vigil365's app gets no Power Platform access/)).toBeVisible();
+  // The Microsoft popup can't run under the test sign-in; the button is what a viewer uses.
+  await expect(page.getByRole('button', { name: 'Read with Microsoft sign-in' })).toBeEnabled();
   await page.screenshot({ path: test.info().outputPath('power-platform.png'), fullPage: true });
 });

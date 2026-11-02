@@ -49,13 +49,6 @@ Rules & Notifications says so; nothing else is affected.
 Without `DeviceManagementConfiguration.Read.All` the licence posture check for an Intune
 compliance policy says "Unknown" with the reason; the other checks are unaffected.
 
-## Not a Graph permission: Power Platform reader
-
-The optional Power Platform inventory reads the Power Platform API, which Graph consent
-doesn't cover. A tenant turns it on by giving Vigil365's app Microsoft's read-only
-"Power Platform reader" role (preview), with `grant-power-platform-reader.ps1` at the
-repository root; `-Remove` takes it away. See `docs/COPILOT_POWER_PLATFORM_PLAN.md`, phase D.
-
 Admin consent is required. In the MSP edition each client's Global Administrator grants it
 once, through the onboarding consent popup. Changing this list after clients have consented
 means every client must consent again.
@@ -63,3 +56,10 @@ means every client must consent again.
 **MSP only:** the *MSP app status* card reads your own app registration and needs
 `Application.Read.All` granted in **your own tenant** only. It is deliberately not in the list
 above, so clients never consent to it.
+
+## Not an application permission: the Power Platform page
+
+The Power Platform page reads Microsoft's Power Platform inventory in the viewer's browser with
+the viewer's own Microsoft sign-in (delegated `ResourceQuery.Resources.Read` and
+`PowerApps.Apps.Read` on the Power Platform API, consented in a popup the first time). Vigil365's
+app gets no Power Platform access. See `docs/COPILOT_POWER_PLATFORM_PLAN.md`, phase D.

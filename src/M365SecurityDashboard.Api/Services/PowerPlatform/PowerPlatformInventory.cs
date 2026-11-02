@@ -1,308 +1,307 @@
+using System.Globalization;
 using System.Text.Json;
-using M365SecurityDashboard.Api.Data.Tenancy;
 using M365SecurityDashboard.Api.Models;
-using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Options;
 
 namespace M365SecurityDashboard.Api.Services.PowerPlatform;
 
 public sealed record PowerPlatformFlag(string Label, string Severity);
 
+/// <summary>An owner object id resolved through Graph. Found = false: no user with that id.</summary>
+public sealed record PowerPlatformOwner(string Id, string? Name, string? Upn, bool? Enabled, bool Found);
+
 public sealed record PowerPlatformEnvironment(
-    string Id, string Name, string? Type, string? State, string? Region, bool HasDataverse,
-    DateTimeOffset? Created, int Apps, int Flows, string? Problem);
+    string Id, string Name, string? Type, string? Region, bool? IsManaged, int Apps, int Flows, int Agents);
 
 public sealed record PowerPlatformApp(
-    string Id, string Name, string EnvironmentId, string EnvironmentName, string? Owner,
-    DateTimeOffset? Created, DateTimeOffset? Modified, int SharedUsers, int SharedGroups,
-    bool BypassConsent, IReadOnlyList<string> Connectors, IReadOnlyList<PowerPlatformFlag> Flags);
+    string Id, string Name, string EnvironmentId, string EnvironmentName, string? OwnerId, string? Owner,
+    DateTimeOffset? Created, DateTimeOffset? Modified, int? SharedUsers, int? SharedGroups, bool? BypassConsent,
+    bool Quarantined, IReadOnlyList<string> Connectors, IReadOnlyList<PowerPlatformFlag> Flags);
 
 public sealed record PowerPlatformFlow(
-    string Id, string Name, string EnvironmentId, string EnvironmentName, string State,
-    DateTimeOffset? Created, DateTimeOffset? Modified, IReadOnlyList<string> Connectors,
+    string Id, string Name, string EnvironmentId, string EnvironmentName, string? OwnerId, string? Owner,
+    DateTimeOffset? Created, DateTimeOffset? Modified, string? Trigger, IReadOnlyList<string> Connectors,
     IReadOnlyList<PowerPlatformFlag> Flags);
 
+public sealed record PowerPlatformAgent(
+    string Id, string Name, string EnvironmentId, string EnvironmentName, string? OwnerId, string? Owner,
+    DateTimeOffset? Created, DateTimeOffset? Published, string? CreatedIn, string? Authentication,
+    IReadOnlyList<string> Channels, int SharedUsers, int SharedGroups, bool SharedWithTenant, bool Quarantined,
+    IReadOnlyList<string> Connectors, IReadOnlyList<PowerPlatformFlag> Flags);
+
 public sealed record PowerPlatformSummary(
-    int Environments, int EnvironmentsRead, int EnvironmentsSkipped, int Apps, int Flows,
-    int ConsentBypassed, int HighRiskConnector, int WidelyShared, int CustomConnector);
+    int Environments, int Apps, int Flows, int Agents, int NeedALook, int ConsentBypassed, int HighRiskConnector,
+    int AgentsWithoutSignIn, int SharedWithEveryone, int OwnerGone);
 
 public sealed record PowerPlatformInventoryResult(
-    string Status, string? Reason, DateTimeOffset ReadAt,
-    IReadOnlyList<PowerPlatformEnvironment> Environments, IReadOnlyList<PowerPlatformApp> Apps,
-    IReadOnlyList<PowerPlatformFlow> Flows, PowerPlatformSummary Summary)
+    DateTimeOffset ReadAt, IReadOnlyList<PowerPlatformEnvironment> Environments, IReadOnlyList<PowerPlatformApp> Apps,
+    IReadOnlyList<PowerPlatformFlow> Flows, IReadOnlyList<PowerPlatformAgent> Agents, PowerPlatformSummary Summary,
+    bool AppDetails, bool OwnersResolved, IReadOnlyList<string> Notes);
+
+/// <summary>
+/// What the browser read, with the signed-in person's own Power Platform access (the
+/// Vigil365 server never calls the Power Platform API): the inventory rows, and for each
+/// environment the apps-as-administrator page with sharing and consent detail.
+/// </summary>
+public sealed class PowerPlatformEvaluateRequest
 {
-    /// <summary>Everything read.</summary>
-    public const string Ready = "Ready";
-    /// <summary>Read, but some environments or pages couldn't be.</summary>
-    public const string Partial = "Partial";
-    /// <summary>The tenant hasn't given Vigil365 the Power Platform reader role.</summary>
-    public const string NotEnabled = "NotEnabled";
-    /// <summary>The environment list itself failed for another reason.</summary>
-    public const string Error = "Error";
+    /// <summary>Rows of the PowerPlatformResources inventory table, as Microsoft returned them.</summary>
+    public List<JsonElement> Resources { get; set; } = [];
+    /// <summary>False when the inventory stopped before its last page.</summary>
+    public bool ResourcesComplete { get; set; } = true;
+    public List<PowerPlatformAppDetails> AppDetails { get; set; } = [];
+    /// <summary>Environments with apps whose detail wasn't read (the per-read cap).</summary>
+    public int AppDetailsSkipped { get; set; }
+    /// <summary>Why app detail wasn't read at all, if it wasn't (for example the account isn't a Power Platform admin).</summary>
+    public string? AppDetailsProblem { get; set; }
+}
+
+public sealed class PowerPlatformAppDetails
+{
+    public string EnvironmentId { get; set; } = "";
+    public List<JsonElement> Items { get; set; } = [];
+    public bool Complete { get; set; } = true;
+    public string? Error { get; set; }
 }
 
 /// <summary>
-/// The tenant's Power Platform environments, canvas apps and cloud flows, with the
-/// settings that make an app or flow risky. Read on demand (the page asks; nothing
-/// collects in the background) and cached per tenant for a few minutes.
+/// Turns the Power Platform inventory into Vigil365's view: environments, canvas apps,
+/// cloud flows and Copilot Studio agents, flagged where they need a look. Pure; the
+/// endpoint resolves owners through Graph first.
 ///
-/// Sources, all GET on api.powerplatform.com, api-version 2024-10-01:
-///   environmentmanagement/environments                      every environment
-///   powerapps/environments/{id}/apps                        apps, as administrator
-///   powerautomate/environments/{id}/cloudFlows              flows (Dataverse environments only)
-/// The flow response's field names aren't in the REST reference; they follow the
-/// .NET SDK's CloudFlow model and are read case-insensitively. Check them on a live
-/// tenant (plan section 6).
+/// Field names follow Microsoft's inventory schema (learn.microsoft.com/power-platform/
+/// admin/inventory-schema and microsoft-copilot-studio/admin-agent-inventory) and the
+/// "Get AdminApps" response, read case-insensitively so a casing change costs nothing.
 /// </summary>
-public sealed class PowerPlatformInventoryService(
-    PowerPlatformApiClient client,
-    ITenantContext tenant,
-    IMemoryCache cache,
-    IOptions<GraphOptions> options,
-    ILogger<PowerPlatformInventoryService> logger)
+public static class PowerPlatformEvaluator
 {
-    public static readonly TimeSpan CacheFor = TimeSpan.FromMinutes(15);
-    private const int AppPageSize = 250;
-    private const int MaxPages = 40;
-    private const int Parallelism = 4;
-
-    private static DateTimeOffset Now => DateTimeOffset.UtcNow;
-
-    public async Task<PowerPlatformInventoryResult> GetAsync(bool refresh, CancellationToken ct)
-    {
-        var key = $"power-platform-inventory:{tenant.Current?.ToString() ?? "install"}";
-        if (!refresh && cache.TryGetValue(key, out PowerPlatformInventoryResult? cached) && cached is not null) return cached;
-        var result = await ReadAsync(ct);
-        cache.Set(key, result, CacheFor);
-        return result;
-    }
-
-    public async Task<PowerPlatformInventoryResult> ReadAsync(CancellationToken ct)
-    {
-        var o = options.Value;
-        PowerPlatformApiClient.Collection envRead;
-        try
-        {
-            envRead = await client.ReadCollectionAsync($"environmentmanagement/environments?api-version={PowerPlatformApiClient.ApiVersion}", MaxPages, ct);
-        }
-        catch (PowerPlatformApiException ex) when (ex.NotEnabled)
-        {
-            logger.LogInformation("Power Platform inventory: not enabled for this tenant ({Why}, {Status})", ex.Why, ex.Status);
-            return Empty(PowerPlatformInventoryResult.NotEnabled, ex.Why == PowerPlatformApiException.Reason.ApiNotInTenant ? "ApiNotInTenant" : "RoleMissing");
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            logger.LogWarning(ex, "Power Platform inventory: the environment list could not be read");
-            return Empty(PowerPlatformInventoryResult.Error, ex is PowerPlatformApiException p ? $"Power Platform API said: {p.Message}" : "The Power Platform API request failed; see the server log.");
-        }
-
-        var all = envRead.Items.Select(ParseEnvironment).Where(e => e.Id.Length > 0).ToList();
-        var toRead = all.Take(Math.Max(1, o.PowerPlatformMaxEnvironments)).ToList();
-        var skipped = all.Count - toRead.Count;
-
-        var results = new (PowerPlatformEnvironment Env, List<PowerPlatformApp> Apps, List<PowerPlatformFlow> Flows)[toRead.Count];
-        using var gate = new SemaphoreSlim(Parallelism);
-        await Task.WhenAll(toRead.Select(async (env, i) =>
-        {
-            await gate.WaitAsync(ct);
-            try { results[i] = await ReadEnvironmentAsync(env, o, ct); }
-            finally { gate.Release(); }
-        }));
-
-        var envs = results.Select(r => r.Env).ToList();
-        var apps = results.SelectMany(r => r.Apps).ToList();
-        var flows = results.SelectMany(r => r.Flows).ToList();
-        var partial = !envRead.Complete || skipped > 0 || envs.Any(e => e.Problem is not null);
-
-        return new PowerPlatformInventoryResult(
-            partial ? PowerPlatformInventoryResult.Partial : PowerPlatformInventoryResult.Ready,
-            null, Now, envs, apps, flows,
-            new PowerPlatformSummary(
-                Environments: all.Count,
-                EnvironmentsRead: envs.Count(e => e.Problem is null),
-                EnvironmentsSkipped: skipped,
-                Apps: apps.Count,
-                Flows: flows.Count,
-                ConsentBypassed: apps.Count(a => a.BypassConsent),
-                HighRiskConnector: apps.Count(a => a.Flags.Any(IsHighRiskFlag)) + flows.Count(f => f.Flags.Any(IsHighRiskFlag)),
-                WidelyShared: apps.Count(a => a.SharedUsers >= o.PowerPlatformWideSharingUsers),
-                CustomConnector: apps.Count(a => a.Flags.Any(f => f.Label == CustomConnectorFlag))));
-    }
-
-    private async Task<(PowerPlatformEnvironment, List<PowerPlatformApp>, List<PowerPlatformFlow>)> ReadEnvironmentAsync(
-        PowerPlatformEnvironment env, GraphOptions o, CancellationToken ct)
-    {
-        var id = Uri.EscapeDataString(env.Id);
-        var problems = new List<string>();
-        var apps = new List<PowerPlatformApp>();
-        var flows = new List<PowerPlatformFlow>();
-
-        try
-        {
-            var read = await client.ReadCollectionAsync($"powerapps/environments/{id}/apps?api-version={PowerPlatformApiClient.ApiVersion}&$top={AppPageSize}", MaxPages, ct);
-            apps.AddRange(read.Items.Select(a => ParseApp(a, env, o)).Where(a => a.Id.Length > 0));
-            if (!read.Complete) problems.Add("only part of the app list could be read");
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            logger.LogInformation(ex, "Power Platform inventory: apps in environment {Environment} could not be read", env.Id);
-            problems.Add($"apps couldn't be read ({Short(ex)})");
-        }
-
-        // Cloud flows live in Dataverse; an environment without it answers 404.
-        if (env.HasDataverse)
-        {
-            try
-            {
-                var read = await client.ReadCollectionAsync($"powerautomate/environments/{id}/cloudFlows?api-version={PowerPlatformApiClient.ApiVersion}", MaxPages, ct);
-                flows.AddRange(read.Items.Select(f => ParseFlow(f, env, o)).Where(f => f.Id.Length > 0));
-                if (!read.Complete) problems.Add("only part of the flow list could be read");
-            }
-            catch (PowerPlatformApiException ex) when (ex.Status == 404) { }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                logger.LogInformation(ex, "Power Platform inventory: flows in environment {Environment} could not be read", env.Id);
-                problems.Add($"flows couldn't be read ({Short(ex)})");
-            }
-        }
-
-        return (env with { Apps = apps.Count, Flows = flows.Count, Problem = problems.Count == 0 ? null : string.Join("; ", problems) }, apps, flows);
-    }
-
-    private PowerPlatformInventoryResult Empty(string status, string reason) =>
-        new(status, reason, Now, [], [], [], new PowerPlatformSummary(0, 0, 0, 0, 0, 0, 0, 0, 0));
-
-    private static string Short(Exception ex) => ex switch
-    {
-        PowerPlatformApiException { Status: 401 or 403 } => "access refused",
-        PowerPlatformApiException { Status: { } s } => $"error {s}",
-        _ => "request failed",
-    };
-
-    // ── Parsing (pure; tests call these directly) ───────────────────────────────
+    public const string EnvironmentType = "microsoft.powerplatform/environments";
+    public const string CanvasAppType = "microsoft.powerapps/canvasapps";
+    public const string CloudFlowType = "microsoft.powerautomate/cloudflows";
+    public const string AgentType = "microsoft.copilotstudio/agents";
+    public static readonly string[] InventoryTypes = [EnvironmentType, CanvasAppType, CloudFlowType, AgentType];
 
     public const string ConsentBypassedFlag = "Consent prompt bypassed";
     public const string CustomConnectorFlag = "Custom connector";
     public const string GatewayFlag = "On-premises data gateway";
     public const string HighRiskPrefix = "High-risk connector: ";
     public const string SharedWithGroupFlag = "Shared with a group";
-    public const string SuspendedFlag = "Suspended";
+    public const string QuarantinedFlag = "Quarantined";
+    public const string NoSignInFlag = "No sign-in required";
+    public const string NoSignInDraftFlag = "No sign-in required (draft)";
+    public const string WholeOrganisationFlag = "Shared with the whole organisation";
+    public const string MakerConnectionFlag = "Tools use the maker's connection";
+    public const string WebSearchFlag = "Uses web search";
+    public const string OwnerGoneFlag = "Owner not in the directory";
+    public const string OwnerDisabledFlag = "Owner's account is disabled";
+    public const string CreatorGoneFlag = "Creator not in the directory";
+    public const string CreatorDisabledFlag = "Creator's account is disabled";
 
-    private static bool IsHighRiskFlag(PowerPlatformFlag f) => f.Label.StartsWith(HighRiskPrefix, StringComparison.Ordinal);
+    /// <summary>Owner object ids worth resolving: every owner of an app or agent, and every flow creator.</summary>
+    public static IReadOnlyList<string> OwnerIds(PowerPlatformEvaluateRequest request) => request.Resources
+        .Where(r => Type(r) is CanvasAppType or CloudFlowType or AgentType)
+        .Select(r => Str(r, "properties", "ownerId") ?? Str(r, "properties", "createdBy"))
+        .Where(id => id is not null && Guid.TryParse(id, out _))
+        .Select(id => id!.ToLowerInvariant())
+        .Distinct()
+        .ToList();
 
-    public static PowerPlatformEnvironment ParseEnvironment(JsonElement e) => new(
-        Id: Str(e, "id") ?? Str(e, "name") ?? "",
-        Name: Str(e, "displayName") ?? Str(e, "properties", "displayName") ?? Str(e, "id") ?? "",
-        Type: Str(e, "type"),
-        State: Str(e, "state"),
-        Region: Str(e, "azureRegion") ?? Str(e, "geo"),
-        HasDataverse: !string.IsNullOrWhiteSpace(Str(e, "dataverseId")),
-        Created: Date(e, "createdDateTime"),
-        Apps: 0, Flows: 0, Problem: null);
-
-    public static PowerPlatformApp ParseApp(JsonElement a, PowerPlatformEnvironment env, GraphOptions o)
+    public static PowerPlatformInventoryResult Evaluate(
+        PowerPlatformEvaluateRequest request, GraphOptions o, IReadOnlyDictionary<string, PowerPlatformOwner>? owners, DateTimeOffset now)
     {
-        var p = a.TryGetProperty("properties", out var props) && props.ValueKind == JsonValueKind.Object ? props : default;
-        var connectors = new List<string>();
-        var custom = false;
-        var gateway = false;
-        var connectorBypass = false;
-        foreach (var c in Items(p, "connectionReferences"))
+        var notes = new List<string>();
+        var envRows = request.Resources.Where(r => Type(r) == EnvironmentType).ToList();
+        var envNames = envRows
+            .Select(r => (Id: Str(r, "name") ?? "", Name: Str(r, "properties", "displayName") ?? Str(r, "name") ?? ""))
+            .Where(e => e.Id.Length > 0)
+            .GroupBy(e => e.Id, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().Name, StringComparer.OrdinalIgnoreCase);
+        string EnvName(string id) => envNames.TryGetValue(id, out var n) ? n : id;
+
+        // The apps-as-administrator detail, keyed by app id (the inventory's Item ID).
+        var details = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+        foreach (var page in request.AppDetails)
         {
-            var name = Str(c, "displayName") ?? Tail(Str(c, "id"));
-            if (!string.IsNullOrWhiteSpace(name) && !connectors.Contains(name, StringComparer.OrdinalIgnoreCase)) connectors.Add(name);
-            custom |= Bool(c, "isCustomApiConnection");
-            gateway |= Bool(c, "isOnPremiseConnection");
-            connectorBypass |= Bool(c, "bypassConsent");
+            foreach (var a in page.Items)
+                if (Str(a, "name") is { } appId) details[appId] = a;
+            if (page.Error is not null) notes.Add($"{EnvName(page.EnvironmentId)}: app sharing and consent detail couldn't be read ({page.Error}).");
+            else if (!page.Complete) notes.Add($"{EnvName(page.EnvironmentId)}: only part of the app detail could be read.");
         }
-        var bypass = Bool(p, "bypassConsent") || connectorBypass;
-        var users = Int(p, "sharedUsersCount");
-        var groups = Int(p, "sharedGroupsCount");
+        if (request.AppDetailsProblem is { } problem) notes.Add($"App sharing and consent detail wasn't read: {problem}");
+        if (request.AppDetailsSkipped > 0)
+            notes.Add($"App sharing and consent detail was read for the first {o.PowerPlatformMaxEnvironments} environments with apps; {request.AppDetailsSkipped} more weren't.");
+        if (!request.ResourcesComplete) notes.Add("Microsoft's inventory stopped before its last page, so some items are missing.");
+
+        var apps = request.Resources.Where(r => Type(r) == CanvasAppType)
+            .Select(r => ParseApp(r, details, EnvName, owners, o)).Where(a => a.Id.Length > 0).ToList();
+        var flows = request.Resources.Where(r => Type(r) == CloudFlowType)
+            .Select(r => ParseFlow(r, EnvName, owners, o)).Where(f => f.Id.Length > 0).ToList();
+        var agents = request.Resources.Where(r => Type(r) == AgentType)
+            .Select(r => ParseAgent(r, EnvName, owners, o)).Where(a => a.Id.Length > 0).ToList();
+
+        var envs = envRows.Select(r =>
+        {
+            var id = Str(r, "name") ?? "";
+            return new PowerPlatformEnvironment(
+                Id: id,
+                Name: EnvName(id),
+                Type: Str(r, "properties", "environmentType"),
+                Region: Str(r, "location"),
+                IsManaged: Any(r, "properties", "isManaged") is { ValueKind: JsonValueKind.True or JsonValueKind.False } m ? m.ValueKind == JsonValueKind.True : null,
+                Apps: apps.Count(a => Same(a.EnvironmentId, id)),
+                Flows: flows.Count(f => Same(f.EnvironmentId, id)),
+                Agents: agents.Count(a => Same(a.EnvironmentId, id)));
+        }).Where(e => e.Id.Length > 0).OrderByDescending(e => e.Apps + e.Flows + e.Agents).ThenBy(e => e.Name).ToList();
+
+        bool Look(IReadOnlyList<PowerPlatformFlag> f) => f.Any(x => x.Severity is "high" or "medium");
+        bool HighRisk(IReadOnlyList<PowerPlatformFlag> f) => f.Any(x => x.Label.StartsWith(HighRiskPrefix, StringComparison.Ordinal));
+        bool Gone(IReadOnlyList<PowerPlatformFlag> f) => f.Any(x => x.Label is OwnerGoneFlag or OwnerDisabledFlag or CreatorGoneFlag or CreatorDisabledFlag);
+
+        var summary = new PowerPlatformSummary(
+            Environments: envs.Count,
+            Apps: apps.Count,
+            Flows: flows.Count,
+            Agents: agents.Count,
+            NeedALook: apps.Count(a => Look(a.Flags)) + flows.Count(f => Look(f.Flags)) + agents.Count(a => Look(a.Flags)),
+            ConsentBypassed: apps.Count(a => a.BypassConsent == true),
+            HighRiskConnector: apps.Count(a => HighRisk(a.Flags)) + flows.Count(f => HighRisk(f.Flags)) + agents.Count(a => HighRisk(a.Flags)),
+            AgentsWithoutSignIn: agents.Count(a => a.Flags.Any(f => f.Label == NoSignInFlag)),
+            SharedWithEveryone: agents.Count(a => a.SharedWithTenant),
+            OwnerGone: apps.Count(a => Gone(a.Flags)) + flows.Count(f => Gone(f.Flags)) + agents.Count(a => Gone(a.Flags)));
+
+        return new PowerPlatformInventoryResult(now, envs, apps, flows, agents, summary,
+            AppDetails: request.AppDetails.Count > 0, OwnersResolved: owners is not null, notes);
+    }
+
+    // ── Resources ───────────────────────────────────────────────────────────────
+
+    internal static PowerPlatformApp ParseApp(JsonElement r, IReadOnlyDictionary<string, JsonElement> details,
+        Func<string, string> envName, IReadOnlyDictionary<string, PowerPlatformOwner>? owners, GraphOptions o)
+    {
+        var id = Str(r, "name") ?? "";
+        var envId = Str(r, "properties", "environmentId") ?? "";
+        var connectors = InventoryConnectors(r);
+        var flags = new List<PowerPlatformFlag>();
+
+        int? users = null, groups = null;
+        bool? bypass = null;
+        string? ownerName = null;
+        if (details.TryGetValue(id, out var d))
+        {
+            var p = Any(d, "properties") ?? default;
+            var custom = false;
+            var gateway = false;
+            var connectorBypass = false;
+            foreach (var c in Items(p, "connectionReferences"))
+            {
+                var name = Str(c, "displayName");
+                if (name is not null && !connectors.Contains(name, StringComparer.OrdinalIgnoreCase)) connectors.Add(name);
+                custom |= Bool(c, "isCustomApiConnection");
+                gateway |= Bool(c, "isOnPremiseConnection");
+                connectorBypass |= Bool(c, "bypassConsent");
+            }
+            bypass = Bool(p, "bypassConsent") || connectorBypass;
+            // Missing stays unknown (null), not "shared with nobody".
+            users = IntOrNull(p, "sharedUsersCount");
+            groups = IntOrNull(p, "sharedGroupsCount");
+            ownerName = Str(p, "owner", "displayName") ?? Str(p, "owner", "userPrincipalName");
+            if (bypass == true) flags.Add(new(ConsentBypassedFlag, "high"));
+            flags.AddRange(HighRiskFlags(connectors, o));
+            if (custom) flags.Add(new(CustomConnectorFlag, "medium"));
+            if (gateway) flags.Add(new(GatewayFlag, "medium"));
+            if (users >= o.PowerPlatformWideSharingUsers) flags.Add(new($"Shared with {users} people", "medium"));
+            if (groups > 0) flags.Add(new(SharedWithGroupFlag, "low"));
+        }
+        else flags.AddRange(HighRiskFlags(connectors, o));
+
+        var quarantined = Bool(Any(r, "properties") ?? default, "isQuarantined");
+        if (quarantined) flags.Add(new(QuarantinedFlag, "low"));
+
+        var ownerId = Str(r, "properties", "ownerId");
+        var owner = Owner(ownerId, owners);
+        flags.AddRange(OwnerFlags(owner, OwnerGoneFlag, OwnerDisabledFlag));
+
+        return new PowerPlatformApp(id, Str(r, "properties", "displayName") ?? id, envId, envName(envId),
+            ownerId, owner?.Name ?? ownerName, Date(r, "createdAt"), Date(r, "lastModifiedAt"),
+            users, groups, bypass, quarantined, connectors, flags);
+    }
+
+    internal static PowerPlatformFlow ParseFlow(JsonElement r, Func<string, string> envName,
+        IReadOnlyDictionary<string, PowerPlatformOwner>? owners, GraphOptions o)
+    {
+        var id = Str(r, "name") ?? "";
+        var envId = Str(r, "properties", "environmentId") ?? "";
+        var connectors = InventoryConnectors(r);
+        var trigger = Str(r, "properties", "trigger");
+        var flags = HighRiskFlags(trigger is null || connectors.Contains(trigger, StringComparer.OrdinalIgnoreCase) ? connectors : [.. connectors, trigger], o).ToList();
+        // Microsoft: for cloud flows the owner field holds the creator and doesn't follow ownership changes.
+        var ownerId = Str(r, "properties", "ownerId") ?? Str(r, "properties", "createdBy");
+        var owner = Owner(ownerId, owners);
+        flags.AddRange(OwnerFlags(owner, CreatorGoneFlag, CreatorDisabledFlag));
+        return new PowerPlatformFlow(id, Str(r, "properties", "displayName") ?? id, envId, envName(envId),
+            ownerId, owner?.Name, Date(r, "createdAt"), Date(r, "lastModifiedAt"), trigger, connectors, flags);
+    }
+
+    internal static PowerPlatformAgent ParseAgent(JsonElement r, Func<string, string> envName,
+        IReadOnlyDictionary<string, PowerPlatformOwner>? owners, GraphOptions o)
+    {
+        var id = Str(r, "name") ?? "";
+        var envId = Str(r, "properties", "environmentId") ?? "";
+        var p = Any(r, "properties") ?? default;
+        var connectors = InventoryConnectors(r);
+        var published = Date(r, "lastPublishedAt");
+        var auth = Str(p, "authentication");
+        var viewers = Any(p, "sharedWithViewers") ?? default;
+        var tenantWide = Bool(viewers, "entireTenant");
+        var quarantined = Bool(p, "isQuarantined");
 
         var flags = new List<PowerPlatformFlag>();
-        if (bypass) flags.Add(new(ConsentBypassedFlag, "high"));
-        flags.AddRange(HighRisk(connectors, o));
-        if (custom) flags.Add(new(CustomConnectorFlag, "medium"));
-        if (gateway) flags.Add(new(GatewayFlag, "medium"));
-        if (users >= o.PowerPlatformWideSharingUsers) flags.Add(new($"Shared with {users} people", "medium"));
-        if (groups > 0) flags.Add(new(SharedWithGroupFlag, "low"));
+        if (string.Equals(auth, "None", StringComparison.OrdinalIgnoreCase))
+            flags.Add(published is null ? new(NoSignInDraftFlag, "low") : new(NoSignInFlag, "high"));
+        flags.AddRange(HighRiskFlags(connectors, o));
+        if (tenantWide) flags.Add(new(WholeOrganisationFlag, "medium"));
+        // A tool on the maker's connection acts for every user with the maker's access.
+        var makerConnection = Items(p, "powerPlatformConnectors")
+            .SelectMany(c => Items(c, "operations"))
+            .Any(op => string.Equals(Str(op, "connectionProvider"), "Maker", StringComparison.OrdinalIgnoreCase)
+                       && Any(op, "isEnabled") is not { ValueKind: JsonValueKind.False });
+        if (makerConnection) flags.Add(new(MakerConnectionFlag, "medium"));
+        if (Bool(p, "isWebSearchEnabledForKnowledge")) flags.Add(new(WebSearchFlag, "low"));
+        if (quarantined) flags.Add(new(QuarantinedFlag, "low"));
 
-        return new PowerPlatformApp(
-            Id: Str(a, "name") ?? Str(a, "id") ?? "",
-            Name: Str(p, "displayName") ?? Str(a, "name") ?? "",
-            EnvironmentId: env.Id, EnvironmentName: env.Name,
-            Owner: Str(p, "owner", "displayName") ?? Str(p, "owner", "userPrincipalName") ?? Str(p, "owner", "email"),
-            Created: Date(p, "createdTime"), Modified: Date(p, "lastModifiedTime"),
-            SharedUsers: users, SharedGroups: groups, BypassConsent: bypass,
-            Connectors: connectors, Flags: flags);
+        var ownerId = Str(p, "ownerId") ?? Str(p, "createdBy");
+        var owner = Owner(ownerId, owners);
+        flags.AddRange(OwnerFlags(owner, OwnerGoneFlag, OwnerDisabledFlag));
+
+        var channels = Items(p, "channels").Where(c => c.ValueKind == JsonValueKind.String).Select(c => c.GetString()!).ToList();
+        return new PowerPlatformAgent(id, Str(p, "displayName") ?? id, envId, envName(envId), ownerId, owner?.Name,
+            Date(r, "createdAt"), published, Str(p, "createdIn"), auth, channels,
+            Int(viewers, "userCount"), Int(viewers, "groupCount"), tenantWide, quarantined, connectors, flags);
     }
 
-    public static PowerPlatformFlow ParseFlow(JsonElement f, PowerPlatformEnvironment env, GraphOptions o)
+    private static PowerPlatformOwner? Owner(string? id, IReadOnlyDictionary<string, PowerPlatformOwner>? owners) =>
+        id is not null && owners is not null && owners.TryGetValue(id.ToLowerInvariant(), out var o) ? o : null;
+
+    private static IEnumerable<PowerPlatformFlag> OwnerFlags(PowerPlatformOwner? owner, string gone, string disabled)
     {
-        var connectors = FlowConnectors(Any(f, "definition") ?? Any(f, "clientData") ?? Any(f, "clientdata"));
-        var state = FlowState(Any(f, "stateCode") ?? Any(f, "statecode"));
-        var flags = HighRisk(connectors, o).ToList();
-        if (state == "Suspended") flags.Add(new(SuspendedFlag, "low"));
-        return new PowerPlatformFlow(
-            Id: Str(f, "workflowId") ?? Str(f, "workflowid") ?? Str(f, "resourceId") ?? "",
-            Name: Str(f, "name") ?? Str(f, "displayName") ?? "",
-            EnvironmentId: env.Id, EnvironmentName: env.Name, State: state,
-            Created: Date(f, "createdOn") ?? Date(f, "createdon"), Modified: Date(f, "modifiedOn") ?? Date(f, "modifiedon"),
-            Connectors: connectors, Flags: flags);
+        if (owner is null) yield break;
+        if (!owner.Found) yield return new(gone, "medium");
+        else if (owner.Enabled == false) yield return new(disabled, "medium");
     }
 
-    /// <summary>Microsoft's WorkflowStateCode: 0 Draft (off), 1 Published (on), 2 Suspended.</summary>
-    internal static string FlowState(JsonElement? v) => v switch
+    /// <summary>Connector ids from the inventory's powerPlatformConnectors (for example shared_sharepointonline).</summary>
+    internal static List<string> InventoryConnectors(JsonElement r)
     {
-        { ValueKind: JsonValueKind.Number } n when n.TryGetInt32(out var i) => i switch { 0 => "Off", 1 => "On", 2 => "Suspended", _ => "Unknown" },
-        { ValueKind: JsonValueKind.String } s => s.GetString()?.ToLowerInvariant() switch
-        {
-            "draft" or "0" => "Off",
-            "published" or "activated" or "1" => "On",
-            "suspended" or "2" => "Suspended",
-            _ => "Unknown",
-        },
-        _ => "Unknown",
-    };
+        var names = new List<string>();
+        foreach (var c in Items(Any(r, "properties") ?? default, "powerPlatformConnectors"))
+            if (Str(c, "connectorId") is { } id && !names.Contains(id, StringComparer.OrdinalIgnoreCase)) names.Add(id);
+        return names;
+    }
 
     /// <summary>
-    /// Connector names from a flow's definition (the workflow's client data): the keys and
-    /// api names under properties.connectionReferences. The definition may arrive as a JSON
-    /// string or an object. Anything unexpected yields no connectors rather than an error.
+    /// The configured high-risk list, matched against connector display names and ids
+    /// ("shared_" dropped), ignoring case; a trailing * is a prefix match.
     /// </summary>
-    internal static IReadOnlyList<string> FlowConnectors(JsonElement? definition)
-    {
-        if (definition is not { } d) return [];
-        JsonDocument? parsed = null;
-        try
-        {
-            var root = d;
-            if (d.ValueKind == JsonValueKind.String)
-            {
-                var text = d.GetString();
-                if (string.IsNullOrWhiteSpace(text)) return [];
-                parsed = JsonDocument.Parse(text);
-                root = parsed.RootElement;
-            }
-            if (root.ValueKind != JsonValueKind.Object
-                || !root.TryGetProperty("properties", out var props) || props.ValueKind != JsonValueKind.Object
-                || !props.TryGetProperty("connectionReferences", out var refs) || refs.ValueKind != JsonValueKind.Object)
-                return [];
-
-            var names = new List<string>();
-            foreach (var r in refs.EnumerateObject())
-            {
-                var name = Str(r.Value, "api", "displayName") ?? Str(r.Value, "displayName") ?? Str(r.Value, "api", "name") ?? r.Name;
-                if (!string.IsNullOrWhiteSpace(name) && !names.Contains(name, StringComparer.OrdinalIgnoreCase)) names.Add(name);
-            }
-            return names;
-        }
-        catch (JsonException) { return []; }
-        finally { parsed?.Dispose(); }
-    }
-
-    /// <summary>The configured high-risk list (case-insensitive; a trailing * is a prefix match), as flags.</summary>
-    internal static IEnumerable<PowerPlatformFlag> HighRisk(IEnumerable<string> connectors, GraphOptions o)
+    internal static IEnumerable<PowerPlatformFlag> HighRiskFlags(IEnumerable<string> connectors, GraphOptions o)
     {
         foreach (var c in connectors)
         {
@@ -321,40 +320,43 @@ public sealed class PowerPlatformInventoryService(
             : string.Equals(name, pattern, StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool Same(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+
     // ── JSON helpers: case-insensitive, tolerant of missing or odd values ──────
 
-    private static JsonElement? Any(JsonElement e, string name)
-    {
-        if (e.ValueKind != JsonValueKind.Object) return null;
-        foreach (var p in e.EnumerateObject())
-            if (string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) return p.Value;
-        return null;
-    }
+    private static string? Type(JsonElement r) => Str(r, "type")?.ToLowerInvariant();
 
-    private static JsonElement? Path(JsonElement e, params string[] path)
+    private static JsonElement? Any(JsonElement e, params string[] path)
     {
-        JsonElement? cur = e;
+        JsonElement cur = e;
         foreach (var part in path)
         {
-            if (cur is not { } c) return null;
-            cur = Any(c, part);
+            if (cur.ValueKind != JsonValueKind.Object) return null;
+            JsonElement? next = null;
+            foreach (var p in cur.EnumerateObject())
+                if (string.Equals(p.Name, part, StringComparison.OrdinalIgnoreCase)) { next = p.Value; break; }
+            if (next is not { } n) return null;
+            cur = n;
         }
         return cur;
     }
 
     private static string? Str(JsonElement e, params string[] path) =>
-        Path(e, path) is { ValueKind: JsonValueKind.String } v && !string.IsNullOrWhiteSpace(v.GetString()) ? v.GetString() : null;
+        Any(e, path) is { ValueKind: JsonValueKind.String } v && !string.IsNullOrWhiteSpace(v.GetString()) ? v.GetString() : null;
 
     private static bool Bool(JsonElement e, string name) =>
         Any(e, name) is { } v && (v.ValueKind == JsonValueKind.True
             || v.ValueKind == JsonValueKind.String && string.Equals(v.GetString(), "true", StringComparison.OrdinalIgnoreCase));
 
-    private static int Int(JsonElement e, string name) =>
-        Any(e, name) is { ValueKind: JsonValueKind.Number } v && v.TryGetInt32(out var i) ? i : 0;
+    private static int Int(JsonElement e, string name) => IntOrNull(e, name) ?? 0;
 
-    private static DateTimeOffset? Date(JsonElement e, string name) =>
-        Str(e, name) is { } s && DateTimeOffset.TryParse(s, System.Globalization.CultureInfo.InvariantCulture,
-            System.Globalization.DateTimeStyles.AssumeUniversal, out var d) ? d : null;
+    private static int? IntOrNull(JsonElement e, string name) =>
+        Any(e, name) is { ValueKind: JsonValueKind.Number } v && v.TryGetInt32(out var i) ? i : null;
+
+    /// <summary>A date from the resource's properties (the inventory) or its top level.</summary>
+    private static DateTimeOffset? Date(JsonElement r, string name) =>
+        (Str(r, "properties", name) ?? Str(r, name)) is { } s
+        && DateTimeOffset.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var d) ? d : null;
 
     /// <summary>An array's items, or an object's values (Microsoft has used both for connection references).</summary>
     private static IEnumerable<JsonElement> Items(JsonElement e, string name) => Any(e, name) switch
@@ -363,6 +365,4 @@ public sealed class PowerPlatformInventoryService(
         { ValueKind: JsonValueKind.Object } obj => obj.EnumerateObject().Select(p => p.Value).ToList(),
         _ => [],
     };
-
-    private static string? Tail(string? id) => id is null ? null : id[(id.LastIndexOf('/') + 1)..];
 }
