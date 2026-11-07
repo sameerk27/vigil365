@@ -509,30 +509,12 @@ public static class DashboardEndpoints
             {
                 var graph = services.GetRequiredService<GraphApiClient>();
                 var policies = await graph.GetCollectionAsync("/v1.0/identity/conditionalAccess/policies", ct);
+                // Users, groups, roles and guests; apps, a user action or an auth context; built-in controls,
+                // an authentication strength and the session controls that are on.
                 var result = policies.Select(p =>
                 {
-                    var name = p.TryGetProperty("displayName", out var n) ? n.GetString() : "Unnamed";
-                    var state = p.TryGetProperty("state", out var s) ? s.GetString() : "unknown";
-                    var inclUsers = "All Users"; var exclUsers = "None"; var apps = "All Apps";
-                    if (p.TryGetProperty("conditions", out var cond))
-                    {
-                        if (cond.TryGetProperty("users", out var u))
-                        {
-                            if (u.TryGetProperty("includeUsers", out var inc) && inc.ValueKind == JsonValueKind.Array)
-                                inclUsers = inc.EnumerateArray().Select(x => x.GetString()).FirstOrDefault() == "All" ? "All Users" : $"{inc.GetArrayLength()} users";
-                            if (u.TryGetProperty("excludeUsers", out var exc) && exc.ValueKind == JsonValueKind.Array && exc.GetArrayLength() > 0)
-                                exclUsers = $"{exc.GetArrayLength()} excluded";
-                            if (u.TryGetProperty("includeGroups", out var grp) && grp.ValueKind == JsonValueKind.Array && grp.GetArrayLength() > 0 && inclUsers == "All Users")
-                                inclUsers = $"{grp.GetArrayLength()} groups";
-                        }
-                        if (cond.TryGetProperty("applications", out var ap) && ap.TryGetProperty("includeApplications", out var incA) && incA.ValueKind == JsonValueKind.Array)
-                            apps = incA.EnumerateArray().Select(x => x.GetString()).FirstOrDefault() == "All" ? "All Apps" : $"{incA.GetArrayLength()} apps";
-                    }
-                    var controls = new List<string>();
-                    if (p.TryGetProperty("grantControls", out var gc) && gc.ValueKind == JsonValueKind.Object &&
-                        gc.TryGetProperty("builtInControls", out var bic) && bic.ValueKind == JsonValueKind.Array)
-                        controls.AddRange(bic.EnumerateArray().Select(x => x.GetString() ?? "").Where(x => x.Length > 0));
-                    return new { name, state, inclUsers, exclUsers, apps, controls = controls.ToArray() };
+                    var v = ConditionalAccessSummary.Summarize(p);
+                    return new { name = v.Name, state = v.State, inclUsers = v.InclUsers, exclUsers = v.ExclUsers, apps = v.Apps, controls = v.Controls };
                 }).ToList();
                 return Results.Ok(new { configured = true, enabled = result.Count(p => p.state == "enabled"), disabled = result.Count(p => p.state == "disabled"), reportOnly = result.Count(p => p.state == "enabledForReportingButNotEnforced"), policies = result });
             }
