@@ -162,27 +162,17 @@ public static class DashboardEndpoints
                 {
                     // Guest Governance (requires Azure AD P1/P2 for signInActivity)
                     var guests = await graph.GetCollectionAsync(
-                        "/v1.0/users?$filter=userType eq 'Guest'&$select=id,displayName,userPrincipalName,signInActivity", gct);
+                        "/v1.0/users?$filter=userType eq 'Guest'&$select=id,displayName,userPrincipalName,mail,signInActivity", gct);
                     guestTotal = guests.Count;
 
                     var threshold90 = DateTimeOffset.UtcNow.AddDays(-90);
                     foreach (var guest in guests)
                     {
-                        var upn = guest.TryGetProperty("userPrincipalName", out var p) ? p.GetString() : null;
-                        if (upn != null)
-                        {
-                            var parts = upn.Split("#EXT#@");
-                            if (parts.Length == 2)
-                            {
-                                var extDomain = parts[1];
-                                guestDomains[extDomain] = guestDomains.GetValueOrDefault(extDomain) + 1;
-                            }
-                            else if (upn.Contains("@"))
-                            {
-                                var domain = upn.Split('@')[1];
-                                guestDomains[domain] = guestDomains.GetValueOrDefault(domain) + 1;
-                            }
-                        }
+                        var upn = guest.TryGetProperty("userPrincipalName", out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : null;
+                        var mail = guest.TryGetProperty("mail", out var m) && m.ValueKind == JsonValueKind.String ? m.GetString() : null;
+                        // The guest's own domain, not the host tenant after #EXT#.
+                        var domain = GuestDomains.Of(mail, upn);
+                        if (domain != null) guestDomains[domain] = guestDomains.GetValueOrDefault(domain) + 1;
 
                         DateTimeOffset? lastSignIn = null;
                         if (guest.TryGetProperty("signInActivity", out var sia) && sia.ValueKind == JsonValueKind.Object &&
@@ -313,7 +303,7 @@ public static class DashboardEndpoints
             {
                 configured = true,
                 mfa = new { registered = mfaRegistered, total = mfaTotal, percentage = mfaPct },
-                guests = new { total = guestTotal, active = guestTotal, inactive90d = guestInactive90d, licenseRequired = guestLicenseRequired, domains = guestDomainsList },
+                guests = new { total = guestTotal, active = guestLicenseRequired ? guestTotal : guestTotal - guestInactive90d, inactive90d = guestInactive90d, licenseRequired = guestLicenseRequired, domains = guestDomainsList },
                 mfaMethods = mfaMethodsBreakdown,
                 staleAccounts = staleAccountsList,
                 riskyUsers,
