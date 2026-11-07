@@ -917,27 +917,8 @@ public static class DashboardEndpoints
                     var description = a.TryGetProperty("description", out var d) && d.ValueKind == JsonValueKind.String ? d.GetString() : null;
                     var alertWebUrl = a.TryGetProperty("alertWebUrl", out var url) ? url.GetString() : null;
 
-                    string? upn = null;
-                    if (a.TryGetProperty("evidence", out var ev) && ev.ValueKind == JsonValueKind.Array)
-                    {
-                        foreach (var e in ev.EnumerateArray())
-                        {
-                            if (e.TryGetProperty("entityType", out var et) && et.GetString() == "User" &&
-                                e.TryGetProperty("userAccount", out var ua) && ua.ValueKind == JsonValueKind.Object &&
-                                ua.TryGetProperty("userPrincipalName", out var upnProp))
-                            {
-                                upn = upnProp.GetString();
-                                if (!string.IsNullOrEmpty(upn)) break;
-                            }
-                            else if (e.TryGetProperty("entityType", out var et2) && et2.GetString() == "Mailbox" &&
-                                     e.TryGetProperty("mailbox", out var mb) && mb.ValueKind == JsonValueKind.Object &&
-                                     mb.TryGetProperty("userPrincipalName", out var upnProp2))
-                            {
-                                upn = upnProp2.GetString();
-                                if (!string.IsNullOrEmpty(upn)) break;
-                            }
-                        }
-                    }
+                    // alerts_v2 evidence carries @odata.type, not entityType (EmailEvidence reads both).
+                    var upn = EmailEvidence.TargetedUpn(a);
 
                     if (!string.IsNullOrEmpty(upn))
                     {
