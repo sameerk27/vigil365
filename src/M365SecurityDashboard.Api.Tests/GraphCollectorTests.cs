@@ -17,7 +17,7 @@ namespace M365SecurityDashboard.Api.Tests;
 /// </summary>
 public sealed class GraphCollectorTests
 {
-    private const string NonCompliantFilter = "complianceState ne 'compliant'";
+    private const string NonCompliantFilter = "complianceState eq 'noncompliant'";
 
     /// <summary>Answers by URL: the first responder whose key the decoded URL contains; otherwise an empty page.</summary>
     private sealed class ScriptedGraph(Dictionary<string, Func<HttpResponseMessage>> responders, HttpStatusCode? everything = null) : HttpMessageHandler
@@ -98,6 +98,26 @@ public sealed class GraphCollectorTests
     }
 
     [Fact]
+    public async Task The_non_compliant_feed_asks_for_noncompliant_devices_and_never_alerts_on_a_compliant_one()
+    {
+        // managedDevices does not apply "complianceState ne 'compliant'": in a real tenant it returned the
+        // compliant devices, each opened as non-compliant. The feed now asks with eq, and a row whose state
+        // is not noncompliant is dropped whatever the filter returned (so an alert opened for it resolves).
+        using var db = TestAppDbContextFactory.Create();
+        SeedOpenDevices(db, "dev-ok");
+        var graph = new ScriptedGraph(new()
+        {
+            [NonCompliantFilter] = () => Json("""{"value":[{"id":"dev-bad","deviceName":"PC1","complianceState":"noncompliant"},{"id":"dev-ok","deviceName":"PC2","complianceState":"compliant"},{"id":"dev-grace","deviceName":"PC3","complianceState":"inGracePeriod"}]}"""),
+        });
+
+        await Collector(db, graph).CollectAsync(CancellationToken.None);
+
+        Assert.False(await IsResolvedAsync(db, "dev-bad"));
+        Assert.True(await IsResolvedAsync(db, "dev-ok"));
+        Assert.False(await db.SecurityAlerts.AnyAsync(a => a.ExternalId == "dev-grace"));
+    }
+
+    [Fact]
     public async Task A_failed_source_resolves_nothing()
     {
         using var db = TestAppDbContextFactory.Create();
@@ -117,7 +137,7 @@ public sealed class GraphCollectorTests
         var graph = new ScriptedGraph(new()
         {
             ["/page-2"] = () => Status(HttpStatusCode.ServiceUnavailable),
-            [NonCompliantFilter] = () => Json("""{"value":[{"id":"dev-2","deviceName":"PC2"}],"@odata.nextLink":"https://graph.test/page-2"}"""),
+            [NonCompliantFilter] = () => Json("""{"value":[{"id":"dev-2","deviceName":"PC2","complianceState":"noncompliant"}],"@odata.nextLink":"https://graph.test/page-2"}"""),
         });
 
         await Collector(db, graph).CollectAsync(CancellationToken.None);
