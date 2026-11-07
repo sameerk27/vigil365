@@ -864,29 +864,19 @@ public static class DashboardEndpoints
             try
             {
                 var graph = services.GetRequiredService<GraphApiClient>();
-                var items = await graph.GetCollectionAsync(
-                    "/v1.0/roleManagement/directory/roleAssignments?$top=20&$expand=roleDefinition($select=displayName)", ct);
-                var activations = items.Select(a =>
+                // The principal expanded (without it no row had a name); role names from the role definitions.
+                var items = await graph.GetCollectionAsync(PimAssignments.AssignmentsPath, ct);
+                var definitions = await graph.GetCollectionAsync(PimAssignments.RoleDefinitionsPath, ct);
+                var activations = PimAssignments.Project(items, definitions).Select(r => new
                 {
-                    string? principalDisplayName = null, principalUpn = null, roleName = null;
-                    if (a.TryGetProperty("principal", out var p) && p.ValueKind == JsonValueKind.Object)
-                    {
-                        if (p.TryGetProperty("displayName", out var pd)) principalDisplayName = pd.GetString();
-                        if (p.TryGetProperty("userPrincipalName", out var pu)) principalUpn = pu.GetString();
-                    }
-                    if (a.TryGetProperty("roleDefinition", out var rd) && rd.ValueKind == JsonValueKind.Object &&
-                        rd.TryGetProperty("displayName", out var rdn)) roleName = rdn.GetString();
-                    return new
-                    {
-                        id = a.TryGetProperty("id", out var id) ? id.GetString() : null,
-                        action = "Assigned",
-                        status = "Active",
-                        createdDateTime = (string?)null,
-                        justification = (string?)null,
-                        principalDisplayName,
-                        principalUpn,
-                        roleName
-                    };
+                    id = r.Id,
+                    action = "Assigned",
+                    status = "Active",
+                    createdDateTime = (string?)null,
+                    justification = (string?)null,
+                    principalDisplayName = r.PrincipalDisplayName,
+                    principalUpn = r.PrincipalUpn,
+                    roleName = r.RoleName
                 }).ToList();
                 return Results.Ok(new { configured = true, total = activations.Count, activations });
             }
