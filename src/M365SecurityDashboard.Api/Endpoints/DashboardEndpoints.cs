@@ -426,7 +426,10 @@ public static class DashboardEndpoints
                                     p.TryGetProperty("enabled", out var e) && e.ValueKind == JsonValueKind.Number ? e.GetInt32() : 0;
                     return new { name, consumed, purchased, available = Math.Max(0, purchased - consumed) };
                 }).Where(s => s.purchased > 0).ToList();
-                return Results.Ok(new { configured = true, skus = result, totalPurchased = result.Sum(s => s.purchased), totalConsumed = result.Sum(s => s.consumed) });
+                // Free and self-service grants (1,000,000 or 10,000 seats) are listed apart, out of the totals and the waste.
+                var bought = result.Where(s => !LicenseSkus.IsFree(s.name, s.purchased, s.consumed)).ToList();
+                var free = result.Where(s => LicenseSkus.IsFree(s.name, s.purchased, s.consumed)).Select(s => new { s.name, s.consumed }).ToList();
+                return Results.Ok(new { configured = true, skus = bought, totalPurchased = bought.Sum(s => s.purchased), totalConsumed = bought.Sum(s => s.consumed), freeSkus = free });
             }
             catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = GraphErrorHint.DescribeOrNull(ex.Message) ?? "An error occurred. Check server logs for details.", skus = Array.Empty<object>(), totalPurchased = 0, totalConsumed = 0 }); }
         });
