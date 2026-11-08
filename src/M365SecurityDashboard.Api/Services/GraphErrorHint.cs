@@ -117,6 +117,35 @@ public static class GraphErrorHint
         return null;
     }
 
+    /// <summary>
+    /// Microsoft's own error sentence from a Graph failure ("The period value 'RL30' is not
+    /// supported…"), for endpoints that would otherwise only say "an error occurred". Only
+    /// the error's message field, never the raw response, request ids or our own exception
+    /// text. Reports wrap a second error document inside the message; the innermost wins.
+    /// </summary>
+    public static string? GraphMessageOrNull(string? rawMessage, int maxLength = 300)
+    {
+        var raw = rawMessage ?? "";
+        var start = raw.IndexOf('{');
+        if (start < 0) return null;
+        string? message = null;
+        var json = raw[start..];
+        for (var depth = 0; depth < 3 && json is not null; depth++)
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                if (!doc.RootElement.TryGetProperty("error", out var error)
+                    || !error.TryGetProperty("message", out var m)
+                    || m.ValueKind != System.Text.Json.JsonValueKind.String) break;
+                message = m.GetString();
+                json = message is not null && message.TrimStart().StartsWith('{') ? message : null;
+            }
+            catch (System.Text.Json.JsonException) { break; }
+        }
+        return string.IsNullOrWhiteSpace(message) || message.TrimStart().StartsWith('{') ? null : Trim(message.Trim(), maxLength);
+    }
+
     private static bool IsPermissionDenied(string raw)
         => raw.Contains("403")
         || raw.Contains("accessDenied", StringComparison.OrdinalIgnoreCase)

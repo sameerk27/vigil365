@@ -757,6 +757,59 @@ namespace M365SecurityDashboard.Api.Data.Migrations.Postgres
                     b.ToTable("NotificationSettings");
                 });
 
+            modelBuilder.Entity("M365SecurityDashboard.Api.Models.PurviewAuditState", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Feed")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int>("LastEventCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("LastRunAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("LastSubmittedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("LastSuccessAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("PendingFrom")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PendingQueryId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTimeOffset?>("PendingSubmittedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("PendingTo")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset?>("Watermark")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("TenantId", "Feed");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("PurviewAuditStates");
+                });
+
             modelBuilder.Entity("M365SecurityDashboard.Api.Models.ReportSchedule", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1280,6 +1333,15 @@ namespace M365SecurityDashboard.Api.Data.Migrations.Postgres
                         .WithMany()
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Cascade);
+                });
+
+            modelBuilder.Entity("M365SecurityDashboard.Api.Models.PurviewAuditState", b =>
+                {
+                    b.HasOne("M365SecurityDashboard.Api.Models.ClientTenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("M365SecurityDashboard.Api.Models.ReportSchedule", b =>

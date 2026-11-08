@@ -292,3 +292,30 @@ export function copyToClipboard(rows: Record<string, unknown>[]): Promise<void> 
 export function getSevCount(dict: Record<string, number> | undefined, sev: string): number {
   return dict ? (dict[sev] ?? dict[sev.toLowerCase()] ?? 0) : 0;
 }
+
+/** Alert policy categories as the operator reads them. Unknown values are shown capitalised. */
+export const POLICY_CATEGORIES: { value: string; label: string }[] = [
+  { value: "identity", label: "Identity" },
+  { value: "devices", label: "Devices" },
+  { value: "email", label: "Email" },
+  { value: "compliance", label: "Compliance" },
+  { value: "licenses", label: "Licenses" },
+  { value: "copilot", label: "Copilot agents" },
+  { value: "powerplatform", label: "Power Platform" },
+];
+
+export function policyCategoryLabel(category: string | null | undefined): string {
+  if (!category) return "—";
+  return POLICY_CATEGORIES.find(c => c.value === category)?.label ?? category.charAt(0).toUpperCase() + category.slice(1);
+}
+
+/**
+ * A calendar date ("2026-10-17") as "Oct 17, 2026". Report dates have no time or zone;
+ * parsing them as instants would show them as a local time (and the wrong day west of UTC).
+ */
+export function fmtDay(day?: string | null): string {
+  if (!day) return "—";
+  const [y, m, d] = day.slice(0, 10).split("-").map(Number);
+  if (!y || !m || !d) return day;
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}

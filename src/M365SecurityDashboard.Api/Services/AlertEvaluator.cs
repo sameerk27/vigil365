@@ -279,8 +279,12 @@ public sealed class AlertEvaluator(
         if (pattern.Length == 0) return 0;
         var like = pattern.Replace("*", "%");
         var since = now.AddMinutes(-Math.Max(1, policy.WindowMinutes));
+        // Purview audit records reach the log hours after the action and are collected
+        // hourly, so they count from when Vigil365 learned of them; by when they happened
+        // they would already be outside the window and never alert.
         return await db.AuditEvents.CountAsync(
-            e => e.OccurredAt >= since && EF.Functions.Like(e.Activity, like), ct);
+            e => (e.Source == PurviewAuditNormalizer.Source ? e.CollectedAt : e.OccurredAt) >= since
+                 && EF.Functions.Like(e.Activity, like), ct);
     }
 
     private async Task<string?> GetAffectedEntitiesJsonAsync(AlertPolicy policy, DateTimeOffset now, CancellationToken ct)
@@ -292,7 +296,8 @@ public sealed class AlertEvaluator(
             var like = pattern.Replace("*", "%");
             var since = now.AddMinutes(-Math.Max(1, policy.WindowMinutes));
             var events = await db.AuditEvents
-                .Where(e => e.OccurredAt >= since && EF.Functions.Like(e.Activity, like))
+                .Where(e => (e.Source == PurviewAuditNormalizer.Source ? e.CollectedAt : e.OccurredAt) >= since
+                            && EF.Functions.Like(e.Activity, like))
                 .OrderByDescending(e => e.OccurredAt)
                 .Take(50)
                 .Select(e => new

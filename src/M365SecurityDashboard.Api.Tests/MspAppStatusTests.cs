@@ -28,7 +28,7 @@ public sealed class MspAppStatusTests
         Assert.DoesNotContain(names, n => n.Contains("Write", StringComparison.OrdinalIgnoreCase));
         // Never something clients would be asked to consent to just for the MSP status card.
         Assert.DoesNotContain("Application.Read.All", names);
-        Assert.Equal(2, GraphPermissionList.Optional.Count);
+        Assert.Equal(4, GraphPermissionList.Optional.Count);
     }
 
     [Fact]

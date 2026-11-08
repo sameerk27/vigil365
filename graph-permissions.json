@@ -6,7 +6,7 @@
     { "name": "IdentityRiskyUser.Read.All", "feature": "Entra ID risky users" },
     { "name": "IdentityRiskEvent.Read.All", "feature": "Risk detections" },
     { "name": "AuditLog.Read.All", "feature": "Sign-in and directory audit logs" },
-    { "name": "Reports.Read.All", "feature": "MFA registration and authentication-method reports" },
+    { "name": "Reports.Read.All", "feature": "MFA registration and authentication-method reports; Copilot usage" },
     { "name": "DeviceManagementManagedDevices.Read.All", "feature": "Intune managed devices" },
     { "name": "ServiceHealth.Read.All", "feature": "Microsoft 365 service health" },
     { "name": "Policy.Read.All", "feature": "Conditional Access policies" },
@@ -19,6 +19,8 @@
   ],
   "optional": [
     { "name": "AttackSimulation.ReadWrite.All", "feature": "Attack simulation results (Graph has no read-only variant; a tenant may refuse it)" },
-    { "name": "SecurityIdentitiesHealth.Read.All", "feature": "Defender for Identity sensor health" }
+    { "name": "SecurityIdentitiesHealth.Read.All", "feature": "Defender for Identity sensor health" },
+    { "name": "AuditLogsQuery.Read.All", "feature": "Copilot agent, Power Automate and Power Apps alerts (Purview audit search)" },
+    { "name": "DeviceManagementConfiguration.Read.All", "feature": "Intune compliance policies (licence posture)" }
   ]
 }

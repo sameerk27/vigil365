@@ -41,7 +41,7 @@ public static class PlatformEndpoints
 
         // ── Tenant audit events (activity feed backing activity-based policies) ─────
         app.MapGet("/api/audit-events", async (
-            AppDbContext db, string? search, string? activity, int days = 7,
+            AppDbContext db, string? search, string? activity, string? source, int days = 7,
             int page = 1, int pageSize = 50, CancellationToken ct = default) =>
         {
             page = page < 1 ? 1 : page;
@@ -49,6 +49,12 @@ public static class PlatformEndpoints
             var since = DateTimeOffset.UtcNow.AddDays(-Math.Clamp(days, 1, 90));
 
             var q = db.AuditEvents.AsNoTracking().Where(e => e.OccurredAt >= since);
+            // "entra" = the directory audit; a product name ("Power Automate") = that
+            // product's Purview audit events. Anything else is ignored, not an error.
+            if (string.Equals(source, "entra", StringComparison.OrdinalIgnoreCase))
+                q = q.Where(e => e.Source == "directoryAudit");
+            else if (PurviewAuditNormalizer.Products.FirstOrDefault(p => p.Equals(source, StringComparison.OrdinalIgnoreCase)) is { } product)
+                q = q.Where(e => e.Source == PurviewAuditNormalizer.Source && e.Category == product);
             if (!string.IsNullOrWhiteSpace(activity))
             {
                 var safePattern = activity
@@ -67,9 +73,29 @@ public static class PlatformEndpoints
             var total = await q.CountAsync(ct);
             var items = await q.OrderByDescending(e => e.OccurredAt)
                 .Skip((page - 1) * pageSize).Take(pageSize)
-                .Select(e => new { e.Id, e.Activity, e.Category, e.ActorUpn, e.ActorApp, e.TargetName, e.Result, e.OccurredAt })
+                .Select(e => new { e.Id, e.Activity, e.Category, e.Source, e.ActorUpn, e.ActorApp, e.TargetName, e.Result, e.OccurredAt })
                 .ToListAsync(ct);
             return Results.Ok(new { total, page, pageSize, items });
+        });
+
+        // ── Purview audit status (Copilot agents, Power Platform) ──────────────────
+        // What the Rules page needs to say "needs permission" or when it last ran.
+        // The high-risk connector list is install configuration, shown read-only.
+        app.MapGet("/api/purview-audit/status", async (
+            AppDbContext db, Microsoft.Extensions.Options.IOptions<GraphOptions> options, CancellationToken ct) =>
+        {
+            var states = await db.PurviewAuditStates.AsNoTracking().ToListAsync(ct);
+            var feeds = PurviewAuditCollector.Feeds.Select(f => states.FirstOrDefault(s => s.Feed == f) is { } s
+                ? new { feed = f, status = s.Status, s.LastRunAt, s.LastSuccessAt, s.LastEventCount, s.LastError, pending = s.PendingQueryId != null }
+                : new { feed = f, status = "NotStarted", LastRunAt = (DateTimeOffset?)null, LastSuccessAt = (DateTimeOffset?)null, LastEventCount = 0, LastError = (string?)null, pending = false });
+            var o = options.Value;
+            return Results.Ok(new
+            {
+                enabled = o.PurviewAuditIntervalMinutes > 0,
+                intervalMinutes = o.PurviewAuditIntervalMinutes,
+                highRiskConnectors = o.PowerPlatformHighRiskConnectors ?? [],
+                feeds,
+            });
         });
 
         // ── Entity investigation profile (drill-down) ──────────────────────────────

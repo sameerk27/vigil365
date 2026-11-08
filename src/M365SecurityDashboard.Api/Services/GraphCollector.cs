@@ -12,7 +12,8 @@ public sealed class GraphCollector(
     IOptions<GraphOptions> options,
     TenantGraphCredentials credentials,
     GraphMetrics graphMetrics,
-    ILogger<GraphCollector> logger)
+    ILogger<GraphCollector> logger,
+    PurviewAuditCollector? purviewAudit = null)
 {
     // Install-wide, non-credential settings (feed paths, lookbacks). Whether Graph
     // is reachable for the *current tenant* is a per-tenant question: `credentials`.
@@ -93,6 +94,22 @@ public sealed class GraphCollector(
                 run.SourceFailures++;
                 failures.Add(("Tenant audit events", GraphErrorHint.Describe(ex.Message, "Tenant audit events")));
                 logger.LogWarning(ex, "Tenant audit event collection failed");
+            }
+
+            // Copilot agent and Power Platform activity from the Purview audit log. Its
+            // permission is optional and it keeps its own hourly cadence and status
+            // (PurviewAuditState), so it is never one of this run's source failures:
+            // a tenant that hasn't granted it must not read as partly connected.
+            if (purviewAudit is not null)
+            {
+                try
+                {
+                    await purviewAudit.CollectAsync(ct);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    logger.LogWarning(ex, "Purview audit collection failed");
+                }
             }
 
             run.SourceFailureDetails = failures.Count > 0

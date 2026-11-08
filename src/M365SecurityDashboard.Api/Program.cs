@@ -100,6 +100,7 @@ builder.Services.AddScoped<TenantRollupService>();
 builder.Services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<TenantContext>());
 builder.Services.AddScoped<TenantGraphCredentials>();
 builder.Services.AddHttpClient<GraphApiClient>();
+builder.Services.AddScoped<M365SecurityDashboard.Api.Services.PowerPlatform.PowerPlatformOwners>();
 builder.Services.AddHttpClient();
 
 // Cross-platform secret encryption key ring. Persisted to disk so secrets survive
@@ -116,6 +117,8 @@ builder.Services.AddSingleton<SecretProtector>();
 builder.Services.AddSingleton<GraphMetrics>();
 builder.Services.AddSingleton<MetricsState>();
 builder.Services.AddScoped<MetricsService>();
+builder.Services.AddScoped<PurviewAuditCollector>();
+builder.Services.AddScoped<M365SecurityDashboard.Api.Services.Posture.PostureCollector>();
 builder.Services.AddScoped<GraphCollector>();
 builder.Services.AddScoped<NotificationSender>();
 builder.Services.AddScoped<DigestBuilder>();
@@ -361,12 +364,18 @@ app.Use(async (ctx, next) =>
 // Security headers must run before static files so the SPA shell and bundled
 // assets receive the same browser protections as API responses.
 var azureAdInstance = app.Configuration["AzureAd:Instance"]?.TrimEnd('/') ?? "https://login.microsoftonline.com";
+// The Power Platform page reads in the browser with the signed-in person's own Microsoft
+// sign-in: it calls the Power Platform API (inventory, apps) and, if the tenant lacks it,
+// Graph (register the Power Platform API). Those two origins, and no others.
+var graphOptions = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<GraphOptions>>().Value;
+string Origin(string url) => Uri.TryCreate(url, UriKind.Absolute, out var u) ? u.GetLeftPart(UriPartial.Authority) : "";
+var adminApiOrigins = string.Join(' ', new[] { Origin(graphOptions.BaseUrl), Origin(graphOptions.PowerPlatformApiBaseUrl) }.Where(o => o.Length > 0).Distinct());
 app.Use(async (ctx, next) =>
 {
     ctx.Response.Headers["X-Frame-Options"] = "DENY";
     ctx.Response.Headers["X-Content-Type-Options"] = "nosniff";
     ctx.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
-    ctx.Response.Headers["Content-Security-Policy"] = $"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' {azureAdInstance} wss:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';";
+    ctx.Response.Headers["Content-Security-Policy"] = $"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' {azureAdInstance} {adminApiOrigins} wss:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';";
     ctx.Response.Headers["Permissions-Policy"] = "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()";
     await next();
 });
@@ -414,6 +423,8 @@ app.MapMetricsEndpoints();
 app.MapReportsEndpoints();
 app.MapIntegrationsEndpoints();
 app.MapPlatformEndpoints();
+app.MapPostureEndpoints();
+app.MapPowerPlatformEndpoints();
 app.MapTenantEndpoints();
 
 app.Map("/api/{**rest}", (HttpContext ctx) =>

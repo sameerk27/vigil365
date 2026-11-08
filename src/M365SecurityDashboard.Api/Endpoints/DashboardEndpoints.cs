@@ -424,6 +424,43 @@ public static class DashboardEndpoints
             catch (Exception ex) { app.Logger.LogError(ex, "Dashboard endpoint error"); return Results.Ok(new { configured = true, error = GraphErrorHint.DescribeOrNull(ex.Message) ?? "An error occurred. Check server logs for details.", skus = Array.Empty<object>(), totalPurchased = 0, totalConsumed = 0 }); }
         });
 
+        // Microsoft 365 Copilot usage (beta usage report, Reports.Read.All) and seats (subscribedSkus).
+        // Users only appear in the report once they hold a Copilot licence.
+        app.MapGet("/api/dashboard/copilot", async (
+            IServiceProvider services, TenantGraphCredentials graphCreds, CancellationToken ct) =>
+        {
+            if (!await graphCreds.IsConfiguredAsync(ct))
+                return Results.Ok(new { configured = false });
+            try
+            {
+                var graph = services.GetRequiredService<GraphApiClient>();
+                var rows = await graph.GetCollectionAsync(
+                    $"/beta/reports/getMicrosoft365CopilotUsageUserDetail(period='{CopilotUsageSummary.ReportPeriod}')?$format=application/json", ct);
+                IReadOnlyList<JsonElement> skus;
+                try { skus = await graph.GetCollectionAsync("/v1.0/subscribedSkus", ct); }
+                catch (Exception ex) { app.Logger.LogWarning(ex, "Copilot page: licences could not be read"); skus = []; }
+
+                var s = CopilotUsageSummary.Build(rows, skus, DateTimeOffset.UtcNow);
+                return Results.Ok(new
+                {
+                    configured = true,
+                    s.ReportRefreshDate, s.LicensedUsers, s.Active, s.Inactive, s.NeverUsed,
+                    s.Seats, s.AssignedSeats, s.UnusedSeats, s.Skus, s.NamesConcealed, s.Apps, s.Users,
+                    activeDays = CopilotUsageSummary.ActiveDays,
+                });
+            }
+            catch (Exception ex)
+            {
+                app.Logger.LogError(ex, "Dashboard endpoint error");
+                // Microsoft changes these reports; when we don't recognise the failure, its own
+                // sentence beats "check the server logs".
+                var error = GraphErrorHint.DescribeOrNull(ex.Message, "Reports.Read.All")
+                    ?? (GraphErrorHint.GraphMessageOrNull(ex.Message) is { } said ? $"Microsoft Graph said: {said}" : null)
+                    ?? "An error occurred. Check server logs for details.";
+                return Results.Ok(new { configured = true, error });
+            }
+        });
+
         // Inactive users (last sign-in > 90 days)
         app.MapGet("/api/dashboard/inactive-users", async (
             IServiceProvider services, TenantGraphCredentials graphCreds, CancellationToken ct) =>

@@ -17,6 +17,8 @@ Disallow: /MSP_EDITION_PLAN.md
 Disallow: /MSP_MULTITENANT_PLAN.md
 Disallow: /MSP_V12_PLAN.md
 Disallow: /MSP_DATA_PROCESSING.md
+Disallow: /COPILOT_POWER_PLATFORM_PLAN.md
+Disallow: /LICENSE_POSTURE_PLAN.md
 
 # Search and answer crawlers (Googlebot, Bingbot, OAI-SearchBot, PerplexityBot,
 # Claude-SearchBot) are allowed by the rule above. Training crawlers are allowed too.

@@ -3,11 +3,14 @@ import { Search, ListChecks, User, AppWindow } from "lucide-react";
 import { apiBase, apiFetch } from "../services/api";
 import { relTime, fmtDate } from "../services/utils";
 import { Card, Badge, EmptyState, LoadingSkeleton, ExportDropdown } from "../components/SharedComponents";
+import { ACTIVITY_SOURCES } from "../services/purview";
 
 type AuditEventRow = {
   id: number;
   activity: string;
   category?: string;
+  /** "directoryAudit" (Entra ID) or "purviewAudit" (Copilot agents, Power Platform). */
+  source?: string;
   actorUpn?: string;
   actorApp?: string;
   targetName?: string;
@@ -18,15 +21,17 @@ type AuditEventRow = {
 type Page = { total: number; page: number; pageSize: number; items: AuditEventRow[] };
 
 /**
- * Tenant Activity: the collected directory-audit event stream that powers
- * activity-based alert policies. Answers "what changed in the tenant?"
- * without opening the Entra portal.
+ * Tenant Activity: the collected audit events that power activity-based alert
+ * policies — Entra directory audit, plus Copilot agent and Power Platform events
+ * from the Purview audit log. Answers "what changed in the tenant?" without
+ * opening the Entra or Power Platform admin portals.
  */
 export function ActivityFeedPage() {
   const [data, setData] = useState<Page | null>(null);
   const [error, setError] = useState(false);
   const [search, setSearch] = useState("");
   const [days, setDays] = useState(7);
+  const [source, setSource] = useState("");
   const [page, setPage] = useState(1);
 
   const load = useCallback(async () => {
@@ -34,13 +39,14 @@ export function ActivityFeedPage() {
     try {
       const qs = new URLSearchParams({ days: String(days), page: String(page), pageSize: "50" });
       if (search.trim()) qs.set("search", search.trim());
+      if (source) qs.set("source", source);
       const r = await apiFetch(`${apiBase}/api/audit-events?${qs}`);
       if (!r.ok) throw new Error(String(r.status));
       setData(await r.json());
     } catch {
       setError(true);
     }
-  }, [search, days, page]);
+  }, [search, days, source, page]);
 
   // Debounce search typing; immediate on page/days change.
   useEffect(() => {
@@ -62,7 +68,10 @@ export function ActivityFeedPage() {
                 onChange={e => { setPage(1); setSearch(e.target.value); }}
                 placeholder="Search activity, actor, target…"/>
             </label>
-            <select className="filter-sel" value={days} onChange={e => { setPage(1); setDays(Number(e.target.value)); }}>
+            <select className="filter-sel" aria-label="Filter by source" value={source} onChange={e => { setPage(1); setSource(e.target.value); }}>
+              {ACTIVITY_SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
+            <select className="filter-sel" aria-label="Period" value={days} onChange={e => { setPage(1); setDays(Number(e.target.value)); }}>
               <option value={1}>Last 24 hours</option>
               <option value={7}>Last 7 days</option>
               <option value={30}>Last 30 days</option>
@@ -70,14 +79,16 @@ export function ActivityFeedPage() {
             </select>
             <ExportDropdown rows={(data?.items ?? []).map(e => ({
               Occurred: e.occurredAt, Activity: e.activity, Category: e.category ?? "",
+              Source: e.source === "purviewAudit" ? "Purview audit" : "Entra directory audit",
               Actor: e.actorUpn ?? e.actorApp ?? "", Target: e.targetName ?? "", Result: e.result ?? "",
             }))} filename="tenant-activity.csv" scopeTotal={data?.total}/>
           </div>
         }>
         <div data-inline-style="inline-03fbcc5593">
-          Entra directory-audit events collected each cycle — the stream that activity-based
-          alert policies match against. Create a policy from any recurring activity in
-          Alert Center → Policies (type: Tenant activity).
+          Entra directory-audit events collected each cycle, plus Copilot agent, Power Automate,
+          Power Apps and Power Platform admin events from the Purview audit log (hourly, when
+          AuditLogsQuery.Read.All is granted). Activity-based alert policies match against this
+          stream. Create a policy from any recurring activity in Alert Center → Policies (type: Tenant activity).
         </div>
         {error ? (
           <EmptyState message="Could not load tenant activity — the API request failed. Refresh to retry."/>

@@ -232,4 +232,37 @@ public sealed class GraphApiClient
         }
         return items;
     }
+
+    /// <summary>
+    /// The only Graph POST Vigil365 makes: starting a Purview audit search. It creates
+    /// a search job and changes nothing in the tenant. Every other path is refused here,
+    /// and a test fails if code anywhere else sends a POST, so "Vigil365 only reads your
+    /// tenant" stays a property of the code, not a promise.
+    /// </summary>
+    public const string AuditLogQueriesPath = "/v1.0/security/auditLog/queries";
+
+    public async Task<JsonElement> PostAsync(string path, object body, CancellationToken ct)
+    {
+        if (!string.Equals(path, AuditLogQueriesPath, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Vigil365 only reads from Microsoft Graph. A POST to '{path}' is not allowed.");
+
+        var (options, credential) = await EnsureAsync(ct);
+        var url = $"{options.BaseUrl.TrimEnd('/')}/{path.TrimStart('/')}";
+        using var request = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(body), System.Text.Encoding.UTF8, "application/json"),
+        };
+        request.Headers.TryAddWithoutValidation("User-Agent", "M365SecurityDashboard/1.0");
+        var token = await credential.GetTokenAsync(new TokenRequestContext(new[] { $"{options.BaseUrl.TrimEnd('/')}/.default" }), ct);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
+
+        _metrics.RecordRequest();
+        using var response = await _http.SendAsync(request, ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests) _metrics.RecordThrottle();
+        var text = await response.Content.ReadAsStringAsync(ct);
+        if (!response.IsSuccessStatusCode)
+            throw new HttpRequestException($"{(int)response.StatusCode} {response.StatusCode}: {text}", null, response.StatusCode);
+        using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(text) ? "{}" : text);
+        return document.RootElement.Clone();
+    }
 }
