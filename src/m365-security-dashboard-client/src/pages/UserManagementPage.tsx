@@ -1,10 +1,10 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useMemo } from "react";
 import { CheckCircle, AlertCircle } from "lucide-react";
 import { AppRole, Tone } from "../services/types";
 import { apiBase, apiFetch, useAuth, isMspMode } from "../services/api";
 import { showInstallToast } from "../services/toast";
 import { confirmAction } from "../services/confirm";
-import { Card, Badge, EmptyState, LoadingSkeleton, InlineError } from "../components/SharedComponents";
+import { Card, Badge, EmptyState, LoadingSkeleton, InlineError, ExportDropdown } from "../components/SharedComponents";
 import { relTime, fmtDate } from "../services/utils";
 import { TenantAssignmentPicker } from "../components/TenantAssignmentPicker";
 import { ApiTokensCard } from "../components/ApiTokensCard";
@@ -44,6 +44,13 @@ interface VerifyResult {
 export function UserManagementPage() {
   const { email: myEmail } = useAuth();
   const [users, setUsers] = useState<ManagedUser[] | null>(null);
+  const [userSearch, setUserSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
+  const shownUsers = useMemo(() => {
+    const q = userSearch.trim().toLowerCase();
+    return (users ?? []).filter(u => (!roleFilter || u.role === roleFilter)
+      && (!q || [u.email, u.displayName ?? ""].some(v => v.toLowerCase().includes(q))));
+  }, [users, userSearch, roleFilter]);
   const [audit, setAudit] = useState<AuditRow[] | null>(null);
   // A failed read is not an empty list: "No users yet" / "No activity recorded
   // yet" would tell an Admin that nobody has access, or that nothing happened.
@@ -196,9 +203,22 @@ export function UserManagementPage() {
 
   return (
     <div className="page">
-      <Card title={`Users${users ? ` (${users.length})` : ""}`}
+      <Card title={`Users${users ? ` (${shownUsers.length === users.length ? users.length : `${shownUsers.length} of ${users.length}`})` : ""}`}
         badge={<Badge label="Admin only" tone="info"/>}
-        action={<button className="btn-export" onClick={() => setShowAdd(s => !s)}>{showAdd ? "Cancel" : "Add User"}</button>}>
+        action={
+          <div className="copilot-filters">
+            <input className="search-input" aria-label="Search users" value={userSearch} onChange={e => setUserSearch(e.target.value)} placeholder="Name or email"/>
+            <select className="filter-sel" aria-label="Filter users by role" value={roleFilter} onChange={e => setRoleFilter(e.target.value)}>
+              <option value="">All roles</option>
+              <option value="Admin">Admin</option>
+              <option value="Analyst">Analyst</option>
+              <option value="Viewer">Viewer</option>
+            </select>
+            <ExportDropdown filename="users.csv" scopeTotal={users?.length}
+              rows={shownUsers.map(u => ({ Name:u.displayName ?? "", Email:u.email, Role:u.role, LastSeen:u.lastSeenAt }))}/>
+            <button className="btn-export" onClick={() => setShowAdd(s => !s)}>{showAdd ? "Cancel" : "Add User"}</button>
+          </div>
+        }>
         <div data-inline-style="inline-03fbcc5593">
           Assign roles to people who have signed in. Roles are stored in Vigil365 — no Entra ID changes needed.
           <strong> Admin</strong> = full access · <strong>Analyst</strong> = acknowledge/snooze/resolve · <strong>Viewer</strong> = read-only.
@@ -228,6 +248,8 @@ export function UserManagementPage() {
           ? <LoadingSkeleton type="table"/>
           : users.length === 0
           ? <EmptyState message="No users yet."/>
+          : shownUsers.length === 0
+          ? <EmptyState message="No users match these filters. Clear the search or choose All roles."/>
           : (
             <div className="tbl-wrap">
               <table className="data-tbl">
@@ -235,7 +257,7 @@ export function UserManagementPage() {
                   <tr><th scope="col">User</th><th scope="col">Email</th><th scope="col">Role</th>{isMspMode() && tenants.length > 1 && <th scope="col">Clients</th>}<th scope="col">Last seen</th><th scope="col">Actions</th></tr>
                 </thead>
                 <tbody>
-                  {users.map(u => (
+                  {shownUsers.map(u => (
                     <tr key={u.email}>
                       <td data-inline-style="inline-3d9df89ef8">
                         {u.displayName || "—"}

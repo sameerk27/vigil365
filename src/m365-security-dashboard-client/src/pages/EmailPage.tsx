@@ -27,7 +27,7 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
     return () => window.removeEventListener("nav-seed-update", listener);
   }, []);
 
-  const emailAlerts = useMemo(() => alerts.filter(a => a.service==="ExchangeOnline" || a.alertType==="MalwareDetection" || a.alertType==="QuarantinedMessage" || a.alertType==="MailFlowIssue"), [alerts]);
+  const emailAlerts = useMemo(() => alerts.filter(a => !a.isResolved).filter(a => a.service==="ExchangeOnline" || a.alertType==="MalwareDetection" || a.alertType==="QuarantinedMessage" || a.alertType==="MailFlowIssue"), [alerts]);
   const quarantined = useMemo(() => emailAlerts.filter(a => a.alertType==="QuarantinedMessage"), [emailAlerts]);
   const mailFlow = useMemo(() => emailAlerts.filter(a => a.alertType==="MailFlowIssue"), [emailAlerts]);
   const malware = useMemo(() => emailAlerts.filter(a => a.alertType==="MalwareDetection"), [emailAlerts]);

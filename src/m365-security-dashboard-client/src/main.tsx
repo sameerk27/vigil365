@@ -25,7 +25,7 @@ import { ToastContainer } from "./components/ToastContainer";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { PageHelp } from "./components/PageHelp";
 import { GlobalSearch } from "./components/GlobalSearch";
-import { Badge, AlertDetailModal, DashboardSkeleton } from "./components/SharedComponents";
+import { Badge, AlertDetailModal, DashboardSkeleton, EmptyState } from "./components/SharedComponents";
 import { fmtDate, fmtCountdown, tzLabel, fmtUtc, isUtcMode, setUtcMode } from "./services/utils";
 import { useSessionTimeout, clearSessionStart, IDLE_TIMEOUT_MIN, type ExpiryReason } from "./services/session";
 
@@ -707,7 +707,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
             onBack={() => { if (window.history.length > 1) window.history.back(); else setPage("overview"); }}/>
         ) : (
           <>
-            {page==="overview"&&<OverviewPage overview={overview} secureScore={secureScore} identity={identity} devices={devices} serviceHealth={serviceHealth} alerts={allAlerts} defenderAlerts={defenderAlerts} securityIncidents={securityIncidents} onAlertClick={setSelectedAlert} onNavigateAlertCenter={()=>setPage("alertcenter")} alertPolicies={alertPolicies} overviewTriggered={triggeredAlerts} healthRefreshKey={refreshKey}/>}
+            {page==="overview"&&<OverviewPage dataLoading={loading} overview={overview} secureScore={secureScore} identity={identity} devices={devices} serviceHealth={serviceHealth} alerts={allAlerts} defenderAlerts={defenderAlerts} securityIncidents={securityIncidents} onAlertClick={setSelectedAlert} onNavigateAlertCenter={()=>setPage("alertcenter")} alertPolicies={alertPolicies} overviewTriggered={triggeredAlerts} healthRefreshKey={refreshKey}/>}
             {page==="recommendations"&&<RecommendationsPage />}
             {page==="trends"&&<TrendsPage />}
             {page==="reports"&&<ReportsPage />}
@@ -730,6 +730,7 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
             {page==="signinmap"&&<SignInLocationsPage data={signInLocations}/>}
             {page==="users"&&<UserManagementPage/>}
             {page==="clients"&&isMspMode()&&<ClientsPage/>}
+            {page==="clients"&&!isMspMode()&&<div className="page"><EmptyState message="Clients is only in the MSP edition. This install looks after one organisation."/></div>}
             {page==="setup"&&<SetupPage/>}
           </>
         )}

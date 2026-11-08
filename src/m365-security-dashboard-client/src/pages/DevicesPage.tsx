@@ -34,7 +34,7 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
     return () => window.removeEventListener("nav-seed-update", listener);
   }, []);
 
-  const deviceAlerts = useMemo(() => alerts.filter(a => a.service==="Intune"), [alerts]);
+  const deviceAlerts = useMemo(() => alerts.filter(a => !a.isResolved && a.service==="Intune"), [alerts]);
 
   // Search checks deviceName, userPrincipalName AND title (title = "Non-compliant device: ADMIN")
   const nonCompliant = useMemo(() => {
