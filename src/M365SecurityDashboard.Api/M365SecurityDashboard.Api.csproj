@@ -53,6 +53,7 @@
        upgraded — they may then satisfy these directly. -->
   <ItemGroup>
     <!-- GHSA-g8r8-53c2-pm3f (via Microsoft.Identity.Web) -->
-    <PackageReference Include="System.Security.Cryptography.Xml" Version="8.0.4" />
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="8.0.5" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="8.0.2" />
   </ItemGroup>
 </Project>
