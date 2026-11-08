@@ -7,8 +7,8 @@ import { Card, KpiTile, CircleGauge, LineChart, StatBox, SectHdr, Badge, EmptySt
 import { SetupChecklist } from "../components/SetupChecklist";
 import { CollectionHealthCard } from "../components/CollectionHealthCard";
 
-export function OverviewPage({ overview, secureScore, identity, devices, serviceHealth, alerts, defenderAlerts, securityIncidents, onAlertClick, onNavigateAlertCenter, alertPolicies, overviewTriggered, healthRefreshKey }:
-  { overview:Overview|null; secureScore:SecureScore|null; identity:IdentityData|null; devices:DevicesData|null; serviceHealth:ServiceHealthData|null; alerts:SecurityAlert[]; defenderAlerts:DefenderAlertsData|null; securityIncidents:SecurityIncidentsData|null; onAlertClick:(a:SecurityAlert)=>void; onNavigateAlertCenter:()=>void; alertPolicies:AlertPolicy[]; overviewTriggered:TriggeredAlert[]; healthRefreshKey:number }) {
+export function OverviewPage({ dataLoading, overview, secureScore, identity, devices, serviceHealth, alerts, defenderAlerts, securityIncidents, onAlertClick, onNavigateAlertCenter, alertPolicies, overviewTriggered, healthRefreshKey }:
+  { dataLoading?:boolean; overview:Overview|null; secureScore:SecureScore|null; identity:IdentityData|null; devices:DevicesData|null; serviceHealth:ServiceHealthData|null; alerts:SecurityAlert[]; defenderAlerts:DefenderAlertsData|null; securityIncidents:SecurityIncidentsData|null; onAlertClick:(a:SecurityAlert)=>void; onNavigateAlertCenter:()=>void; alertPolicies:AlertPolicy[]; overviewTriggered:TriggeredAlert[]; healthRefreshKey:number }) {
 
   // Points without a valid maxScore are gaps in the source data, not 0% — mapping
   // them to 0 painted a fake cliff at the end of the trend line.
@@ -25,7 +25,10 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
   // Security alerts only — service-health advisories are availability noise and
   // live in their own card, never in the alert feed or counts.
   const activeAlerts = useMemo(() => alerts.filter(a => !a.isResolved && a.service !== "ServiceHealth"), [alerts]);
-  const advisories = useMemo(() => alerts.filter(a => !a.isResolved && a.service === "ServiceHealth"), [alerts]);
+  // Service Health's own list when it has loaded, so this card and that page agree.
+  const advisories = useMemo<{ title: string; severity: string; detectedAt: string }[]>(
+    () => serviceHealth?.issues?.length ? serviceHealth.issues : alerts.filter(a => !a.isResolved && a.service === "ServiceHealth"),
+    [serviceHealth, alerts]);
 
   const mfaMissingCount = useMemo(() => activeAlerts.filter(a=>a.alertType==="MfaStatus").length, [activeAlerts]);
   const mfaPct = (identity?.mfa.total??0) > 0 ? (identity?.mfa.percentage??0) : 0;
@@ -37,7 +40,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
   // panel failure (the load banner already reports the count). Use the run state
   // to tell an unhelpful "set it up" message apart from an honest "retry" one.
   const collectionDone = !!overview?.lastRun?.completedAt;
-  const unloadedSub = collectionDone ? "Couldn't load this cycle — retry" : "Run collection to load";
+  const unloadedSub = dataLoading ? "Loading…" : collectionDone ? "Couldn't load this cycle — retry" : "Run collection to load";
 
   const devNonCompliant = devices?.nonCompliant??0;
   const devEffectiveTotal = Math.max(devices?.totalDevices??0, devNonCompliant);
@@ -161,6 +164,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
             <EmptyState message={
               secureScore?.configured ? "Collecting trend data — check back after first run"
               : secureScore?.error ? "Couldn't load Secure Score this cycle — retry the refresh"
+              : dataLoading ? "Loading Secure Score…"
               : collectionDone ? "Secure Score data unavailable — retry the refresh"
               : "Configure Graph credentials then run a collection"
             }/>
@@ -274,7 +278,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
           )}
         </Card>
         <Card title="Device Compliance"
-          badge={devNonCompliant>0?<Badge label={`${devNonCompliant} non-compliant`} tone={devNonCompliant>3?"error":"warning"}/>:<Badge label="All compliant" tone="good"/>}>
+          badge={devNonCompliant>0?<Badge label={`${devNonCompliant} non-compliant`} tone={devNonCompliant>3?"error":"warning"}/>:devices&&devEffectiveTotal===0?<Badge label="No devices" tone="neutral"/>:<Badge label="All compliant" tone="good"/>}>
           <div className="device-hero">
             <CircleGauge pct={devices ? devComplPct : 0} size={70} color={devices && (devices.totalDevices??0)>0 ? undefined : "var(--color-muted)"}/>
             <div className="stat-col">
@@ -296,7 +300,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
             !devices
               ?<EmptyState message="Run a collection to load device data"/>
               :devNonCompliant===0
-                ?<EmptyState message="All devices are compliant"/>
+                ?<EmptyState message={devEffectiveTotal===0 ? "No managed devices found. Enrol devices in Intune to see compliance here." : "All devices are compliant"}/>
                 :<EmptyState message={`${devNonCompliant} non-compliant reported by Intune summary`}/>
           )}
         </Card>

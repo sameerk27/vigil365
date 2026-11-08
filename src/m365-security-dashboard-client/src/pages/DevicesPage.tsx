@@ -34,7 +34,7 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
     return () => window.removeEventListener("nav-seed-update", listener);
   }, []);
 
-  const deviceAlerts = useMemo(() => alerts.filter(a => a.service==="Intune"), [alerts]);
+  const deviceAlerts = useMemo(() => alerts.filter(a => !a.isResolved && a.service==="Intune"), [alerts]);
 
   // Search checks deviceName, userPrincipalName AND title (title = "Non-compliant device: ADMIN")
   const nonCompliant = useMemo(() => {
@@ -84,9 +84,9 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
     <div className="page">
       {selectedMde && <DefenderAlertModal alert={selectedMde} onClose={() => setSelectedMde(null)}/>}
       <div className="kpi-row kpi-row-4">
-        <KpiTile icon={<Monitor size={18}/>} label="COMPLIANCE RATE" value={devices ? `${devComplPct}%` : "—"}
+        <KpiTile icon={<Monitor size={18}/>} label="COMPLIANCE RATE" value={devices && (devices.totalDevices??0)>0 ? `${devComplPct}%` : "—"}
           sub={devices ? ((devices.totalDevices??0)>0?`${devices.totalDevices} total devices`:"No devices enrolled") : "Run collection to load"}
-          tone={devices ? pctTone(devComplPct) : "neutral"} onClick={() => scrollTo(ncRef)}/>
+          tone={devices && (devices.totalDevices??0)>0 ? pctTone(devComplPct) : "neutral"} onClick={() => scrollTo(ncRef)}/>
         <KpiTile icon={<XCircle size={18}/>} label="NON-COMPLIANT" value={devices?.nonCompliant??0}
           sub="Require immediate action" tone={(devices?.nonCompliant??0)===0?"good":(devices?.nonCompliant??0)<=3?"warning":"error"}
           onClick={() => { setNcSearch(""); setNcSev(""); scrollTo(ncRef); }}/>
@@ -162,7 +162,7 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
           </div>
         }>
         {deviceAlerts.filter(a=>a.alertType==="NonCompliantDevice").length===0
-          ?<EmptyState icon={<ShieldCheck size={28}/>} message="All devices are compliant"/>
+          ?<EmptyState icon={<ShieldCheck size={28}/>} message={devices && (devices.totalDevices??0)===0 ? "No managed devices found. Enrol devices in Intune to see compliance here." : "All devices are compliant"}/>
           : nonCompliant.length===0
             ?<div className="td-empty" data-inline-style="inline-d8c94c1628">No devices match the filter.</div>
             :(

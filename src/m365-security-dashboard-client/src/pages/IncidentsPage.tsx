@@ -13,11 +13,13 @@ export type UnifiedItem =
 
 export type IncidentFilter = "all" | "alerts" | "defender" | "incidents" | "advisories";
 
-export function IncidentsPage({ alerts, alertsTotal, serviceHealth, defenderAlerts, securityIncidents, onAlertClick }:
+export function IncidentsPage({ alerts: recentAlerts, alertsTotal, serviceHealth, defenderAlerts, securityIncidents, onAlertClick }:
   { alerts: SecurityAlert[]; alertsTotal?: number; serviceHealth: ServiceHealthData|null; defenderAlerts: DefenderAlertsData|null; securityIncidents: SecurityIncidentsData|null; onAlertClick:(a:SecurityAlert)=>void }) {
   // The alert list is server-capped (200). When more exist, say so rather than
   // letting this page silently disagree with Overview's full-database count.
-  const truncated = (alertsTotal ?? 0) > alerts.length;
+  const truncated = (alertsTotal ?? 0) > recentAlerts.length;
+  // The feed also holds resolved rows (a registered MFA user is one), and this page lists open work.
+  const alerts = useMemo(() => recentAlerts.filter(a => !a.isResolved), [recentAlerts]);
   const [search, setSearch] = useState("");
   const [severity, setSeverity] = useState("");
   const [typeFilter, setTypeFilter] = useState<IncidentFilter>("all");
@@ -232,7 +234,7 @@ export function IncidentsPage({ alerts, alertsTotal, serviceHealth, defenderAler
       <Card title="All Incidents & Advisories" badge={<Badge label={`${filtered.length} shown`} tone="neutral"/>}>
         {truncated && (
           <div className="trunc-notice">
-            Showing the {alerts.length} most recent open Vigil365 alerts of {alertsTotal} total.
+            Showing the {alerts.length} open Vigil365 alerts among the {recentAlerts.length} most recent of {alertsTotal} total.
             Narrow the filters or export to see the rest.
           </div>
         )}
@@ -271,7 +273,7 @@ export function IncidentsPage({ alerts, alertsTotal, serviceHealth, defenderAler
             // Only the Vigil365-alert portion is server-capped (200); Defender,
             // incidents and advisories are fully loaded. So the true scope is
             // what is on screen plus the alerts the cap hid.
-            scopeTotal={truncated ? filtered.length + ((alertsTotal ?? 0) - alerts.length) : undefined}
+            scopeTotal={truncated ? filtered.length + ((alertsTotal ?? 0) - recentAlerts.length) : undefined}
           />
           {(search||severity||typeFilter!=="all"||dateRange!=="all")&&(
             <button className="btn-apply" onClick={()=>{setSearch("");setSeverity("");setTypeFilter("all");setDateRange("all");}}>Clear</button>

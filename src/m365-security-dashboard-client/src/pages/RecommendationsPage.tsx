@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { ShieldAlert, ExternalLink, Lightbulb, CheckCircle2, AlertTriangle, ChevronRight, Layers, ShieldCheck, RefreshCw } from "lucide-react";
+import { ShieldAlert, ExternalLink, Lightbulb, CheckCircle2, AlertTriangle, ChevronRight, Layers, ShieldCheck, RefreshCw, Search } from "lucide-react";
 import { SecurityRecommendation, CaGapFinding } from "../services/types";
 import { recApi, caApi } from "../services/api";
 
@@ -23,7 +23,7 @@ function findingToRec(f: CaGapFinding, idx: number, source: "ca" | "sharing"): S
       : "https://admin.microsoft.com/sharepoint?page=sharing&modern=true",
   };
 }
-import { KpiTile, Card, Badge, EmptyState, LoadingSkeleton } from "../components/SharedComponents";
+import { KpiTile, Card, Badge, EmptyState, LoadingSkeleton, ExportDropdown } from "../components/SharedComponents";
 import { sevTone, severityRank } from "../services/utils";
 
 export function RecommendationsPage() {
@@ -31,6 +31,8 @@ export function RecommendationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
+  const [search, setSearch] = useState("");
+  const [severity, setSeverity] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const loadData = async () => {
@@ -70,9 +72,11 @@ export function RecommendationsPage() {
   }, [recommendations]);
 
   const filtered = useMemo(() => {
-    if (selectedCategory === "All") return recommendations;
-    return recommendations.filter(r => r.category === selectedCategory);
-  }, [recommendations, selectedCategory]);
+    const q = search.trim().toLowerCase();
+    return recommendations.filter(r => (selectedCategory === "All" || r.category === selectedCategory)
+      && (!severity || r.severity === severity)
+      && (!q || [r.title, r.category, r.whyItMatters].some(v => v.toLowerCase().includes(q))));
+  }, [recommendations, selectedCategory, severity, search]);
 
   const criticalCount = useMemo(() => recommendations.filter(r => r.severity === "critical").length, [recommendations]);
   const highCount = useMemo(() => recommendations.filter(r => r.severity === "high").length, [recommendations]);
@@ -114,9 +118,24 @@ export function RecommendationsPage() {
       <Card title="Security Recommendations"
         badge={<Badge label="Read-only advisor" tone="info" />}
         action={
-          <button className="btn-export" onClick={loadData} disabled={loading}>
-            <RefreshCw size={13} className={loading ? "spin" : undefined} /> Refresh
-          </button>
+          <div className="copilot-filters">
+            <label className="search-box">
+              <Search size={14} aria-hidden="true"/>
+              <input className="search-input" aria-label="Search recommendations" value={search} onChange={e => setSearch(e.target.value)} placeholder="Title, category or reason"/>
+            </label>
+            <select className="filter-sel" aria-label="Filter by severity" value={severity} onChange={e => setSeverity(e.target.value)}>
+              <option value="">All severities</option>
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+            <ExportDropdown filename="recommendations.csv" scopeTotal={recommendations.length}
+              rows={filtered.map(r => ({ Severity:r.severity, Category:r.category, Title:r.title, Affected:r.affectedCount, Why:r.whyItMatters, Fix:r.remediationSteps.join(" "), Portal:r.portalDeepLink }))}/>
+            <button className="btn-export" onClick={loadData} disabled={loading}>
+              <RefreshCw size={13} className={loading ? "spin" : undefined} /> Refresh
+            </button>
+          </div>
         }>
         <div data-inline-style="inline-03fbcc5593">
           Prioritized posture improvements paired with why-it-matters context, step-by-step remediation,
@@ -142,7 +161,7 @@ export function RecommendationsPage() {
         ) : error ? (
           <EmptyState icon={<AlertTriangle size={28} />} message={error} />
         ) : filtered.length === 0 ? (
-          <EmptyState icon={<CheckCircle2 size={28} />} message="No recommendations in this category — your tenant matches the baseline criteria." />
+          <EmptyState icon={<CheckCircle2 size={28} />} message={search || severity ? "No recommendations match these filters. Clear the search or choose All severities." : "No recommendations in this category — your tenant matches the baseline criteria."} />
         ) : (
           <div data-inline-style="inline-379fabac31">
             {filtered.map(item => {

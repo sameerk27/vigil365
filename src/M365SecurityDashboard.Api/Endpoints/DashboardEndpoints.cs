@@ -154,9 +154,19 @@ public static class DashboardEndpoints
 
                 try
                 {
-                    // Guest Governance (requires Azure AD P1/P2 for signInActivity)
-                    var guests = await graph.GetCollectionAsync(
-                        "/v1.0/users?$filter=userType eq 'Guest'&$select=id,displayName,userPrincipalName,mail,signInActivity", gct);
+                    // Without P1/P2 Microsoft refuses the whole request when signInActivity is selected,
+                    // so that refusal is the licence signal. A guest who has never signed in simply has
+                    // no signInActivity, which says nothing about the licence.
+                    IReadOnlyList<JsonElement> guests;
+                    try
+                    {
+                        guests = await graph.GetCollectionAsync(GuestSignInActivity.WithActivityPath, gct);
+                    }
+                    catch (HttpRequestException ex) when (GuestSignInActivity.NeedsPremium(ex.Message))
+                    {
+                        guestLicenseRequired = true;
+                        guests = await graph.GetCollectionAsync(GuestSignInActivity.WithoutActivityPath, gct);
+                    }
                     guestTotal = guests.Count;
 
                     var threshold90 = DateTimeOffset.UtcNow.AddDays(-90);
@@ -176,19 +186,11 @@ public static class DashboardEndpoints
                             lastSignIn = dt;
                         }
 
-                        // If lastSignIn is null, they've either never signed in or we don't have the data (or no P1/P2).
-                        // If they don't have P1/P2, signInActivity won't be returned at all for any user.
+                        // No date means they have never signed in, or the tenant has no P1/P2 (licence message shown).
                         if (lastSignIn == null || lastSignIn < threshold90)
                         {
                             guestInactive90d++;
                         }
-                    }
-
-                    // Heuristic: If we have guests but absolutely none of them have signInActivity, we likely lack P1/P2.
-                    // A proper way would be to check the tenant SKUs, but this works well enough.
-                    if (guestTotal > 0 && guests.All(g => !g.TryGetProperty("signInActivity", out _)))
-                    {
-                        guestLicenseRequired = true;
                     }
                 }
                 catch { /* permission not granted, or budget elapsed – skip */ }
@@ -278,7 +280,8 @@ public static class DashboardEndpoints
                 { "email", "Email" },
                 { "fido2", "FIDO2 / Security Key" },
                 { "softwareOath", "OATH Token (App)" },
-                { "windowsHelloForBusiness", "Windows Hello" }
+                { "windowsHelloForBusiness", "Windows Hello" },
+                { "softwareOneTimePasscode", "Authenticator app code" }
             };
 
             var mfaMethodsBreakdown = mfaMethods.Select(kv => new

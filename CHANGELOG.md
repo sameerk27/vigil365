@@ -127,6 +127,21 @@ version lives in exactly two places — the API's `<Version>` and the client's
   Enterprise applications. Nothing else to do.
 
 ### Fixed
+- **Devices and Email show open items only.** Resolved rows were still listed, so a device that
+  had been fixed stayed on the non-compliant list and old mail flow issues counted as active.
+- **Overview no longer says "Couldn't load" while Secure Score is still loading,** and its
+  advisory count now matches Service Health.
+- Network, Recommendations and Users gain search, filters and CSV export.
+- Opening the Clients page on a Single edition install now explains why, instead of a blank page.
+- **MFA coverage no longer counts people who have left.** Anyone who dropped out of Microsoft's
+  report stayed counted as registered, which inflated the figure. Guests are left out too, so
+  Overview and Posture now agree.
+- **High and Critical alert tiles on Incidents count open alerts only.** They said "unresolved"
+  but included resolved ones. The list on that page now shows open alerts only.
+- **Guest Governance no longer says P1/P2 is needed when you have it.** A guest who had never
+  signed in triggered the message by mistake.
+- **A tenant with no managed devices no longer reads as all compliant.**
+- The MFA breakdown shows "Authenticator app code" instead of `softwareOneTimePasscode`.
 - **Device compliance no longer counts compliant devices as non-compliant.** Microsoft ignored
   the old filter on some tenants, so compliant devices opened alerts. Vigil365 now asks for
   non-compliant devices only and drops anything else. Devices in the `error` or `conflict` state

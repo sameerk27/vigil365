@@ -1,13 +1,32 @@
 import React, { useState, useMemo } from "react";
-import { Activity, LogIn, XCircle, Globe, AlertCircle, ExternalLink, BarChart2 } from "lucide-react";
+import { Activity, LogIn, XCircle, Globe, AlertCircle, ExternalLink, BarChart2, Search } from "lucide-react";
 import { ServiceHealthData, SignInLocationsData, SignInEntry } from "../services/types";
 import { fmtDate, relTime, fmtShort, countryFlag, fmtFullTime } from "../services/utils";
-import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, StatusDot, SectHdr, MiniBarChart, rowActivation} from "../components/SharedComponents";
+import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, StatusDot, SectHdr, MiniBarChart, rowActivation, ExportDropdown, SortTh} from "../components/SharedComponents";
 import { M365_SVCS, matchSvcIssue } from "./ServiceHealthPage";
 
 export function NetworkPage({ serviceHealth, signInLocations }: { serviceHealth: ServiceHealthData|null; signInLocations: SignInLocationsData|null }) {
   const [selectedSignIn, setSelectedSignIn] = useState<SignInEntry|null>(null);
   const svcIssues = serviceHealth?.total??0;
+  const [signInSearch, setSignInSearch] = useState("");
+  const [signInResult, setSignInResult] = useState("");
+  const [signInSort, setSignInSort] = useState<"user"|"when">("when");
+  const [signInDir, setSignInDir] = useState<"asc"|"desc">("desc");
+  const onSignInSort = (col: "user"|"when") => {
+    if (col === signInSort) setSignInDir(d => d === "asc" ? "desc" : "asc");
+    else { setSignInSort(col); setSignInDir(col === "when" ? "desc" : "asc"); }
+  };
+
+  const shownSignIns = useMemo(() => {
+    const q = signInSearch.trim().toLowerCase();
+    const dir = signInDir === "asc" ? 1 : -1;
+    return (signInLocations?.recent ?? [])
+      .filter(s => (!signInResult || (signInResult === "success") === s.success)
+        && (!q || [s.upn, s.app, s.city, s.country].some(v => v?.toLowerCase().includes(q))))
+      .sort((a, b) => dir * (signInSort === "user"
+        ? (a.upn ?? "").localeCompare(b.upn ?? "")
+        : new Date(a.created ?? 0).getTime() - new Date(b.created ?? 0).getTime()));
+  }, [signInLocations, signInSearch, signInResult, signInSort, signInDir]);
 
   // top apps by sign-in count
   const topApps = useMemo(()=>{
@@ -119,14 +138,31 @@ export function NetworkPage({ serviceHealth, signInLocations }: { serviceHealth:
         </Card>
       </div>
 
-      <Card title="Recent Sign-in Activity" badge={<Badge label={`${signInLocations?.total??0} events`} tone="neutral"/>}>
+      <Card title="Recent Sign-in Activity" badge={<Badge label={`${shownSignIns.length} of ${signInLocations?.recent.length??0} events`} tone="neutral"/>}
+        action={
+          <div className="copilot-filters">
+            <label className="search-box">
+              <Search size={14} aria-hidden="true"/>
+              <input className="search-input" aria-label="Search sign-ins" value={signInSearch} onChange={e => setSignInSearch(e.target.value)} placeholder="User, app or location"/>
+            </label>
+            <select className="filter-sel" aria-label="Filter sign-ins by result" value={signInResult} onChange={e => setSignInResult(e.target.value)}>
+              <option value="">All results</option>
+              <option value="success">Success</option>
+              <option value="failed">Failed</option>
+            </select>
+            <ExportDropdown filename="sign-in-activity.csv" scopeTotal={signInLocations?.recent.length}
+              rows={shownSignIns.map(s => ({ User:s.upn??"", App:s.app??"", City:s.city??"", Country:s.country??"", Time:s.created??"", Result:s.success?"Success":"Failed" }))}/>
+          </div>
+        }>
         {!signInLocations?.configured||signInLocations.recent.length===0
           ? <EmptyState icon={<LogIn size={28}/>} message="No recent sign-in data"/>
+          : shownSignIns.length===0
+          ? <EmptyState icon={<LogIn size={28}/>} message="No sign-ins match these filters. Clear the search or choose All results."/>
           : <div className="tbl-wrap">
               <table className="data-tbl">
-                <thead><tr><th scope="col">User</th><th scope="col">App</th><th scope="col">Location</th><th scope="col">Time</th><th scope="col">Result</th></tr></thead>
+                <thead><tr><SortTh label="User" col="user" sortBy={signInSort} sortDir={signInDir} onSort={onSignInSort}/><th scope="col">App</th><th scope="col">Location</th><SortTh label="Time" col="when" sortBy={signInSort} sortDir={signInDir} onSort={onSignInSort}/><th scope="col">Result</th></tr></thead>
                 <tbody>
-                  {signInLocations.recent.map((s,i)=>(
+                  {shownSignIns.map((s,i)=>(
                     <tr key={i} className="tbl-row-click" {...rowActivation(()=>setSelectedSignIn(s), "Open sign-in detail")}>
                       <td><div className="al-title">{s.upn?.split("@")[0]??"Unknown"}</div></td>
                       <td className="al-desc">{s.app??"—"}</td>
