@@ -11,7 +11,9 @@ Key facts:
 - Optional Microsoft Graph permissions: AttackSimulation.ReadWrite.All (read-write only because Graph has no read-only option for attack simulation results; Vigil365 reads with it and works without it), SecurityIdentitiesHealth.Read.All, AuditLogsQuery.Read.All, DeviceManagementConfiguration.Read.All and InformationProtectionPolicy.Read.All.
 - Requirements: Windows 10 or 11, or Windows Server 2019 or later, and a Microsoft 365 tenant.
 - Licence: MIT. Source code: https://github.com/sameerk27/vigil365
-- Latest release: v1.1.0.
+- Latest release: v1.2.0.
+- Pages include identity, devices, email, Conditional Access, licence posture, Copilot usage and Power Platform alerts.
+- MSP edition: a preview in v1.2.0. It watches many client tenants from one install, and needs SQL Server Standard or Enterprise, Azure SQL, or PostgreSQL. It has not yet been through a full walkthrough on a real client tenant.
 
 ## Docs
 
