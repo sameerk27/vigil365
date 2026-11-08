@@ -36,18 +36,26 @@ phishing simulations; Vigil365 only reads results with it.
 sends to Graph: an audit search is started with `POST /security/auditLog/queries`,
 which creates a search job and changes nothing in the tenant. The Graph client
 refuses a POST to any other path, and a test fails if code anywhere else sends one.
-Without this permission the Copilot agent and Power Platform rules stay idle and
-Rules & Notifications says so; nothing else is affected.
+The same permission covers all three searches: Copilot Studio agents, Power Automate and
+Power Apps, and Power Platform admin changes (DLP policies, environment groups and their
+sharing limits, an admin taking System Administrator, Customer Lockbox). The admin search
+asks by operation name, because Graph's record type list has no member for those records.
+Without this permission the Copilot agent and Power Platform rules stay idle, and the
+Power Platform page and Rules & Notifications say so; nothing else is affected.
 
 | Feature | Permission |
 | --- | --- |
 | Attack simulation results (Graph has no read-only variant; a tenant may refuse it) | `AttackSimulation.ReadWrite.All` |
 | Defender for Identity sensor health | `SecurityIdentitiesHealth.Read.All` |
-| Copilot agent, Power Automate and Power Apps alerts (Purview audit search) | `AuditLogsQuery.Read.All` |
+| Copilot agent, Power Automate, Power Apps and Power Platform admin alerts (Purview audit search) | `AuditLogsQuery.Read.All` |
 | Intune compliance policies (licence posture) | `DeviceManagementConfiguration.Read.All` |
+| Purview sensitivity labels (Compliance page) | `InformationProtectionPolicy.Read.All` |
 
 Without `DeviceManagementConfiguration.Read.All` the licence posture check for an Intune
 compliance policy says "Unknown" with the reason; the other checks are unaffected.
+
+Without `InformationProtectionPolicy.Read.All` the Compliance page's sensitivity labels card
+says which permission to grant; nothing else is affected.
 
 Admin consent is required. In the MSP edition each client's Global Administrator grants it
 once, through the onboarding consent popup. Changing this list after clients have consented
@@ -57,9 +65,12 @@ means every client must consent again.
 `Application.Read.All` granted in **your own tenant** only. It is deliberately not in the list
 above, so clients never consent to it.
 
-## Not an application permission: the Power Platform page
+**The Power Platform page needs no permission of its own.** It shows alerts and activity
+from the Purview audit search above and has no sign-in popup. Vigil365's app has no Power
+Platform API access.
 
-The Power Platform page reads Microsoft's Power Platform inventory in the viewer's browser with
-the viewer's own Microsoft sign-in (delegated `ResourceQuery.Resources.Read` and
-`PowerApps.Apps.Read` on the Power Platform API, consented in a popup the first time). Vigil365's
-app gets no Power Platform access. See `docs/COPILOT_POWER_PLATFORM_PLAN.md`, phase D.
+An earlier development build read Microsoft's Power Platform inventory in the browser, with
+delegated `ResourceQuery.Resources.Read` and `PowerApps.Apps.Read` (and
+`Application.ReadWrite.All` for a one-time "Register the Power Platform API" step). That is
+gone. If an admin consented to those scopes, they can remove the consent under Enterprise
+applications; nothing else needs doing.

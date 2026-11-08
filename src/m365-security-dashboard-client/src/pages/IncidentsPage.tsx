@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from "react";
 import { ShieldAlert, AlertCircle, AlertTriangle, Bell, Search, Eye, ExternalLink, Database } from "lucide-react";
 import { SecurityAlert, ServiceHealthData, DefenderAlertsData, SecurityIncidentsData, DefenderAlert, SecurityIncident } from "../services/types";
-import { fmtDate, relTime, fmtDefenderSource, fmtService, sevColor } from "../services/utils";
-import { DetailModal, DetailField, KpiTile, Card, Badge, MiniBarChart, InlineError, ExportDropdown, rowActivation, LineChart, EmptyState } from "../components/SharedComponents";
+import { fmtDate, relTime, fmtDefenderSource, fmtService, sevColor, severityRank, PORTAL } from "../services/utils";
+import { DefenderAlertModal, DetailModal, DetailField, KpiTile, Card, Badge, MiniBarChart, InlineError, ExportDropdown, rowActivation, LineChart, EmptyState } from "../components/SharedComponents";
 import { FilterPresets } from "../components/FilterPresets";
 
 export type UnifiedItem =
@@ -12,61 +12,6 @@ export type UnifiedItem =
   | { kind: "advisory"; data: { title: string; description?: string; severity: string; detectedAt: string; portalUrl?: string } };
 
 export type IncidentFilter = "all" | "alerts" | "defender" | "incidents" | "advisories";
-
-export function DefenderAlertModal({ alert, onClose, parentIncident, onOpenIncident }:
-  { alert: DefenderAlert; onClose: () => void; parentIncident?: SecurityIncident | null; onOpenIncident?: () => void }) {
-  const portalUrl = alert.alertWebUrl ?? (alert.id ? `https://security.microsoft.com/alerts/${alert.id}` : "https://security.microsoft.com/alerts");
-  const sev = alert.severity.charAt(0).toUpperCase() + alert.severity.slice(1);
-  return (
-    <DetailModal
-      title={alert.title ?? "Defender Alert"}
-      subtitle={`${sev} · ${fmtDefenderSource(alert.serviceSource ?? "Defender")}`}
-      onClose={onClose}
-      portalUrl={portalUrl}
-      portalLabel="View in Defender XDR"
-    >
-      <DetailField label="Alert ID" value={alert.id} copy={!!alert.id}/>
-      <DetailField label="Severity" value={sev}/>
-      <DetailField label="Status" value={alert.status}/>
-      <DetailField label="Classification" value={alert.classification}/>
-      <DetailField label="Service Source" value={fmtDefenderSource(alert.serviceSource ?? "")}/>
-      <DetailField label="Detection Source" value={alert.detectionSource}/>
-      <DetailField label="Category" value={alert.category}/>
-      <DetailField label="Assigned To" value={alert.assignedTo}/>
-      <DetailField label="Threat Actor" value={alert.actorDisplayName}/>
-      <DetailField label="Threat" value={alert.threatDisplayName}/>
-      {alert.incidentId && parentIncident && onOpenIncident ? (
-        <DetailField label="Incident" value={parentIncident.displayName ?? "Security Incident"} onNavigate={onOpenIncident} navLabel="Open incident →"/>
-      ) : (
-        <DetailField label="Incident ID" value={alert.incidentId} copy={!!alert.incidentId}/>
-      )}
-      <DetailField label="Detected" value={alert.createdDateTime ? `${relTime(alert.createdDateTime)} (${fmtDate(alert.createdDateTime)})` : undefined} title={fmtDate(alert.createdDateTime)}/>
-      <DetailField label="Last Updated" value={alert.lastUpdateDateTime ? `${relTime(alert.lastUpdateDateTime)} (${fmtDate(alert.lastUpdateDateTime)})` : undefined} title={fmtDate(alert.lastUpdateDateTime)}/>
-      {alert.description && (
-        <>
-          <div className="dm-section-hdr">Description</div>
-          <div className="dm-desc-block">{alert.description}</div>
-        </>
-      )}
-      {((Array.isArray(alert.mitreTechniques)?alert.mitreTechniques:[]).filter(Boolean)).length>0&&(
-        <>
-          <div className="dm-section-hdr">MITRE Techniques</div>
-          <div className="mitre-tags">
-            {(Array.isArray(alert.mitreTechniques)?alert.mitreTechniques:[]).filter(Boolean).map(t=>(
-              <a key={t} href={`https://attack.mitre.org/techniques/${t.replace(".","/")||t}`} target="_blank" rel="noopener noreferrer" className="mitre-tag">{t}</a>
-            ))}
-          </div>
-        </>
-      )}
-      {alert.recommendedActions && (
-        <>
-          <div className="dm-section-hdr">Recommended Actions</div>
-          <div className="dm-desc-block">{alert.recommendedActions}</div>
-        </>
-      )}
-    </DetailModal>
-  );
-}
 
 export function IncidentsPage({ alerts, alertsTotal, serviceHealth, defenderAlerts, securityIncidents, onAlertClick }:
   { alerts: SecurityAlert[]; alertsTotal?: number; serviceHealth: ServiceHealthData|null; defenderAlerts: DefenderAlertsData|null; securityIncidents: SecurityIncidentsData|null; onAlertClick:(a:SecurityAlert)=>void }) {
@@ -139,11 +84,10 @@ export function IncidentsPage({ alerts, alertsTotal, serviceHealth, defenderAler
     }
     // Triage order: worst first (severity), then most recent. The queue must lead
     // with the item an analyst should look at now, regardless of source.
-    const sevRank = (s?: string) => ({ critical:0, high:1, medium:2, low:3, informational:4 } as Record<string,number>)[(s??"").toLowerCase()] ?? 5;
     const itemSev = (i: UnifiedItem) => i.kind==="alert"?i.data.severity:i.kind==="defender"?i.data.severity:i.kind==="incident"?i.data.severity:i.data.severity;
     const itemWhen = (i: UnifiedItem) => i.kind==="alert"?i.data.detectedAt:i.kind==="defender"?i.data.createdDateTime:i.kind==="incident"?i.data.createdDateTime:i.data.detectedAt;
     return [...items].sort((a,b) =>
-      sevRank(itemSev(a)) - sevRank(itemSev(b)) ||
+      severityRank(itemSev(a)) - severityRank(itemSev(b)) ||
       new Date(itemWhen(b) ?? 0).getTime() - new Date(itemWhen(a) ?? 0).getTime());
   }, [unified, typeFilter, severity, search, dateRange]);
 
@@ -175,7 +119,7 @@ export function IncidentsPage({ alerts, alertsTotal, serviceHealth, defenderAler
           title={selectedIncident.displayName ?? "Security Incident"}
           subtitle={`${selectedIncident.severity} · ${selectedIncident.status}`}
           onClose={()=>setSelectedIncident(null)}
-          portalUrl={selectedIncident.incidentWebUrl ?? (selectedIncident.id ? `https://security.microsoft.com/incidents/${selectedIncident.id}` : "https://security.microsoft.com/incidents")}
+          portalUrl={selectedIncident.incidentWebUrl ?? (selectedIncident.id ? `${PORTAL.defenderIncidents}/${selectedIncident.id}` : PORTAL.defenderIncidents)}
           portalLabel="View in Defender XDR"
         >
           <DetailField label="Incident ID" value={selectedIncident.id} copy={!!selectedIncident.id}/>

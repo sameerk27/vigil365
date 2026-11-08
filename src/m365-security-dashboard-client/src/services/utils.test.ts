@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { csvSafe, tzLabel, fmtUtc } from "./utils";
+import { csvSafe, tzLabel, fmtUtc, fmtDate, fmtShort, setUtcMode, severityRank, matchesQuery, filterAlerts, defenderAlertUrl, PORTAL } from "./utils";
 
 /**
  * The CSV guard is the frontend half of a security control: exported alert
@@ -55,5 +55,69 @@ describe("tzLabel", () => {
 
   it("produces a non-empty label", () => {
     expect(tzLabel().length).toBeGreaterThan(0);
+  });
+});
+
+// Pins the two app-wide date formats before they share one implementation.
+describe("fmtDate / fmtShort", () => {
+  const thisYear = new Date().getUTCFullYear();
+  it("shows the year only when it is not this year, in UTC mode", () => {
+    setUtcMode(true);
+    try {
+      expect(fmtDate("2020-03-05T14:07:00Z")).toBe("Mar 5, 2020, 02:07 PM");
+      expect(fmtShort("2020-03-05T14:07:00Z")).toBe("Mar 5, 2020");
+      expect(fmtDate(`${thisYear}-03-05T14:07:00Z`)).toBe("Mar 5, 02:07 PM");
+      expect(fmtShort(`${thisYear}-03-05T14:07:00Z`)).toBe("Mar 5");
+    } finally { setUtcMode(false); }
+  });
+  it("uses the UTC day, not the local one, in UTC mode", () => {
+    setUtcMode(true);
+    try { expect(fmtShort("2020-03-05T23:59:00Z")).toBe("Mar 5, 2020"); } finally { setUtcMode(false); }
+  });
+  it("renders a dash for a missing value", () => {
+    expect(fmtDate(undefined)).toBe("–");
+    expect(fmtShort("")).toBe("–");
+  });
+  it("in local mode, shows the year only for other years and the time only in fmtDate", () => {
+    expect(fmtShort("2020-06-15T12:00:00Z")).toContain("2020");
+    expect(fmtShort(`${thisYear}-06-15T12:00:00Z`)).not.toContain(String(thisYear));
+    expect(fmtDate("2020-06-15T12:00:00Z")).toMatch(/\d{2}:\d{2}/);
+    expect(fmtShort("2020-06-15T12:00:00Z")).not.toMatch(/\d{2}:\d{2}/);
+  });
+});
+
+describe("severityRank", () => {
+  it("orders known severities, ignoring case, with unknown and missing last", () => {
+    const sorted = ["low", "unknownFutureValue", "Critical", undefined, "informational", "HIGH", "medium"]
+      .sort((a, b) => severityRank(a) - severityRank(b));
+    expect(sorted.slice(0, 5)).toEqual(["Critical", "HIGH", "medium", "low", "informational"]);
+    expect(severityRank(null)).toBe(5);
+  });
+});
+
+describe("matchesQuery / filterAlerts", () => {
+  const alerts = [
+    { title: "Mass download", severity: "high", category: "Exfiltration" },
+    { title: "Impossible travel", severity: "Medium", category: null },
+    { title: "Odd login", severity: null as unknown as string, category: "InitialAccess" },
+  ];
+  it("matches any field ignoring case; a blank query matches everything", () => {
+    expect(matchesQuery("  DOWN ", "Mass download", null)).toBe(true);
+    expect(matchesQuery("travel", undefined, "Exfiltration")).toBe(false);
+    expect(matchesQuery("   ", undefined)).toBe(true);
+  });
+  it("filters by severity and text together, tolerating a missing severity", () => {
+    expect(filterAlerts(alerts, "", "", a => [a.title]).length).toBe(3);
+    expect(filterAlerts(alerts, "medium", "", a => [a.title]).map(a => a.title)).toEqual(["Impossible travel"]);
+    expect(filterAlerts(alerts, "", "access", a => [a.title, a.category]).map(a => a.title)).toEqual(["Odd login"]);
+    expect(filterAlerts(undefined, "high", "x", a => [a.severity])).toEqual([]);
+  });
+});
+
+describe("defenderAlertUrl", () => {
+  it("prefers Graph's own link, then the alert by id, then the queue", () => {
+    expect(defenderAlertUrl({ alertWebUrl: "https://security.microsoft.com/alerts/x?tid=1", id: "a1" })).toBe("https://security.microsoft.com/alerts/x?tid=1");
+    expect(defenderAlertUrl({ id: "da63_1" })).toBe(`${PORTAL.defenderAlerts}/da63_1`);
+    expect(defenderAlertUrl({ alertWebUrl: "", id: undefined })).toBe(PORTAL.defenderAlerts);
   });
 });

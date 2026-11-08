@@ -1,3 +1,5 @@
+using M365SecurityDashboard.Api.Services.Common;
+
 namespace M365SecurityDashboard.Api.Services;
 
 /// <summary>
@@ -66,29 +68,17 @@ public static class GraphErrorHint
     public static string Describe(string? rawMessage, string? sourceName = null, int maxLength = 300)
     {
         var raw = rawMessage ?? "";
-
-        // First: the raw text carries request-id GUIDs that can contain "403" or "429".
-        if (IsNotYetProvisioned(raw)) return NotYetProvisionedMessage;
-
-        if (IsPermissionDenied(raw))
+        return Classify(raw) switch
         {
-            var perm = PermissionFor(sourceName);
-            return perm is null
-                ? "Permission denied by Microsoft Graph. The app registration is missing an application permission for this data; check the required permissions and grant admin consent."
-                : $"Permission denied: grant the {perm} application permission to the Vigil365 app registration and click 'Grant admin consent' in Entra.";
-        }
-
-        if (raw.Contains("429") || raw.Contains("TooManyRequests", StringComparison.OrdinalIgnoreCase))
-            return "Microsoft Graph throttled this request (429). Vigil365 backs off and retries automatically; no action needed unless it persists.";
-
-        if (raw.Contains("401") || raw.Contains("Unauthorized", StringComparison.OrdinalIgnoreCase)
-            || raw.Contains("invalid_client", StringComparison.OrdinalIgnoreCase))
-            return "Microsoft Graph rejected the credentials (401). The client secret or certificate is expired or incorrect — re-check the Graph configuration in Setup.";
-
-        if (raw.Contains("404") || raw.Contains("NotFound", StringComparison.OrdinalIgnoreCase))
-            return "Microsoft Graph returned 404 for this data. The feature may not be licensed or enabled in this tenant.";
-
-        return Trim(raw, maxLength);
+            Failure.NotProvisioned => NotYetProvisionedMessage,
+            Failure.PermissionDenied => PermissionFor(sourceName) is { } perm
+                ? $"Permission denied: grant the {perm} application permission to the Vigil365 app registration and click 'Grant admin consent' in Entra."
+                : "Permission denied by Microsoft Graph. The app registration is missing an application permission for this data; check the required permissions and grant admin consent.",
+            Failure.Throttled => "Microsoft Graph throttled this request (429). Vigil365 backs off and retries automatically; no action needed unless it persists.",
+            Failure.BadCredentials => "Microsoft Graph rejected the credentials (401). The client secret or certificate is expired or incorrect — re-check the Graph configuration in Setup.",
+            Failure.NotFound => "Microsoft Graph returned 404 for this data. The feature may not be licensed or enabled in this tenant.",
+            _ => TextLimits.Truncate(raw, maxLength),
+        };
     }
 
     /// <summary>
@@ -96,26 +86,16 @@ public static class GraphErrorHint
     /// otherwise null so the caller keeps its own generic message. Never echoes
     /// the raw exception, which could carry internal detail into an HTTP response.
     /// </summary>
-    public static string? DescribeOrNull(string? rawMessage, string? requiredPermission = null)
+    public static string? DescribeOrNull(string? rawMessage, string? requiredPermission = null) => Classify(rawMessage ?? "") switch
     {
-        var raw = rawMessage ?? "";
-
-        if (IsNotYetProvisioned(raw)) return NotYetProvisionedMessage;
-
-        if (IsPermissionDenied(raw))
-            return requiredPermission is null
-                ? "Permission denied by Microsoft Graph. The Vigil365 app registration is missing an application permission for this data — check the required permissions and grant admin consent in Entra."
-                : $"Permission denied: grant the {requiredPermission} application permission to the Vigil365 app registration and click 'Grant admin consent' in Entra.";
-
-        if (raw.Contains("429") || raw.Contains("TooManyRequests", StringComparison.OrdinalIgnoreCase))
-            return "Microsoft Graph is throttling requests (429). This usually clears on its own — try again shortly.";
-
-        if (raw.Contains("401") || raw.Contains("Unauthorized", StringComparison.OrdinalIgnoreCase)
-            || raw.Contains("invalid_client", StringComparison.OrdinalIgnoreCase))
-            return "Microsoft Graph rejected the credentials (401). The client secret or certificate may be expired — re-check the Graph configuration in Setup.";
-
-        return null;
-    }
+        Failure.NotProvisioned => NotYetProvisionedMessage,
+        Failure.PermissionDenied => requiredPermission is null
+            ? "Permission denied by Microsoft Graph. The Vigil365 app registration is missing an application permission for this data — check the required permissions and grant admin consent in Entra."
+            : $"Permission denied: grant the {requiredPermission} application permission to the Vigil365 app registration and click 'Grant admin consent' in Entra.",
+        Failure.Throttled => "Microsoft Graph is throttling requests (429). This usually clears on its own — try again shortly.",
+        Failure.BadCredentials => "Microsoft Graph rejected the credentials (401). The client secret or certificate may be expired — re-check the Graph configuration in Setup.",
+        _ => null,
+    };
 
     /// <summary>
     /// Microsoft's own error sentence from a Graph failure ("The period value 'RL30' is not
@@ -143,8 +123,21 @@ public static class GraphErrorHint
             }
             catch (System.Text.Json.JsonException) { break; }
         }
-        return string.IsNullOrWhiteSpace(message) || message.TrimStart().StartsWith('{') ? null : Trim(message.Trim(), maxLength);
+        return string.IsNullOrWhiteSpace(message) || message.TrimStart().StartsWith('{') ? null : TextLimits.Truncate(message.Trim(), maxLength);
     }
+
+    private enum Failure { NotProvisioned, PermissionDenied, Throttled, BadCredentials, NotFound, Unknown }
+
+    // Both describers use this one ladder. Not-yet-provisioned comes first: its raw text carries
+    // request-id GUIDs that can contain "403" or "429".
+    private static Failure Classify(string raw) =>
+        IsNotYetProvisioned(raw) ? Failure.NotProvisioned
+        : IsPermissionDenied(raw) ? Failure.PermissionDenied
+        : raw.Contains("429") || raw.Contains("TooManyRequests", StringComparison.OrdinalIgnoreCase) ? Failure.Throttled
+        : raw.Contains("401") || raw.Contains("Unauthorized", StringComparison.OrdinalIgnoreCase)
+            || raw.Contains("invalid_client", StringComparison.OrdinalIgnoreCase) ? Failure.BadCredentials
+        : raw.Contains("404") || raw.Contains("NotFound", StringComparison.OrdinalIgnoreCase) ? Failure.NotFound
+        : Failure.Unknown;
 
     private static bool IsPermissionDenied(string raw)
         => raw.Contains("403")
@@ -152,5 +145,4 @@ public static class GraphErrorHint
         || raw.Contains("Forbidden", StringComparison.OrdinalIgnoreCase)
         || raw.Contains("Authorization_RequestDenied", StringComparison.OrdinalIgnoreCase);
 
-    private static string Trim(string s, int max) => s.Length <= max ? s : s[..max];
 }

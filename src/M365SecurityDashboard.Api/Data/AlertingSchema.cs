@@ -223,6 +223,30 @@ public static class AlertingSchema
         ("Power Platform environment deleted",    PowerPlatformCategory, "Environment deleted*",                   "medium", true),
     ];
 
+    /// <summary>
+    /// Added after the first pack shipped (docs/POWER_PLATFORM_ALERTS_PLAN.md §3b): admin
+    /// changes from the operation-name search, and bulk deletion. Seeded once, keyed on these
+    /// names, so installs that already have the first pack receive it and a deleted rule is
+    /// not brought back (unless every rule in it is deleted, as with the first pack).
+    /// Bulk deletion counts across everyone, by when the deletions happened (AlertEvaluator).
+    /// </summary>
+    internal static readonly (string Name, string Pattern, string Severity, bool Enabled, int Threshold)[] PowerPlatformAdditions =
+    [
+        ("Power Platform DLP policy deleted",                  "Power Platform DLP policy deleted*",       "high",   true,  1),
+        ("Power Platform connector policy changed",            "Power Platform connector policy changed*", "high",   true,  1),
+        ("Sharing limits or environment group rules changed",  "Environment group rules changed*",         "medium", true,  1),
+        ("Environment security group changed",                 "Environment security group changed*",      "high",   true,  1),
+        ("Admin took System Administrator in an environment",  "Admin took System Administrator*",         "medium", true,  1),
+        ("Power Platform environment copied",                  "Environment copied*",                      "medium", true,  1),
+        ("Power Platform environment restored",                "Environment restored*",                    "medium", true,  1),
+        ("Customer Lockbox request",                           "Customer Lockbox request*",                "medium", true,  1),
+        ("App conditional access changed",                     "App conditional access changed*",          "medium", true,  1),
+        ("Many flows deleted",                                 "Flow deleted*",                            "high",   true,  5),
+        ("Many apps deleted",                                  "App deleted*",                             "high",   true,  5),
+        ("Power Platform DLP policy created",                  "Power Platform DLP policy created*",       "low",    false, 1),
+        ("Environment group changed",                          "Environment group changed*",               "low",    false, 1),
+    ];
+
     public static void SeedDefaultPolicies(AppDbContext db)
     {
         var now = DateTimeOffset.UtcNow;
@@ -254,23 +278,7 @@ public static class AlertingSchema
         {
             foreach (var a in ActivityDefaults)
             {
-                db.AlertPolicies.Add(new AlertPolicy
-                {
-                    Id = Guid.NewGuid(),
-                    Name = a.Name,
-                    Enabled = true,
-                    Kind = "activity",
-                    Category = a.Category,
-                    Metric = "",
-                    ActivityPattern = a.Pattern,
-                    WindowMinutes = 60,
-                    Threshold = 1,
-                    Severity = a.Severity,
-                    Condition = $"Activity \"{a.Pattern}\" ≥ 1 in 60m",
-                    SuppressionMinutes = 60,
-                    CreatedAt = now,
-                    TriggerCount = 0,
-                });
+                db.AlertPolicies.Add(ActivityPolicy(a.Name, a.Category, a.Pattern, a.Severity, true, now));
             }
         }
 
@@ -278,23 +286,16 @@ public static class AlertingSchema
         {
             foreach (var a in CopilotPowerPlatformDefaults)
             {
-                db.AlertPolicies.Add(new AlertPolicy
-                {
-                    Id = Guid.NewGuid(),
-                    Name = a.Name,
-                    Enabled = a.Enabled,
-                    Kind = "activity",
-                    Category = a.Category,
-                    Metric = "",
-                    ActivityPattern = a.Pattern,
-                    WindowMinutes = 60,
-                    Threshold = 1,
-                    Severity = a.Severity,
-                    Condition = $"Activity \"{a.Pattern}\" ≥ 1 in 60m",
-                    SuppressionMinutes = 60,
-                    CreatedAt = now,
-                    TriggerCount = 0,
-                });
+                db.AlertPolicies.Add(ActivityPolicy(a.Name, a.Category, a.Pattern, a.Severity, a.Enabled, now));
+            }
+        }
+
+        var additions = PowerPlatformAdditions.Select(a => a.Name).ToList();
+        if (!db.AlertPolicies.Any(p => p.Category == PowerPlatformCategory && additions.Contains(p.Name)))
+        {
+            foreach (var a in PowerPlatformAdditions)
+            {
+                db.AlertPolicies.Add(ActivityPolicy(a.Name, PowerPlatformCategory, a.Pattern, a.Severity, a.Enabled, now, a.Threshold));
             }
         }
 
@@ -339,4 +340,24 @@ public static class AlertingSchema
             db.NotificationSettings.Add(new NotificationSettings());
         db.SaveChanges();
     }
+
+    private const int ActivityWindowMinutes = 60;
+
+    private static AlertPolicy ActivityPolicy(string name, string category, string pattern, string severity, bool enabled, DateTimeOffset now, int threshold = 1) => new()
+    {
+        Id = Guid.NewGuid(),
+        Name = name,
+        Enabled = enabled,
+        Kind = "activity",
+        Category = category,
+        Metric = "",
+        ActivityPattern = pattern,
+        WindowMinutes = ActivityWindowMinutes,
+        Threshold = threshold,
+        Severity = severity,
+        Condition = $"Activity \"{pattern}\" ≥ {threshold} in {ActivityWindowMinutes}m",
+        SuppressionMinutes = 60,
+        CreatedAt = now,
+        TriggerCount = 0,
+    };
 }

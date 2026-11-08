@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using M365SecurityDashboard.Api.Data;
 using M365SecurityDashboard.Api.Models;
+using M365SecurityDashboard.Api.Services.Common;
 
 namespace M365SecurityDashboard.Api.Services;
 
@@ -21,12 +22,8 @@ public sealed class NotificationSender(
 {
     public sealed record ReportAttachment(string FileName, string ContentType, byte[] Bytes);
 
-    private static readonly Dictionary<string, int> SeverityRank = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["informational"] = 0, ["low"] = 1, ["medium"] = 2, ["high"] = 3, ["critical"] = 4,
-    };
-
-    private static int Rank(string? sev) => SeverityRank.TryGetValue(sev ?? "low", out var r) ? r : 1;
+    // An unrecognised severity ranks as low, so it is still delivered at the lowest threshold.
+    private static int Rank(string? sev) => SeverityScale.Rank(sev, unknownAs: SeverityScale.Low);
 
     /// <summary>Deep link to this alert in Vigil365 — one click from a Teams
     /// message or email straight to the alert. Null when no base URL is configured.</summary>
@@ -114,7 +111,7 @@ public sealed class NotificationSender(
         {
             using var msg = new MailMessage
             {
-                From = new MailAddress(cfg.FromAddress ?? cfg.SmtpUsername ?? "vigil365@localhost"),
+                From = FromAddress(cfg),
                 Subject = "You've been granted access to Vigil365",
                 IsBodyHtml = true,
                 Body = $"""
@@ -140,13 +137,7 @@ public sealed class NotificationSender(
             };
             msg.To.Add(toEmail);
 
-            using var client = new SmtpClient(cfg.SmtpHost, cfg.SmtpPort)
-            {
-                EnableSsl = cfg.SmtpUseSsl,
-                Credentials = string.IsNullOrWhiteSpace(cfg.SmtpUsername)
-                    ? CredentialCache.DefaultNetworkCredentials
-                    : new NetworkCredential(cfg.SmtpUsername, smtpPassword),
-            };
+            using var client = CreateSmtpClient(cfg, smtpPassword);
             await client.SendMailAsync(msg, ct);
             return (true, null);
         }
@@ -178,7 +169,7 @@ public sealed class NotificationSender(
         {
             using var msg = new MailMessage
             {
-                From = new MailAddress(cfg.FromAddress ?? cfg.SmtpUsername ?? "vigil365@localhost"),
+                From = FromAddress(cfg),
                 Subject = subject,
                 IsBodyHtml = true,
                 Body = htmlBody,
@@ -193,13 +184,7 @@ public sealed class NotificationSender(
                 msg.Attachments.Add(new Attachment(stream, attachment.FileName, attachment.ContentType));
             }
 
-            using var client = new SmtpClient(cfg.SmtpHost, cfg.SmtpPort)
-            {
-                EnableSsl = cfg.SmtpUseSsl,
-                Credentials = string.IsNullOrWhiteSpace(cfg.SmtpUsername)
-                    ? CredentialCache.DefaultNetworkCredentials
-                    : new NetworkCredential(cfg.SmtpUsername, smtpPassword),
-            };
+            using var client = CreateSmtpClient(cfg, smtpPassword);
             await client.SendMailAsync(msg, ct);
             return (true, null);
         }
@@ -272,7 +257,7 @@ public sealed class NotificationSender(
 
     private async Task<bool> PostDigestAsync(AppDbContext db, string channel, string url, string json, int count, CancellationToken ct, string? signingSecret = null)
     {
-        var log = new NotificationLog { TriggeredAlertId = Guid.Empty, PolicyName = $"Daily digest ({count})", Channel = channel, Target = Truncate(url, 120) };
+        var log = new NotificationLog { TriggeredAlertId = Guid.Empty, PolicyName = $"Daily digest ({count})", Channel = channel, Target = TextLimits.Truncate(url, 120) };
         try
         {
             var http = httpFactory.CreateClient();
@@ -281,12 +266,12 @@ public sealed class NotificationSender(
             AddWebhookSignature(content.Headers, json, signingSecret);
             using var resp = await http.PostAsync(url, content, ct);
             log.Success = resp.IsSuccessStatusCode;
-            if (!resp.IsSuccessStatusCode) log.Error = Truncate($"{(int)resp.StatusCode} {resp.ReasonPhrase}", 1000);
+            if (!resp.IsSuccessStatusCode) log.Error = TextLimits.Truncate($"{(int)resp.StatusCode} {resp.ReasonPhrase}", 1000);
         }
         catch (Exception ex)
         {
             log.Success = false;
-            log.Error = Truncate(ex.Message, 1000);
+            log.Error = TextLimits.Truncate(ex.Message, 1000);
             logger.LogWarning(ex, "Digest {Channel} send failed", channel);
         }
         db.NotificationLogs.Add(log);
@@ -295,7 +280,7 @@ public sealed class NotificationSender(
 
     private async Task<bool> SendDigestEmailAsync(AppDbContext db, NotificationSettings cfg, string? smtpPassword, string to, string title, IReadOnlyList<TriggeredAlert> alerts, CancellationToken ct)
     {
-        var log = new NotificationLog { TriggeredAlertId = Guid.Empty, PolicyName = $"Daily digest ({alerts.Count})", Channel = "email", Target = Truncate(to, 120) };
+        var log = new NotificationLog { TriggeredAlertId = Guid.Empty, PolicyName = $"Daily digest ({alerts.Count})", Channel = "email", Target = TextLimits.Truncate(to, 120) };
         try
         {
             var rows = new StringBuilder();
@@ -305,39 +290,39 @@ public sealed class NotificationSender(
                     + $"<td style=\"padding:4px 0;color:#64748b\">{a.TriggeredAt:dd MMM HH:mm}</td></tr>");
             using var msg = new MailMessage
             {
-                From = new MailAddress(cfg.FromAddress ?? cfg.SmtpUsername ?? "vigil365@localhost"),
+                From = FromAddress(cfg),
                 Subject = $"[Vigil365] {title}",
                 IsBodyHtml = true,
                 Body = $"<div style=\"font-family:Segoe UI,Arial,sans-serif\"><h2 style=\"color:#2563eb;margin:0 0 12px\">{WebUtility.HtmlEncode(title)}</h2>"
                     + $"<table style=\"border-collapse:collapse;font-size:14px\">{rows}</table></div>",
             };
             msg.To.Add(to);
-            using var client = new SmtpClient(cfg.SmtpHost, cfg.SmtpPort)
-            {
-                EnableSsl = cfg.SmtpUseSsl,
-                Credentials = string.IsNullOrWhiteSpace(cfg.SmtpUsername) ? CredentialCache.DefaultNetworkCredentials : new NetworkCredential(cfg.SmtpUsername, smtpPassword),
-            };
+            using var client = CreateSmtpClient(cfg, smtpPassword);
             await client.SendMailAsync(msg, ct);
             log.Success = true;
         }
         catch (Exception ex)
         {
             log.Success = false;
-            log.Error = Truncate(ex.Message, 1000);
+            log.Error = TextLimits.Truncate(ex.Message, 1000);
             logger.LogWarning(ex, "Digest email send failed");
         }
         db.NotificationLogs.Add(log);
         return log.Success;
     }
 
-    private static string SevColor(string sev) => sev?.ToLowerInvariant() switch
+    private static string SevColor(string sev) => SeverityScale.HexColor(sev);
+
+    private static SmtpClient CreateSmtpClient(NotificationSettings cfg, string? smtpPassword) => new(cfg.SmtpHost, cfg.SmtpPort)
     {
-        "critical" => "dc2626",
-        "high" => "ea580c",
-        "medium" => "d97706",
-        "low" => "2563eb",
-        _ => "6b7280",
+        EnableSsl = cfg.SmtpUseSsl,
+        Credentials = string.IsNullOrWhiteSpace(cfg.SmtpUsername)
+            ? CredentialCache.DefaultNetworkCredentials
+            : new NetworkCredential(cfg.SmtpUsername, smtpPassword),
     };
+
+    private static MailAddress FromAddress(NotificationSettings cfg) =>
+        new(cfg.FromAddress ?? cfg.SmtpUsername ?? "vigil365@localhost");
 
     private async Task SendTeamsAsync(AppDbContext db, string url, TriggeredAlert a, CancellationToken ct)
     {
@@ -418,7 +403,7 @@ public sealed class NotificationSender(
 
     private async Task PostJsonAsync(AppDbContext db, string channel, string url, string json, TriggeredAlert a, CancellationToken ct, string? signingSecret = null)
     {
-        var log = new NotificationLog { TriggeredAlertId = a.Id, PolicyName = a.PolicyName, Channel = channel, Target = Truncate(url, 120) };
+        var log = new NotificationLog { TriggeredAlertId = a.Id, PolicyName = a.PolicyName, Channel = channel, Target = TextLimits.Truncate(url, 120) };
         try
         {
             var http = httpFactory.CreateClient();
@@ -428,12 +413,12 @@ public sealed class NotificationSender(
             using var resp = await http.PostAsync(url, content, ct);
             log.Success = resp.IsSuccessStatusCode;
             if (!resp.IsSuccessStatusCode)
-                log.Error = Truncate($"{(int)resp.StatusCode} {resp.ReasonPhrase}", 1000);
+                log.Error = TextLimits.Truncate($"{(int)resp.StatusCode} {resp.ReasonPhrase}", 1000);
         }
         catch (Exception ex)
         {
             log.Success = false;
-            log.Error = Truncate(ex.Message, 1000);
+            log.Error = TextLimits.Truncate(ex.Message, 1000);
             logger.LogWarning(ex, "Notification {Channel} failed for policy {Policy}", channel, a.PolicyName);
         }
         db.NotificationLogs.Add(log);
@@ -452,12 +437,12 @@ public sealed class NotificationSender(
 
     private async Task SendEmailAsync(AppDbContext db, NotificationSettings cfg, string? smtpPassword, string to, TriggeredAlert a, CancellationToken ct)
     {
-        var log = new NotificationLog { TriggeredAlertId = a.Id, PolicyName = a.PolicyName, Channel = "email", Target = Truncate(to, 120) };
+        var log = new NotificationLog { TriggeredAlertId = a.Id, PolicyName = a.PolicyName, Channel = "email", Target = TextLimits.Truncate(to, 120) };
         try
         {
             using var msg = new MailMessage
             {
-                From = new MailAddress(cfg.FromAddress ?? cfg.SmtpUsername ?? "vigil365@localhost"),
+                From = FromAddress(cfg),
                 Subject = $"[Vigil365] {a.Severity.ToUpperInvariant()} — {a.PolicyName}",
                 IsBodyHtml = true,
                 Body = $"""
@@ -479,24 +464,17 @@ public sealed class NotificationSender(
             };
             msg.To.Add(to);
 
-            using var client = new SmtpClient(cfg.SmtpHost, cfg.SmtpPort)
-            {
-                EnableSsl = cfg.SmtpUseSsl,
-                Credentials = string.IsNullOrWhiteSpace(cfg.SmtpUsername)
-                    ? CredentialCache.DefaultNetworkCredentials
-                    : new NetworkCredential(cfg.SmtpUsername, smtpPassword),
-            };
+            using var client = CreateSmtpClient(cfg, smtpPassword);
             await client.SendMailAsync(msg, ct);
             log.Success = true;
         }
         catch (Exception ex)
         {
             log.Success = false;
-            log.Error = Truncate(ex.Message, 1000);
+            log.Error = TextLimits.Truncate(ex.Message, 1000);
             logger.LogWarning(ex, "Email notification failed for policy {Policy}", a.PolicyName);
         }
         db.NotificationLogs.Add(log);
     }
 
-    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max];
 }

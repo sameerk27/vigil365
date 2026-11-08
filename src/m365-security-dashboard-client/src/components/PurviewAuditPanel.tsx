@@ -33,7 +33,7 @@ export function PurviewAuditPanel() {
     );
   }
 
-  const needsPermission = status.feeds.some(f => f.status === "NeedsPermission");
+  const needsPermission = status.feeds.find(f => f.status === "NeedsPermission");
   const failed = status.feeds.find(f => f.status === "Failed");
   const lastResults = latest(status.feeds.map(f => f.lastSuccessAt));
 
@@ -44,10 +44,9 @@ export function PurviewAuditPanel() {
           <ShieldAlert size={16} aria-hidden="true"/>
           <div>
             <strong>Copilot agent and Power Platform rules need one more permission</strong>
-            <p>
-              Grant AuditLogsQuery.Read.All (read-only) with admin consent. Until then these rules stay idle.
-              In the MSP edition, each client grants it through its consent link.
-            </p>
+            {/* The server's sentence says what to check if the permission is already granted, with Microsoft's own reason when it gave one. */}
+            <p>{needsPermission.lastError ?? "Grant AuditLogsQuery.Read.All (read-only) with admin consent."}</p>
+            <p>Until then these rules stay idle. In the MSP edition, each client grants it through its consent link.</p>
           </div>
         </div>
       ) : failed ? (

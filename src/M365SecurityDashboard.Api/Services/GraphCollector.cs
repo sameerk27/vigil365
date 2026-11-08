@@ -3,6 +3,8 @@ using M365SecurityDashboard.Api.Data;
 using M365SecurityDashboard.Api.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using static M365SecurityDashboard.Api.Services.Common.JsonRead;
+using M365SecurityDashboard.Api.Services.Common;
 
 namespace M365SecurityDashboard.Api.Services;
 
@@ -180,7 +182,7 @@ public sealed class GraphCollector(
             WithFilter("/v1.0/auditLogs/directoryAudits?$top=200", $"activityDateTime ge {since}"), ct);
         if (rows.Count == 0) return;
 
-        var incomingIds = rows.Select(r => Get(r, "id")).Where(id => id != null).Cast<string>().ToList();
+        var incomingIds = rows.Select(r => Text(r, "id")).Where(id => id != null).Cast<string>().ToList();
         var known = (await db.AuditEvents
             .Where(e => e.Source == "directoryAudit" && incomingIds.Contains(e.ExternalId))
             .Select(e => e.ExternalId)
@@ -189,7 +191,7 @@ public sealed class GraphCollector(
         var added = 0;
         foreach (var r in rows)
         {
-            var id = Get(r, "id");
+            var id = Text(r, "id");
             if (id is null || !known.Add(id)) continue; // dedupe within batch + store
 
             string? targetName = null;
@@ -197,7 +199,7 @@ public sealed class GraphCollector(
             {
                 foreach (var t in targets.EnumerateArray())
                 {
-                    targetName = Get(t, "displayName") ?? Get(t, "userPrincipalName");
+                    targetName = Text(t, "displayName") ?? Text(t, "userPrincipalName");
                     if (targetName != null) break;
                 }
             }
@@ -206,12 +208,12 @@ public sealed class GraphCollector(
             {
                 ExternalId = id,
                 Source = "directoryAudit",
-                Activity = Trim(Get(r, "activityDisplayName") ?? "Unknown activity", 200),
-                Category = TrimOrNull(Get(r, "category"), 80),
-                ActorUpn = TrimOrNull(Get(r, "initiatedBy", "user", "userPrincipalName"), 320),
-                ActorApp = TrimOrNull(Get(r, "initiatedBy", "app", "displayName"), 200),
-                TargetName = TrimOrNull(targetName, 320),
-                Result = TrimOrNull(Get(r, "result"), 20),
+                Activity = TextLimits.Truncate(Text(r, "activityDisplayName") ?? "Unknown activity", 200),
+                Category = TextLimits.TruncateOrNull(Text(r, "category"), 80),
+                ActorUpn = TextLimits.TruncateOrNull(Text(r, "initiatedBy", "user", "userPrincipalName"), 320),
+                ActorApp = TextLimits.TruncateOrNull(Text(r, "initiatedBy", "app", "displayName"), 200),
+                TargetName = TextLimits.TruncateOrNull(targetName, 320),
+                Result = TextLimits.TruncateOrNull(Text(r, "result"), 20),
                 OccurredAt = GetDate(r, "activityDateTime"),
                 CollectedAt = DateTimeOffset.UtcNow,
                 RawJson = r.GetRawText(),
@@ -298,56 +300,56 @@ public sealed class GraphCollector(
 
     // riskyUsers returns every user who was ever at risk; riskState says whether still is.
     private static SecurityAlert MapRiskyUser(JsonElement e) => Alert(e, M365ServiceArea.EntraId, "RiskyUser",
-        Get(e, "id"), SeverityFromRisk(Get(e, "riskLevel")), $"Risky user: {Get(e, "userPrincipalName") ?? Get(e, "id")}",
-        Get(e, "riskState"), Get(e, "userPrincipalName"), null, GetDate(e, "riskLastUpdatedDateTime"),
-        isResolved: IsRiskClosed(Get(e, "riskState")));
+        Text(e, "id"), SeverityFromRisk(Text(e, "riskLevel")), $"Risky user: {Text(e, "userPrincipalName") ?? Text(e, "id")}",
+        Text(e, "riskState"), Text(e, "userPrincipalName"), null, GetDate(e, "riskLastUpdatedDateTime"),
+        isResolved: IsRiskClosed(Text(e, "riskState")));
 
     private static SecurityAlert MapRiskySignIn(JsonElement e) => Alert(e, M365ServiceArea.EntraId, "RiskySignIn",
-        Get(e, "id"), SeverityFromRisk(Get(e, "riskLevelAggregated")), $"Risky sign-in: {Get(e, "userPrincipalName")}",
-        Get(e, "riskState"), Get(e, "userPrincipalName"), Get(e, "deviceDetail", "displayName"), GetDate(e, "createdDateTime"),
-        isResolved: IsRiskClosed(Get(e, "riskState")));
+        Text(e, "id"), SeverityFromRisk(Text(e, "riskLevelAggregated")), $"Risky sign-in: {Text(e, "userPrincipalName")}",
+        Text(e, "riskState"), Text(e, "userPrincipalName"), Text(e, "deviceDetail", "displayName"), GetDate(e, "createdDateTime"),
+        isResolved: IsRiskClosed(Text(e, "riskState")));
 
     private static SecurityAlert MapFailedSignIn(JsonElement e) => Alert(e, M365ServiceArea.EntraId, "FailedSignIn",
-        Get(e, "id"), AlertSeverity.Medium, $"Failed sign-in: {Get(e, "userPrincipalName")}",
-        Get(e, "status", "failureReason"), Get(e, "userPrincipalName"), Get(e, "deviceDetail", "displayName"), GetDate(e, "createdDateTime"));
+        Text(e, "id"), AlertSeverity.Medium, $"Failed sign-in: {Text(e, "userPrincipalName")}",
+        Text(e, "status", "failureReason"), Text(e, "userPrincipalName"), Text(e, "deviceDetail", "displayName"), GetDate(e, "createdDateTime"));
 
     private static SecurityAlert MapMfaStatus(JsonElement e)
     {
-        var registered = GetBool(e, "isMfaRegistered");
-        return Alert(e, M365ServiceArea.EntraId, "MfaStatus", Get(e, "id") ?? Get(e, "userPrincipalName"),
+        var registered = IsTrue(e, "isMfaRegistered");
+        return Alert(e, M365ServiceArea.EntraId, "MfaStatus", Text(e, "id") ?? Text(e, "userPrincipalName"),
             registered ? AlertSeverity.Informational : AlertSeverity.High,
-            registered ? $"MFA registered: {Get(e, "userPrincipalName")}" : $"MFA missing: {Get(e, "userPrincipalName")}",
-            Get(e, "defaultMfaMethod"), Get(e, "userPrincipalName"), null, DateTimeOffset.UtcNow,
+            registered ? $"MFA registered: {Text(e, "userPrincipalName")}" : $"MFA missing: {Text(e, "userPrincipalName")}",
+            Text(e, "defaultMfaMethod"), Text(e, "userPrincipalName"), null, DateTimeOffset.UtcNow,
             isResolved: registered);
     }
 
     private static SecurityAlert MapNonCompliantDevice(JsonElement e) => Alert(e, M365ServiceArea.Intune, "NonCompliantDevice",
-        Get(e, "id"), AlertSeverity.High, $"Non-compliant device: {Get(e, "deviceName")}",
-        Get(e, "complianceState"), Get(e, "userPrincipalName"), Get(e, "deviceName"), GetDate(e, "lastSyncDateTime"));
+        Text(e, "id"), AlertSeverity.High, $"Non-compliant device: {Text(e, "deviceName")}",
+        Text(e, "complianceState"), Text(e, "userPrincipalName"), Text(e, "deviceName"), GetDate(e, "lastSyncDateTime"));
 
     private static SecurityAlert MapDeviceNotCheckedIn(JsonElement e) => Alert(e, M365ServiceArea.Intune, "DeviceNotCheckedIn",
-        Get(e, "id"), AlertSeverity.Medium, $"Device not checked in: {Get(e, "deviceName")}",
-        $"Last sync: {Get(e, "lastSyncDateTime")}", Get(e, "userPrincipalName"), Get(e, "deviceName"), GetDate(e, "lastSyncDateTime"));
+        Text(e, "id"), AlertSeverity.Medium, $"Device not checked in: {Text(e, "deviceName")}",
+        $"Last sync: {Text(e, "lastSyncDateTime")}", Text(e, "userPrincipalName"), Text(e, "deviceName"), GetDate(e, "lastSyncDateTime"));
 
     private static SecurityAlert MapDefenderIncident(JsonElement e) => Alert(e, M365ServiceArea.DefenderXdr, "Incident",
-        Get(e, "id"), SeverityFromString(Get(e, "severity")), $"Defender incident: {Get(e, "displayName") ?? Get(e, "id")}",
-        Get(e, "status"), null, null, GetDate(e, "createdDateTime"), Get(e, "incidentWebUrl"), IsClosed(Get(e, "status")));
+        Text(e, "id"), SeverityFromString(Text(e, "severity")), $"Defender incident: {Text(e, "displayName") ?? Text(e, "id")}",
+        Text(e, "status"), null, null, GetDate(e, "createdDateTime"), Text(e, "incidentWebUrl"), IsClosed(Text(e, "status")));
 
     private static SecurityAlert MapDefenderAlert(JsonElement e) => Alert(e, M365ServiceArea.DefenderXdr, "Alert",
-        Get(e, "id"), SeverityFromString(Get(e, "severity")), $"Defender alert: {Get(e, "title") ?? Get(e, "id")}",
-        Get(e, "description"), null, null, GetDate(e, "createdDateTime"), Get(e, "alertWebUrl"), IsClosed(Get(e, "status")));
+        Text(e, "id"), SeverityFromString(Text(e, "severity")), $"Defender alert: {Text(e, "title") ?? Text(e, "id")}",
+        Text(e, "description"), null, null, GetDate(e, "createdDateTime"), Text(e, "alertWebUrl"), IsClosed(Text(e, "status")));
 
     private static SecurityAlert MapMalwareDetection(JsonElement e) => Alert(e, M365ServiceArea.DefenderXdr, "MalwareDetection",
-        Get(e, "id"), SeverityFromString(Get(e, "severity")), $"Malware detection: {Get(e, "title") ?? Get(e, "id")}",
-        Get(e, "description"), null, null, GetDate(e, "createdDateTime"), Get(e, "alertWebUrl"), IsClosed(Get(e, "status")));
+        Text(e, "id"), SeverityFromString(Text(e, "severity")), $"Malware detection: {Text(e, "title") ?? Text(e, "id")}",
+        Text(e, "description"), null, null, GetDate(e, "createdDateTime"), Text(e, "alertWebUrl"), IsClosed(Text(e, "status")));
 
     private static SecurityAlert MapQuarantinedMessage(JsonElement e) => Alert(e, M365ServiceArea.ExchangeOnline, "QuarantinedMessage",
-        Get(e, "id"), SeverityFromString(Get(e, "severity")), $"Quarantined message: {Get(e, "title") ?? Get(e, "subject") ?? Get(e, "id")}",
-        Get(e, "description"), Get(e, "recipientEmailAddress"), null, GetDate(e, "createdDateTime"), Get(e, "alertWebUrl"), IsClosed(Get(e, "status")));
+        Text(e, "id"), SeverityFromString(Text(e, "severity")), $"Quarantined message: {Text(e, "title") ?? Text(e, "subject") ?? Text(e, "id")}",
+        Text(e, "description"), Text(e, "recipientEmailAddress"), null, GetDate(e, "createdDateTime"), Text(e, "alertWebUrl"), IsClosed(Text(e, "status")));
 
     private static SecurityAlert MapMailFlowIssue(JsonElement e) => Alert(e, M365ServiceArea.ExchangeOnline, "MailFlowIssue",
-        Get(e, "id"), AlertSeverity.High, $"Exchange issue: {Get(e, "title") ?? Get(e, "id")}",
-        Get(e, "impactDescription"), null, null, GetDate(e, "startDateTime"), Get(e, "details", "url"), GetBool(e, "isResolved"));
+        Text(e, "id"), AlertSeverity.High, $"Exchange issue: {Text(e, "title") ?? Text(e, "id")}",
+        Text(e, "impactDescription"), null, null, GetDate(e, "startDateTime"), Text(e, "details", "url"), IsTrue(e, "isResolved"));
 
     /// <summary>
     /// One tenant-wide posture alert (fixed ExternalId so it upserts in place):
@@ -369,8 +371,8 @@ public sealed class GraphCollector(
     }
 
     private static SecurityAlert MapServiceHealth(JsonElement e) => Alert(e, M365ServiceArea.ServiceHealth, "ServiceHealthIssue",
-        Get(e, "id"), SeverityFromClassification(Get(e, "classification")), $"{Get(e, "service")}: {Get(e, "title") ?? Get(e, "id")}",
-        Get(e, "impactDescription"), null, null, GetDate(e, "startDateTime"), null, GetBool(e, "isResolved"));
+        Text(e, "id"), SeverityFromClassification(Text(e, "classification")), $"{Text(e, "service")}: {Text(e, "title") ?? Text(e, "id")}",
+        Text(e, "impactDescription"), null, null, GetDate(e, "startDateTime"), null, IsTrue(e, "isResolved"));
 
     private static SecurityAlert Alert(JsonElement raw, M365ServiceArea service, string type, string? externalId,
         AlertSeverity severity, string title, string? description, string? user, string? device, DateTimeOffset detected,
@@ -391,32 +393,8 @@ public sealed class GraphCollector(
         RawJson = raw.GetRawText()
     };
 
-    private static string? Get(JsonElement e, params string[] path)
-    {
-        var current = e;
-        foreach (var part in path)
-        {
-            // TryGetProperty throws on non-object elements (e.g. an array),
-            // so guard the kind before traversing into nested paths.
-            if (current.ValueKind != JsonValueKind.Object) return null;
-            if (!current.TryGetProperty(part, out current)) return null;
-        }
-
-        return current.ValueKind switch
-        {
-            JsonValueKind.String => current.GetString(),
-            JsonValueKind.Number => current.GetRawText(),
-            JsonValueKind.True => "true",
-            JsonValueKind.False => "false",
-            _ => null
-        };
-    }
-
-    private static bool GetBool(JsonElement e, string name) =>
-        e.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.True;
-
     private static DateTimeOffset GetDate(JsonElement e, string name) =>
-        DateTimeOffset.TryParse(Get(e, name), out var date) ? date : DateTimeOffset.UtcNow;
+        DateTimeOffset.TryParse(Text(e, name), out var date) ? date : DateTimeOffset.UtcNow;
 
     private static AlertSeverity SeverityFromRisk(string? value) => value?.ToLowerInvariant() switch
     {
@@ -451,8 +429,6 @@ public sealed class GraphCollector(
     private static bool IsRiskClosed(string? riskState) => riskState?.ToLowerInvariant() is
         "none" or "remediated" or "dismissed" or "confirmedsafe";
 
-    private static string Trim(string s, int max) => s.Length <= max ? s : s[..max];
-    private static string? TrimOrNull(string? s, int max) => s is null ? null : Trim(s, max);
 
     private async Task CaptureTrendSnapshotAsync(CancellationToken ct)
     {

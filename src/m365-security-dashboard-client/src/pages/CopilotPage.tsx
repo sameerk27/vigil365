@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Search, Sparkles, EyeOff, Lightbulb } from "lucide-react";
+import { Search, Sparkles, EyeOff, Lightbulb, AlertTriangle } from "lucide-react";
 import { apiBase, apiFetch } from "../services/api";
 import { fmtDay } from "../services/utils";
-import { Card, Badge, EmptyState, LoadingSkeleton, ExportDropdown, ProgressBar } from "../components/SharedComponents";
+import { Card, Badge, EmptyState, LoadingSkeleton, ExportDropdown, ProgressBar, SortTh } from "../components/SharedComponents";
 import { StatCard } from "../components/ui";
 import type { Tone } from "../services/types";
 
@@ -10,6 +10,10 @@ type CopilotUser = { name: string; upn: string | null; lastActivity: string | nu
 type CopilotUsage = {
   configured: boolean;
   error?: string;
+  /** The usage report stopped part-way: the users and counts are only those read. */
+  partial?: boolean;
+  /** Why seat numbers are missing (licences unreadable), or null. */
+  seatsError?: string | null;
   reportRefreshDate?: string | null;
   licensedUsers?: number;
   active?: number;
@@ -27,6 +31,10 @@ type CopilotUsage = {
 
 const statusTone = (s: string): Tone => (s === "Active" ? "good" : s === "Never used" ? "neutral" : "warning");
 
+type SortCol = "name" | "lastActivity" | "status";
+// Who needs a look first when sorted by status: people who never used their seat, then idle ones.
+const STATUS_RANK: Record<string, number> = { "Never used": 0, Inactive: 1, Active: 2 };
+
 /**
  * Copilot usage: who holds a Microsoft 365 Copilot seat, who uses it and in which apps,
  * and how many paid seats do nothing. From the Copilot usage report (Reports.Read.All)
@@ -37,6 +45,13 @@ export function CopilotPage() {
   const [failed, setFailed] = useState(false);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
+  const [sortBy, setSortBy] = useState<SortCol>("lastActivity");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  const onSort = (col: SortCol) => {
+    if (sortBy === col) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortBy(col); setSortDir(col === "lastActivity" ? "desc" : "asc"); }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -49,10 +64,19 @@ export function CopilotPage() {
 
   const users = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return (data?.users ?? []).filter(u =>
-      (!status || u.status === status) &&
-      (!q || u.name.toLowerCase().includes(q) || (u.upn ?? "").toLowerCase().includes(q)));
-  }, [data, search, status]);
+    const dir = sortDir === "asc" ? 1 : -1;
+    return (data?.users ?? [])
+      .filter(u =>
+        (!status || u.status === status) &&
+        (!q || u.name.toLowerCase().includes(q) || (u.upn ?? "").toLowerCase().includes(q)))
+      .sort((a, b) => {
+        // Never-used users have no date: they sort as the oldest.
+        const by = sortBy === "name" ? a.name.localeCompare(b.name)
+          : sortBy === "status" ? (STATUS_RANK[a.status] ?? 9) - (STATUS_RANK[b.status] ?? 9)
+          : (a.lastActivity ?? "").localeCompare(b.lastActivity ?? "");
+        return by * dir || a.name.localeCompare(b.name);
+      });
+  }, [data, search, status, sortBy, sortDir]);
 
   if (failed) return <div className="page"><EmptyState message="Could not load Copilot usage: the API request failed. Refresh to retry."/></div>;
   if (data === null) return <div className="page"><LoadingSkeleton type="table"/></div>;
@@ -75,6 +99,24 @@ export function CopilotPage() {
 
   return (
     <div className="page">
+      {data.partial && (
+        <div className="notice-warn" role="status">
+          <AlertTriangle size={16} aria-hidden="true"/>
+          <div>
+            <strong>Only part of the usage report could be read</strong>
+            <p>The counts below cover the {licensed} users Microsoft returned before the report stopped, not the whole tenant. Refresh to try again.</p>
+          </div>
+        </div>
+      )}
+      {data.seatsError && (
+        <div className="notice-warn" role="status">
+          <AlertTriangle size={16} aria-hidden="true"/>
+          <div>
+            <strong>Seat numbers aren't shown</strong>
+            <p>{data.seatsError}</p>
+          </div>
+        </div>
+      )}
       {data.namesConcealed && (
         <div className="notice-warn" role="status">
           <EyeOff size={16} aria-hidden="true"/>
@@ -86,10 +128,11 @@ export function CopilotPage() {
       )}
 
       <div className="stat-row-4">
-        <StatCard label="Licensed users" value={licensed} sub={data.seats != null ? `of ${data.seats} seats bought` : "in the usage report"}/>
+        <StatCard label="Licensed users" value={licensed} sub={data.seats != null ? `of ${data.seats} seats bought` : data.seatsError ? "seats bought unknown" : "in the usage report"}/>
         <StatCard label={`Active in ${days} days`} value={data.active ?? 0} sub={`${Math.round(((data.active ?? 0) / licensed) * 100)}% of licensed users`}/>
         <StatCard label={`Inactive ${days}+ days`} value={idle} sub={`${data.neverUsed ?? 0} never used it`}/>
-        <StatCard label="Unused seats" value={data.unusedSeats ?? "—"} sub={data.unusedSeats != null ? "bought, not assigned" : "no Copilot licence found"}/>
+        <StatCard label="Unused seats" value={data.unusedSeats ?? "—"}
+          sub={data.unusedSeats != null ? "bought, not assigned" : data.seatsError ? "licences couldn't be read" : "no Copilot licence found"}/>
       </div>
 
       <div className="two-col">
@@ -147,7 +190,12 @@ export function CopilotPage() {
           <div className="tbl-wrap">
             <table className="data-tbl">
               <thead>
-                <tr><th scope="col">User</th><th scope="col">Last activity</th><th scope="col">Apps used in {days} days</th><th scope="col">Status</th></tr>
+                <tr>
+                  <SortTh label="User" col="name" sortBy={sortBy} sortDir={sortDir} onSort={onSort}/>
+                  <SortTh label="Last activity" col="lastActivity" sortBy={sortBy} sortDir={sortDir} onSort={onSort}/>
+                  <th scope="col">Apps used in {days} days</th>
+                  <SortTh label="Status" col="status" sortBy={sortBy} sortDir={sortDir} onSort={onSort}/>
+                </tr>
               </thead>
               <tbody>
                 {users.map(u => (

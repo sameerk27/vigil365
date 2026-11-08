@@ -241,7 +241,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
                     <SectHdr>AT-RISK USERS</SectHdr>
                     {riskyUsers.slice(0,4).map((a,i)=>(
                       <div key={i} className="mini-row al-clickable" {...rowActivation(()=>onAlertClick(a))} data-inline-style="inline-7c0f86ab54">
-                        <span className={`sev-dot sev-${a.severity.toLowerCase()}`}/>
+                        <span className={sevClass(a.severity)}/>
                         <span className="mr-user">{a.userPrincipalName??a.title}</span>
                         <Badge label={a.severity} tone={a.severity==="High"||a.severity==="Critical"?"error":"warning"}/>
                       </div>

@@ -43,9 +43,13 @@ public sealed class GraphOptions
 
     /// <summary>
     /// Each search re-reads this much of the previous window: audit records can reach
-    /// the log hours after the action. Duplicates are dropped on the record id.
+    /// the log hours after the action. Microsoft documents up to 24 hours for some
+    /// services, and a record that lands after the overlap is never read, so it never
+    /// alerts and nothing says so. Duplicates are dropped on the record id; activity
+    /// policies count Purview records from when they were collected, so a late one
+    /// still alerts once.
     /// </summary>
-    public int PurviewAuditOverlapMinutes { get; set; } = 120;
+    public int PurviewAuditOverlapMinutes { get; set; } = 24 * 60;
 
     /// <summary>A search Microsoft has not finished after this long is abandoned and submitted again.</summary>
     public int PurviewAuditQueryTimeoutMinutes { get; set; } = 180;
@@ -57,19 +61,6 @@ public sealed class GraphOptions
     /// An array, so configuration replaces the list instead of appending to it.
     /// </summary>
     public string[] PowerPlatformHighRiskConnectors { get; set; } = ["HTTP*", "FTP*", "SFTP*", "Gmail", "Dropbox"];
-
-    // ── Power Platform inventory (docs/COPILOT_POWER_PLATFORM_PLAN.md phase D) ──
-    /// <summary>
-    /// The Power Platform API. The page's browser code reads it with the viewer's own
-    /// sign-in; the server only allows it in the Content Security Policy.
-    /// </summary>
-    public string PowerPlatformApiBaseUrl { get; set; } = "https://api.powerplatform.com";
-
-    /// <summary>Most environments whose app sharing and consent detail is read per read, busiest first.</summary>
-    public int PowerPlatformMaxEnvironments { get; set; } = 50;
-
-    /// <summary>An app shared with at least this many people is flagged as widely shared.</summary>
-    public int PowerPlatformWideSharingUsers { get; set; } = 25;
 
     public bool HasCertificate() =>
         !string.IsNullOrWhiteSpace(CertificateThumbprint) ||

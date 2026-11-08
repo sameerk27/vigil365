@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import { Monitor, XCircle, Clock, ShieldAlert, Search, Laptop, CheckCircle, Eye, ShieldCheck } from "lucide-react";
 import { DevicesData, SecurityAlert, MdeVulnerabilitiesData, MdeAlert } from "../services/types";
-import { pctTone, fmtDate, relTime, fmtFullTime } from "../services/utils";
+import { pctTone, fmtDate, relTime } from "../services/utils";
 import { consumeNavSeed, crossNavigate } from "../services/api";
-import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, MiniBarChart, InfoRow, CircleGauge, ExportDropdown, StatBox, SectHdr, rowActivation, SeverityFilter} from "../components/SharedComponents";
+import { KpiTile, Card, Badge, EmptyState, MiniBarChart, InfoRow, CircleGauge, ExportDropdown, SectHdr, rowActivation, SeverityFilter, DefenderAlertModal, AlertRow, SeverityStatRow } from "../components/SharedComponents";
 
 export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick }:
   { devices: DevicesData|null; alerts: SecurityAlert[]; mdeVulnerabilities: MdeVulnerabilitiesData|null; onAlertClick:(a:SecurityAlert)=>void }) {
@@ -82,27 +82,7 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
 
   return (
     <div className="page">
-      {selectedMde && (
-        <DetailModal
-          title={selectedMde.title ?? "MDE Alert"}
-          subtitle={`${selectedMde.severity} · ${selectedMde.category ?? "Defender for Endpoint"}`}
-          onClose={() => setSelectedMde(null)}
-          portalUrl={selectedMde.alertWebUrl ?? (selectedMde.id ? `https://security.microsoft.com/alerts/${selectedMde.id}` : "https://security.microsoft.com/alerts")}
-          portalLabel="View in Defender XDR"
-        >
-          <DetailField label="Alert ID" value={selectedMde.id} copy/>
-          {selectedMde.alertWebUrl && <DetailField label="Portal URL" value="Open in Defender XDR" onNavigate={()=>window.open(selectedMde.alertWebUrl, "_blank")} navLabel="Open →"/>}
-          <DetailField label="Severity" value={selectedMde.severity}/>
-          <DetailField label="Status" value={selectedMde.status}/>
-          <DetailField label="Category" value={selectedMde.category}/>
-          <DetailField label="Detected" value={fmtFullTime(selectedMde.createdDateTime)} title={fmtDate(selectedMde.createdDateTime)}/>
-          {selectedMde.description && <><div className="dm-section-hdr">Description</div><div className="dm-desc-block">{selectedMde.description}</div></>}
-          {(selectedMde.mitreTechniques?.length ?? 0) > 0 && (
-            <><div className="dm-section-hdr">MITRE Techniques</div>
-            <div className="mitre-tags">{selectedMde.mitreTechniques.map(t=><a key={t} href={`https://attack.mitre.org/techniques/${t}`} target="_blank" rel="noopener noreferrer" className="mitre-tag">{t}</a>)}</div></>
-          )}
-        </DetailModal>
-      )}
+      {selectedMde && <DefenderAlertModal alert={selectedMde} onClose={() => setSelectedMde(null)}/>}
       <div className="kpi-row kpi-row-4">
         <KpiTile icon={<Monitor size={18}/>} label="COMPLIANCE RATE" value={devices ? `${devComplPct}%` : "—"}
           sub={devices ? ((devices.totalDevices??0)>0?`${devices.totalDevices} total devices`:"No devices enrolled") : "Run collection to load"}
@@ -263,33 +243,19 @@ export function DevicesPage({ devices, alerts, mdeVulnerabilities, onAlertClick 
           ) : undefined
         }>
         {mdeVulnerabilities?.error
-          ?<EmptyState icon={<ShieldAlert size={28}/>} message="Needs SecurityAlert.Read.All"/>
+          ?<EmptyState icon={<ShieldAlert size={28}/>} message={mdeVulnerabilities.error}/>
           :(mdeVulnerabilities?.total??0)===0
             ?<EmptyState icon={<ShieldCheck size={28}/>} message="No Defender for Endpoint alerts"/>
             :(
               <>
                 <div className="stat-row4" data-inline-style="inline-8d16d0ba00">
-                  <StatBox value={mdeVulnerabilities!.bySeverity?.["high"]??0} label="High" color={(mdeVulnerabilities!.bySeverity?.["high"]??0)>0?"var(--status-error-text)":undefined}/>
-                  <StatBox value={mdeVulnerabilities!.bySeverity?.["medium"]??0} label="Medium" color={(mdeVulnerabilities!.bySeverity?.["medium"]??0)>0?"var(--status-warn-text)":undefined}/>
-                  <StatBox value={mdeVulnerabilities!.bySeverity?.["low"]??0} label="Low"/>
-                  <StatBox value={mdeVulnerabilities!.bySeverity?.["informational"]??0} label="Info"/>
+                  <SeverityStatRow counts={mdeVulnerabilities!.bySeverity}/>
                 </div>
                 <div className="alert-list">
                   <SectHdr>ENDPOINT ALERTS — {filteredMde.length} shown</SectHdr>
                   {filteredMde.length===0&&<div className="td-empty" data-inline-style="inline-43eb55eaea">No alerts match the filter.</div>}
                   {filteredMde.slice(0,10).map((a,i)=>(
-                    <div key={a.id??i} className="al-item" onClick={()=>setSelectedMde(a)}>
-                      <span className={`sev-dot sev-${a.severity.toLowerCase()}`}/>
-                      <div className="al-body">
-                        <div className="al-title">{(a.title??"Untitled").length>60?(a.title??"").slice(0,60)+"…":a.title}</div>
-                        <div className="row-meta">
-                          {a.category&&<span className="row-meta-item">{a.category}</span>}
-                          <Badge label={a.status} tone={a.status==="resolved"?"good":"warning"}/>
-                          <span className="row-meta-item">{relTime(a.createdDateTime)}</span>
-                        </div>
-                      </div>
-                      <Eye size={13} data-inline-style="inline-69271fc98e"/>
-                    </div>
+                    <AlertRow key={a.id??i} alert={a} onClick={()=>setSelectedMde(a)}/>
                   ))}
                   {filteredMde.length>10&&<div className="more-link">{filteredMde.length-10} more results — use search to narrow</div>}
                 </div>

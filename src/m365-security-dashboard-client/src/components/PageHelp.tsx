@@ -42,6 +42,10 @@ const HELP: Partial<Record<NavPage, HelpEntry>> = {
   compliance: {
     what: "One honest control assessment (CIS/NIST/ISO/GDPR references) derived from collected signals, plus Secure Score and data-coverage KPIs. Controls with no data are marked NOT ASSESSED, not passed.",
   },
+  posture: {
+    what: "What the tenant's Microsoft 365 licences include, which of those features are set up to a minimum, which are paid for but not used, and what would need another licence. Read live from Microsoft Graph on each visit; nothing is changed. Safe Links and preset policies show as Unknown until Exchange Online PowerShell is connected. Click a check for why it matters and how to fix it, or download the client report.",
+    links: [{ label: "CISA SCuBA baselines", url: "https://github.com/cisagov/ScubaGear/tree/main/PowerShell/ScubaGear/baselines" }],
+  },
   recommendations: {
     what: "A single findings hub: prioritised recommendations folding in Conditional Access gaps and SharePoint/OneDrive sharing posture. Vigil365 recommends — it never changes anything itself.",
   },
@@ -70,8 +74,11 @@ const HELP: Partial<Record<NavPage, HelpEntry>> = {
     links: [{ label: "Copilot usage report", url: "https://admin.microsoft.com/#/reportsUsage/MicrosoftCopilotUsage" }],
   },
   powerplatform: {
-    what: "Every Power Platform environment, Copilot Studio agent, canvas app and cloud flow, with the ones that need a look flagged: agents without sign-in or shared with everyone, apps that skip the consent prompt or are shared widely, high-risk connectors, and owners who left. Read in your browser with your own Microsoft sign-in (Global Administrator, Power Platform Administrator, Dynamics 365 Administrator or Global Reader); Vigil365's app has no Power Platform access and nothing is stored.",
-    links: [{ label: "Power Platform admin center", url: "https://admin.powerplatform.microsoft.com/" }],
+    what: "Alerts and activity for Copilot Studio agents, Power Automate flows, Power Apps and Power Platform admin changes: agents shared or opened to anyone, flows using high-risk connectors or shared outside the organisation, apps skipping the consent prompt, DLP policies deleted, sharing limits changed, many flows or apps deleted at once. Read in the background from Microsoft's audit log with Vigil365's own read-only permission (AuditLogsQuery.Read.All); Microsoft can take up to 24 hours to log an action. Act on an alert in the Alert Center.",
+    links: [
+      { label: "Microsoft Purview audit", url: "https://purview.microsoft.com/audit" },
+      { label: "Power Platform admin center", url: "https://admin.powerplatform.microsoft.com/" },
+    ],
   },
   users: {
     what: "In-app access control: assign Admin / Analyst / Viewer roles, invite users, and verify the tamper-evident audit trail. Roles are Vigil365's own — they do not change anyone's Microsoft account.",

@@ -25,47 +25,6 @@ export async function getAccessToken(): Promise<string | null> {
   }
 }
 
-/**
- * A Microsoft sign-in popup in another tenant (or the same one) for scopes outside
- * Vigil365's own API: the admin picks their account and Microsoft asks for consent if
- * it hasn't been given. Must be called straight from a click, or the popup is blocked.
- * The token stays in this browser. The Vigil365 session's account stays the active one,
- * and a different account used only for this is dropped from MSAL's cache afterwards.
- */
-export async function acquireTokenPopupForTenant(tenantId: string, scopes: string[]): Promise<string> {
-  const pca = _msalInstance;
-  if (!pca) throw new Error("Microsoft sign-in isn't available in this browser session.");
-  const authority = pca.getConfiguration().auth.authority ?? "https://login.microsoftonline.com/common";
-  const base = authority.replace(/\/[^/]*\/?$/, "/");
-  const active = pca.getActiveAccount();
-  try {
-    const result = await pca.acquireTokenPopup({ scopes, authority: `${base}${tenantId}`, prompt: "select_account" });
-    if (result.account && active && result.account.homeAccountId !== active.homeAccountId) {
-      await pca.clearCache({ account: result.account }).catch(() => undefined);
-    }
-    return result.accessToken;
-  } finally {
-    if (active) pca.setActiveAccount(active);
-  }
-}
-
-/**
- * The same, without a popup: works when the person signed in to Vigil365 belongs to that
- * tenant and has already consented to these scopes. Null otherwise; never throws.
- */
-export async function acquireTokenSilentForTenant(tenantId: string, scopes: string[]): Promise<string | null> {
-  const pca = _msalInstance;
-  const account = pca?.getActiveAccount() ?? pca?.getAllAccounts()[0];
-  if (!pca || !account || account.tenantId?.toLowerCase() !== tenantId.toLowerCase()) return null;
-  try {
-    const authority = pca.getConfiguration().auth.authority ?? "https://login.microsoftonline.com/common";
-    const result = await pca.acquireTokenSilent({ scopes, account, authority: `${authority.replace(/\/[^/]*\/?$/, "/")}${tenantId}` });
-    return result.accessToken;
-  } catch {
-    return null;
-  }
-}
-
 // ─── Client tenant selection (MSP) ─────────────────────────────────────────────
 // Which client tenant every API call is scoped to. Sent as X-Vigil-Tenant; the
 // server refuses (403) a client the user may not see, and with no header falls

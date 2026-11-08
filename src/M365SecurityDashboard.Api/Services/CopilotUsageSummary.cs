@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using static M365SecurityDashboard.Api.Services.Common.JsonRead;
 
 namespace M365SecurityDashboard.Api.Services;
 
@@ -70,11 +71,11 @@ public static partial class CopilotUsageSummary
 
         var users = reportRows.Select(r =>
         {
-            var upn = Str(r, "userPrincipalName");
+            var upn = NonBlank(r, "userPrincipalName");
             var last = Date(r, "lastActivityDate");
             var apps = AppColumns.Where(c => Date(r, c.Field) is { } d && d >= cutoff).Select(c => c.App).ToList();
             var status = last is null ? StatusNeverUsed : last >= cutoff ? StatusActive : StatusInactive;
-            return new User(Str(r, "displayName") ?? upn ?? "(unknown)", upn, last?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), apps, status);
+            return new User(NonBlank(r, "displayName") ?? upn ?? "(unknown)", upn, last?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), apps, status);
         })
         .OrderByDescending(u => u.LastActivity ?? "")
         .ThenBy(u => u.Name, StringComparer.OrdinalIgnoreCase)
@@ -82,7 +83,7 @@ public static partial class CopilotUsageSummary
 
         var copilotSkus = skus
             .Select(s => new Sku(
-                Str(s, "skuPartNumber") ?? "",
+                NonBlank(s, "skuPartNumber") ?? "",
                 s.TryGetProperty("prepaidUnits", out var p) && p.ValueKind == JsonValueKind.Object
                     && p.TryGetProperty("enabled", out var e) && e.ValueKind == JsonValueKind.Number ? e.GetInt32() : 0,
                 s.TryGetProperty("consumedUnits", out var c) && c.ValueKind == JsonValueKind.Number ? c.GetInt32() : 0))
@@ -114,10 +115,6 @@ public static partial class CopilotUsageSummary
         partNumber.Contains("COPILOT", StringComparison.OrdinalIgnoreCase)
         && !partNumber.Contains("STUDIO", StringComparison.OrdinalIgnoreCase);
 
-    private static string? Str(JsonElement e, string name) =>
-        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String
-            && !string.IsNullOrWhiteSpace(v.GetString()) ? v.GetString() : null;
-
     private static DateOnly? Date(JsonElement e, string name) =>
-        Str(e, name) is { } s && DateOnly.TryParse(s.Length >= 10 ? s[..10] : s, CultureInfo.InvariantCulture, DateTimeStyles.None, out var d) ? d : null;
+        NonBlank(e, name) is { } s && DateOnly.TryParse(s.Length >= 10 ? s[..10] : s, CultureInfo.InvariantCulture, DateTimeStyles.None, out var d) ? d : null;
 }

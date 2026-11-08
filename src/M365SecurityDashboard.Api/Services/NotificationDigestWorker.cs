@@ -1,6 +1,7 @@
 using M365SecurityDashboard.Api.Data;
 using M365SecurityDashboard.Api.Models;
 using Microsoft.EntityFrameworkCore;
+using M365SecurityDashboard.Api.Services.Common;
 
 namespace M365SecurityDashboard.Api.Services;
 
@@ -174,9 +175,6 @@ public sealed class NotificationDigestWorker(
             .ToList();
     }
 
-    private static readonly Dictionary<string, int> SeverityRank = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["informational"] = 0, ["low"] = 1, ["medium"] = 2, ["high"] = 3, ["critical"] = 4,
-    };
-    private static int Rank(string? sev) => SeverityRank.TryGetValue(sev ?? "low", out var r) ? r : 1;
+    // An unrecognised severity ranks as low, matching NotificationSender's filter.
+    private static int Rank(string? sev) => SeverityScale.Rank(sev, unknownAs: SeverityScale.Low);
 }

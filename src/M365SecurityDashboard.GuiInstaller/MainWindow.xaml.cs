@@ -1387,6 +1387,22 @@ namespace M365SecurityDashboard.GuiInstaller
             RunSc($"description {serviceName} \"Vigil365 Microsoft 365 security monitoring service\"", check: false);
             RunSc($"failure {serviceName} reset= 86400 actions= restart/5000/restart/15000/restart/60000", check: false);
 
+            // Without this, a reboot left Vigil365 stopped whenever its database
+            // started later than it did (see InstallPlan.LocalDatabaseService).
+            using (var services = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services"))
+            {
+                var dbService = InstallPlan.LocalDatabaseService(plannedEngine, sqlConnectionString, Environment.MachineName,
+                    services?.GetSubKeyNames() ?? Array.Empty<string>());
+                if (dbService == null)
+                    Log("The database is not a service on this computer, so Vigil365 does not wait for one at startup.");
+                else
+                {
+                    Log($"Vigil365 will start after {dbService}, its database.");
+                    try { RunSc($"config {serviceName} depend= {dbService}"); }
+                    catch (Exception ex) { Log($"Could not make Vigil365 wait for {dbService} ({ex.Message}). After a reboot, check Vigil365 is running."); }
+                }
+            }
+
             Log("Starting Service...");
             RunSc($"start {serviceName}");
 

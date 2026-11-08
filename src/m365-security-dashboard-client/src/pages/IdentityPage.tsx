@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { Key, UserX, Globe, Users, Search, CheckCircle, XCircle, UserCheck, ShieldCheck, AlertCircle, AlertTriangle, Clock, User, Lock, ShieldAlert } from "lucide-react";
 import { IdentityData, SecurityAlert, PrivilegedRolesData, PimData, MdiAlertsData, RiskDetectionsData, IdentityHealthData, MdiAlert, RiskDetection, Tone } from "../services/types";
-import { pctTone, fmtDate, sevColor, relTime, fmtFullTime } from "../services/utils";
+import { pctTone, fmtDate, sevColor, relTime, fmtFullTime, sevClass } from "../services/utils";
 import { consumeNavSeed, crossNavigate } from "../services/api";
-import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, InlineError, InfoRow, ProgressBar, ExportDropdown, CircleGauge, StatBox, SectHdr, rowActivation } from "../components/SharedComponents";
+import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, InlineError, InfoRow, ProgressBar, ExportDropdown, CircleGauge, StatBox, SectHdr, rowActivation, DefenderAlertModal, AlertRow, SeverityStatRow } from "../components/SharedComponents";
 import { FilterPresets } from "../components/FilterPresets";
 
 export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAlerts, riskDetections, identityHealth, onAlertClick }:
@@ -107,27 +107,7 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
 
   return (
     <div className="page">
-      {selectedMdi && (
-        <DetailModal
-          title={selectedMdi.title ?? "MDI Alert"}
-          subtitle={`${selectedMdi.severity} · ${selectedMdi.category ?? "Defender for Identity"}`}
-          onClose={() => setSelectedMdi(null)}
-          portalUrl={selectedMdi.alertWebUrl ?? (selectedMdi.id ? `https://security.microsoft.com/alerts/${selectedMdi.id}` : "https://security.microsoft.com/alerts")}
-          portalLabel="View in Defender XDR"
-        >
-          <DetailField label="Alert ID" value={selectedMdi.id} copy/>
-          {selectedMdi.alertWebUrl && <DetailField label="Portal URL" value="Open in Defender XDR" onNavigate={()=>window.open(selectedMdi.alertWebUrl, "_blank")} navLabel="Open →"/>}
-          <DetailField label="Severity" value={selectedMdi.severity}/>
-          <DetailField label="Status" value={selectedMdi.status}/>
-          <DetailField label="Category" value={selectedMdi.category}/>
-          <DetailField label="Created" value={fmtFullTime(selectedMdi.createdDateTime)} title={fmtDate(selectedMdi.createdDateTime)}/>
-          {selectedMdi.description && <><div className="dm-section-hdr">Description</div><div className="dm-desc-block">{selectedMdi.description}</div></>}
-          {(selectedMdi.mitreTechniques?.length ?? 0) > 0 && (
-            <><div className="dm-section-hdr">MITRE Techniques</div>
-            <div className="mitre-tags">{selectedMdi.mitreTechniques.map(t=><a key={t} href={`https://attack.mitre.org/techniques/${t}`} target="_blank" rel="noopener noreferrer" className="mitre-tag">{t}</a>)}</div></>
-          )}
-        </DetailModal>
-      )}
+      {selectedMdi && <DefenderAlertModal alert={selectedMdi} onClose={() => setSelectedMdi(null)}/>}
       {selectedDetection && (
         <DetailModal
           title={selectedDetection.riskEventType?.replace(/([A-Z])/g," $1").trim() ?? "Risk Detection"}
@@ -301,7 +281,7 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
 
         <Card title="Risk Detections" badge={<><Badge label={`${riskDetections?.total??0} detections`} tone={(riskDetections?.total??0)>0?"error":"good"}/><span className="card-count">{filteredDetections.length}</span></>}>
           {riskDetections?.error
-            ?<EmptyState icon={<AlertTriangle size={28}/>} message="Needs IdentityRiskEvent.Read.All"/>
+            ?<EmptyState icon={<AlertTriangle size={28}/>} message={riskDetections.error}/>
             :(riskDetections?.total??0)===0
               ?<EmptyState icon={<ShieldCheck size={28}/>} message="No risk detections — no leaked credentials, password spray, or MITM attacks found"/>
               :(
@@ -327,7 +307,7 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
                     {filteredDetections.length===0&&<div className="td-empty" data-inline-style="inline-a905015236">No detections match the filter.</div>}
                     {filteredDetections.slice(0,6).map((d,i)=>(
                       <div key={d.id??i} className="al-item" onClick={()=>setSelectedDetection(d)}>
-                        <span className={`sev-dot sev-${d.riskLevel.toLowerCase()}`}/>
+                        <span className={sevClass(d.riskLevel)}/>
                         <div className="al-body">
                           <div className="al-title">{d.userPrincipalName?.split("@")[0]??d.userDisplayName??"Unknown"}</div>
                           <div className="row-meta">
@@ -350,34 +330,20 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
       <div className="two-col">
         <Card title="Defender for Identity Alerts" badge={<><Badge label={`${filteredMdiAlerts.length} / ${mdiAlerts?.total??0} alerts`} tone={(mdiAlerts?.total??0)>0?"error":"good"}/><span className="card-count">{filteredMdiAlerts.length}</span></>}>
           {mdiAlerts?.error
-            ?<EmptyState icon={<ShieldAlert size={28}/>} message="Needs SecurityAlert.Read.All"/>
+            ?<EmptyState icon={<ShieldAlert size={28}/>} message={mdiAlerts.error}/>
             :(mdiAlerts?.total??0)===0
               ?<EmptyState icon={<ShieldCheck size={28}/>} message="No Defender for Identity alerts — no on-prem AD threats detected"/>
               :(
                 <>
                   <div className="stat-row4" data-inline-style="inline-8d16d0ba00">
-                    <StatBox value={mdiAlerts!.bySeverity?.["high"]??0} label="High" color={(mdiAlerts!.bySeverity?.["high"]??0)>0?"var(--status-error-text)":undefined}/>
-                    <StatBox value={mdiAlerts!.bySeverity?.["medium"]??0} label="Medium" color={(mdiAlerts!.bySeverity?.["medium"]??0)>0?"var(--status-warn-text)":undefined}/>
-                    <StatBox value={mdiAlerts!.bySeverity?.["low"]??0} label="Low"/>
-                    <StatBox value={mdiAlerts!.bySeverity?.["informational"]??0} label="Info"/>
+                    <SeverityStatRow counts={mdiAlerts!.bySeverity}/>
                   </div>
                   <div className="alert-list">
                     <div className="list-count">{filteredMdiAlerts.length} of {mdiAlerts?.total??0} MDI alert{(mdiAlerts?.total??0)!==1?"s":""}</div>
                     <SectHdr>MDI ALERTS — {filteredMdiAlerts.length} shown</SectHdr>
                     {filteredMdiAlerts.length===0&&<div className="td-empty" data-inline-style="inline-43eb55eaea">No alerts match the filter.</div>}
                     {filteredMdiAlerts.slice(0,8).map((a,i)=>(
-                      <div key={a.id??i} className="al-item" onClick={()=>setSelectedMdi(a)}>
-                        <span className={`sev-dot sev-${a.severity.toLowerCase()}`}/>
-                        <div className="al-body">
-                          <div className="al-title">{a.title}</div>
-                          <div className="row-meta">
-                            {a.category&&<span className="row-meta-item">{a.category}</span>}
-                            {a.status&&<Badge label={a.status} tone="neutral"/>}
-                            <span className="row-meta-item">{relTime(a.createdDateTime)}</span>
-                          </div>
-                        </div>
-                        <Badge label={a.severity} tone={a.severity==="high"||a.severity==="High"?"error":a.severity==="medium"||a.severity==="Medium"?"warning":"neutral"}/>
-                      </div>
+                      <AlertRow key={a.id??i} alert={a} onClick={()=>setSelectedMdi(a)}/>
                     ))}
                   </div>
                 </>
@@ -387,7 +353,7 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
 
         <Card title="PIM Role Activations" badge={<Badge label={`${filteredPim.length} / ${pimData?.total??0} recent`} tone="neutral"/>}>
           {pimData?.error
-            ?<EmptyState icon={<Key size={28}/>} message="Needs RoleManagement.Read.Directory"/>
+            ?<EmptyState icon={<Key size={28}/>} message={pimData.error}/>
             :(pimData?.activations.length??0)===0
               ?<EmptyState icon={<Clock size={28}/>} message="No recent role activations"/>
               :(
@@ -469,14 +435,14 @@ export function IdentityPage({ identity, alerts, privilegedRoles, pimData, mdiAl
 
       <Card title="Identity Sensor Health" badge={<Badge label={(identityHealth?.total??0)===0?"All Healthy":`${identityHealth?.total??0} issues`} tone={(identityHealth?.issues?.length??0)===0?"good":"error"}/>}>
         {identityHealth?.error
-          ?<EmptyState icon={<AlertTriangle size={28}/>} message="Needs IdentityBaseline.Read.All — add permission in Azure App Registration"/>
+          ?<EmptyState icon={<AlertTriangle size={28}/>} message={identityHealth.error}/>
           :(identityHealth?.total??0)===0
             ?<EmptyState icon={<ShieldCheck size={36}/>} message="All identity sensors reporting healthy — no MDI sensor gaps detected"/>
             :(
               <div className="alert-list">
                 {identityHealth!.issues.map((iss,i)=>(
                   <div key={iss.id??i} className="al-item al-item-noclick">
-                    <span className={`sev-dot sev-${iss.severity.toLowerCase()}`}/>
+                    <span className={sevClass(iss.severity)}/>
                     <div className="al-body">
                       <div className="al-title">{iss.displayName??iss.issueType??"Health Issue"}</div>
                       {iss.description&&<div className="al-desc">{iss.description}</div>}

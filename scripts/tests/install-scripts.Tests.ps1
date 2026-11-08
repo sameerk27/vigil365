@@ -48,6 +48,52 @@ Describe "enterprise-install.ps1 service command line" {
     }
 }
 
+# At boot SQL Server (Automatic, Delayed Start) came up after Vigil365, whose start
+# waits for its database, and Windows left Vigil365 stopped. enterprise-install.ps1
+# makes it depend on a database service on the same computer.
+Describe "enterprise-install.ps1 starts the service after a local database" {
+    BeforeAll {
+        . (Join-Path $PSScriptRoot 'ScriptTestHelpers.ps1')
+        $scriptPath = Join-Path $PSScriptRoot '../../enterprise-install.ps1'
+        . (Import-ScriptFunction $scriptPath 'Get-DatabaseServiceName', 'Get-ScDependArguments', 'Get-ScCreateArguments', 'Invoke-Sc')
+        $installed = @('MSSQL$SQLEXPRESS', 'MSSQLSERVER', 'postgresql-x64-16', 'RpcSs')
+    }
+
+    It "finds the SQL Server service a local connection string names" {
+        Assert-Equal 'MSSQL$SQLEXPRESS' (Get-DatabaseServiceName 'SqlServer' 'Server=.\SQLEXPRESS;Database=Vigil365;Trusted_Connection=True' 'VIGILHOST' $installed)
+        Assert-Equal 'MSSQL$SQLEXPRESS' (Get-DatabaseServiceName 'SqlServer' 'Data Source=tcp:localhost\sqlexpress,1433;Initial Catalog=Vigil365' 'VIGILHOST' $installed)
+        Assert-Equal 'MSSQL$SQLEXPRESS' (Get-DatabaseServiceName 'SqlServer' 'Server=vigilhost\SQLEXPRESS;Database=Vigil365' 'VIGILHOST' $installed)
+        Assert-Equal 'MSSQLSERVER' (Get-DatabaseServiceName 'SqlServer' 'Server=(local);Database=Vigil365' 'VIGILHOST' $installed)
+        Assert-Equal 'postgresql-x64-16' (Get-DatabaseServiceName 'Postgres' 'Host=localhost:5432;Database=vigil365' 'VIGILHOST' $installed)
+    }
+
+    It "adds no dependency for a database elsewhere, LocalDB, or a service that is not installed" {
+        Assert-True ($null -eq (Get-DatabaseServiceName 'SqlServer' 'Server=sql01.contoso.com\SQLEXPRESS;Database=Vigil365' 'VIGILHOST' $installed)) "a remote SQL Server"
+        Assert-True ($null -eq (Get-DatabaseServiceName 'SqlServer' 'Server=(localdb)\MSSQLLocalDB;Database=Vigil365' 'VIGILHOST' $installed)) "LocalDB"
+        Assert-True ($null -eq (Get-DatabaseServiceName 'SqlServer' 'Server=.\OTHER;Database=Vigil365' 'VIGILHOST' $installed)) "an instance that is not installed"
+        Assert-True ($null -eq (Get-DatabaseServiceName 'SqlServer' 'not a connection string' 'VIGILHOST' $installed)) "an unreadable connection string"
+        Assert-True ($null -eq (Get-DatabaseServiceName 'Postgres' 'Host=pg.contoso.com;Database=vigil365' 'VIGILHOST' $installed)) "a remote PostgreSQL"
+        Assert-True ($null -eq (Get-DatabaseServiceName 'Postgres' 'Host=localhost;Database=vigil365' 'VIGILHOST' @('postgresql-x64-15', 'postgresql-x64-16'))) "two PostgreSQL services"
+    }
+
+    It "is the exact command line sc.exe needs" {
+        Assert-Equal 'config Vigil365 depend= MSSQL$SQLEXPRESS' (Get-ScDependArguments 'Vigil365' 'MSSQL$SQLEXPRESS')
+        Assert-Equal @('config', 'Vigil365', 'depend=', 'MSSQL$SQLEXPRESS') (Split-CommandLine (Get-ScDependArguments 'Vigil365' 'MSSQL$SQLEXPRESS'))
+    }
+
+    It "makes a real service depend on another (Windows, elevated)" -Skip:(-not ($env:OS -eq 'Windows_NT' -and ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))) {
+        $name = 'Vigil365DepTest' + [guid]::NewGuid().ToString('N').Substring(0, 8)
+        try {
+            Invoke-Sc (Get-ScCreateArguments $name 'C:\Program Files\Vigil365 Sc Test\M365SecurityDashboard.Api.exe' 'http://127.0.0.1:8080')
+            Invoke-Sc (Get-ScDependArguments $name 'RpcSs')
+            $qc = (& sc.exe qc $name) -join "`n"
+            Assert-True ($qc -match 'DEPENDENCIES\s*:\s*RpcSs') "the service to depend on RpcSs:`n$qc"
+        } finally {
+            & sc.exe delete $name | Out-Null
+        }
+    }
+}
+
 Describe "install.ps1 service command line" {
     BeforeAll {
         . (Join-Path $PSScriptRoot 'ScriptTestHelpers.ps1')

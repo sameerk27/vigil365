@@ -46,6 +46,43 @@ function Invoke-Sc([string]$Arguments) {
 function Get-ScCreateArguments([string]$ServiceName, [string]$Exe, [string]$Urls) {
     "create $ServiceName binPath= `"\`"$Exe\`" --environment Production --urls $Urls`" start= auto obj= `"NT AUTHORITY\LocalService`""
 }
+# The Windows service of the database, when it runs on this computer, for Vigil365 to
+# depend on. SQL Server installs as Automatic (Delayed Start), so at boot it came up
+# after Vigil365, whose start waits for its database; Windows gave up and left
+# Vigil365 stopped (recovery actions don't cover a failed start). Returns $null for a
+# database elsewhere, LocalDB, or a service that isn't installed: depending on a
+# missing service stops Vigil365 starting at all. Same rules as the GUI installer's
+# InstallPlan.LocalDatabaseService. Tested in scripts/tests/install-scripts.Tests.ps1.
+function Get-DatabaseServiceName([string]$Provider, [string]$ConnectionString, [string]$MachineName, [string[]]$InstalledServices) {
+    $builder = New-Object System.Data.Common.DbConnectionStringBuilder
+    # The builder is a dictionary, so "$builder.ConnectionString = ..." would only add
+    # a key named ConnectionString; the setter parses the string.
+    try { $builder.set_ConnectionString($ConnectionString) } catch { return $null }
+    function Get-Value([string[]]$Keys) {
+        foreach ($k in $Keys) { if ($builder.ContainsKey($k) -and "$($builder[$k])".Trim()) { return "$($builder[$k])".Trim() } }
+        return $null
+    }
+    function Test-ThisComputer([string]$HostName) { $HostName -in @('.', '(local)', 'localhost', '127.0.0.1', '::1', $MachineName) }
+    if ($Provider -eq 'Postgres') {
+        $pgHost = Get-Value @('Host', 'Server')
+        if (-not $pgHost -or $pgHost.Contains(',')) { return $null }
+        if (($pgHost.ToCharArray() | Where-Object { $_ -eq ':' }).Count -eq 1) { $pgHost = $pgHost.Split(':')[0] }
+        if (-not (Test-ThisComputer $pgHost)) { return $null }
+        $postgres = @($InstalledServices | Where-Object { $_ -like 'postgresql*' })
+        if ($postgres.Count -eq 1) { return $postgres[0] } else { return $null }
+    }
+    $server = Get-Value @('Server', 'Data Source', 'Address', 'Addr', 'Network Address')
+    if (-not $server) { return $null }
+    $server = $server -replace '^(?i)(tcp|np|lpc|admin):', ''
+    if ($server -like '(localdb)*') { return $null }
+    $server = $server.Split(',')[0].Trim()
+    $parts = $server.Split('\', 2)
+    if (-not (Test-ThisComputer $parts[0])) { return $null }
+    $name = if ($parts.Count -lt 2 -or -not $parts[1] -or $parts[1] -eq 'MSSQLSERVER') { 'MSSQLSERVER' } else { 'MSSQL$' + $parts[1] }
+    $found = @($InstalledServices | Where-Object { $_ -eq $name })
+    if ($found.Count -gt 0) { return $found[0] } else { return $null }
+}
+function Get-ScDependArguments([string]$ServiceName, [string]$DependsOn) { "config $ServiceName depend= $DependsOn" }
 function Read-Required([string]$Name, [string]$Value) {
     if ($Value) { return $Value }
     do { $Value = Read-Host $Name } while ([string]::IsNullOrWhiteSpace($Value))
@@ -98,6 +135,11 @@ if (Get-Service $ServiceName -ErrorAction SilentlyContinue) { Invoke-Sc "delete 
 Invoke-Sc (Get-ScCreateArguments $ServiceName $exe "http://127.0.0.1:$Port")
 Invoke-Sc "description $ServiceName `"Vigil365 Microsoft 365 security monitoring service`""
 Invoke-Sc "failure $ServiceName reset= 86400 actions= restart/5000/restart/15000/restart/60000"
+$databaseService = Get-DatabaseServiceName $DatabaseProvider $SqlConnectionString $env:COMPUTERNAME @(Get-Service | ForEach-Object Name)
+if ($databaseService) {
+    Invoke-Sc (Get-ScDependArguments $ServiceName $databaseService)
+    Write-Host "$ServiceName will start after $databaseService, its database." -ForegroundColor Cyan
+}
 Invoke-Sc "start $ServiceName"
 # "sc start" returns while the service is still starting; one that dies on startup must not read as installed.
 try { (Get-Service $ServiceName).WaitForStatus("Running", [TimeSpan]::FromSeconds(60)) }

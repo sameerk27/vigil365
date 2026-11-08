@@ -196,7 +196,7 @@ public sealed class GraphApiClient
         return new GraphCollection(items, complete);
     }
 
-    public async Task<IReadOnlyList<JsonElement>> GetSinglePageAsync(string path, CancellationToken ct)
+    public async Task<IReadOnlyList<JsonElement>> GetSinglePageAsync(string path, CancellationToken ct, string? prefer = null)
     {
         var (options, credential) = await EnsureAsync(ct);
         var url = path.StartsWith("http", StringComparison.OrdinalIgnoreCase)
@@ -205,6 +205,7 @@ public sealed class GraphApiClient
 
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.TryAddWithoutValidation("User-Agent", "M365SecurityDashboard/1.0");
+        if (prefer is not null) request.Headers.TryAddWithoutValidation("Prefer", prefer);
         var token = await credential.GetTokenAsync(new TokenRequestContext(new[] { $"{options.BaseUrl.TrimEnd('/')}/.default" }), ct);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
 

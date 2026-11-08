@@ -54,6 +54,45 @@ describe("CopilotPage", () => {
     expect(await screen.findByText(/Users appear here once they hold a Microsoft 365 Copilot licence/)).toBeInTheDocument();
   });
 
+  it("says when only part of the usage report was read, instead of showing it as the whole tenant", async () => {
+    mockApi({ "GET /api/dashboard/copilot": { body: usage({ partial: true }) } });
+    render(<CopilotPage/>);
+    const notice = await screen.findByRole("status");
+    expect(notice).toHaveTextContent("Only part of the usage report could be read");
+    expect(notice).toHaveTextContent("cover the 3 users Microsoft returned");
+  });
+
+  it("when licences can't be read, seat numbers are unknown rather than 'no Copilot licence'", async () => {
+    mockApi({ "GET /api/dashboard/copilot": { body: usage({
+      seats: null, assignedSeats: null, unusedSeats: null, skus: [],
+      seatsError: "Permission denied: grant the Directory.Read.All application permission to the Vigil365 app registration.",
+    }) } });
+    render(<CopilotPage/>);
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Directory.Read.All");
+    expect(screen.getByText("licences couldn't be read")).toBeInTheDocument();
+    expect(screen.queryByText("no Copilot licence found")).toBeNull();
+  });
+
+  it("sorts users by name, last activity or status from the column headers", async () => {
+    mockApi({ "GET /api/dashboard/copilot": { body: usage() } });
+    render(<CopilotPage/>);
+    await screen.findByRole("table");
+    const names = () => within(screen.getByRole("table")).getAllByRole("row").slice(1).map(r => r.querySelector("td")?.textContent ?? "");
+
+    expect(names()[0]).toContain("Priya Shah"); // most recent activity first by default
+
+    fireEvent.click(screen.getByRole("button", { name: "User" }));
+    const byName = names();
+    expect(byName[0]).toContain("Lena Novak");
+    expect(byName[1]).toContain("Marco Rossi");
+    expect(byName[2]).toContain("Priya Shah");
+
+    fireEvent.click(screen.getByRole("button", { name: "Status" }));
+    expect(screen.getByRole("columnheader", { name: "Status" })).toHaveAttribute("aria-sort", "ascending");
+    expect(names()[0]).toContain("Marco Rossi"); // never used comes first
+  });
+
   it("shows the Graph error when the report can't be read", async () => {
     mockApi({ "GET /api/dashboard/copilot": { body: { configured: true, error: "Needs permission: Reports.Read.All" } } });
     render(<CopilotPage/>);

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using M365SecurityDashboard.Api.Services.Common;
 
 namespace M365SecurityDashboard.Api.Services;
 
@@ -99,8 +100,8 @@ public static class ConditionalAccessGapAnalyzer
     /// <summary>Parses a raw Graph conditionalAccess policy element into the analysis view.</summary>
     public static CaPolicyView Parse(JsonElement p)
     {
-        var name = p.TryGetProperty("displayName", out var n) ? n.GetString() ?? "Unnamed" : "Unnamed";
-        var state = p.TryGetProperty("state", out var s) ? s.GetString() ?? "unknown" : "unknown";
+        var name = JsonRead.Str(p, "displayName") ?? "Unnamed";
+        var state = JsonRead.Str(p, "state") ?? "unknown";
 
         bool includesAllUsers = false, includesAllApps = false;
         int exclUsers = 0, exclGroups = 0;

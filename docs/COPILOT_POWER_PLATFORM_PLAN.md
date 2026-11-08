@@ -1,6 +1,6 @@
 # Copilot and Power Platform: plan
 
-Status: **phases A and B built on `feat/copilot-power-platform` (2026-10-19); phase D built 2026-10-23 as a read with the viewer's own sign-in; A, B and D not yet checked against a live tenant; phase C waits for a licensed tenant** (plan revised 2026-10-18, phase D revised 2026-10-21). Microsoft's APIs and audit schemas were
+Status: **phases A and B built on `feat/copilot-power-platform` (2026-10-19); phase D built 2026-10-23 and removed 2026-11-07; phase F built 2026-11-07; A, B and F not yet checked against a live tenant; phase C waits for a licensed tenant** (plan revised 2026-10-18, phase D revised 2026-10-21). Microsoft's APIs and audit schemas were
 checked on that date; re-check section 2 before building, because some of the sources are beta or
 preview.
 
@@ -45,7 +45,7 @@ not the `Operation` strings. Capture those from a live tenant before writing tem
 | Defender runtime protection for Copilot Studio agents (for example, blocked prompt injection) | Defender alerts, already collected by the "Defender alerts" source (`/v1.0/security/alerts_v2`) | `SecurityAlert.Read.All`, **already granted** | **Preview** | Unverified how these alerts identify themselves. Check on a licensed tenant, then tag them as agent alerts. |
 | Copilot usage per user (last activity per app) | `GET /beta/reports/getMicrosoft365CopilotUsageUserDetail(period='D28')` | `Reports.Read.All`, **already granted** | Beta | Licensed users only. Names are hashed if the tenant conceals report names. Microsoft points to the newer `/copilot` report path. |
 | Copilot seats bought and assigned | `GET /v1.0/subscribedSkus` | `Directory.Read.All`, **already granted** | v1.0 | Already read by the licences endpoint. Confirm the Copilot SKU part number on a real tenant. |
-| Power Platform inventory, read by a person (environments, apps, flows, agents) | Power Platform inventory `POST /resourcequery/resources/query` and `GET /powerapps/environments/{id}/apps`, api-version `2024-10-01` | Delegated: `ResourceQuery.Resources.Read`, `PowerApps.Apps.Read`; the person needs Global Administrator, Power Platform Administrator, Dynamics 365 Administrator or Global Reader | Inventory GA (connector fields and some agent fields preview) | **Built (phase D).** Delegated only: Microsoft returns 403 to apps. Rechecked 2026-10-23. |
+| Power Platform inventory, read by a person (environments, apps, flows, agents) | Power Platform inventory `POST /resourcequery/resources/query` and `GET /powerapps/environments/{id}/apps`, api-version `2024-10-01` | Delegated: `ResourceQuery.Resources.Read`, `PowerApps.Apps.Read`; the person needs Global Administrator, Power Platform Administrator, Dynamics 365 Administrator or Global Reader | Inventory GA (connector fields and some agent fields preview) | **Built in phase D, removed 2026-11-07.** Delegated only: Microsoft returns 403 to apps. Rechecked 2026-10-23. |
 | (Tried, removed) Power Platform reader RBAC role for Vigil365's app | `api.powerplatform.com` app-only | Power Platform reader role (preview) | — | Role assigned fine, but every app-only call got 403 "Caller is not an authorized app": the app must also be enrolled as a management application, which Microsoft treats as Power Platform Administrator (can't be limited). Owner declined (2026-10-23). |
 | (Rejected) Power Platform admin (BAP) API via management-app registration | `api.bap.microsoft.com` | The app is treated as a Power Platform Administrator | GA | **Breaks the read-only promise. Do not use.** |
 
@@ -98,7 +98,9 @@ into the activity name at ingest (section 4).
 
 **Collection** (`Services/GraphCollector.cs`): new `CollectPurviewAuditAsync` step, on its own cadence
 because of the query limits: `Graph:PurviewAuditIntervalMinutes`, default 60.
-- **Run N:** create a query for `[watermark, now]`, filtered by record type or operation to the events
+- **Run N:** create a query for `[watermark - overlap, now]` (overlap `Graph:PurviewAuditOverlapMinutes`,
+  default 24 hours, because Microsoft says records can take up to 24 hours to reach the log; duplicates are
+  dropped by record id), filtered by record type or operation to the events
   in section 3.
 - **Run N+1:** if the query has `succeeded`, page its records into `AuditEvents` and advance the
   watermark. A run never waits on a query.
@@ -178,7 +180,11 @@ About 1–2 days.
 Only useful on tenants with the licences in section 2. About 1–2 days after a licensed tenant confirms
 the alert shape.
 
-**D. Power Platform inventory (built 2026-10-23: read with the viewer's own sign-in).**
+**D. Power Platform inventory (built 2026-10-23: read with the viewer's own sign-in). Removed 2026-11-07.**
+
+*Why removed:* it can't alert. Microsoft lets only a signed-in person read the inventory, so it ran only
+while someone had the page open. Phase F replaced it. The notes below are kept as a record; the code is in
+801284d.
 
 *What happened first (2026-10-21/22):* the reader-role route was built (Power Platform reader RBAC role for
 Vigil365's app, assigned from the page or a script) and tried on the owner's tenant. The role was assigned,
@@ -203,7 +209,8 @@ The owner chose not to give Vigil365's app those rights; that code was removed (
   the most apps, four at a time, for sharing counts and the consent bypass.
 - **Server:** `POST /api/power-platform/inventory/evaluate` takes the rows (the browser keeps only the fields
   used), names owners with a Graph GET (`users?$filter=id in (...)`, 15 ids per call, at most 600 owners) and
-  returns them flagged (`PowerPlatformEvaluator`). It never calls the Power Platform API and never sees the
+  returns them flagged (`PowerPlatformEvaluator`). Owner names go to Analysts and Admins only (decided
+  2026-11-06): the browser chooses the ids, so a Viewer gets the review with owner ids. It never calls the Power Platform API and never sees the
   token. `GET /api/power-platform/settings` gives the tenant id and API origins. Nothing is stored; the
   browser keeps the last read in memory while the app is open.
 - **Flags:** agents with authentication "None" (high if published, low if draft), shared with the entire
@@ -221,6 +228,16 @@ The owner chose not to give Vigil365's app those rights; that code was removed (
   built-in HTTP action shows no connector); the "HTTP with Microsoft Entra ID" connector id isn't documented,
   so `HTTP*` matches its display name (app detail) but not an id; no alerts on inventory changes.
 
+**F. Power Platform page as alerts (built 2026-11-07, not yet checked on a live tenant).** The page shows
+Purview-based alerts and activity instead of the inventory (phase D is removed), adds a third audit search for
+admin events Graph can't select by record type, and adds admin-change and bulk-deletion rules. See
+`docs/POWER_PLATFORM_ALERTS_PLAN.md`; its section 6 lists the live checks.
+
+**E. Flow errors (planned 2026-11-06/07, parked, not built).** Alerts when cloud flow runs fail, read with an
+admin's saved, read-only sign-in (no changes in the customer's environment). Testing stopped before a run
+was read back. The
+Purview audit log has no runs. See `docs/FLOW_ERRORS_PLAN.md`.
+
 ## 6. Must be checked on a live tenant before building
 
 - Run one audit query by hand (Graph Explorer) covering a created, shared and published agent, a flow
@@ -233,7 +250,9 @@ The owner chose not to give Vigil365's app those rights; that code was removed (
 - The delay between an action and its audit record, which sets how quickly an alert can fire.
 - The audit query limits on that tenant, to confirm the 60-minute default.
 - For phase C: a tenant with Agent 365, or Defender for Cloud Apps plus Copilot Studio.
-- For phase D, on a test tenant with a Power Platform Administrator and a Global Reader:
+- For phase F: `docs/POWER_PLATFORM_ALERTS_PLAN.md` section 6.
+- For phase D (no longer needed: phase D was removed 2026-11-07), on a test tenant with a Power Platform
+  Administrator and a Global Reader:
   - whether the delegated scopes need admin consent in tenants that block user consent;
   - that the inventory's app `name` matches the apps-as-administrator `name` (the merge key);
   - the agent fields in practice (`authentication`, `sharedWithViewers`, `powerPlatformConnectors[].operations[]

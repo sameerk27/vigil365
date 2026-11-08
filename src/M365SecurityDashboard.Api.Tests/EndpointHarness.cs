@@ -99,6 +99,19 @@ internal sealed class EndpointHarness : IAsyncDisposable
         return (ctx.Response.StatusCode, await new StreamReader(ctx.Response.Body).ReadToEndAsync());
     }
 
+    /// <summary>
+    /// Starts the app on a free loopback port and returns its address, for what only a real
+    /// server does (Kestrel's request size limit, say). No authentication runs: the caller is anonymous.
+    /// </summary>
+    public async Task<Uri> ListenAsync()
+    {
+        _app.Urls.Add("http://127.0.0.1:0");
+        await _app.StartAsync();
+        var addresses = _app.Services.GetRequiredService<Microsoft.AspNetCore.Hosting.Server.IServer>()
+            .Features.Get<Microsoft.AspNetCore.Hosting.Server.Features.IServerAddressesFeature>()!.Addresses;
+        return new Uri(addresses.First());
+    }
+
     public ValueTask DisposeAsync() => _app.DisposeAsync();
 
     private sealed class HasBody : Microsoft.AspNetCore.Http.Features.IHttpRequestBodyDetectionFeature

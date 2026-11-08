@@ -25,6 +25,24 @@ describe("PurviewAuditPanel", () => {
     expect(banner).toHaveTextContent("AuditLogsQuery.Read.All");
   });
 
+  it("when the permission is granted but still refused, shows what to check and Microsoft's reason", async () => {
+    const lastError = "Copilot agent and Power Platform alerts need AuditLogsQuery.Read.All (read-only). Grant admin consent, then wait for the next run. "
+      + "If it is already granted, check that auditing is turned on in Microsoft Purview. Microsoft said: Auditing is not enabled for this tenant.";
+    mockApi({ "GET /api/purview-audit/status": { body: statusBody([feed("NeedsPermission", { lastError })]) } });
+    render(<PurviewAuditPanel/>);
+    const banner = await screen.findByRole("alert");
+    expect(banner).toHaveTextContent("check that auditing is turned on in Microsoft Purview");
+    expect(banner).toHaveTextContent("Microsoft said: Auditing is not enabled for this tenant.");
+  });
+
+  it("explains an audit batch held back because the domain list couldn't be read", async () => {
+    const lastError = "Couldn't read the organisation's verified domains, so a flow shared with someone outside it can't be recognised. "
+      + "These audit records will be read again on the next run.";
+    mockApi({ "GET /api/purview-audit/status": { body: statusBody([feed("Failed", { lastError, pending: true }), feed("Ok")]) } });
+    render(<PurviewAuditPanel/>);
+    expect(await screen.findByRole("status")).toHaveTextContent("will be read again on the next run");
+  });
+
   it("shows the last failure instead of an all-clear", async () => {
     mockApi({ "GET /api/purview-audit/status": { body: statusBody([feed("Failed", { lastError: "The audit search did not finish in time." }), feed("Ok")]) } });
     render(<PurviewAuditPanel/>);

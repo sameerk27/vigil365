@@ -1,9 +1,27 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Download, ChevronRight, Copy, ClipboardCheck, ExternalLink, AlertTriangle, X, Lock, UserCheck, MessageSquare } from "lucide-react";
-import { Tone, SecurityAlert, AlertNote } from "../services/types";
-import { fmtService, fmtDate, fmtShort, relTime, fmtUtc, downloadCsv, copyToClipboard } from "../services/utils";
+import { Download, ChevronRight, Copy, ClipboardCheck, ExternalLink, AlertTriangle, X, Lock, UserCheck, MessageSquare, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
+import { Tone, SecurityAlert, AlertNote, DefenderAlert, SecurityIncident, GraphSecurityAlert } from "../services/types";
+import { fmtService, fmtDate, fmtShort, relTime, fmtUtc, downloadCsv, copyToClipboard, fmtDefenderSource, defenderAlertUrl, sevClass, sevTone, getSevCount } from "../services/utils";
 import { showToast } from "../services/toast";
 import { useAuth, acApi, wbApi, openEntity, requestRefresh, clientFileName } from "../services/api";
+
+// ─── Sortable table header ────────────────────────────────────────────────────
+/** Click to sort by this column, click again to flip direction. aria-sort tells screen readers the current order. */
+export function SortTh<T extends string>({ label, col, sortBy, sortDir, onSort }: {
+  label: string; col: T; sortBy: string; sortDir: "asc" | "desc"; onSort: (c: T) => void;
+}) {
+  const active = sortBy === col;
+  return (
+    <th scope="col" aria-sort={active ? (sortDir === "asc" ? "ascending" : "descending") : undefined}>
+      <button type="button" className="th-sort" onClick={() => onSort(col)}>
+        {label}
+        {active
+          ? (sortDir === "asc" ? <ChevronUp size={12} aria-hidden="true"/> : <ChevronDown size={12} aria-hidden="true"/>)
+          : <ChevronsUpDown size={12} className="sort-icon-muted" aria-hidden="true"/>}
+      </button>
+    </th>
+  );
+}
 
 // ─── Export dropdown ──────────────────────────────────────────────────────────
 /**
@@ -794,7 +812,7 @@ export function AlertDetailModal({ alert, allAlerts, onSelectAlert, onClose }: {
                   onClick={() => onSelectAlert?.(r)}
                   style={{ cursor: onSelectAlert ? "pointer" : "default", textAlign: "left", background: "none", border: "none", display: "flex", width: "100%", alignItems: "center" }}
                   aria-label={`Open related alert: ${r.title}`}>
-                  <span className={`sev-dot sev-${r.severity.toLowerCase()}`}/>
+                  <span className={sevClass(r.severity)}/>
                   <span className="mr-user" data-inline-style="inline-126244f135">{r.title}</span>
                   <Badge label={fmtService(r.service)} tone="neutral"/>
                 </button>
@@ -804,5 +822,96 @@ export function AlertDetailModal({ alert, allAlerts, onSelectAlert, onClose }: {
         </>
       )}
     </DetailModal>
+  );
+}
+
+/** Detail view for any alerts_v2 alert (Defender XDR, MDE, MDI, MDO, MCAS, Purview). Empty fields are hidden. */
+export function DefenderAlertModal({ alert, onClose, parentIncident, onOpenIncident }:
+  { alert: DefenderAlert; onClose: () => void; parentIncident?: SecurityIncident | null; onOpenIncident?: () => void }) {
+  const portalUrl = defenderAlertUrl(alert);
+  const sev = alert.severity.charAt(0).toUpperCase() + alert.severity.slice(1);
+  return (
+    <DetailModal
+      title={alert.title ?? "Defender Alert"}
+      subtitle={`${sev} · ${fmtDefenderSource(alert.serviceSource ?? "Defender")}`}
+      onClose={onClose}
+      portalUrl={portalUrl}
+      portalLabel="View in Defender XDR"
+    >
+      <DetailField label="Alert ID" value={alert.id} copy={!!alert.id}/>
+      <DetailField label="Severity" value={sev}/>
+      <DetailField label="Status" value={alert.status}/>
+      <DetailField label="Classification" value={alert.classification}/>
+      <DetailField label="Service Source" value={fmtDefenderSource(alert.serviceSource ?? "")}/>
+      <DetailField label="Detection Source" value={alert.detectionSource}/>
+      <DetailField label="Category" value={alert.category}/>
+      <DetailField label="Assigned To" value={alert.assignedTo}/>
+      <DetailField label="Threat Actor" value={alert.actorDisplayName}/>
+      <DetailField label="Threat" value={alert.threatDisplayName}/>
+      {alert.incidentId && parentIncident && onOpenIncident ? (
+        <DetailField label="Incident" value={parentIncident.displayName ?? "Security Incident"} onNavigate={onOpenIncident} navLabel="Open incident →"/>
+      ) : (
+        <DetailField label="Incident ID" value={alert.incidentId} copy={!!alert.incidentId}/>
+      )}
+      <DetailField label="Detected" value={alert.createdDateTime ? `${relTime(alert.createdDateTime)} (${fmtDate(alert.createdDateTime)})` : undefined} title={fmtDate(alert.createdDateTime)}/>
+      <DetailField label="Last Updated" value={alert.lastUpdateDateTime ? `${relTime(alert.lastUpdateDateTime)} (${fmtDate(alert.lastUpdateDateTime)})` : undefined} title={fmtDate(alert.lastUpdateDateTime)}/>
+      {alert.description && (
+        <>
+          <div className="dm-section-hdr">Description</div>
+          <div className="dm-desc-block">{alert.description}</div>
+        </>
+      )}
+      {((Array.isArray(alert.mitreTechniques)?alert.mitreTechniques:[]).filter(Boolean)).length>0&&(
+        <>
+          <div className="dm-section-hdr">MITRE Techniques</div>
+          <div className="mitre-tags">
+            {(Array.isArray(alert.mitreTechniques)?alert.mitreTechniques:[]).filter(Boolean).map(t=>(
+              <a key={t} href={`https://attack.mitre.org/techniques/${t.replace(".","/")||t}`} target="_blank" rel="noopener noreferrer" className="mitre-tag">{t}</a>
+            ))}
+          </div>
+        </>
+      )}
+      {alert.recommendedActions && (
+        <>
+          <div className="dm-section-hdr">Recommended Actions</div>
+          <div className="dm-desc-block">{alert.recommendedActions}</div>
+        </>
+      )}
+    </DetailModal>
+  );
+}
+
+/** One row in an alerts_v2 list (DLP, MDE, MDO, MDI, Cloud Apps, Insider Risk). Keyboard-activatable. */
+export function AlertRow({ alert, onClick }: { alert: GraphSecurityAlert; onClick: () => void }) {
+  return (
+    <div className="al-item" {...rowActivation(onClick)}>
+      <span className={sevClass(alert.severity)}/>
+      <div className="al-body">
+        <div className="al-title">{alert.title ?? "Untitled alert"}</div>
+        <div className="row-meta">
+          {alert.category && <span className="row-meta-item">{alert.category}</span>}
+          <Badge label={alert.status} tone={alert.status === "resolved" ? "good" : "warning"}/>
+          <span className="row-meta-item" title={fmtDate(alert.createdDateTime)}>{relTime(alert.createdDateTime)}</span>
+        </div>
+      </div>
+      <Badge label={alert.severity} tone={sevTone(alert.severity)}/>
+    </div>
+  );
+}
+
+const SEVERITY_STAT_LABEL: Record<string, string> = { critical: "Critical", high: "High", medium: "Medium", low: "Low", informational: "Info" };
+const SEVERITY_STAT_COLOR: Record<string, string> = { critical: "var(--status-error-text)", high: "var(--status-error-text)", medium: "var(--status-warn-text)" };
+
+/** The per-severity count boxes above an alerts_v2 list. Serious levels are coloured only when non-zero.
+ *  Renders the boxes alone, so the page keeps its own stat-row wrapper and layout. */
+export function SeverityStatRow({ counts, levels = ["high", "medium", "low", "informational"] }:
+  { counts?: Record<string, number>; levels?: string[] }) {
+  return (
+    <>
+      {levels.map(level => {
+        const n = getSevCount(counts, level);
+        return <StatBox key={level} value={n} label={SEVERITY_STAT_LABEL[level] ?? level} color={n > 0 ? SEVERITY_STAT_COLOR[level] : undefined}/>;
+      })}
+    </>
   );
 }

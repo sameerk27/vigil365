@@ -4,6 +4,8 @@ using M365SecurityDashboard.Api.Data;
 using M365SecurityDashboard.Api.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using static M365SecurityDashboard.Api.Services.Common.JsonRead;
+using M365SecurityDashboard.Api.Services.Common;
 
 namespace M365SecurityDashboard.Api.Services;
 
@@ -27,19 +29,35 @@ public sealed class PurviewAuditCollector(
 {
     public const string FeedPowerPlatform = "powerPlatform";
     public const string FeedCopilotStudio = "copilotStudio";
-    public static readonly IReadOnlyList<string> Feeds = [FeedPowerPlatform, FeedCopilotStudio];
+    /// <summary>Power Platform admin operations whose record type Graph can't filter on (see PurviewAuditNormalizer.PowerPlatformAdminOperations).</summary>
+    public const string FeedPowerPlatformAdmin = "powerPlatformAdmin";
+    public static readonly IReadOnlyList<string> Feeds = [FeedPowerPlatform, FeedCopilotStudio, FeedPowerPlatformAdmin];
 
     public const string StatusWaiting = "Waiting";
     public const string StatusOk = "Ok";
     public const string StatusNeedsPermission = "NeedsPermission";
     public const string StatusFailed = "Failed";
 
+    // Microsoft may also refuse with 403 when the permission is granted but audit search isn't
+    // available to the tenant (assumed from the docs, not seen on a live tenant), so the
+    // message covers both and carries Microsoft's own sentence when there is one.
     public const string NeedsPermissionMessage =
-        "Copilot agent and Power Platform alerts need AuditLogsQuery.Read.All (read-only). Grant admin consent, then wait for the next run.";
+        "Copilot agent and Power Platform alerts need AuditLogsQuery.Read.All (read-only). Grant admin consent, then wait for the next run. " +
+        "If it is already granted, check that auditing is turned on in Microsoft Purview.";
+
+    public const string DomainsUnreadableMessage =
+        "Couldn't read the organisation's verified domains, so a flow shared with someone outside it can't be recognised. " +
+        "These audit records will be read again on the next run.";
 
     private readonly GraphOptions _options = options.Value;
     private readonly TimeProvider _time = time ?? TimeProvider.System;
-    private IReadOnlySet<string>? _verifiedDomains;
+    private VerifiedDomains? _verifiedDomains;
+
+    /// <summary>The tenant's verified domains, or why they couldn't be read in full.</summary>
+    private sealed record VerifiedDomains(IReadOnlySet<string> Names, string? Problem);
+
+    /// <summary>A step that can't finish this run without being wrong. The search stays pending and the reason is shown as is.</summary>
+    private sealed class RetryNextRunException(string message) : Exception(message);
 
     /// <summary>Advance every feed one step. Never throws for a Graph failure: the feed's state records it.</summary>
     public async Task CollectAsync(CancellationToken ct)
@@ -73,15 +91,23 @@ public sealed class PurviewAuditCollector(
         catch (HttpRequestException ex) when (ex.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized)
         {
             state.Status = StatusNeedsPermission;
-            state.LastError = NeedsPermissionMessage;
+            state.LastError = GraphErrorHint.GraphMessageOrNull(ex.Message) is { } said
+                ? TextLimits.Truncate($"{NeedsPermissionMessage} Microsoft said: {said}", 1000)
+                : NeedsPermissionMessage;
             state.PendingQueryId = null;
             state.LastSubmittedAt = now; // try again on the normal cadence, not every run
             logger.LogInformation("Purview audit feed {Feed}: permission not granted", feed);
         }
+        catch (RetryNextRunException ex)
+        {
+            state.Status = StatusFailed;
+            state.LastError = TextLimits.Truncate(ex.Message, 1000);
+            logger.LogWarning("Purview audit feed {Feed}: {Reason}", feed, ex.Message);
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             state.Status = StatusFailed;
-            state.LastError = Trim(GraphErrorHint.Describe(ex.Message, "Purview audit search"), 1000);
+            state.LastError = TextLimits.Truncate(GraphErrorHint.Describe(ex.Message, "Purview audit search"), 1000);
             logger.LogWarning(ex, "Purview audit feed {Feed} failed", feed);
         }
 
@@ -108,15 +134,21 @@ public sealed class PurviewAuditCollector(
         state.LastError = null;
     }
 
-    /// <summary>The search for one feed: Power Platform by record type, Copilot Studio by its documented operation names.</summary>
+    /// <summary>
+    /// The search for one feed: Power Platform by record type; Copilot Studio and the Power
+    /// Platform admin operations by their documented operation names.
+    /// </summary>
     internal static object QueryBody(string feed, DateTimeOffset from, DateTimeOffset to)
     {
         var start = from.UtcDateTime.ToString("O");
         var end = to.UtcDateTime.ToString("O");
         var name = $"Vigil365 {feed} {start}";
-        return feed == FeedCopilotStudio
-            ? new { displayName = name, filterStartDateTime = start, filterEndDateTime = end, operationFilters = PurviewAuditNormalizer.CopilotStudioOperations }
-            : new { displayName = name, filterStartDateTime = start, filterEndDateTime = end, recordTypeFilters = PurviewAuditNormalizer.PowerPlatformRecordTypes };
+        return feed switch
+        {
+            FeedCopilotStudio => new { displayName = name, filterStartDateTime = start, filterEndDateTime = end, operationFilters = PurviewAuditNormalizer.CopilotStudioOperations },
+            FeedPowerPlatformAdmin => new { displayName = name, filterStartDateTime = start, filterEndDateTime = end, operationFilters = PurviewAuditNormalizer.PowerPlatformAdminOperations },
+            _ => (object)new { displayName = name, filterStartDateTime = start, filterEndDateTime = end, recordTypeFilters = PurviewAuditNormalizer.PowerPlatformRecordTypes },
+        };
     }
 
     private async Task PollAsync(PurviewAuditState state, DateTimeOffset now, CancellationToken ct)
@@ -129,7 +161,7 @@ public sealed class PurviewAuditCollector(
         {
             var read = await graph.ReadCollectionAsync($"/v1.0/security/auditLog/queries/{id}/records", ct);
             // A truncated read proves nothing about what's missing: keep the search and read it again next run.
-            if (!read.Complete) throw new InvalidOperationException("The audit search results could not be read in full. Trying again next run.");
+            if (!read.Complete) throw new RetryNextRunException("The audit search results could not be read in full. Trying again next run.");
 
             state.LastEventCount = await StoreAsync(read.Items, ct);
             state.Watermark = state.PendingTo;
@@ -178,71 +210,82 @@ public sealed class PurviewAuditCollector(
             .ToListAsync(ct)).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var domains = await VerifiedDomainsAsync(ct);
+        // The domains decide one thing: whether a flow shared with someone who isn't a guest
+        // went outside the organisation. Without them that share would be stored as internal
+        // and its high-severity rule would never fire, so such a batch waits for the next run.
+        // Guests (#EXT#) are external either way, and every other record doesn't need them.
+        bool IsExternal(string upn) =>
+            domains.Problem is null ? PurviewAuditNormalizer.IsExternal(upn, domains.Names)
+            : PurviewAuditNormalizer.IsExternal(upn, new HashSet<string>()) ? true
+            : throw new RetryNextRunException($"{DomainsUnreadableMessage} {domains.Problem}".TrimEnd());
+
         var connectors = _options.PowerPlatformHighRiskConnectors ?? [];
         var skipped = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
-        var added = 0;
         var collectedAt = _time.GetUtcNow();
+        // Normalise the whole batch before storing any of it, so a batch that has to wait leaves nothing half-stored.
+        var normalized = new List<(string Id, JsonElement Record, NormalizedAuditEvent Event)>();
         foreach (var r in records)
         {
             var id = Str(r, "id");
             if (id is null || !known.Add(id)) continue; // overlap with the previous window, or a duplicate in this one
 
-            var e = PurviewAuditNormalizer.Normalize(r, connectors, upn => PurviewAuditNormalizer.IsExternal(upn, domains));
+            var e = PurviewAuditNormalizer.Normalize(r, connectors, IsExternal);
             if (e is null)
             {
                 skipped.Add(Str(r, "operation") ?? "(no operation)");
                 continue;
             }
+            normalized.Add((id, r, e));
+        }
 
+        foreach (var (id, r, e) in normalized)
+        {
             db.AuditEvents.Add(new AuditEvent
             {
-                ExternalId = Trim(id, 256),
+                ExternalId = TextLimits.Truncate(id, 256),
                 Source = PurviewAuditNormalizer.Source,
-                Activity = Trim(e.Activity, 200),
-                Category = Trim(e.Product, 80),
-                ActorUpn = TrimOrNull(e.ActorUpn, 320),
-                TargetName = TrimOrNull(e.TargetName, 320),
-                Result = TrimOrNull(e.Result, 20),
+                Activity = TextLimits.Truncate(e.Activity, 200),
+                Category = TextLimits.Truncate(e.Product, 80),
+                ActorUpn = TextLimits.TruncateOrNull(e.ActorUpn, 320),
+                TargetName = TextLimits.TruncateOrNull(e.TargetName, 320),
+                Result = TextLimits.TruncateOrNull(e.Result, 20),
                 OccurredAt = Date(r, "createdDateTime") ?? collectedAt,
                 CollectedAt = collectedAt,
                 RawJson = r.GetRawText(),
             });
-            added++;
         }
 
         // Operation names nothing matched: what to look at when tuning against a live tenant.
         if (skipped.Count > 0)
             logger.LogInformation("Purview audit: skipped operations {Operations}", string.Join(", ", skipped.Take(40)));
-        if (added > 0)
-            logger.LogInformation("Purview audit: stored {Count} new events", added);
-        return added;
+        if (normalized.Count > 0)
+            logger.LogInformation("Purview audit: stored {Count} new events", normalized.Count);
+        return normalized.Count;
     }
 
-    /// <summary>The tenant's verified domains, once per run. Unreadable: empty, so only guest (#EXT#) accounts count as external.</summary>
-    private async Task<IReadOnlySet<string>> VerifiedDomainsAsync(CancellationToken ct)
+    /// <summary>
+    /// The tenant's verified domains, read once per run when a batch needs them. A list that
+    /// failed or came back short is kept with the reason, never treated as the whole list: a
+    /// missing domain would make colleagues look external, and no list would make everyone
+    /// but guests look internal.
+    /// </summary>
+    private async Task<VerifiedDomains> VerifiedDomainsAsync(CancellationToken ct)
     {
-        if (_verifiedDomains is not null) return _verifiedDomains;
+        if (_verifiedDomains is { Problem: null }) return _verifiedDomains;
         var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         try
         {
-            foreach (var d in await graph.GetCollectionAsync("/v1.0/domains?$select=id,isVerified", ct))
+            var read = await graph.ReadCollectionAsync("/v1.0/domains?$select=id,isVerified", ct);
+            foreach (var d in read.Items)
                 if (d.TryGetProperty("isVerified", out var v) && v.ValueKind == JsonValueKind.True && Str(d, "id") is { } name)
                     set.Add(name);
+            return _verifiedDomains = new VerifiedDomains(set, read.Complete ? null : "Only part of the list came back.");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogWarning(ex, "Could not read verified domains; only guest accounts will count as external");
+            logger.LogWarning(ex, "Could not read verified domains");
+            return _verifiedDomains = new VerifiedDomains(set, GraphErrorHint.DescribeOrNull(ex.Message, "Directory.Read.All") ?? "");
         }
-        return _verifiedDomains = set;
     }
 
-    private static string? Str(JsonElement e, string name) =>
-        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
-
-    private static DateTimeOffset? Date(JsonElement e, string name) =>
-        Str(e, name) is { } s && DateTimeOffset.TryParse(s, System.Globalization.CultureInfo.InvariantCulture,
-            System.Globalization.DateTimeStyles.AssumeUniversal, out var d) ? d : null;
-
-    private static string Trim(string s, int max) => s.Length <= max ? s : s[..max];
-    private static string? TrimOrNull(string? s, int max) => s is null ? null : Trim(s, max);
 }

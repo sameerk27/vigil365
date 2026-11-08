@@ -22,6 +22,7 @@ const sevTone = (s: string): Tone => {
 export function ClientAlertQueue() {
   const { canMutate } = useAuth();
   const [items, setItems] = useState<QueueItem[] | null>(null);
+  const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [client, setClient] = useState<string>("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -29,11 +30,12 @@ export function ClientAlertQueue() {
   const load = useCallback(async () => {
     const r = await queueApi.list();
     if (r.ok) {
-      setItems(r.value); setError(null);
+      const loaded = r.value.items;
+      setItems(loaded); setTotal(r.value.total); setError(null);
       // Handling a client's last open alert drops it from the filter options; a
       // filter left on it would hide every other client's alerts, with no way back.
-      setClient(c => r.value.some(i => i.tenantName === c) ? c : "");
-    } else { setItems([]); setError(r.error); }
+      setClient(c => loaded.some(i => i.tenantName === c) ? c : "");
+    } else { setItems([]); setTotal(0); setError(r.error); }
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -60,13 +62,19 @@ export function ClientAlertQueue() {
 
   return (
     <Card title="Open alerts across clients"
-      badge={<Badge label={items ? `${shown.length}${client ? ` of ${items.length}` : ""}` : "—"} tone={shown.some(i => sevTone(i.severity) === "error") ? "error" : "neutral"} />}
+      badge={<Badge label={!items ? "—" : client ? `${shown.length} of ${items.length}` : total > items.length ? `${items.length} of ${total}` : `${shown.length}`}
+        tone={shown.some(i => sevTone(i.severity) === "error") ? "error" : "neutral"} />}
       action={clients.length > 1 ? (
         <select className="filter-sel" aria-label="Filter by client" value={client} onChange={e => setClient(e.target.value)}>
           <option value="">All clients</option>
           {clients.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
       ) : undefined}>
+      {items && !error && total > items.length && (
+        <p className="queue-capped" role="status">
+          Showing the {items.length} most severe of {total} open alerts across your clients. Open a client to see all of its alerts.
+        </p>
+      )}
       {items === null ? <LoadingSkeleton type="table" />
         : error ? <InlineError title="Couldn't load the cross-client queue" message={error} onRetry={load} />
         : shown.length === 0 ? <EmptyState icon={<AlertTriangle size={24} />} message="No open alerts across your clients." />

@@ -282,9 +282,28 @@ public sealed class AlertEvaluator(
         // Purview audit records reach the log hours after the action and are collected
         // hourly, so they count from when Vigil365 learned of them; by when they happened
         // they would already be outside the window and never alert.
-        return await db.AuditEvents.CountAsync(
+        var matching = db.AuditEvents.Where(
             e => (e.Source == PurviewAuditNormalizer.Source ? e.CollectedAt : e.OccurredAt) >= since
-                 && EF.Functions.Like(e.Activity, like), ct);
+                 && EF.Functions.Like(e.Activity, like));
+        if (policy.Threshold <= 1) return await matching.CountAsync(ct);
+
+        // One audit search can bring in a day of records at once, so counting by collection
+        // time would turn a day of ordinary deletions into a "5 in an hour" burst.
+        var happened = await matching.Select(e => e.OccurredAt).ToListAsync(ct);
+        return MostWithinWindow(happened, TimeSpan.FromMinutes(Math.Max(1, policy.WindowMinutes)));
+    }
+
+    /// <summary>The largest number of these moments that fit inside one window of this length.</summary>
+    internal static int MostWithinWindow(IEnumerable<DateTimeOffset> moments, TimeSpan window)
+    {
+        var sorted = moments.Order().ToList();
+        var best = 0;
+        for (int start = 0, end = 0; end < sorted.Count; end++)
+        {
+            while (sorted[end] - sorted[start] > window) start++;
+            best = Math.Max(best, end - start + 1);
+        }
+        return best;
     }
 
     private async Task<string?> GetAffectedEntitiesJsonAsync(AlertPolicy policy, DateTimeOffset now, CancellationToken ct)

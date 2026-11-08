@@ -1,6 +1,6 @@
 # Vigil365
 
-> Vigil365 is a free, open-source, self-hosted security dashboard for Microsoft 365. It collects alerts and posture data from Microsoft Defender, Microsoft Entra ID, Intune, Defender for Office 365, Microsoft Purview and Conditional Access on a schedule, and shows them in one console. It only reads from Microsoft Graph and never changes settings in the tenant; its Power Platform page reads with the viewer's own Microsoft sign-in.
+> Vigil365 is a free, open-source, self-hosted security dashboard for Microsoft 365. It collects alerts and posture data from Microsoft Defender, Microsoft Entra ID, Intune, Defender for Office 365, Microsoft Purview and Conditional Access on a schedule, and shows them in one console. It only reads from Microsoft Graph and never changes settings in the tenant. Its one POST starts a Purview audit search, which feeds the Copilot agent and Power Platform alerts and changes nothing in the tenant.
 
 Vigil365 is not a hosted service. You install it on a Windows machine or server you control, with its database on a server you control. The installer is a single file of about 120 MB and needs administrator rights. Setup registers an app in your Microsoft 365 tenant once, with admin consent.
 
@@ -8,7 +8,7 @@ Key facts:
 
 - Collection runs every 15 minutes by default.
 - Required Microsoft Graph permissions: 15 application permissions, all read-only.
-- Optional Microsoft Graph permissions: AttackSimulation.ReadWrite.All (read-write only because Graph has no read-only option for attack simulation results; Vigil365 reads with it and works without it), SecurityIdentitiesHealth.Read.All, AuditLogsQuery.Read.All and DeviceManagementConfiguration.Read.All.
+- Optional Microsoft Graph permissions: AttackSimulation.ReadWrite.All (read-write only because Graph has no read-only option for attack simulation results; Vigil365 reads with it and works without it), SecurityIdentitiesHealth.Read.All, AuditLogsQuery.Read.All, DeviceManagementConfiguration.Read.All and InformationProtectionPolicy.Read.All.
 - Requirements: Windows 10 or 11, or Windows Server 2019 or later, and a Microsoft 365 tenant.
 - Licence: MIT. Source code: https://github.com/sameerk27/vigil365
 - Latest release: v1.1.0.

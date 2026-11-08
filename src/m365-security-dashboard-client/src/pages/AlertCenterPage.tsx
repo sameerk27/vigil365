@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
-import { X, Bell, Activity, CheckCircle, Search, ExternalLink, ArrowRight, AlertTriangle, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
+import { X, Bell, Activity, CheckCircle, Search, ExternalLink, ArrowRight, AlertTriangle } from "lucide-react";
 import { AlertPolicy, TriggeredAlert, NotificationSettings, NotificationLogEntry, Tone, AlertCoverageScorecard, AlertBaselineRule } from "../services/types";
 import { acApi, recApi, wbApi, useAuth, crossNavigate, consumeNavTab, getSelectedTenantId, setSelectedTenantId, isMspMode } from "../services/api";
 import { showToast, showInstallToast } from "../services/toast";
 import { routingApi, queueApi, type TenantRouting } from "../services/tenants";
 import { confirmAction } from "../services/confirm";
-import { DetailField, Card, Badge, EmptyState, ExportDropdown, ProgressBar, CopyButton, LoadingSkeleton, TriageSection, SeverityFilter, InlineError, StateMessage} from "../components/SharedComponents";
+import { DetailField, Card, Badge, EmptyState, ExportDropdown, CopyButton, LoadingSkeleton, TriageSection, SeverityFilter, InlineError, StateMessage, SortTh } from "../components/SharedComponents";
 import { CollectionStatusBanner } from "../components/CollectionStatusBanner";
 import { CollectionRunHistory } from "../components/CollectionRunHistory";
 import { AlertMetricsTab } from "../components/AlertMetricsTab";
@@ -16,7 +16,7 @@ import { FilterPresets } from "../components/FilterPresets";
 import { SegmentedTabs, StatCard } from "../components/ui";
 import { BaselineTab } from "../components/BaselineTab";
 import { SystemMetricsTab } from "../components/SystemMetricsTab";
-import { relTime, fmtDate, sevTone, POLICY_CATEGORIES, policyCategoryLabel } from "../services/utils";
+import { relTime, fmtDate, sevTone, POLICY_CATEGORIES, policyCategoryLabel, severityRank, sevClass } from "../services/utils";
 import { PurviewAuditPanel } from "../components/PurviewAuditPanel";
 
 /** Human-readable status labels — raw enums like "auto_resolved" never reach the UI. */
@@ -86,23 +86,6 @@ function AlertEvidenceTimeline({ alert, noteVersion }: { alert: TriggeredAlert; 
         </div>
       ))}
     </section>
-  );
-}
-
-/** Sortable table header — click to sort, click again to flip direction. */
-function SortTh<T extends string>({ label, col, sortBy, sortDir, onSort }: {
-  label: string; col: T; sortBy: string; sortDir: "asc" | "desc"; onSort: (c: T) => void;
-}) {
-  const active = sortBy === col;
-  return (
-    <th scope="col" aria-sort={active ? (sortDir === "asc" ? "ascending" : "descending") : undefined}>
-      <button type="button" className="th-sort" onClick={() => onSort(col)}>
-        {label}
-        {active
-          ? (sortDir === "asc" ? <ChevronUp size={12}/> : <ChevronDown size={12}/>)
-          : <ChevronsUpDown size={12} className="sort-icon-muted"/>}
-      </button>
-    </th>
   );
 }
 
@@ -572,7 +555,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
     let cancelled = false;
     queueApi.list().then(r => {
       if (cancelled) return;
-      const elsewhere = r.ok ? r.value.find(i => i.id.toLowerCase() === id && i.tenantId !== getSelectedTenantId()) : undefined;
+      const elsewhere = r.ok ? r.value.items.find(i => i.id.toLowerCase() === id && i.tenantId !== getSelectedTenantId()) : undefined;
       if (elsewhere) {
         onDeepLinkConsumed?.();
         setSelectedTenantId(elsewhere.tenantId);
@@ -632,12 +615,11 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
           : true;
       });
     }
-    const sevRank: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
     const statusRank: Record<string, number> = { new: 0, acknowledged: 1, snoozed: 2, auto_resolved: 3, resolved: 4 };
     const dir = sortDir === "asc" ? 1 : -1;
     return [...items].sort((a, b) => {
       switch (sortBy) {
-        case "severity":   return ((sevRank[a.severity] ?? 5) - (sevRank[b.severity] ?? 5)) * dir;
+        case "severity":   return (severityRank(a.severity) - severityRank(b.severity)) * dir;
         case "policyName": return a.policyName.localeCompare(b.policyName) * dir;
         case "status":     return ((statusRank[a.status] ?? 5) - (statusRank[b.status] ?? 5)) * dir;
         case "assignedTo": return (a.assignedTo ?? "￿").localeCompare(b.assignedTo ?? "￿") * dir;
@@ -1205,7 +1187,7 @@ export function AlertCenterPage({ policies, triggeredAlerts, onChanged, deepLink
               return (
               <div key={i} className="template-card">
                 <div className="template-card-head">
-                  <span className={`tmpl-dot sev-dot sev-${t.severity.toLowerCase()}`}/>
+                  <span className={`tmpl-dot ${sevClass(t.severity)}`}/>
                   <div className="template-card-title">{t.name}</div>
                   <Badge label={applied ? "Applied" : "Not applied"} tone={applied ? "good" : "neutral"}/>
                 </div>

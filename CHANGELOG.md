@@ -26,9 +26,15 @@ version lives in exactly two places — the API's `<Version>` and the client's
   idle and Rules & Notifications says so; no client is marked as partly connected. Tenants
   that already consented must consent again to get it.
 - The audit search runs hourly (`Graph:PurviewAuditIntervalMinutes`, 0 turns it off) and
-  re-reads a 120-minute overlap, because audit records can reach the log hours after the
-  action. Purview events count toward an activity rule's window from when Vigil365
+  re-reads the previous 24 hours (`Graph:PurviewAuditOverlapMinutes`, default 1440), because
+  Microsoft says audit records can reach the log up to 24 hours after the action. A record
+  that arrives later than that is never read. Purview events count toward an activity rule's window from when Vigil365
   collected them.
+- A flow shared with someone who isn't a guest needs the organisation's verified domains to
+  tell whether it went outside. If they can't be read in full, that batch of audit records
+  is read again on the next run rather than stored as internal, and Rules & Notifications
+  says why. When Microsoft refuses the audit search, its own reason is shown next to the
+  permission to check.
 - Tenant Activity filters by source: Entra ID, Copilot agents, Power Automate, Power Apps,
   Power Platform admin.
 - **Copilot usage page.** Shows who holds a Microsoft 365 Copilot licence, who used it in the
@@ -36,50 +42,141 @@ version lives in exactly two places — the API's `<Version>` and the client's
   to reassign idle licences. It reads Microsoft's Copilot usage report (Graph beta) and the
   tenant's licences with the existing `Reports.Read.All` and `Directory.Read.All`; no new
   permission. A banner explains when the tenant hides user names in usage reports. It uses
-  28-day windows: Microsoft's v2 Copilot reports reject 30 days (MC1423101).
-- **Power Platform inventory, read with your own sign-in.** A new Power Platform page lists
-  every environment, Copilot Studio agent, canvas app and cloud flow from Microsoft's Power
-  Platform inventory, and flags the ones that need a look:
-  - agents anyone can use without signing in, agents shared with the whole organisation, and
-    agents whose tools run on the maker's connection
-  - apps that bypass the consent prompt, use a custom, on-premises or high-risk connector, or
-    are shared with many people (default 25, `Graph:PowerPlatformWideSharingUsers`)
-  - flows and agents with a high-risk connector (`Graph:PowerPlatformHighRiskConnectors`)
-  - owners (flow creators) who are no longer in the directory or are disabled
-  The person viewing selects **Read with Microsoft sign-in**: a Microsoft popup signs them in to
-  that tenant and the browser reads the inventory, and app sharing and consent detail, with
-  their own access (Global Administrator, Power Platform Administrator, Dynamics 365
-  Administrator or Global Reader). Vigil365's server evaluates the rows the browser sends and
-  names owners through Graph; it never calls the Power Platform API. Microsoft refuses apps
-  ("Caller is not an authorized app") unless they are enrolled with Power Platform
-  Administrator rights, so Vigil365's app gets no Power Platform access. Nothing is stored; a
-  read is kept in memory while the app is open, and a person who already consented gets it
-  without a popup. If the tenant hasn't registered Microsoft's Power Platform API, the page
-  offers that step first (an Application Administrator's sign-in).
+  28-day windows: Microsoft's v2 Copilot reports reject 30 days (MC1423101). If the report
+  stops part-way, the page says so and how many users it covers. If the licences can't be
+  read, seat numbers show as unknown with the reason, not "no Copilot licence". Users sort by
+  name, last activity or status.
+- **Power Platform alerts page.** The Power Platform page shows alerts and activity for
+  Copilot Studio agents, Power Automate, Power Apps and Power Platform admin changes, from
+  the Purview audit log Vigil365 already reads. No sign-in popup. It has:
+  - the audit search status, and what to grant when the permission is missing
+  - tiles for open alerts, open high alerts, events in the last 7 days and rules on
+  - open alerts in the Copilot agents and Power Platform categories; each opens in the
+    Alert Center to acknowledge, resolve, snooze or assign
+  - activity for the last 7, 30 or 90 days, with a "Would alert" badge when an enabled rule
+    matches it
+  - the rules, with a link to edit them in the Alert Center
+  Each table has search, filters, sort and CSV export. `GET /api/audit-events` takes
+  `source=purviewAudit` for every Purview product at once.
+- **Power Platform admin change alerts.** A third audit search asks for Power Platform admin
+  operations by name, because Graph's record type list has no member for them. New rules
+  (on by default): Power Platform DLP policy deleted, connector policy changed, sharing
+  limits or environment group rules changed, environment security group changed, an admin
+  took System Administrator in an environment, environment copied, environment restored,
+  Customer Lockbox request, and app conditional access changed. "DLP policy created" and
+  "Environment group changed" ship off.
+- **Bulk deletion alerts.** "Many flows deleted" and "Many apps deleted" fire on 5 or more
+  in an hour, counted across everyone, by when the deletions happened.
+- Existing installs receive these 13 rules once, when Vigil365 next starts. A rule you
+  delete stays deleted, unless you delete all 13: then they all come back on the next
+  start. To stop them, switch them off instead. Nothing else to do.
+- **Licence posture page** (Posture → Licence posture). For each check it says whether the
+  tenant's licences include the feature, and if they do, whether it is set up to a minimum:
+  Pass, Fail, paid for but not used, needs another licence, or Unknown with the reason. The
+  checks are Conditional Access MFA, legacy authentication, Security Defaults, MFA
+  registration, high-risk users and sign-ins, Intune compliance, SharePoint sharing and attack
+  simulation. Failures come first. A check opens with why it matters, the minimum and how to
+  fix it. The page has search, filters, sort, CSV export, and a client report as one HTML
+  file. It reads Graph in parallel and keeps the result in memory for 5 minutes per
+  tenant, so the client report matches the page. "Read again" reads afresh. Nothing is written
+  to the database. A read that couldn't get the licences isn't kept. Safe Links and preset policies
+  stay Unknown until Exchange Online PowerShell is connected (a later phase).
+  - A Conditional Access policy counts only if it covers all users, all resources and every
+    sign-in. A policy limited to some apps, locations, platforms or client apps, or to risky
+    sign-ins, doesn't count, and nor does one that accepts a compliant device instead of
+    MFA. Excluded accounts don't fail a policy; they are listed for review, because emergency
+    access accounts should be excluded.
+  - A failed or part-read Graph call makes a check Unknown, never "off". That includes the
+    licence list: when only some of it comes back, every check is Unknown rather than
+    "needs another licence".
+- New optional permission `InformationProtectionPolicy.Read.All` (read-only) for the Compliance
+  page's Purview sensitivity labels card. The card's Graph call was already there, but this
+  permission was missing from the list Vigil365 requests. If the card says the permission is
+  missing, grant admin consent again; nothing else depends on it.
+
+### Changed
+- The cross-client alert queue (MSP) says when it shows only the most severe 500 of more
+  open alerts. `GET /api/tenants/alerts` now returns `{ items, total }` instead of a bare list.
+- Sortable column headers are one shared component (Rules & Notifications, Licence posture,
+  Copilot usage).
+- **Permission errors name the permission.** When Microsoft refuses access, 15 dashboard
+  sections now say which permission to grant (for example `SecurityAlert.Read.All` on the
+  Defender alert lists) instead of a general "missing an application permission". The cards on
+  the Compliance, Devices, Email and Identity pages now show the real reason a section failed;
+  they used to show a fixed "Needs…" message, one with a permission name that does not exist.
+- Alert lists on the Compliance, Devices, Email and Identity pages look and behave the same:
+  severity badges use the app-wide colours, times are relative with the exact time on hover,
+  and rows open with Enter or Space as well as a click. The Defender for Endpoint and Defender
+  for Identity alert details show classification, threat and recommended actions when
+  Microsoft provides them.
+- Sorting by severity ignores capitalisation everywhere.
+- Internal: Microsoft JSON is read through one set of tolerant readers, and Graph-backed
+  dashboard sections share one error path (`audits/CODE_DUPLICATION_AUDIT.md`).
+
+### Removed
+- **Power Platform inventory (in-browser read).** Development builds of this release read
+  Microsoft's Power Platform inventory in the browser, with the viewer's own sign-in. It
+  couldn't alert: Microsoft lets only a signed-in person read it, so it ran only while
+  someone had the page open. The Power Platform alerts page replaces it. With it go the
+  sign-in popup, the delegated scopes, the "Register the Power Platform API" step, the owner
+  look-up, `GET /api/power-platform/settings`, `POST /api/power-platform/inventory/evaluate`
+  and the settings `Graph:PowerPlatformApiBaseUrl`, `Graph:PowerPlatformMaxEnvironments` and
+  `Graph:PowerPlatformWideSharingUsers`. If an admin consented to the delegated Power
+  Platform scopes (`ResourceQuery.Resources.Read`, `PowerApps.Apps.Read`, and
+  `Application.ReadWrite.All` for the register step), they can remove that consent under
+  Enterprise applications. Nothing else to do.
+
+### Fixed
+- **Device compliance no longer counts compliant devices as non-compliant.** Microsoft ignored
+  the old filter on some tenants, so compliant devices opened alerts. Vigil365 now asks for
+  non-compliant devices only and drops anything else. Devices in the `error` or `conflict` state
+  no longer raise this alert.
+- **Licences leave out free and self-service plans.** They are no longer counted as purchased
+  or as waste. A bought licence with more than 10,000 seats stays counted, however little it
+  is used.
+- **Guests are grouped by their own domain,** not your tenant's, and the active count no longer
+  equals the total when sign-in activity is available.
+- **Conditional Access names what a policy really targets:** groups, roles, guests, user actions
+  and authentication contexts, plus authentication strength and session controls. A policy that
+  targets nobody now says "No users".
+- **PIM rows name the person or app** instead of "Unknown".
+- **Vigil365 now starts after a reboot when its database is on the same server.** SQL Server
+  Express starts a couple of minutes after boot, and Vigil365 started first, waited for its
+  database, and was left stopped by Windows. The Setup wizard and `enterprise-install.ps1` now
+  make the Vigil365 service wait for a SQL Server or PostgreSQL service on the same computer.
+  Existing installs: run Setup again, or run `sc config Vigil365 depend= MSSQL$SQLEXPRESS`
+  (your instance's service name) in an administrator prompt.
+- **A surprise in Microsoft's data no longer breaks a whole dashboard section.** A missing
+  severity used to crash the Compliance, Devices and Identity alert lists; it now shows as
+  "unknown". A field of an unexpected type is left blank instead of turning the section into
+  an error.
+- A page request you abandon is no longer logged as a dashboard error.
+- The Email page's "Top targeted users" card now reads the kinds of evidence Microsoft actually
+  sends (mailbox, message recipient, user). It looked for a field that does not exist, so it was
+  always empty.
+- **Insider Risk no longer fails every time.** It filtered on a source value Microsoft does not
+  have. It now picks Insider Risk alerts from the newest 200 Defender alerts and says so when
+  older ones may be missing.
 
 ### Security
 - **Dependency security updates.** `System.Security.Cryptography.Xml` to 8.0.5 and `System.Security.Cryptography.Pkcs` to 8.0.2 (both ship with the server), and the client's build and test tools (vite, vitest and their dependencies).
 - The audit search is started with a POST. It is the only Graph POST Vigil365 makes: the
   Graph client refuses any other path, and a test fails if code anywhere else builds a POST.
-- The Power Platform page's Microsoft calls run in the viewer's browser with the viewer's own
-  delegated token (`ResourceQuery.Resources.Read` and `PowerApps.Apps.Read` on the Power
-  Platform API; `Application.ReadWrite.All` on Graph only for the one-time register step).
-  The token never reaches the Vigil365 server, and next-page links are followed only on
-  Microsoft's host. That consent stays on Vigil365's app registration until revoked under
-  Enterprise applications; a popup account other than the Vigil365 session's is dropped from
-  the browser's sign-in cache afterwards.
-- The Content Security Policy's `connect-src` now also allows the configured Graph and Power
-  Platform API origins, for those calls.
-- The owner lookup is a Graph GET (`users?$filter=id in (...)`, Directory.Read.All, already
-  granted); ids that aren't GUIDs never reach the filter.
+  There are three searches per tenant (Copilot Studio, Power Platform, and Power Platform
+  admin changes), all to `/security/auditLog/queries` with the same read-only permission.
+- The browser talks only to Vigil365 and Microsoft sign-in. The Content Security Policy's
+  `connect-src` stays `'self'`, the sign-in authority and `wss:`; every Microsoft API is
+  called by the server.
 
 ### Notes
 - Power Automate and Power Apps document friendly event names, not the operation strings
   in the audit log. Those records are classified by their fields and by keywords; tune them
   against a live tenant (`docs/COPILOT_POWER_PLATFORM_PLAN.md` §6). Unmatched operations
   are logged.
-- Microsoft's inventory lists the connectors a flow uses, not built-in actions: a flow using the
-  built-in HTTP action shows no connector for it (the phase A audit alerts still see those).
+- The Power Platform admin search assumes Graph returns those records when asked by
+  operation name. Environment copied, restored and security group changes are matched by
+  keywords in Microsoft's friendly names. Neither is checked on a live tenant yet
+  (`docs/POWER_PLATFORM_ALERTS_PLAN.md` §6).
 
 ## [1.2.0] — not yet released (pending the release walkthrough, `docs/MSP_V12_PLAN.md` §6)
 

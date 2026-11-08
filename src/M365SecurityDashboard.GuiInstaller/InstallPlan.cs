@@ -393,6 +393,67 @@ namespace M365SecurityDashboard.GuiInstaller
         /// </summary>
         public static bool RestartAfterFailedUpgrade(ServiceState before) => before == ServiceState.Running;
 
+        // ── Starting after the database at boot ─────────────────────────────────
+
+        /// <summary>
+        /// The Windows service of the database the connection string names, when that
+        /// database runs on this computer, for the Vigil365 service to depend on. SQL
+        /// Server Express installs as Automatic (Delayed Start), so at boot it came up
+        /// about two minutes after Vigil365, whose start waits for its database:
+        /// Windows gave up on Vigil365 and left it stopped, because recovery actions
+        /// do not cover a service that never finished starting. A dependency makes
+        /// Windows start the database first.
+        ///
+        /// Null when the database is on another computer, is LocalDB (not a service),
+        /// or its service cannot be told apart (two PostgreSQL services). A name is
+        /// only returned when that service is installed: depending on one that is not
+        /// stops Vigil365 from starting at all (error 1075).
+        /// </summary>
+        public static string? LocalDatabaseService(DbEngine engine, string? connectionString, string machineName,
+                                                   IEnumerable<string> installedServices)
+        {
+            var installed = installedServices.ToList();
+            string? Installed(string name) => installed.FirstOrDefault(s => s.Equals(name, StringComparison.OrdinalIgnoreCase));
+
+            var builder = new System.Data.Common.DbConnectionStringBuilder();
+            try { builder.ConnectionString = connectionString ?? ""; }
+            catch (ArgumentException) { return null; }
+            string? Value(params string[] keys) =>
+                keys.Select(k => builder.TryGetValue(k, out var v) ? v?.ToString()?.Trim() : null)
+                    .FirstOrDefault(v => !string.IsNullOrEmpty(v));
+            bool IsThisComputer(string host) =>
+                host is "." or "(local)" or "127.0.0.1" or "::1"
+                || host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+                || host.Equals(machineName, StringComparison.OrdinalIgnoreCase);
+
+            if (engine == DbEngine.Postgres)
+            {
+                var host = Value("Host", "Server");
+                // One host only; "localhost:5432" names a port. A list of hosts is a cluster elsewhere.
+                if (host is null || host.Contains(',')) return null;
+                if (host.Count(c => c == ':') == 1) host = host[..host.IndexOf(':')];
+                if (!IsThisComputer(host)) return null;
+                // The service name carries the version ("postgresql-x64-16"), not the port.
+                var postgres = installed.Where(s => s.StartsWith("postgresql", StringComparison.OrdinalIgnoreCase)).ToList();
+                return postgres.Count == 1 ? postgres[0] : null;
+            }
+
+            var server = Value("Server", "Data Source", "Address", "Addr", "Network Address");
+            if (server is null) return null;
+            server = System.Text.RegularExpressions.Regex.Replace(server, "^(tcp|np|lpc|admin):", "",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (server.StartsWith("(localdb)", StringComparison.OrdinalIgnoreCase)) return null;
+            var comma = server.IndexOf(',');
+            if (comma >= 0) server = server[..comma].Trim();
+            var slash = server.IndexOf('\\');
+            var sqlHost = slash >= 0 ? server[..slash] : server;
+            var instance = slash >= 0 ? server[(slash + 1)..] : "";
+            if (!IsThisComputer(sqlHost)) return null;
+            return Installed(instance.Length == 0 || instance.Equals("MSSQLSERVER", StringComparison.OrdinalIgnoreCase)
+                ? "MSSQLSERVER"
+                : "MSSQL$" + instance);
+        }
+
         /// <summary>
         /// The first step: sign in. It names the account because only the exact
         /// Admin email entered in Setup becomes Admin on a new database — any other

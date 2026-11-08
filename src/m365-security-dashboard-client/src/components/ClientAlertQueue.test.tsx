@@ -66,6 +66,22 @@ describe("ClientAlertQueue (U6)", () => {
     await waitFor(() => expect(screen.queryByText("Risky sign-ins spike")).toBeNull());
   });
 
+  it("says when the server cut the queue, instead of passing it off as every open alert", async () => {
+    mockApi({ "GET /api/tenants/alerts": { body: { items: [contoso, fabrikam], total: 640 } } });
+    renderQueue();
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Showing the 2 most severe of 640 open alerts across your clients.");
+    expect(screen.getByText("2 of 640")).toBeInTheDocument();
+  });
+
+  it("shows no cut note when everything fits", async () => {
+    mockApi({ "GET /api/tenants/alerts": { body: { items: [contoso, fabrikam], total: 2 } } });
+    renderQueue();
+
+    await screen.findByText("Risky sign-ins spike");
+    expect(screen.queryByText(/most severe of/)).toBeNull();
+  });
+
   it("opens an alert in its own client, on the page that shows triggered alerts", async () => {
     mockApi({ "GET /api/tenants/alerts": { body: [contoso, fabrikam] } });
     renderQueue();
