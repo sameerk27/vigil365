@@ -27,6 +27,7 @@ public class LicenseSkusTests
     [InlineData("SPE_E5", 1025, 1025)]
     [InlineData("ENTERPRISEPACK", 300, 120)]
     [InlineData("BIG_REAL_SKU", 10000, 9000)]
+    [InlineData("UNDER_USED_BOUGHT_SKU", 12000, 3000)]
     public void Bought_licences_are_counted(string sku, int purchased, int consumed) =>
         Assert.False(LicenseSkus.IsFree(sku, purchased, consumed));
 }

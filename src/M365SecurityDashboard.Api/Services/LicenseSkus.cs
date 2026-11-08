@@ -16,9 +16,9 @@ public static partial class LicenseSkus
     [GeneratedRegex("VIRAL|FREE|TRIAL|PREVIEW|_IW(_|$)|_DEV$", RegexOptions.IgnoreCase)]
     private static partial Regex FreeName();
 
-    /// <summary>A free or self-service grant: by name, by an unlimited seat count, or 10,000+ seats with under half in use.</summary>
+    /// <summary>A free or self-service grant: by name, by an unlimited seat count, or Microsoft's exact 10,000-seat grant with under half in use (a larger bought licence that is under-used is real waste, so it stays counted).</summary>
     public static bool IsFree(string? skuPartNumber, int purchased, int consumed) =>
         purchased >= UnlimitedSeats
         || (skuPartNumber is not null && FreeName().IsMatch(skuPartNumber))
-        || (purchased >= SelfServiceSeats && consumed * 2L < purchased);
+        || (purchased == SelfServiceSeats && consumed * 2L < purchased);
 }
