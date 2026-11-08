@@ -156,27 +156,17 @@ public static class DashboardEndpoints
                 {
                     // Guest Governance (requires Azure AD P1/P2 for signInActivity)
                     var guests = await graph.GetCollectionAsync(
-                        "/v1.0/users?$filter=userType eq 'Guest'&$select=id,displayName,userPrincipalName,signInActivity", gct);
+                        "/v1.0/users?$filter=userType eq 'Guest'&$select=id,displayName,userPrincipalName,mail,signInActivity", gct);
                     guestTotal = guests.Count;
 
                     var threshold90 = DateTimeOffset.UtcNow.AddDays(-90);
                     foreach (var guest in guests)
                     {
                         var upn = Str(guest, "userPrincipalName");
-                        if (upn != null)
-                        {
-                            var parts = upn.Split("#EXT#@");
-                            if (parts.Length == 2)
-                            {
-                                var extDomain = parts[1];
-                                guestDomains[extDomain] = guestDomains.GetValueOrDefault(extDomain) + 1;
-                            }
-                            else if (upn.Contains("@"))
-                            {
-                                var domain = upn.Split('@')[1];
-                                guestDomains[domain] = guestDomains.GetValueOrDefault(domain) + 1;
-                            }
-                        }
+                        var mail = Str(guest, "mail");
+                        // The guest's own domain, not the host tenant after #EXT#.
+                        var domain = GuestDomains.Of(mail, upn);
+                        if (domain != null) guestDomains[domain] = guestDomains.GetValueOrDefault(domain) + 1;
 
                         DateTimeOffset? lastSignIn = null;
                         if (guest.TryGetProperty("signInActivity", out var sia) && sia.ValueKind == JsonValueKind.Object &&
@@ -305,7 +295,7 @@ public static class DashboardEndpoints
             {
                 configured = true,
                 mfa = new { registered = mfaRegistered, total = mfaTotal, percentage = mfaPct },
-                guests = new { total = guestTotal, active = guestTotal, inactive90d = guestInactive90d, licenseRequired = guestLicenseRequired, domains = guestDomainsList },
+                guests = new { total = guestTotal, active = guestLicenseRequired ? guestTotal : guestTotal - guestInactive90d, inactive90d = guestInactive90d, licenseRequired = guestLicenseRequired, domains = guestDomainsList },
                 mfaMethods = mfaMethodsBreakdown,
                 staleAccounts = staleAccountsList,
                 riskyUsers,
@@ -415,7 +405,10 @@ public static class DashboardEndpoints
                     var purchased = Int(s, "prepaidUnits", "enabled") ?? 0;
                     return new { name, consumed, purchased, available = Math.Max(0, purchased - consumed) };
                 }).Where(s => s.purchased > 0).ToList();
-                return new { skus = result, totalPurchased = result.Sum(s => s.purchased), totalConsumed = result.Sum(s => s.consumed) };
+                // Free and self-service grants (1,000,000 or 10,000 seats) are listed apart, out of the totals and the waste.
+                var bought = result.Where(s => !LicenseSkus.IsFree(s.name, s.purchased, s.consumed)).ToList();
+                var free = result.Where(s => LicenseSkus.IsFree(s.name, s.purchased, s.consumed)).Select(s => new { s.name, s.consumed }).ToList();
+                return new { skus = bought, totalPurchased = bought.Sum(s => s.purchased), totalConsumed = bought.Sum(s => s.consumed), freeSkus = free };
             }, ct));
 
         // Microsoft 365 Copilot usage (beta usage report, Reports.Read.All) and seats (subscribedSkus).
@@ -519,28 +512,12 @@ public static class DashboardEndpoints
                 async graph =>
             {
                 var policies = await graph.GetCollectionAsync("/v1.0/identity/conditionalAccess/policies", ct);
+                // Users, groups, roles and guests; apps, a user action or an auth context; built-in controls,
+                // an authentication strength and the session controls that are on.
                 var result = policies.Select(p =>
                 {
-                    var name = Str(p, "displayName") ?? "Unnamed";
-                    var state = Str(p, "state") ?? "unknown";
-                    var inclUsers = "All Users"; var exclUsers = "None"; var apps = "All Apps";
-                    if (Get(p, "conditions") is { ValueKind: JsonValueKind.Object } cond)
-                    {
-                        if (Get(cond, "users") is { ValueKind: JsonValueKind.Object } u)
-                        {
-                            if (u.TryGetProperty("includeUsers", out var inc) && inc.ValueKind == JsonValueKind.Array)
-                                inclUsers = Strings(u, "includeUsers").FirstOrDefault() == "All" ? "All Users" : $"{inc.GetArrayLength()} users";
-                            if (u.TryGetProperty("excludeUsers", out var exc) && exc.ValueKind == JsonValueKind.Array && exc.GetArrayLength() > 0)
-                                exclUsers = $"{exc.GetArrayLength()} excluded";
-                            if (u.TryGetProperty("includeGroups", out var grp) && grp.ValueKind == JsonValueKind.Array && grp.GetArrayLength() > 0 && inclUsers == "All Users")
-                                inclUsers = $"{grp.GetArrayLength()} groups";
-                        }
-                        if (Get(cond, "applications", "includeApplications") is { ValueKind: JsonValueKind.Array } incA)
-                            apps = Strings(cond, "applications", "includeApplications").FirstOrDefault() == "All" ? "All Apps" : $"{incA.GetArrayLength()} apps";
-                    }
-                    var controls = new List<string>();
-                    controls.AddRange(Strings(p, "grantControls", "builtInControls"));
-                    return new { name, state, inclUsers, exclUsers, apps, controls = controls.ToArray() };
+                    var v = ConditionalAccessSummary.Summarize(p);
+                    return new { name = v.Name, state = v.State, inclUsers = v.InclUsers, exclUsers = v.ExclUsers, apps = v.Apps, controls = v.Controls };
                 }).ToList();
                 return new { enabled = result.Count(p => p.state == "enabled"), disabled = result.Count(p => p.state == "disabled"), reportOnly = result.Count(p => p.state == "enabledForReportingButNotEnforced"), policies = result };
             }, ct));
@@ -789,24 +766,19 @@ public static class DashboardEndpoints
                 new { total = 0, activations = Array.Empty<object>() }, null,
                 async graph =>
             {
-                var items = await graph.GetCollectionAsync(
-                    "/v1.0/roleManagement/directory/roleAssignments?$top=20&$expand=roleDefinition($select=displayName)", ct);
-                var activations = items.Select(a =>
+                // The principal expanded (without it no row had a name); role names from the role definitions.
+                var items = await graph.GetCollectionAsync(PimAssignments.AssignmentsPath, ct);
+                var definitions = await graph.GetCollectionAsync(PimAssignments.RoleDefinitionsPath, ct);
+                var activations = PimAssignments.Project(items, definitions).Select(r => new
                 {
-                    var principalDisplayName = Str(a, "principal", "displayName");
-                    var principalUpn = Str(a, "principal", "userPrincipalName");
-                    var roleName = Str(a, "roleDefinition", "displayName");
-                    return new
-                    {
-                        id = Str(a, "id"),
-                        action = "Assigned",
-                        status = "Active",
-                        createdDateTime = (string?)null,
-                        justification = (string?)null,
-                        principalDisplayName,
-                        principalUpn,
-                        roleName
-                    };
+                    id = r.Id,
+                    action = "Assigned",
+                    status = "Active",
+                    createdDateTime = (string?)null,
+                    justification = (string?)null,
+                    principalDisplayName = r.PrincipalDisplayName,
+                    principalUpn = r.PrincipalUpn,
+                    roleName = r.RoleName
                 }).ToList();
                 return new { total = activations.Count, activations };
             }, ct));

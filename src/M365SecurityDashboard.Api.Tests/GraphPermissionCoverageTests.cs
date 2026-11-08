@@ -38,6 +38,7 @@ public sealed class GraphPermissionCoverageTests
         ["admin/sharepoint/settings"] = ["SharePointTenantSettings.Read.All"],
         ["admin/serviceAnnouncement/issues"] = ["ServiceHealth.Read.All"],
         ["roleManagement/directory/roleAssignments"] = ["Directory.Read.All", "RoleManagement.Read.Directory"],
+        ["roleManagement/directory/roleDefinitions"] = ["Directory.Read.All", "RoleManagement.Read.Directory"],
         ["users"] = ["Directory.Read.All"],
         ["organization"] = ["Directory.Read.All"],
         ["subscribedSkus"] = ["Directory.Read.All"],

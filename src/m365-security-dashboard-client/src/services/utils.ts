@@ -115,6 +115,8 @@ export function fmtCaControl(token: string): string {
   if (!token) return "—";
   const known = CA_CONTROL_LABELS[token];
   if (known) return known;
+  // Already a sentence from the API (e.g. "Auth strength: Phishing-resistant MFA"): keep its capitals.
+  if (token.includes(" ")) return token;
   // e.g. "someNewControl" -> "Some new control"
   const spaced = token.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase();
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);

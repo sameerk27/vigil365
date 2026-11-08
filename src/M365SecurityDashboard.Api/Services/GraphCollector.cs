@@ -63,6 +63,8 @@ public sealed class GraphCollector(
                     var returned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     foreach (var row in read.Items)
                     {
+                        // A row the source does not keep is not an alert, and not "returned" either.
+                        if (source.Keep is not null && !source.Keep(row)) continue;
                         var alert = source.Map(row);
                         if (alert.ExternalId is not null) returned.Add(alert.ExternalId);
                         await UpsertAlertAsync(alert, ct);
@@ -236,7 +238,9 @@ public sealed class GraphCollector(
             new("Risky sign-ins", WithFilter("/v1.0/auditLogs/signIns?$top=50", $"riskState ne 'none' and createdDateTime ge {signInCutoff}"), M365ServiceArea.EntraId, "RiskySignIn", MapRiskySignIn),
             new("Failed sign-ins", WithFilter("/v1.0/auditLogs/signIns?$top=50", $"status/errorCode ne 0 and createdDateTime ge {signInCutoff}"), M365ServiceArea.EntraId, "FailedSignIn", MapFailedSignIn),
             new("MFA registration", "/v1.0/reports/authenticationMethods/userRegistrationDetails?$top=100", M365ServiceArea.EntraId, "MfaStatus", MapMfaStatus),
-            new("Non-compliant devices", WithFilter("/v1.0/deviceManagement/managedDevices?$top=50", "complianceState ne 'compliant'"), M365ServiceArea.Intune, "NonCompliantDevice", MapNonCompliantDevice),
+            // managedDevices does not apply "complianceState ne 'compliant'" (in a real tenant it returned the
+            // compliant devices); eq is applied, and Keep drops any other state Graph still returns.
+            new("Non-compliant devices", WithFilter("/v1.0/deviceManagement/managedDevices?$top=50", "complianceState eq 'noncompliant'"), M365ServiceArea.Intune, "NonCompliantDevice", MapNonCompliantDevice, IsNonCompliant),
             new("Devices not checked in", WithFilter("/v1.0/deviceManagement/managedDevices?$top=50", $"lastSyncDateTime lt {deviceCutoff}"), M365ServiceArea.Intune, "DeviceNotCheckedIn", MapDeviceNotCheckedIn),
             new("Defender incidents", "/v1.0/security/incidents?$top=50", M365ServiceArea.DefenderXdr, "Incident", MapDefenderIncident),
             new("Defender alerts", "/v1.0/security/alerts_v2?$top=50", M365ServiceArea.DefenderXdr, "Alert", MapDefenderAlert),
@@ -496,5 +500,9 @@ public sealed class GraphCollector(
     }
 
     /// <param name="Service">With <paramref name="AlertType"/>, the alerts this source owns (what its Map produces).</param>
-    private sealed record GraphSource(string Name, string Path, M365ServiceArea Service, string AlertType, Func<JsonElement, SecurityAlert> Map);
+    private static bool IsNonCompliant(JsonElement row) =>
+        row.TryGetProperty("complianceState", out var cs) && cs.ValueKind == JsonValueKind.String &&
+        string.Equals(cs.GetString(), "noncompliant", StringComparison.OrdinalIgnoreCase);
+
+    private sealed record GraphSource(string Name, string Path, M365ServiceArea Service, string AlertType, Func<JsonElement, SecurityAlert> Map, Func<JsonElement, bool>? Keep = null);
 }
