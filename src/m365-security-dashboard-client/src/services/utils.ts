@@ -47,29 +47,23 @@ export function setUtcMode(utc: boolean) {
 // Date formatting: exactly two formats app-wide — fmtDate (date + time) and
 // fmtShort (date only). Both add the year automatically when it isn't the
 // current year, and both pin en-US so output never varies by system locale.
-export function fmtDate(iso?: string): string {
+function fmtCalendar(iso: string | undefined, withTime: boolean): string {
   if (!iso) return "–";
   const d = new Date(iso);
-  const sameYear = _utcMode 
-    ? d.getUTCFullYear() === new Date().getUTCFullYear() 
-    : d.getFullYear() === new Date().getFullYear();
-  if (_utcMode) {
-    return d.toLocaleString("en-US", { timeZone: "UTC", month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }), hour: "2-digit", minute: "2-digit" });
-  }
-  return d.toLocaleString("en-US", { month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }), hour: "2-digit", minute: "2-digit" });
+  const year = _utcMode ? d.getUTCFullYear() : d.getFullYear();
+  const thisYear = _utcMode ? new Date().getUTCFullYear() : new Date().getFullYear();
+  const opts: Intl.DateTimeFormatOptions = {
+    month: "short", day: "numeric",
+    ...(year === thisYear ? {} : { year: "numeric" }),
+    ...(withTime ? { hour: "2-digit", minute: "2-digit" } : {}),
+    ...(_utcMode ? { timeZone: "UTC" } : {}),
+  };
+  return withTime ? d.toLocaleString("en-US", opts) : d.toLocaleDateString("en-US", opts);
 }
 
-export function fmtShort(iso?: string): string {
-  if (!iso) return "–";
-  const d = new Date(iso);
-  const sameYear = _utcMode 
-    ? d.getUTCFullYear() === new Date().getUTCFullYear() 
-    : d.getFullYear() === new Date().getFullYear();
-  if (_utcMode) {
-    return d.toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }) });
-  }
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }) });
-}
+export function fmtDate(iso?: string): string { return fmtCalendar(iso, true); }
+
+export function fmtShort(iso?: string): string { return fmtCalendar(iso, false); }
 
 /**
  * All timestamps render in the viewer's local zone. In a security timeline
@@ -317,3 +311,34 @@ export function fmtDay(day?: string | null): string {
   if (!y || !m || !d) return day;
   return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
+
+// ── Severity ordering (one scale app-wide; lower sorts first) ───────────────
+export const SEVERITY_RANK: Readonly<Record<string, number>> = { critical: 0, high: 1, medium: 2, low: 3, informational: 4 };
+
+/** Sort key for a severity, ignoring case; unknown and missing sort last. */
+export const severityRank = (s?: string | null): number => SEVERITY_RANK[(s ?? "").toLowerCase()] ?? 5;
+
+// ── Search / filter ─────────────────────────────────────────────────────────
+/** True when q is blank or any field contains it, ignoring case. */
+export function matchesQuery(q: string, ...fields: (string | null | undefined)[]): boolean {
+  const n = q.trim().toLowerCase();
+  return !n || fields.some(f => (f ?? "").toLowerCase().includes(n));
+}
+
+/** The severity + text filter every alert list uses. Tolerates a missing severity. */
+export function filterAlerts<T extends { severity?: string | null }>(
+  items: T[] | undefined, severity: string, q: string, fields: (a: T) => (string | null | undefined)[],
+): T[] {
+  return (items ?? []).filter(a =>
+    (!severity || (a.severity ?? "").toLowerCase() === severity) && matchesQuery(q, ...fields(a)));
+}
+
+// ── Microsoft portal links ──────────────────────────────────────────────────
+export const PORTAL = {
+  defenderAlerts: "https://security.microsoft.com/alerts",
+  defenderIncidents: "https://security.microsoft.com/incidents",
+} as const;
+
+/** Graph's own deep link when present, else the alert by id, else the alert queue. */
+export const defenderAlertUrl = (a: { alertWebUrl?: string | null; id?: string | null }): string =>
+  a.alertWebUrl || (a.id ? `${PORTAL.defenderAlerts}/${encodeURIComponent(a.id)}` : PORTAL.defenderAlerts);

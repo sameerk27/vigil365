@@ -52,7 +52,7 @@ import { ActivityFeedPage } from "./pages/ActivityFeedPage";
 import { ClientsPage } from "./pages/ClientsPage";
 import { CopilotPage } from "./pages/CopilotPage";
 import { PowerPlatformPage } from "./pages/PowerPlatformPage";
-import { isMsalPopupResponse, finishMsalPopup } from "./services/msalPopup";
+import { PosturePage } from "./pages/PosturePage";
 import { TenantSwitcher } from "./components/TenantSwitcher";
 import { ClientGate } from "./components/ClientGate";
 import { DbSizeBanner } from "./components/DbSizeBanner";
@@ -119,6 +119,7 @@ const SECTIONS: SectionDef[] = [
   { id:"email",    label:"Email",          icon:<Mail size={17}/>,          pages:[{ id:"email", label:"Email" }] },
   { id:"posture",  label:"Posture",        icon:<CheckSquare size={17}/>,   pages:[
       { id:"compliance",      label:"Compliance" },
+      { id:"posture",         label:"Licence posture" },
       { id:"recommendations", label:"Recommendations" },
       { id:"trends",          label:"Trends & History" },
       { id:"reports",         label:"Reports" }] },
@@ -718,7 +719,9 @@ function App({ account, onSignOut }: { account?: AccountInfo | null; onSignOut?:
               deepLinkAlertId={pendingTriggeredId} onDeepLinkConsumed={() => setPendingTriggeredId(null)}/>}
             {page==="activityfeed"&&<ActivityFeedPage/>}
             {page==="copilot"&&<CopilotPage/>}
-            {page==="powerplatform"&&<PowerPlatformPage/>}
+            {page==="powerplatform"&&<PowerPlatformPage policies={alertPolicies} triggeredAlerts={triggeredAlerts}
+              onOpenAlert={id => { setPendingTriggeredId(id); setPage("alertcenter"); }}/>}
+            {page==="posture"&&<PosturePage/>}
             {page==="compliance"&&<CompliancePage secureScore={secureScore} overview={overview} dlpAlerts={dlpAlerts} purview={purview} mcasAlerts={mcasAlerts} insiderRisk={insiderRisk} attackSimulation={attackSimulation} identity={identity} devices={devices} ca={conditionalAccess} securityIncidents={securityIncidents} privilegedRoles={privilegedRoles} emailProtection={emailProtection}/>}
             {page==="servicehealth"&&<ServiceHealthPage serviceHealth={serviceHealth}/>}
             {page==="network"&&<NetworkPage serviceHealth={serviceHealth} signInLocations={signInLocations}/>}
@@ -1017,12 +1020,5 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
   }
 }
 
-if (isMsalPopupResponse()) {
-  // This window is a Microsoft sign-in popup (Power Platform "Turn on") coming back to
-  // Vigil365: hand the result to the page that opened it instead of starting the app.
-  document.getElementById("root")!.textContent = "Finishing Microsoft sign-in…";
-  finishMsalPopup().catch(() => { try { window.close(); } catch { /* not closable */ } });
-} else {
-  createRoot(document.getElementById("root")!).render(<ErrorBoundary><AuthGate /></ErrorBoundary>);
-}
+createRoot(document.getElementById("root")!).render(<ErrorBoundary><AuthGate /></ErrorBoundary>);
 

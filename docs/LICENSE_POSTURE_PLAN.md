@@ -1,6 +1,14 @@
 # Licence-aware posture and adoption: technical design
 
-Status: **design, nothing built** (2026-10-19). Source brief: `license-posture-handoff-2026-10-19.md` (Samir).
+Status (2026-11-06): **phase 1 built** on `feat/copilot-power-platform`: catalog, collector,
+evaluator, `/api/posture`, `/api/posture/report.html`, and the page (Posture → Licence posture) with
+search, filters, sort, CSV and JSON export and the HTML client report. Tested: every rule
+(`PostureEvaluatorTests`), the data maps (`PostureCatalogTests`), the report's encoding
+(`PostureReportTests`), the page (`PosturePage.test.tsx`), and signed-in journeys including MSP
+scoping and axe (`e2e/signed-in/posture.spec.ts`, `a11y.spec.ts`). Not done: storing snapshots
+(drift and history), Secure Score control mapping, JSON schemas for the data maps. Nothing has
+been checked against a live tenant. Design written 2026-10-19 from
+`license-posture-handoff-2026-10-19.md` (Samir).
 Items marked **[verify]** are not yet confirmed against Microsoft or the licensor; confirm each
 before the code that depends on it ships.
 
@@ -86,6 +94,16 @@ Findings → Posture page, HTML / CSV / JSON export
 | Intune compliance policy present | `GET /v1.0/deviceManagement/deviceCompliancePolicies` | `DeviceManagementConfiguration.Read.All`, **new** **[verify]** |
 | Secure Score control IDs and states | `GET /v1.0/security/secureScoreControlProfiles` | `SecurityEvents.Read.All` (have) **[verify]** |
 | External sharing level | `GET /v1.0/admin/sharepoint/settings` | `SharePointTenantSettings.Read.All` (have) |
+
+**When a Conditional Access policy counts** (decided 2026-11-06). "All users" in `includeUsers` isn't
+enough. A policy passes the MFA, legacy-auth and high-risk checks only if it is enabled, covers all
+resources, and has no condition that leaves ordinary sign-ins out: excluded apps, locations, platforms,
+client apps short of browser plus modern apps, a device filter, a risk level it isn't about, a condition
+Vigil365 doesn't recognise, or (for MFA) another grant control accepted instead (operator OR, or no
+operator). Excluded users, groups, roles and guests don't fail it: Microsoft recommends excluding
+emergency access accounts, so they are listed for review instead. Each policy is judged on its own.
+A policy list or MFA report that is missing a page counts as unread, never as complete. The policy
+JSON shape in the tests comes from Microsoft's documentation **[verify]** against a live tenant.
 
 ### Exchange Online and Security & Compliance PowerShell (new)
 

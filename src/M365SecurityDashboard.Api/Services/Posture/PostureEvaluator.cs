@@ -1,4 +1,5 @@
 using System.Text.Json;
+using static M365SecurityDashboard.Api.Services.Common.JsonRead;
 
 namespace M365SecurityDashboard.Api.Services.Posture;
 
@@ -119,9 +120,9 @@ public static class PostureEvaluator
 
         var (status, detail) = check.Rule switch
         {
-            "caMfaAllUsers" => CaRule(s, p => Grants(p, "mfa") || HasAuthStrength(p), "requires MFA for all users"),
-            "caBlockLegacyAuth" => CaRule(s, p => Grants(p, "block") && ClientApps(p).Contains("exchangeActiveSync") && ClientApps(p).Contains("other"), "blocks legacy authentication for all users"),
-            "mfaEnforced" => MfaEnforced(s),
+            "caMfaAllUsers" => CaRule(s, CaTarget.Mfa, "requires MFA for all users"),
+            "caBlockLegacyAuth" => CaRule(s, CaTarget.LegacyAuth, "blocks legacy authentication for all users"),
+            "mfaEnforced" => MfaEnforced(s, ConditionalAccessLicensed(owned, catalog)),
             "mfaRegistration" => MfaRegistration(s, check.Threshold ?? 95),
             "caBlockHighRisk" => HighRisk(s),
             "pimInUse" => (PostureStatus.Unknown, "Needs RoleManagement.Read.Directory to read PIM assignments. Vigil365 doesn't request it yet."),
@@ -142,40 +143,169 @@ public static class PostureEvaluator
 
     private static string ReadFrom(PostureCheck c) => c.Reads == "exchange" ? "Exchange Online PowerShell" : "Microsoft Graph";
 
-    // ── Conditional Access ────────────────────────────────────────────────────
+    /// <summary>Whether a licence the tenant owns includes Conditional Access. If the catalog lacks the feature, assume it does, so a failed read stays Unknown.</summary>
+    private static bool ConditionalAccessLicensed(IReadOnlyList<OwnedSku> owned, PostureCatalog catalog) =>
+        catalog.Features.FirstOrDefault(f => f.Id == "conditional-access") is not { } ca || LicensedBy(ca, owned) is not null;
 
-    private static (PostureStatus, string) CaRule(PostureSnapshot s, Func<JsonElement, bool> grants, string what)
+    // ── Conditional Access ────────────────────────────────────────────────────
+    //
+    // "All" in includeUsers isn't enough for a pass. Microsoft applies a policy only when every
+    // one of its conditions matches, so an all-users policy scoped to some apps, to risky
+    // sign-ins, or to some locations or platforms, or one that accepts a compliant device
+    // instead of MFA (grant operator OR), leaves ordinary sign-ins out. A policy counts only
+    // when nothing but its excluded accounts is left out. Those are listed, not failed:
+    // Microsoft recommends excluding emergency access accounts from every policy. Each policy
+    // is judged on its own; several that only add up together don't pass.
+
+    private enum CaTarget { Mfa, LegacyAuth, UserRisk, SignInRisk }
+
+    private static (PostureStatus, string) CaRule(PostureSnapshot s, CaTarget target, string what) =>
+        s.ConditionalAccess.Value is { } policies
+            ? Coverage(policies, target, what)
+            : (PostureStatus.Unknown, $"Couldn't read Conditional Access: {s.ConditionalAccess.Error}");
+
+    /// <summary>Pass if an enabled policy covers the target for every sign-in; otherwise the nearest miss, in words.</summary>
+    private static (PostureStatus Status, string Detail) Coverage(IReadOnlyList<JsonElement> policies, CaTarget target, string what)
     {
-        if (s.ConditionalAccess.Value is not { } policies) return (PostureStatus.Unknown, $"Couldn't read Conditional Access: {s.ConditionalAccess.Error}");
         if (policies.Count == 0) return (PostureStatus.LicensedNotConfigured, "No Conditional Access policies exist.");
-        var matching = policies.Where(p => AllUsers(p) && grants(p)).ToList();
-        if (matching.Any(p => State(p) == "enabled"))
-            return (PostureStatus.Pass, $"Enabled policy {Quote(matching.First(p => State(p) == "enabled"))} {what}.");
-        if (matching.Count > 0)
-            return (PostureStatus.Fail, $"Policy {Quote(matching[0])} {what}, but it is {Describe(State(matching[0]))}.");
+        var aimed = policies.Where(p => Aims(p, target)).Select(p => (Policy: p, Limits: Limits(p, target))).ToList();
+        var covering = aimed.Where(a => a.Limits.Count == 0).Select(a => a.Policy).ToList();
+
+        if (covering.Where(p => State(p) == "enabled").ToList() is [var on, ..])
+            return (PostureStatus.Pass, $"Enabled policy {Quote(on)} {what}.{ExclusionNote(on)}");
+        if (covering is [var off, ..])
+            return (PostureStatus.Fail, $"Policy {Quote(off)} {what}, but it is {Describe(State(off))}.");
+        if (aimed.Where(a => State(a.Policy) == "enabled").ToList() is [var part, ..])
+            return (PostureStatus.Fail, $"Enabled policy {Quote(part.Policy)} is for all users, but {Join(part.Limits, "and")}.");
         return (PostureStatus.Fail, $"{policies.Count} Conditional Access {(policies.Count == 1 ? "policy exists" : "policies exist")}, but none {what}.");
     }
 
-    private static (PostureStatus, string) MfaEnforced(PostureSnapshot s)
+    private static (PostureStatus, string) MfaEnforced(PostureSnapshot s, bool conditionalAccessLicensed)
     {
-        if (s.SecurityDefaultsEnabled.Value) return (PostureStatus.Pass, "Security Defaults are on.");
-        if (s.ConditionalAccess.Value is { } policies
-            && policies.Any(p => State(p) == "enabled" && AllUsers(p) && (Grants(p, "mfa") || HasAuthStrength(p))))
-            return (PostureStatus.Pass, "Security Defaults are off and a Conditional Access policy requires MFA for all users.");
-        if (!s.SecurityDefaultsEnabled.Read && !s.ConditionalAccess.Read)
-            return (PostureStatus.Unknown, $"Couldn't read Security Defaults or Conditional Access: {s.SecurityDefaultsEnabled.Error}");
-        return (PostureStatus.Fail, "Security Defaults are off and no enabled Conditional Access policy requires MFA for all users.");
+        var defaults = s.SecurityDefaultsEnabled;
+        if (defaults.Read && defaults.Value) return (PostureStatus.Pass, "Security Defaults are on.");
+
+        // An enabled policy enforces MFA whatever Security Defaults say, so it settles the check
+        // even when that read failed. A failed read is never taken to mean "off".
+        (PostureStatus Status, string Detail)? ca = s.ConditionalAccess.Value is { } policies
+            ? Coverage(policies, CaTarget.Mfa, "requires MFA for all users")
+            : null;
+        if (ca is { Status: PostureStatus.Pass } pass) return (PostureStatus.Pass, pass.Detail);
+        if (!defaults.Read)
+            return (PostureStatus.Unknown, $"Couldn't read Security Defaults: {defaults.Error} "
+                + (ca is { } read ? read.Detail : $"Conditional Access couldn't be read either: {s.ConditionalAccess.Error}"));
+        if (ca is not { } policiesRead)
+            return conditionalAccessLicensed
+                ? (PostureStatus.Unknown, $"Security Defaults are off, and Conditional Access couldn't be read: {s.ConditionalAccess.Error}")
+                : (PostureStatus.Fail, "Security Defaults are off, and no licence in this tenant includes Conditional Access.");
+        return (PostureStatus.Fail, $"Security Defaults are off. {policiesRead.Detail}");
     }
 
     private static (PostureStatus, string) HighRisk(PostureSnapshot s)
     {
         if (s.ConditionalAccess.Value is not { } policies) return (PostureStatus.Unknown, $"Couldn't read Conditional Access: {s.ConditionalAccess.Error}");
-        bool Blocks(string riskProperty) => policies.Any(p => State(p) == "enabled" && AllUsers(p) && Grants(p, "block") && RiskLevels(p, riskProperty).Contains("high"));
-        var users = Blocks("userRiskLevels");
-        var signIns = Blocks("signInRiskLevels");
-        if (users && signIns) return (PostureStatus.Pass, "Enabled policies block high-risk users and high-risk sign-ins.");
-        if (!users && !signIns) return (PostureStatus.LicensedNotConfigured, "No enabled policy blocks high-risk users or high-risk sign-ins.");
-        return (PostureStatus.Fail, users ? "High-risk users are blocked, but high-risk sign-ins aren't." : "High-risk sign-ins are blocked, but high-risk users aren't.");
+        var users = Coverage(policies, CaTarget.UserRisk, "blocks high-risk users");
+        var signIns = Coverage(policies, CaTarget.SignInRisk, "blocks high-risk sign-ins");
+        if (users.Status == PostureStatus.Pass && signIns.Status == PostureStatus.Pass)
+            return (PostureStatus.Pass, $"{users.Detail} {signIns.Detail}");
+        if (!policies.Any(p => Aims(p, CaTarget.UserRisk) || Aims(p, CaTarget.SignInRisk)))
+            return (PostureStatus.LicensedNotConfigured, "No policy blocks high-risk users or high-risk sign-ins.");
+        return (PostureStatus.Fail, $"{users.Detail} {signIns.Detail}");
+    }
+
+    /// <summary>The policy is meant for the target: it names all users and has the grant (and, for risk, the condition) that make it that kind of policy.</summary>
+    private static bool Aims(JsonElement p, CaTarget target) => AllUsers(p) && target switch
+    {
+        CaTarget.Mfa => Grants(p, "mfa") || HasAuthStrength(p),
+        CaTarget.LegacyAuth => Grants(p, "block") && Has(ClientApps(p), "exchangeActiveSync") && Has(ClientApps(p), "other"),
+        CaTarget.UserRisk => Grants(p, "block") && Has(RiskLevels(p, "userRiskLevels"), "high"),
+        CaTarget.SignInRisk => Grants(p, "block") && Has(RiskLevels(p, "signInRiskLevels"), "high"),
+        _ => false,
+    };
+
+    private static readonly HashSet<string> KnownConditions = new(StringComparer.OrdinalIgnoreCase)
+        { "users", "applications", "clientAppTypes", "userRiskLevels", "signInRiskLevels", "locations", "platforms", "devices" };
+
+    /// <summary>What an all-users policy still leaves out, in words. Empty: it covers every sign-in apart from its excluded accounts.</summary>
+    private static List<string> Limits(JsonElement p, CaTarget target)
+    {
+        var limits = new List<string>();
+        if (!Has(Strings(p, "conditions", "applications", "includeApplications"), "All"))
+            limits.Add("it doesn't cover all cloud apps");
+        else if (Strings(p, "conditions", "applications", "excludeApplications").Count is > 0 and var apps)
+            limits.Add($"it excludes {Plural(apps, "cloud app", "cloud apps")}");
+
+        // Two risk conditions on one policy must both match, so a block on high user risk that
+        // also sets sign-in risk only fires when both are high.
+        if (RiskLevels(p, "userRiskLevels").Count > 0 && target != CaTarget.UserRisk)
+            limits.Add(target == CaTarget.SignInRisk ? "it only blocks when the user is risky too" : "it applies only to risky users");
+        if (RiskLevels(p, "signInRiskLevels").Count > 0 && target != CaTarget.SignInRisk)
+            limits.Add(target == CaTarget.UserRisk ? "it only blocks when the sign-in is risky too" : "it applies only to risky sign-ins");
+
+        // Legacy clients can't do MFA (that's what the legacy block is for), so browsers plus
+        // modern apps cover every client the other checks are about.
+        var clients = ClientApps(p);
+        if (target != CaTarget.LegacyAuth && clients.Count > 0 && !Has(clients, "all")
+            && !(Has(clients, "browser") && Has(clients, "mobileAppsAndDesktopClients")))
+            limits.Add("it doesn't cover every client app");
+
+        if (Strings(p, "conditions", "locations", "excludeLocations").Count > 0
+            || Strings(p, "conditions", "locations", "includeLocations") is { Count: > 0 } locations && !Has(locations, "All"))
+            limits.Add("it depends on where the sign-in comes from");
+        if (Strings(p, "conditions", "platforms", "excludePlatforms").Count > 0
+            || Strings(p, "conditions", "platforms", "includePlatforms") is { Count: > 0 } platforms && !Has(platforms, "all"))
+            limits.Add("it covers only some device platforms");
+        if (Meaningful(Node(p, "conditions", "devices", "deviceFilter", "rule")))
+            limits.Add("it has a device filter");
+
+        // A condition this code doesn't know (a rarer one, or one Microsoft adds later) may
+        // narrow the policy too, so it counts against it rather than being ignored.
+        if (Node(p, "conditions") is { ValueKind: JsonValueKind.Object } conditions)
+            foreach (var c in conditions.EnumerateObject())
+                if (!KnownConditions.Contains(c.Name) && !c.Name.StartsWith('@') && Meaningful(c.Value))
+                    limits.Add($"it has an extra condition ({c.Name})");
+
+        if (target == CaTarget.Mfa && MfaAlternatives(p) is { Count: > 0 } alternatives)
+            limits.Add($"it accepts {Join(alternatives, "or")} instead of MFA");
+        return limits;
+    }
+
+    /// <summary>Grant controls that satisfy the policy instead of MFA. None when the operator is AND.</summary>
+    private static List<string> MfaAlternatives(JsonElement p)
+    {
+        // A missing operator is treated as OR, so a policy that can't be read in full never passes.
+        if (Node(p, "grantControls", "operator") is { ValueKind: JsonValueKind.String } op
+            && string.Equals(op.GetString(), "AND", StringComparison.OrdinalIgnoreCase)) return [];
+        var others = Strings(p, "grantControls", "builtInControls")
+            .Where(c => !string.Equals(c, "mfa", StringComparison.OrdinalIgnoreCase))
+            .Select(c => c switch
+            {
+                "compliantDevice" => "a compliant device",
+                "domainJoinedDevice" => "a hybrid-joined device",
+                "approvedApplication" => "an approved client app",
+                "compliantApplication" => "an app protection policy",
+                "passwordChange" => "a password change",
+                _ => c,
+            })
+            .ToList();
+        if (Strings(p, "grantControls", "termsOfUse").Count > 0) others.Add("terms of use");
+        if (Strings(p, "grantControls", "customAuthenticationFactors").Count > 0) others.Add("a custom control");
+        return others;
+    }
+
+    /// <summary>" It excludes 2 users and 1 group; check each exclusion is deliberate.", or "" when it excludes nobody.</summary>
+    private static string ExclusionNote(JsonElement p)
+    {
+        var parts = new List<string>();
+        void Add(string field, string one, string many)
+        {
+            if (Strings(p, "conditions", "users", field).Count is > 0 and var n) parts.Add(Plural(n, one, many));
+        }
+        Add("excludeUsers", "user", "users");
+        Add("excludeGroups", "group", "groups");
+        Add("excludeRoles", "role", "roles");
+        if (Meaningful(Node(p, "conditions", "users", "excludeGuestsOrExternalUsers"))) parts.Add("guests or external users");
+        return parts.Count == 0 ? "" : $" It excludes {Join(parts, "and")}; check each exclusion is deliberate.";
     }
 
     // ── Other workloads ───────────────────────────────────────────────────────
@@ -234,21 +364,29 @@ public static class PostureEvaluator
         Strings(p, "grantControls", "builtInControls").Contains(control, StringComparer.OrdinalIgnoreCase);
 
     private static bool HasAuthStrength(JsonElement p) =>
-        p.TryGetProperty("grantControls", out var g) && g.ValueKind == JsonValueKind.Object
-        && g.TryGetProperty("authenticationStrength", out var a) && a.ValueKind == JsonValueKind.Object;
+        Node(p, "grantControls", "authenticationStrength").ValueKind == JsonValueKind.Object;
 
     private static IReadOnlyList<string> ClientApps(JsonElement p) => Strings(p, "conditions", "clientAppTypes");
 
     private static IReadOnlyList<string> RiskLevels(JsonElement p, string property) => Strings(p, "conditions", property);
 
-    private static IReadOnlyList<string> Strings(JsonElement e, params string[] path)
+    private static bool Has(IReadOnlyList<string> values, string value) => values.Contains(value, StringComparer.OrdinalIgnoreCase);
+
+    private static JsonElement Node(JsonElement e, params string[] path) => Get(e, path) ?? default;
+    /// <summary>Whether a condition says anything: null, empty, "none" and Microsoft's "unknownFutureValue" placeholder don't.</summary>
+    private static bool Meaningful(JsonElement v) => v.ValueKind switch
     {
-        foreach (var name in path)
-        {
-            if (e.ValueKind != JsonValueKind.Object || !e.TryGetProperty(name, out e)) return [];
-        }
-        return e.ValueKind == JsonValueKind.Array
-            ? e.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString()!).ToList()
-            : [];
-    }
+        JsonValueKind.String => v.GetString() is { Length: > 0 } t
+            && !t.Equals("none", StringComparison.OrdinalIgnoreCase) && !t.Equals("unknownFutureValue", StringComparison.OrdinalIgnoreCase),
+        JsonValueKind.Array => v.EnumerateArray().Any(Meaningful),
+        JsonValueKind.Object => v.EnumerateObject().Any(x => !x.Name.StartsWith('@') && Meaningful(x.Value)),
+        JsonValueKind.True or JsonValueKind.Number => true,
+        _ => false,
+    };
+
+    private static string Plural(int n, string one, string many) => $"{n} {(n == 1 ? one : many)}";
+
+    /// <summary>"a", "a and b", "a, b and c" (or "or").</summary>
+    private static string Join(IReadOnlyList<string> items, string last) =>
+        items.Count <= 1 ? string.Concat(items) : $"{string.Join(", ", items.Take(items.Count - 1))} {last} {items[^1]}";
 }

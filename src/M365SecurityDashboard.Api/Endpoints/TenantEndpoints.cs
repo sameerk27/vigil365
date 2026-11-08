@@ -6,6 +6,7 @@ using M365SecurityDashboard.Api.Services;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using M365SecurityDashboard.Api.Services.Common;
 
 namespace M365SecurityDashboard.Api.Endpoints;
 
@@ -54,7 +55,7 @@ public static class TenantEndpoints
             var error = q["error"].ToString();
             if (!string.IsNullOrEmpty(error))
             {
-                t.LastError = Truncate($"Admin consent was not granted: {error} {q["error_description"]}".Trim(), 1000);
+                t.LastError = TextLimits.Truncate($"Admin consent was not granted: {error} {q["error_description"]}".Trim(), 1000);
                 await db.SaveChangesAsync(ct);
                 return Landing(false, "Consent was not granted. You can close this window and try again.");
             }
@@ -145,7 +146,11 @@ public static class TenantEndpoints
         app.MapGet("/api/tenants/alerts", async (System.Security.Claims.ClaimsPrincipal user, TenantAccess access, TenantRollupService rollup, int? limit, CancellationToken ct) =>
         {
             var permitted = await access.PermittedTenantsAsync(user, ct);
-            return Results.Ok(await rollup.OpenAlertsAcrossAsync(permitted, limit ?? 500, ct));
+            var cap = Math.Clamp(limit ?? 500, 1, 2000);
+            var items = await rollup.OpenAlertsAcrossAsync(permitted, cap, ct);
+            // The list is capped; the total lets the page say "N of M" instead of passing a cut list off as the whole queue.
+            var total = items.Count < cap ? items.Count : await rollup.CountOpenAcrossAsync(permitted, ct);
+            return Results.Ok(new { items, total });
         });
 
         // ── Admin ─────────────────────────────────────────────────────────────
@@ -367,7 +372,7 @@ public static class TenantEndpoints
                 var org = await graph.GetSinglePageAsync("/v1.0/organization?$select=id,displayName", ct);
                 var first = org.FirstOrDefault();
                 var entraId = first.ValueKind == JsonValueKind.Object && first.TryGetProperty("id", out var idProp) ? idProp.GetString() : null;
-                var display = first.ValueKind == JsonValueKind.Object && first.TryGetProperty("displayName", out var dn) ? dn.GetString() : null;
+                var display = JsonRead.Str(first, "displayName");
 
                 if (!string.IsNullOrWhiteSpace(t.MicrosoftTenantId) && !string.IsNullOrWhiteSpace(entraId)
                     && !string.Equals(t.MicrosoftTenantId, entraId, StringComparison.OrdinalIgnoreCase))
@@ -407,7 +412,7 @@ public static class TenantEndpoints
             catch (Exception ex)
             {
                 var notYet = GraphErrorHint.IsNotYetProvisioned(ex.Message);
-                t.LastError = notYet ? GraphErrorHint.NotYetProvisionedMessage : Truncate(ex.Message, 1000);
+                t.LastError = notYet ? GraphErrorHint.NotYetProvisionedMessage : TextLimits.Truncate(ex.Message, 1000);
                 await db.SaveChangesAsync(ct);
                 return Results.BadRequest(new { ok = false, message = t.LastError, retryable = notYet, hint = GraphErrorHint.DescribeOrNull(ex.Message) });
             }
@@ -488,7 +493,6 @@ public static class TenantEndpoints
     private static string? Normalize(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
     private static string? ValidColor(string? s)
         => s is not null && System.Text.RegularExpressions.Regex.IsMatch(s.Trim(), "^#[0-9a-fA-F]{6}$") ? s.Trim().ToLowerInvariant() : null;
-    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max];
 
     /// <summary>
     /// The page the client's Global Administrator lands on after consent. No inline

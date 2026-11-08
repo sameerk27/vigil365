@@ -4,6 +4,7 @@ using System.Text;
 using M365SecurityDashboard.Api.Data;
 using M365SecurityDashboard.Api.Models;
 using Microsoft.EntityFrameworkCore;
+using M365SecurityDashboard.Api.Services.Common;
 
 namespace M365SecurityDashboard.Api.Services;
 
@@ -101,15 +102,9 @@ public sealed class DigestBuilder(AppDbContext db)
         ];
     }
 
-    private static int SeverityRank(string? sev) => (sev ?? "").ToLowerInvariant() switch
-    {
-        "critical" => 4, "high" => 3, "medium" => 2, "low" => 1, _ => 0,
-    };
+    private static int SeverityRank(string? sev) => SeverityScale.Rank(sev);
 
-    private static string SevColor(string? sev) => (sev ?? "").ToLowerInvariant() switch
-    {
-        "critical" => "dc2626", "high" => "ea580c", "medium" => "d97706", "low" => "2563eb", _ => "6b7280",
-    };
+    private static string SevColor(string? sev) => SeverityScale.HexColor(sev);
 
     /// <summary>Delta rendered as a colored ▲/▼ chip — green when moving the safe way.</summary>
     private static string DeltaChip(Metric m)

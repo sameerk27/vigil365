@@ -1,419 +1,427 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Search, Workflow, AlertTriangle, RefreshCw, ShieldCheck, ExternalLink, LogIn } from "lucide-react";
-import { fmtDay } from "../services/utils";
-import { Card, Badge, EmptyState, LoadingSkeleton, ExportDropdown } from "../components/SharedComponents";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Search, Workflow, BellRing, ListChecks } from "lucide-react";
+import { apiBase, apiFetch, acApi, crossNavigate, isMspMode } from "../services/api";
+import { fmtDate, relTime, severityRank, sevTone, matchesQuery } from "../services/utils";
+import { Card, Badge, EmptyState, ExportDropdown, SortTh, rowActivation } from "../components/SharedComponents";
 import { StatCard } from "../components/ui";
-import type { Tone } from "../services/types";
-import {
-  loadPowerPlatformSettings, readPowerPlatform, registerPowerPlatformApi, cachedInventory, needsLook, connectorName,
-  PowerPlatformReadError, RBAC_DOCS_URL,
-  type PowerPlatformSettings, type PowerPlatformInventory, type PowerPlatformFlag,
-} from "../services/powerPlatform";
+import { PurviewAuditPanel } from "../components/PurviewAuditPanel";
+import type { AlertPolicy, TriggeredAlert, Tone } from "../services/types";
 
-/** Rows rendered per table; search, the filters and export reach the rest. */
-const ROW_LIMIT = 500;
+/** The alert categories this page covers: Power Platform, and Copilot Studio agents (built in Power Platform). */
+const CATEGORIES = ["powerplatform", "copilot"];
+const productOfCategory = (c: string) => (c === "copilot" ? "Copilot agents" : "Power Platform");
 
-const flagTone = (f: PowerPlatformFlag): Tone => (f.severity === "high" ? "error" : f.severity === "medium" ? "warning" : "neutral");
-const has = (flags: PowerPlatformFlag[], label: string) => flags.some(f => f.label === label);
-const hasPrefix = (flags: PowerPlatformFlag[], prefix: string) => flags.some(f => f.label.startsWith(prefix));
-const ownerGone = (flags: PowerPlatformFlag[]) => flags.some(f => / (not in the directory|account is disabled)$/.test(f.label));
+/** The Purview audit products, as the server names them in each event's category. */
+const PRODUCTS = ["Copilot agents", "Power Automate", "Power Apps", "Power Platform admin"];
 
-function Flags({ flags }: { flags: PowerPlatformFlag[] }) {
-  if (flags.length === 0) return <span className="pp-muted">None</span>;
-  return <span className="pp-flags">{flags.map(f => <Badge key={f.label} label={f.label} tone={flagTone(f)}/>)}</span>;
-}
+const OPEN = new Set(["new", "acknowledged"]);
+const statusLabel: Record<string, string> = { new: "New", acknowledged: "Acknowledged", snoozed: "Snoozed", resolved: "Resolved", auto_resolved: "Resolved (auto)" };
+const statusTone = (s: string): Tone => (s === "new" ? "error" : s === "acknowledged" ? "warning" : "neutral");
 
-function Truncated({ shown, total }: { shown: number; total: number }) {
-  return shown < total ? <p className="pp-muted pp-truncated">Showing {shown} of {total}. Search, filter or export to see the rest.</p> : null;
-}
+type AuditItem = {
+  id: number; activity: string; category: string | null; source: string;
+  actorUpn: string | null; actorApp: string | null; targetName: string | null; result: string | null; occurredAt: string;
+};
+type AuditPage = { total: number; page: number; pageSize: number; items: AuditItem[] };
 
-const ownerText = (owner: string | null, ownerId: string | null) => owner ?? (ownerId ? "Unknown user" : "—");
-const connectorsText = (c: string[]) => (c.length ? c.map(connectorName).join(", ") : "None");
-const sharedText = (users: number, groups: number) =>
-  `${users} ${users === 1 ? "person" : "people"}${groups ? `, ${groups} group${groups === 1 ? "" : "s"}` : ""}`;
-
-type Step = "idle" | "reading" | "needsRegister" | "registering" | "registered";
+const PAGE_SIZE = 200;
 
 /**
- * Power Platform inventory: environments, canvas apps, cloud flows and Copilot Studio
- * agents, with the ones that need a look flagged. Read in the browser with the viewer's
- * own Microsoft sign-in (Microsoft won't let Vigil365's app read it without Power Platform
- * Administrator rights, which Vigil365 doesn't take). Kept in memory while the app is open.
+ * A rule pattern as the server's LIKE reads it: "*" and "%" match anything, "_" one
+ * character, the whole name must match. Case is ignored here; the badge is a hint, the
+ * server decides.
  */
-export function PowerPlatformPage() {
-  const [settings, setSettings] = useState<PowerPlatformSettings | null>(null);
-  const [failed, setFailed] = useState(false);
-  const [inv, setInv] = useState<PowerPlatformInventory | null>(null);
-  const [step, setStep] = useState<Step>("idle");
-  const [trying, setTrying] = useState(false);
-  const [progress, setProgress] = useState("");
-  const [problem, setProblem] = useState<string | null>(null);
-  const [closed, setClosed] = useState(false);
+export function patternMatches(pattern: string, activity: string): boolean {
+  const re = [...pattern.trim()].map(c => (c === "*" || c === "%" ? ".*" : c === "_" ? "." : c.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))).join("");
+  return re.length > 0 && new RegExp(`^${re}$`, "i").test(activity);
+}
 
-  const [environment, setEnvironment] = useState("");
-  const [agentSearch, setAgentSearch] = useState("");
-  const [agentFilter, setAgentFilter] = useState("");
-  const [appSearch, setAppSearch] = useState("");
-  const [appFilter, setAppFilter] = useState("");
-  const [flowSearch, setFlowSearch] = useState("");
-  const [flowFilter, setFlowFilter] = useState("");
+type AlertSort = "severity" | "rule" | "triggered" | "status";
+type EventSort = "when" | "product" | "activity" | "who";
+type RuleSort = "name" | "severity" | "lastTriggered";
 
-  // Settings, then the read kept from earlier in this session, or a read without a popup
-  // when the person already consented (same tenant).
+/**
+ * Power Platform alerts: what Copilot Studio agents, Power Automate flows, Power Apps and
+ * Power Platform admins changed, and the alerts it raised. Everything comes from the
+ * Microsoft Purview audit log, read in the background with Vigil365's own read-only
+ * permission (AuditLogsQuery.Read.All); this page asks for no sign-in of its own.
+ * Alerts are acted on in the Alert Center, so there is one place for that.
+ */
+export function PowerPlatformPage({ policies, triggeredAlerts, onOpenAlert }: {
+  policies: AlertPolicy[];
+  triggeredAlerts: TriggeredAlert[];
+  onOpenAlert: (id: string) => void;
+}) {
+  // ── Alerts ──
+  const alerts = useMemo(() => triggeredAlerts.filter(a => CATEGORIES.includes(a.category)), [triggeredAlerts]);
+  const [alertSearch, setAlertSearch] = useState("");
+  const [alertStatus, setAlertStatus] = useState("open");
+  const [alertSeverity, setAlertSeverity] = useState("");
+  const [alertProduct, setAlertProduct] = useState("");
+  const [alertSort, setAlertSort] = useState<AlertSort>("triggered");
+  const [alertDir, setAlertDir] = useState<"asc" | "desc">("desc");
+
+  const shownAlerts = useMemo(() => {
+    const dir = alertDir === "asc" ? 1 : -1;
+    return alerts
+      .filter(a =>
+        (alertStatus === "" || (alertStatus === "open" ? OPEN.has(a.status) : a.status === alertStatus || (alertStatus === "resolved" && a.status === "auto_resolved"))) &&
+        (!alertSeverity || a.severity.toLowerCase() === alertSeverity) &&
+        (!alertProduct || productOfCategory(a.category) === alertProduct) &&
+        matchesQuery(alertSearch, a.policyName, a.affectedEntities, a.assignedTo))
+      .sort((a, b) => {
+        const by = alertSort === "severity" ? severityRank(b.severity) - severityRank(a.severity)
+          : alertSort === "rule" ? a.policyName.localeCompare(b.policyName)
+          : alertSort === "status" ? (statusLabel[a.status] ?? a.status).localeCompare(statusLabel[b.status] ?? b.status)
+          : a.triggeredAt.localeCompare(b.triggeredAt);
+        return by * dir || b.triggeredAt.localeCompare(a.triggeredAt);
+      });
+  }, [alerts, alertSearch, alertStatus, alertSeverity, alertProduct, alertSort, alertDir]);
+
+  const onAlertSort = (c: AlertSort) => {
+    if (alertSort === c) setAlertDir(d => (d === "asc" ? "desc" : "asc"));
+    else { setAlertSort(c); setAlertDir(c === "rule" || c === "status" ? "asc" : "desc"); }
+  };
+
+  // ── Rules ──
+  // MSP: a client can switch a rule off or change its threshold; the evaluator honours that, so this page must too.
+  const [overrides, setOverrides] = useState<Record<string, { enabled: boolean | null; threshold: number | null }>>({});
+  useEffect(() => {
+    if (!isMspMode()) return;
+    let cancelled = false;
+    acApi.getTenantOverrides().then(rows => { if (!cancelled) setOverrides(Object.fromEntries(rows.map(r => [r.policyId, r]))); });
+    return () => { cancelled = true; };
+  }, [policies]);
+
+  const rules = useMemo(() => policies
+    .filter(p => CATEGORIES.includes(p.category) && (p.kind ?? "metric") === "activity")
+    .map(p => {
+      const o = overrides[p.id];
+      return o ? { ...p, enabled: o.enabled ?? p.enabled, threshold: o.threshold ?? p.threshold } : p;
+    }), [policies, overrides]);
+  const enabledRules = useMemo(() => rules.filter(r => r.enabled && r.activityPattern), [rules]);
+  const [ruleSearch, setRuleSearch] = useState("");
+  const [ruleState, setRuleState] = useState("");
+  const [ruleSort, setRuleSort] = useState<RuleSort>("severity");
+  const [ruleDir, setRuleDir] = useState<"asc" | "desc">("asc");
+
+  const shownRules = useMemo(() => {
+    const dir = ruleDir === "asc" ? 1 : -1;
+    return rules
+      .filter(r => (!ruleState || (ruleState === "on") === r.enabled) && matchesQuery(ruleSearch, r.name, r.activityPattern))
+      .sort((a, b) => {
+        const by = ruleSort === "name" ? a.name.localeCompare(b.name)
+          : ruleSort === "lastTriggered" ? (a.lastTriggered ?? "").localeCompare(b.lastTriggered ?? "")
+          : severityRank(a.severity) - severityRank(b.severity);
+        return by * dir || a.name.localeCompare(b.name);
+      });
+  }, [rules, ruleSearch, ruleState, ruleSort, ruleDir]);
+
+  const onRuleSort = (c: RuleSort) => {
+    if (ruleSort === c) setRuleDir(d => (d === "asc" ? "desc" : "asc"));
+    else { setRuleSort(c); setRuleDir(c === "lastTriggered" ? "desc" : "asc"); }
+  };
+
+  // ── Activity ──
+  const [days, setDays] = useState(7);
+  const [product, setProduct] = useState("");
+  const [events, setEvents] = useState<AuditItem[] | null>(null);
+  const [eventsTotal, setEventsTotal] = useState(0);
+  const [eventsPage, setEventsPage] = useState(1);
+  const [eventsFailed, setEventsFailed] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreFailed, setLoadMoreFailed] = useState(false);
+  // Bumped when the filters change, so a "Load more" still in flight can't add rows from the old filters.
+  const generation = useRef(0);
+  /** undefined while loading, null when it couldn't be read. */
+  const [weekTotal, setWeekTotal] = useState<number | null | undefined>(undefined);
+  const [eventSearch, setEventSearch] = useState("");
+  const [wouldAlertOnly, setWouldAlertOnly] = useState(false);
+  const [eventSort, setEventSort] = useState<EventSort>("when");
+  const [eventDir, setEventDir] = useState<"asc" | "desc">("desc");
+
+  const fetchEvents = useCallback(async (page: number): Promise<AuditPage> => {
+    const qs = new URLSearchParams({ source: product || "purviewAudit", days: String(days), page: String(page), pageSize: String(PAGE_SIZE) });
+    const r = await apiFetch(`${apiBase}/api/audit-events?${qs}`);
+    if (!r.ok) throw new Error(String(r.status));
+    return (await r.json()) as AuditPage;
+  }, [product, days]);
+
   useEffect(() => {
     let cancelled = false;
-    loadPowerPlatformSettings()
-      .then(async s => {
-        if (cancelled) return;
-        setSettings(s);
-        if (!s.configured || !s.tenantId) return;
-        const cached = cachedInventory(s.tenantId);
-        if (cached) { setInv(cached); return; }
-        setTrying(true);
-        try {
-          const result = await readPowerPlatform(s, false, t => { if (!cancelled) setProgress(t); });
-          if (!cancelled && result) setInv(result);
-        } catch { /* fall back to the button */ }
-        finally { if (!cancelled) { setTrying(false); setProgress(""); } }
-      })
-      .catch(() => { if (!cancelled) setFailed(true); });
+    generation.current++;
+    setEvents(null);
+    setEventsFailed(false);
+    setLoadingMore(false);
+    setLoadMoreFailed(false);
+    fetchEvents(1)
+      .then(p => { if (!cancelled) { setEvents(p.items); setEventsTotal(p.total); setEventsPage(1); } })
+      .catch(() => { if (!cancelled) setEventsFailed(true); });
+    return () => { cancelled = true; };
+  }, [fetchEvents]);
+
+  // The tile counts the last 7 days whatever the table is filtered to.
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch(`${apiBase}/api/audit-events?source=purviewAudit&days=7&pageSize=1`)
+      .then(r => (r.ok ? (r.json() as Promise<AuditPage>) : null))
+      .then(p => { if (!cancelled) setWeekTotal(p ? p.total : null); })
+      .catch(() => { if (!cancelled) setWeekTotal(null); });
     return () => { cancelled = true; };
   }, []);
 
-  // Straight from the click, so the browser lets the Microsoft popup open.
-  const read = useCallback(async () => {
-    if (!settings) return;
-    setProblem(null);
-    setClosed(false);
-    setStep("reading");
+  const loadMore = async () => {
+    const started = generation.current;
+    setLoadingMore(true);
+    setLoadMoreFailed(false);
     try {
-      const result = await readPowerPlatform(settings, true, setProgress);
-      if (result) setInv(result);
-      setStep("idle");
-    } catch (e) {
-      const err = e instanceof PowerPlatformReadError ? e : null;
-      setStep(err?.problem === "ApiNotInTenant" ? "needsRegister" : "idle");
-      if (err?.problem === "Cancelled") setClosed(true);
-      else setProblem(e instanceof Error ? e.message : String(e));
-    } finally { setProgress(""); }
-  }, [settings]);
-
-  const register = useCallback(async () => {
-    if (!settings) return;
-    setProblem(null);
-    setClosed(false);
-    setStep("registering");
-    try {
-      await registerPowerPlatformApi(settings);
-      setStep("registered");
-    } catch (e) {
-      setStep("needsRegister");
-      if (e instanceof PowerPlatformReadError && e.problem === "Cancelled") setClosed(true);
-      else setProblem(e instanceof Error ? e.message : String(e));
+      const p = await fetchEvents(eventsPage + 1);
+      if (started !== generation.current) return;
+      // New records push older ones onto the next page, so a row can come back twice.
+      setEvents(prev => {
+        const seen = new Set((prev ?? []).map(e => e.id));
+        return [...(prev ?? []), ...p.items.filter(e => !seen.has(e.id))];
+      });
+      setEventsPage(p.page);
+      setEventsTotal(p.total);
+    } catch {
+      if (started === generation.current) setLoadMoreFailed(true);
+    } finally {
+      if (started === generation.current) setLoadingMore(false);
     }
-  }, [settings]);
+  };
 
-  const agents = useMemo(() => {
-    const q = agentSearch.trim().toLowerCase();
-    return (inv?.agents ?? []).filter(a =>
-      (!environment || a.environmentId === environment) &&
-      (!agentFilter
-        || (agentFilter === "flagged" && needsLook(a.flags))
-        || (agentFilter === "nosignin" && (a.authentication ?? "").toLowerCase() === "none")
-        || (agentFilter === "tenant" && a.sharedWithTenant)
-        || (agentFilter === "published" && !!a.published)
-        || (agentFilter === "draft" && !a.published)) &&
-      (!q || a.name.toLowerCase().includes(q) || (a.owner ?? "").toLowerCase().includes(q) || a.connectors.some(c => c.toLowerCase().includes(q))));
-  }, [inv, agentSearch, agentFilter, environment]);
+  // A rule with a threshold above 1 needs several events: one event alone only counts towards it.
+  const rulesFor = useCallback((activity: string) => {
+    const hits = enabledRules.filter(r => patternMatches(r.activityPattern!, activity));
+    return { rule: hits.find(r => r.threshold <= 1) ?? null, counts: hits.find(r => r.threshold > 1) ?? null };
+  }, [enabledRules]);
 
-  const apps = useMemo(() => {
-    const q = appSearch.trim().toLowerCase();
-    return (inv?.apps ?? []).filter(a =>
-      (!environment || a.environmentId === environment) &&
-      (!appFilter
-        || (appFilter === "flagged" && needsLook(a.flags))
-        || (appFilter === "consent" && a.bypassConsent === true)
-        || (appFilter === "highrisk" && hasPrefix(a.flags, "High-risk connector"))
-        || (appFilter === "shared" && a.flags.some(f => f.label.startsWith("Shared with") && f.severity === "medium"))
-        || (appFilter === "custom" && has(a.flags, "Custom connector"))
-        || (appFilter === "owner" && ownerGone(a.flags))) &&
-      (!q || a.name.toLowerCase().includes(q) || (a.owner ?? "").toLowerCase().includes(q) || a.connectors.some(c => c.toLowerCase().includes(q))));
-  }, [inv, appSearch, appFilter, environment]);
+  const shownEvents = useMemo(() => {
+    const dir = eventDir === "asc" ? 1 : -1;
+    return (events ?? [])
+      .map(e => ({ e, ...rulesFor(e.activity) }))
+      .filter(({ e, rule }) => (!wouldAlertOnly || rule) && matchesQuery(eventSearch, e.activity, e.actorUpn, e.actorApp, e.targetName))
+      .sort((a, b) => {
+        const by = eventSort === "product" ? (a.e.category ?? "").localeCompare(b.e.category ?? "")
+          : eventSort === "activity" ? a.e.activity.localeCompare(b.e.activity)
+          : eventSort === "who" ? (a.e.actorUpn ?? a.e.actorApp ?? "").localeCompare(b.e.actorUpn ?? b.e.actorApp ?? "")
+          : a.e.occurredAt.localeCompare(b.e.occurredAt);
+        return by * dir || b.e.occurredAt.localeCompare(a.e.occurredAt);
+      });
+  }, [events, rulesFor, wouldAlertOnly, eventSearch, eventSort, eventDir]);
 
-  const flows = useMemo(() => {
-    const q = flowSearch.trim().toLowerCase();
-    return (inv?.flows ?? []).filter(f =>
-      (!environment || f.environmentId === environment) &&
-      (!flowFilter
-        || (flowFilter === "flagged" && needsLook(f.flags))
-        || (flowFilter === "highrisk" && hasPrefix(f.flags, "High-risk connector"))
-        || (flowFilter === "owner" && ownerGone(f.flags))) &&
-      (!q || f.name.toLowerCase().includes(q) || (f.owner ?? "").toLowerCase().includes(q) || f.connectors.some(c => c.toLowerCase().includes(q))));
-  }, [inv, flowSearch, flowFilter, environment]);
+  const onEventSort = (c: EventSort) => {
+    if (eventSort === c) setEventDir(d => (d === "asc" ? "desc" : "asc"));
+    else { setEventSort(c); setEventDir(c === "when" ? "desc" : "asc"); }
+  };
 
-  if (failed) return <div className="page"><EmptyState message="Could not load the Power Platform page: the API request failed. Refresh to retry."/></div>;
-  if (settings === null || trying) {
-    return <div className="page">{progress ? <p className="pp-muted pp-note">{progress}</p> : null}<LoadingSkeleton type="table"/></div>;
-  }
-  if (!settings.configured) return <div className="page"><EmptyState icon={<Workflow size={28}/>} message="Connect Microsoft Graph in Setup to see Power Platform."/></div>;
-
-  const busy = step === "reading" || step === "registering";
-  const feedback = (
-    <>
-      {progress && <p className="pp-progress" role="status"><RefreshCw size={14} aria-hidden="true" className="pp-spin"/> {progress}</p>}
-      {problem && <p className="pp-error" role="alert">{problem}</p>}
-      {closed && !problem && (
-        <p className="pp-muted">
-          The sign-in window was closed. If Microsoft said the request needs admin approval, a Global Administrator or
-          Cloud Application Administrator has to approve Vigil365's request first.
-        </p>
-      )}
-    </>
-  );
-
-  if (!inv) {
-    return (
-      <div className="page">
-        <Card title="Read Power Platform with your Microsoft sign-in" badge={<Badge label="On demand" tone="neutral"/>}>
-          <div className="pp-turnon">
-            <p>
-              See every Power Platform environment, canvas app, cloud flow and Copilot Studio agent, with the ones that need a look
-              flagged: agents anyone can use without signing in or shared with the whole organisation, apps that skip the consent
-              prompt or are shared widely, high-risk connectors, and owners who have left.
-            </p>
-            <p className="pp-why">
-              <ShieldCheck size={16} aria-hidden="true"/>
-              <span>
-                Vigil365 reads it with <strong>your</strong> access, in this browser: a Microsoft sign-in window opens, and your
-                account needs one of Global Administrator, Power Platform Administrator, Dynamics 365 Administrator or Global
-                Reader. Vigil365's app gets no Power Platform access, and nothing is stored.
-              </span>
-            </p>
-            {(step === "needsRegister" || step === "registering") ? (
-              <div className="pp-step">
-                <strong>First, register Microsoft's Power Platform API in this tenant</strong>
-                <p className="pp-muted">
-                  This tenant doesn't have it yet, so nobody can sign in to it. Sign in as an Application Administrator or Cloud
-                  Application Administrator and accept the permission request.
-                </p>
-                <button className="btn-run" onClick={register} disabled={busy}>
-                  <LogIn size={14} aria-hidden="true"/> {step === "registering" ? "Waiting for Microsoft sign-in…" : "Register the Power Platform API"}
-                </button>
-              </div>
-            ) : (
-              <div className="pp-step">
-                {step === "registered" && <p className="pp-ok">Power Platform API registered. Now read the inventory.</p>}
-                <button className="btn-run" onClick={read} disabled={busy}>
-                  <LogIn size={14} aria-hidden="true"/> {step === "reading" ? "Reading…" : "Read with Microsoft sign-in"}
-                </button>
-              </div>
-            )}
-            {feedback}
-            <div className="pp-actions">
-              <a className="pp-link" href={RBAC_DOCS_URL} target="_blank" rel="noopener noreferrer">Who can read the inventory <ExternalLink size={12} aria-hidden="true"/></a>
-            </div>
-          </div>
-        </Card>
-      </div>
-    );
-  }
-
-  const s = inv.summary;
-  const envs = inv.environments;
-  const agentsPublished = inv.agents.filter(a => a.published).length;
+  const openAlerts = alerts.filter(a => OPEN.has(a.status));
+  const openHigh = openAlerts.filter(a => severityRank(a.severity) <= 1).length;
 
   return (
     <div className="page">
-      {inv.notes.length > 0 && (
-        <div className="notice-warn" role="status">
-          <AlertTriangle size={16} aria-hidden="true"/>
-          <div>
-            <strong>Part of the inventory couldn't be read</strong>
-            {inv.notes.map(n => <p key={n}>{n}</p>)}
-          </div>
-        </div>
-      )}
+      <PurviewAuditPanel/>
+      <p className="pp-muted pp-note">
+        From Microsoft's audit log, read in the background with Vigil365's own read-only permission. Microsoft can take up to
+        24 hours to log an action, so an alert can arrive hours after the change.
+      </p>
 
-      <div className="stat-row-5">
-        <StatCard label="Environments" value={s.environments} sub={`${envs.filter(e => e.isManaged).length} managed`}/>
-        <StatCard label="Copilot agents" value={s.agents} sub={`${agentsPublished} published · ${s.agentsWithoutSignIn} without sign-in`}/>
-        <StatCard label="Canvas apps" value={s.apps} sub={inv.appDetails ? `${s.consentBypassed} bypass consent` : "sharing detail not read"}/>
-        <StatCard label="Cloud flows" value={s.flows} sub={`${inv.flows.filter(f => hasPrefix(f.flags, "High-risk connector")).length} with a high-risk connector`}/>
-        <StatCard label="Need a look" value={s.needALook} sub={`${s.ownerGone} with an owner who left or is disabled`}/>
+      <div className="stat-row-4">
+        <StatCard label="Open alerts" value={openAlerts.length} sub="new or acknowledged"/>
+        <StatCard label="Open, high" value={openHigh} sub={openHigh ? "look at these first" : "none"}/>
+        <StatCard label="Events in 7 days" value={weekTotal ?? "—"} sub={weekTotal === undefined ? "loading" : weekTotal === null ? "couldn't be read" : "agents, flows, apps and admin changes"}/>
+        <StatCard label="Rules on" value={enabledRules.length} sub={`of ${rules.length} Power Platform and agent rules`}/>
       </div>
 
-      <div className="pp-toolbar">
-        <select className="filter-sel" aria-label="Filter by environment" value={environment} onChange={e => setEnvironment(e.target.value)}>
-          <option value="">All environments</option>
-          {envs.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-        </select>
-        <span className="pp-muted">Read {new Date(inv.readAt).toLocaleString()} with your sign-in</span>
-        <button className="btn-export" onClick={read} disabled={busy}>
-          <RefreshCw size={13} aria-hidden="true"/> {step === "reading" ? "Reading…" : "Read again"}
-        </button>
-      </div>
-      {feedback}
-
-      <Card title="Copilot Studio agents" badge={<Badge label={`${s.agents} agent${s.agents === 1 ? "" : "s"}`} tone="neutral"/>}
+      <Card title="Alerts" badge={<Badge label={`${shownAlerts.length} shown`} tone="neutral"/>}
         action={
           <div className="copilot-filters">
             <label className="search-box">
               <Search size={14}/>
-              <input className="search-input" aria-label="Search agents" value={agentSearch} onChange={e => setAgentSearch(e.target.value)} placeholder="Agent, owner or connector"/>
+              <input className="search-input" aria-label="Search alerts" value={alertSearch} onChange={e => setAlertSearch(e.target.value)} placeholder="Rule, entity or assignee"/>
             </label>
-            <select className="filter-sel" aria-label="Filter agents" value={agentFilter} onChange={e => setAgentFilter(e.target.value)}>
-              <option value="">All agents</option>
-              <option value="flagged">Need a look</option>
-              <option value="nosignin">No sign-in required</option>
-              <option value="tenant">Shared with the whole organisation</option>
-              <option value="published">Published</option>
-              <option value="draft">Draft</option>
+            <select className="filter-sel" aria-label="Filter alerts by status" value={alertStatus} onChange={e => setAlertStatus(e.target.value)}>
+              <option value="open">Open</option>
+              <option value="">All statuses</option>
+              <option value="new">New</option>
+              <option value="acknowledged">Acknowledged</option>
+              <option value="snoozed">Snoozed</option>
+              <option value="resolved">Resolved</option>
             </select>
-            <ExportDropdown filename="copilot-studio-agents.csv" scopeTotal={inv.agents.length}
-              rows={agents.map(a => ({ Agent: a.name, Environment: a.environmentName, Owner: ownerText(a.owner, a.ownerId), Published: a.published ?? "",
-                SignIn: a.authentication ?? "", SharedWithOrganisation: a.sharedWithTenant, SharedUsers: a.sharedUsers, SharedGroups: a.sharedGroups,
-                Channels: a.channels.join("; "), Connectors: a.connectors.map(connectorName).join("; "), Flags: a.flags.map(f => f.label).join("; ") }))}/>
+            <select className="filter-sel" aria-label="Filter alerts by severity" value={alertSeverity} onChange={e => setAlertSeverity(e.target.value)}>
+              <option value="">All severities</option>
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+            <select className="filter-sel" aria-label="Filter alerts by product" value={alertProduct} onChange={e => setAlertProduct(e.target.value)}>
+              <option value="">Agents and Power Platform</option>
+              <option value="Copilot agents">Copilot agents</option>
+              <option value="Power Platform">Power Platform</option>
+            </select>
+            <ExportDropdown filename="power-platform-alerts.csv"
+              rows={shownAlerts.map(a => ({ Severity: a.severity, Rule: a.policyName, Product: productOfCategory(a.category), Triggered: a.triggeredAt, Status: statusLabel[a.status] ?? a.status, AssignedTo: a.assignedTo ?? "", Condition: a.condition }))}/>
           </div>
         }>
-        {agents.length === 0 ? <EmptyState message={s.agents === 0 ? "No Copilot Studio agents in the inventory." : "No agents match these filters."}/> : (
-          <>
-            <div className="tbl-wrap">
-              <table className="data-tbl">
-                <thead><tr><th scope="col">Agent</th><th scope="col">Environment</th><th scope="col">Owner</th><th scope="col">Published</th><th scope="col">Sign-in</th><th scope="col">Shared with</th><th scope="col">Flags</th></tr></thead>
-                <tbody>
-                  {agents.slice(0, ROW_LIMIT).map(a => (
-                    <tr key={a.environmentId + a.id}>
-                      <td>{a.name}{a.channels.length ? <span className="copilot-upn">{a.channels.join(", ")}</span> : null}</td>
-                      <td className="al-date">{a.environmentName}</td>
-                      <td className="al-date">{ownerText(a.owner, a.ownerId)}</td>
-                      <td className="al-date">{a.published ? fmtDay(a.published) : "Draft"}</td>
-                      <td className="al-date">{a.authentication ?? "—"}</td>
-                      <td className="al-date">{a.sharedWithTenant ? "Everyone" : sharedText(a.sharedUsers, a.sharedGroups)}</td>
-                      <td><Flags flags={a.flags}/></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <Truncated shown={Math.min(agents.length, ROW_LIMIT)} total={agents.length}/>
-          </>
-        )}
-      </Card>
-
-      <Card title="Canvas apps" badge={<Badge label={`${s.apps} app${s.apps === 1 ? "" : "s"}`} tone="neutral"/>}
-        action={
-          <div className="copilot-filters">
-            <label className="search-box">
-              <Search size={14}/>
-              <input className="search-input" aria-label="Search apps" value={appSearch} onChange={e => setAppSearch(e.target.value)} placeholder="App, owner or connector"/>
-            </label>
-            <select className="filter-sel" aria-label="Filter apps" value={appFilter} onChange={e => setAppFilter(e.target.value)}>
-              <option value="">All apps</option>
-              <option value="flagged">Need a look</option>
-              <option value="consent">Consent prompt bypassed</option>
-              <option value="highrisk">High-risk connector</option>
-              <option value="shared">Shared widely</option>
-              <option value="custom">Custom connector</option>
-              <option value="owner">Owner left or disabled</option>
-            </select>
-            <ExportDropdown filename="power-platform-apps.csv" scopeTotal={inv.apps.length}
-              rows={apps.map(a => ({ App: a.name, Environment: a.environmentName, Owner: ownerText(a.owner, a.ownerId), SharedUsers: a.sharedUsers ?? "", SharedGroups: a.sharedGroups ?? "",
-                Connectors: a.connectors.map(connectorName).join("; "), Flags: a.flags.map(f => f.label).join("; "), Modified: a.modified ?? "" }))}/>
-          </div>
-        }>
-        {apps.length === 0 ? <EmptyState message={s.apps === 0 ? "No canvas apps in the inventory." : "No apps match these filters."}/> : (
-          <>
-            <div className="tbl-wrap">
-              <table className="data-tbl">
-                <thead><tr><th scope="col">App</th><th scope="col">Environment</th><th scope="col">Owner</th><th scope="col">Shared with</th><th scope="col">Connectors</th><th scope="col">Flags</th><th scope="col">Modified</th></tr></thead>
-                <tbody>
-                  {apps.slice(0, ROW_LIMIT).map(a => (
-                    <tr key={a.environmentId + a.id}>
-                      <td>{a.name}</td>
-                      <td className="al-date">{a.environmentName}</td>
-                      <td className="al-date">{ownerText(a.owner, a.ownerId)}</td>
-                      <td className="al-date">{a.sharedUsers === null ? "—" : sharedText(a.sharedUsers, a.sharedGroups ?? 0)}</td>
-                      <td className="al-date">{connectorsText(a.connectors)}</td>
-                      <td><Flags flags={a.flags}/></td>
-                      <td className="al-date">{a.modified ? fmtDay(a.modified) : "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <Truncated shown={Math.min(apps.length, ROW_LIMIT)} total={apps.length}/>
-          </>
-        )}
-      </Card>
-
-      <Card title="Cloud flows" badge={<Badge label={`${s.flows} flow${s.flows === 1 ? "" : "s"}`} tone="neutral"/>}
-        action={
-          <div className="copilot-filters">
-            <label className="search-box">
-              <Search size={14}/>
-              <input className="search-input" aria-label="Search flows" value={flowSearch} onChange={e => setFlowSearch(e.target.value)} placeholder="Flow, creator or connector"/>
-            </label>
-            <select className="filter-sel" aria-label="Filter flows" value={flowFilter} onChange={e => setFlowFilter(e.target.value)}>
-              <option value="">All flows</option>
-              <option value="flagged">Need a look</option>
-              <option value="highrisk">High-risk connector</option>
-              <option value="owner">Creator left or disabled</option>
-            </select>
-            <ExportDropdown filename="power-platform-flows.csv" scopeTotal={inv.flows.length}
-              rows={flows.map(f => ({ Flow: f.name, Environment: f.environmentName, CreatedBy: ownerText(f.owner, f.ownerId), Trigger: f.trigger ?? "",
-                Connectors: f.connectors.map(connectorName).join("; "), Flags: f.flags.map(x => x.label).join("; "), Modified: f.modified ?? "" }))}/>
-          </div>
-        }>
-        <p className="pp-muted pp-note">Microsoft lists the connectors a flow uses, not its built-in actions: a flow calling a web service through the built-in HTTP action shows no connector for it.</p>
-        {flows.length === 0 ? <EmptyState message={s.flows === 0 ? "No cloud flows in the inventory." : "No flows match these filters."}/> : (
-          <>
-            <div className="tbl-wrap">
-              <table className="data-tbl">
-                <thead><tr><th scope="col">Flow</th><th scope="col">Environment</th><th scope="col">Created by</th><th scope="col">Trigger</th><th scope="col">Connectors</th><th scope="col">Flags</th><th scope="col">Modified</th></tr></thead>
-                <tbody>
-                  {flows.slice(0, ROW_LIMIT).map(f => (
-                    <tr key={f.environmentId + f.id}>
-                      <td>{f.name}</td>
-                      <td className="al-date">{f.environmentName}</td>
-                      <td className="al-date">{ownerText(f.owner, f.ownerId)}</td>
-                      <td className="al-date">{f.trigger ?? "—"}</td>
-                      <td className="al-date">{connectorsText(f.connectors)}</td>
-                      <td><Flags flags={f.flags}/></td>
-                      <td className="al-date">{f.modified ? fmtDay(f.modified) : "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <Truncated shown={Math.min(flows.length, ROW_LIMIT)} total={flows.length}/>
-          </>
-        )}
-      </Card>
-
-      <Card title="Environments" badge={<Badge label={`${s.environments}`} tone="neutral"/>}>
-        <div className="tbl-wrap">
-          <table className="data-tbl">
-            <thead><tr><th scope="col">Environment</th><th scope="col">Type</th><th scope="col">Region</th><th scope="col">Managed</th><th scope="col">Agents</th><th scope="col">Apps</th><th scope="col">Flows</th></tr></thead>
-            <tbody>
-              {envs.map(e => (
-                <tr key={e.id}>
-                  <td>{e.name}</td>
-                  <td className="al-date">{e.type ?? "—"}</td>
-                  <td className="al-date">{e.region ?? "—"}</td>
-                  <td className="al-date">{e.isManaged === null ? "—" : e.isManaged ? "Yes" : "No"}</td>
-                  <td className="al-date">{e.agents}</td>
-                  <td className="al-date">{e.apps}</td>
-                  <td className="al-date">{e.flows}</td>
+        {shownAlerts.length === 0 ? (
+          <EmptyState icon={<BellRing size={24}/>} message={alerts.length === 0
+            ? "No Power Platform or agent alerts yet. They appear here when a rule below matches an audit event."
+            : "No alerts match these filters."}/>
+        ) : (
+          <div className="tbl-wrap">
+            <table className="data-tbl">
+              <thead>
+                <tr>
+                  <SortTh label="Severity" col="severity" sortBy={alertSort} sortDir={alertDir} onSort={onAlertSort}/>
+                  <SortTh label="Rule" col="rule" sortBy={alertSort} sortDir={alertDir} onSort={onAlertSort}/>
+                  <th scope="col">Product</th>
+                  <SortTh label="Triggered" col="triggered" sortBy={alertSort} sortDir={alertDir} onSort={onAlertSort}/>
+                  <SortTh label="Status" col="status" sortBy={alertSort} sortDir={alertDir} onSort={onAlertSort}/>
+                  <th scope="col">Assigned to</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {shownAlerts.map(a => (
+                  <tr key={a.id} className="tbl-row-click" {...rowActivation(() => onOpenAlert(a.id), `Open ${a.policyName} in the Alert Center`)}>
+                    <td><Badge label={a.severity} tone={sevTone(a.severity)}/></td>
+                    <td>{a.policyName}</td>
+                    <td>{productOfCategory(a.category)}</td>
+                    <td className="al-date" title={fmtDate(a.triggeredAt)}>{relTime(a.triggeredAt) || fmtDate(a.triggeredAt)}</td>
+                    <td><Badge label={statusLabel[a.status] ?? a.status} tone={statusTone(a.status)}/></td>
+                    <td>{a.assignedTo || <span className="pp-muted">Nobody</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="pp-muted pp-truncated">Select an alert to acknowledge, assign or resolve it in the Alert Center.</p>
+        {triggeredAlerts.length >= 500 && (
+          <p className="pp-muted pp-truncated">Vigil365 loads the newest 500 alerts across every area, so older Power Platform alerts may not be counted here.</p>
+        )}
       </Card>
 
-      <div className="pp-footer">
-        <p className="pp-muted">Read with your own Microsoft sign-in. Vigil365's app has no Power Platform access, and the read isn't stored.</p>
-      </div>
+      <Card title="Activity" badge={<Badge label={events ? `${eventsTotal} in ${days} days` : eventsFailed ? "couldn't load" : "loading"} tone="neutral"/>}
+        action={
+          <div className="copilot-filters">
+            <label className="search-box">
+              <Search size={14}/>
+              <input className="search-input" aria-label="Search activity" value={eventSearch} onChange={e => setEventSearch(e.target.value)} placeholder="Activity, who or what"/>
+            </label>
+            <select className="filter-sel" aria-label="Filter activity by product" value={product} onChange={e => setProduct(e.target.value)}>
+              <option value="">All products</option>
+              {PRODUCTS.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <select className="filter-sel" aria-label="Activity period" value={days} onChange={e => setDays(Number(e.target.value))}>
+              <option value={7}>Last 7 days</option>
+              <option value={30}>Last 30 days</option>
+              <option value={90}>Last 90 days</option>
+            </select>
+            <label className="pp-check">
+              <input type="checkbox" checked={wouldAlertOnly} onChange={e => setWouldAlertOnly(e.target.checked)}/> Only what a rule alerts on
+            </label>
+            <ExportDropdown filename="power-platform-activity.csv" scopeTotal={eventsTotal}
+              rows={shownEvents.map(({ e, rule, counts }) => ({ When: e.occurredAt, Product: e.category ?? "", Activity: e.activity, Who: e.actorUpn ?? e.actorApp ?? "", Target: e.targetName ?? "", Result: e.result ?? "", Rule: rule?.name ?? (counts ? `Counts towards: ${counts.name}` : "") }))}/>
+          </div>
+        }>
+        {eventsFailed ? (
+          <EmptyState message="Couldn't load the activity: the API request failed. Refresh to try again."/>
+        ) : events === null ? (
+          <p className="pp-muted">Loading activity…</p>
+        ) : shownEvents.length === 0 ? (
+          <EmptyState icon={<Workflow size={24}/>} message={events.length === 0
+            ? `Nothing logged in the last ${days} days. If the status above says a permission is missing, grant it first.`
+            : "No activity matches these filters."}/>
+        ) : (
+          <div className="tbl-wrap">
+            <table className="data-tbl">
+              <thead>
+                <tr>
+                  <SortTh label="When" col="when" sortBy={eventSort} sortDir={eventDir} onSort={onEventSort}/>
+                  <SortTh label="Product" col="product" sortBy={eventSort} sortDir={eventDir} onSort={onEventSort}/>
+                  <SortTh label="Activity" col="activity" sortBy={eventSort} sortDir={eventDir} onSort={onEventSort}/>
+                  <SortTh label="Who" col="who" sortBy={eventSort} sortDir={eventDir} onSort={onEventSort}/>
+                  <th scope="col">What</th>
+                  <th scope="col">Rule</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shownEvents.map(({ e, rule, counts }) => (
+                  <tr key={e.id}>
+                    <td className="al-date" title={fmtDate(e.occurredAt)}>{fmtDate(e.occurredAt)}</td>
+                    <td>{e.category ?? "—"}</td>
+                    <td>{e.activity}{e.result === "failure" ? <> <Badge label="failed" tone="neutral"/></> : null}</td>
+                    <td>{e.actorUpn ?? e.actorApp ?? "—"}</td>
+                    <td>{e.targetName ?? "—"}</td>
+                    <td>{rule ? <Badge label={`Would alert: ${rule.name}`} tone={sevTone(rule.severity)}/>
+                      : counts ? <Badge label={`Counts towards: ${counts.name}`} tone="neutral"/>
+                      : <span className="pp-muted">—</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {events && events.length < eventsTotal && (
+          <div className="pp-center">
+            <button className="btn-export" onClick={loadMore} disabled={loadingMore}>
+              {loadingMore ? "Loading…" : `Load more (${events.length} of ${eventsTotal})`}
+            </button>
+          </div>
+        )}
+        {loadMoreFailed && <p className="pp-muted pp-truncated" role="status">Couldn't load more activity. Try again.</p>}
+      </Card>
+
+      <Card title="Rules" badge={<Badge label={`${enabledRules.length} on`} tone="neutral"/>}
+        action={
+          <div className="copilot-filters">
+            <label className="search-box">
+              <Search size={14}/>
+              <input className="search-input" aria-label="Search rules" value={ruleSearch} onChange={e => setRuleSearch(e.target.value)} placeholder="Rule or pattern"/>
+            </label>
+            <select className="filter-sel" aria-label="Filter rules by state" value={ruleState} onChange={e => setRuleState(e.target.value)}>
+              <option value="">On and off</option>
+              <option value="on">On</option>
+              <option value="off">Off</option>
+            </select>
+            <ExportDropdown filename="power-platform-rules.csv"
+              rows={shownRules.map(r => ({ Rule: r.name, Product: productOfCategory(r.category), Pattern: r.activityPattern ?? "", Severity: r.severity, On: r.enabled ? "yes" : "no", Condition: r.condition, LastTriggered: r.lastTriggered ?? "", Triggered: r.triggerCount }))}/>
+            <button className="btn-export" onClick={() => crossNavigate({ page: "alertcenter", tab: "policies" })}><ListChecks size={13}/> Open in Alert Center</button>
+          </div>
+        }>
+        {shownRules.length === 0 ? (
+          <EmptyState message={rules.length === 0 ? "No Power Platform or agent rules yet. Vigil365 adds them when it starts." : "No rules match these filters."}/>
+        ) : (
+          <div className="tbl-wrap">
+            <table className="data-tbl">
+              <thead>
+                <tr>
+                  <SortTh label="Rule" col="name" sortBy={ruleSort} sortDir={ruleDir} onSort={onRuleSort}/>
+                  <th scope="col">Product</th>
+                  <th scope="col">When</th>
+                  <SortTh label="Severity" col="severity" sortBy={ruleSort} sortDir={ruleDir} onSort={onRuleSort}/>
+                  <th scope="col">State</th>
+                  <SortTh label="Last triggered" col="lastTriggered" sortBy={ruleSort} sortDir={ruleDir} onSort={onRuleSort}/>
+                </tr>
+              </thead>
+              <tbody>
+                {shownRules.map(r => (
+                  <tr key={r.id}>
+                    <td>{r.name}</td>
+                    <td>{productOfCategory(r.category)}</td>
+                    <td className="mono-cell">{r.condition}</td>
+                    <td><Badge label={r.severity} tone={sevTone(r.severity)}/></td>
+                    <td><Badge label={r.enabled ? "On" : "Off"} tone={r.enabled ? "good" : "neutral"}/></td>
+                    <td className="al-date">{r.lastTriggered ? fmtDate(r.lastTriggered) : "Never"}{r.triggerCount ? ` · ${r.triggerCount}×` : ""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

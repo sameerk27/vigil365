@@ -20,7 +20,8 @@
   "optional": [
     { "name": "AttackSimulation.ReadWrite.All", "feature": "Attack simulation results (Graph has no read-only variant; a tenant may refuse it)" },
     { "name": "SecurityIdentitiesHealth.Read.All", "feature": "Defender for Identity sensor health" },
-    { "name": "AuditLogsQuery.Read.All", "feature": "Copilot agent, Power Automate and Power Apps alerts (Purview audit search)" },
-    { "name": "DeviceManagementConfiguration.Read.All", "feature": "Intune compliance policies (licence posture)" }
+    { "name": "AuditLogsQuery.Read.All", "feature": "Copilot agent, Power Automate, Power Apps and Power Platform admin alerts (Purview audit search)" },
+    { "name": "DeviceManagementConfiguration.Read.All", "feature": "Intune compliance policies (licence posture)" },
+    { "name": "InformationProtectionPolicy.Read.All", "feature": "Purview sensitivity labels (Compliance page)" }
   ]
 }

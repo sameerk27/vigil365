@@ -13,7 +13,7 @@
       "reads": "graph",
       "rule": "caMfaAllUsers",
       "whyItMatters": "A password alone is the most common way into a Microsoft 365 tenant. A policy that asks everyone for a second factor stops most of those sign-ins.",
-      "minimum": "An enabled Conditional Access policy for all users that requires MFA or an authentication strength.",
+      "minimum": "An enabled Conditional Access policy for all users and all resources that requires MFA or an authentication strength, with no conditions (such as trusted locations) that skip some sign-ins and no other control accepted instead.",
       "fix": [
         "In the Microsoft Entra admin center, open Conditional Access and create a policy for all users and all resources.",
         "Grant access only with multifactor authentication, and exclude two break-glass accounts.",
@@ -30,7 +30,7 @@
       "reads": "graph",
       "rule": "caBlockLegacyAuth",
       "whyItMatters": "Old sign-in protocols can't do MFA, so attackers use them to try stolen passwords without being challenged.",
-      "minimum": "An enabled Conditional Access policy for all users that blocks Exchange ActiveSync and other legacy clients.",
+      "minimum": "An enabled Conditional Access policy for all users and all resources that blocks Exchange ActiveSync and other legacy clients.",
       "fix": [
         "Create a Conditional Access policy for all users and all resources.",
         "Under Conditions, Client apps, select Exchange ActiveSync clients and Other clients.",
@@ -80,7 +80,7 @@
       "reads": "graph",
       "rule": "caBlockHighRisk",
       "whyItMatters": "Microsoft scores users and sign-ins that look compromised. Blocking the high-risk ones stops an attacker who already has the password.",
-      "minimum": "Enabled Conditional Access policies that block high user risk and high sign-in risk.",
+      "minimum": "Two enabled Conditional Access policies for all users and all resources: one that blocks high user risk and one that blocks high sign-in risk.",
       "fix": [
         "Create a Conditional Access policy for all users with User risk set to High, and Grant set to Block.",
         "Create a second policy with Sign-in risk set to High, and Grant set to Block."

@@ -7,7 +7,6 @@ import { recApi, caApi } from "../services/api";
 // CA gap analysis and SharePoint/OneDrive sharing posture produce the same
 // shape of insight (finding + why + remediation). Surfacing them here keeps ONE
 // place to answer "what should I fix?", instead of three scattered cards.
-const sevRank = (s: string) => ({ critical: 0, high: 1, medium: 2, low: 3 } as Record<string, number>)[s] ?? 4;
 
 function findingToRec(f: CaGapFinding, idx: number, source: "ca" | "sharing"): SecurityRecommendation {
   return {
@@ -25,7 +24,7 @@ function findingToRec(f: CaGapFinding, idx: number, source: "ca" | "sharing"): S
   };
 }
 import { KpiTile, Card, Badge, EmptyState, LoadingSkeleton } from "../components/SharedComponents";
-import { sevTone } from "../services/utils";
+import { sevTone, severityRank } from "../services/utils";
 
 export function RecommendationsPage() {
   const [recommendations, setRecommendations] = useState<SecurityRecommendation[]>([]);
@@ -47,7 +46,7 @@ export function RecommendationsPage() {
       ...(recs ?? []),
       ...(gaps?.findings ?? []).map((f, i) => findingToRec(f, i, "ca")),
       ...(sharing?.findings ?? []).map((f, i) => findingToRec(f, i, "sharing")),
-    ].sort((a, b) => sevRank(a.severity) - sevRank(b.severity));
+    ].sort((a, b) => severityRank(a.severity) - severityRank(b.severity));
 
     if (recs === null && gaps === null && sharing === null) {
       setError("Could not load recommendations — the API request failed. Refresh to retry.");

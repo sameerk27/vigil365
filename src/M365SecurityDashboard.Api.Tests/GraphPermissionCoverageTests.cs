@@ -30,6 +30,7 @@ public sealed class GraphPermissionCoverageTests
         ["auditLogs/directoryAudits"] = ["AuditLog.Read.All"],
         ["reports/authenticationMethods/userRegistrationDetails"] = ["AuditLog.Read.All", "Reports.Read.All"],
         ["reports/getMicrosoft365CopilotUsageUserDetail"] = ["Reports.Read.All"],
+        ["security/informationProtection/sensitivityLabels"] = ["InformationProtectionPolicy.Read.All"],
         ["deviceManagement/managedDevices"] = ["DeviceManagementManagedDevices.Read.All"],
         ["deviceManagement/deviceCompliancePolicies"] = ["DeviceManagementConfiguration.Read.All"],
         ["identity/conditionalAccess/policies"] = ["Policy.Read.All"],

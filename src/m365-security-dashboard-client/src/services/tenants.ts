@@ -79,8 +79,19 @@ export interface QueueItem {
   condition: string; metricValue: number; triggeredAt: string; status: string; assignedTo: string | null; snoozedUntil: string | null;
 }
 
+/** The queue as loaded: capped by the server (most severe first), with how many open alerts there are in all. */
+export interface QueuePage { items: QueueItem[]; total: number }
+
 export const queueApi = {
-  list: () => call<QueueItem[]>("/api/tenants/alerts"),
+  list: async (): Promise<Result<QueuePage>> => {
+    const r = await call<QueueItem[] | Partial<QueuePage>>("/api/tenants/alerts");
+    if (!r.ok) return { ok: false, error: r.error, retryable: r.retryable };
+    // An older server sends the bare list.
+    const v = r.value;
+    if (Array.isArray(v)) return { ok: true, value: { items: v, total: v.length } };
+    const items = v.items ?? [];
+    return { ok: true, value: { items, total: Math.max(v.total ?? 0, items.length) } };
+  },
   /** Acts in the alert's own client (explicit header), not the selected one. */
   act: (item: Pick<QueueItem, "id" | "tenantId">, action: "acknowledge" | "resolve") =>
     call(`/api/triggered-alerts/${item.id}/${action}`, { method: "POST", headers: { "X-Vigil-Tenant": item.tenantId } }),

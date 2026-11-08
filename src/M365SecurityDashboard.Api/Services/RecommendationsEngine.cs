@@ -10,7 +10,13 @@ public static class RecommendationsEngine
     {
         var list = new List<SecurityRecommendation>();
 
-        var mfaMissing = await db.SecurityAlerts.AsNoTracking().CountAsync(a => a.AlertType == "MfaStatus" && !a.IsResolved, ct);
+        // One grouped count instead of a query per recommendation.
+        var open = await db.SecurityAlerts.AsNoTracking().Where(a => !a.IsResolved)
+            .GroupBy(a => a.AlertType).Select(g => new { Type = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.Type, x => x.Count, ct);
+        int Open(string alertType) => open.GetValueOrDefault(alertType);
+
+        var mfaMissing = Open("MfaStatus");
         list.Add(new SecurityRecommendation
         {
             Id = "rec-mfa-registration",
@@ -29,7 +35,7 @@ public static class RecommendationsEngine
             PortalDeepLink = "https://entra.microsoft.com/#view/Microsoft_AAD_IAM/AuthenticationMethodsMenuBlade/~/AdminAuthMethods"
         });
 
-        var riskyUsers = await db.SecurityAlerts.AsNoTracking().CountAsync(a => a.AlertType == "RiskyUser" && !a.IsResolved, ct);
+        var riskyUsers = Open("RiskyUser");
         list.Add(new SecurityRecommendation
         {
             Id = "rec-risky-users",
@@ -48,7 +54,7 @@ public static class RecommendationsEngine
             PortalDeepLink = "https://entra.microsoft.com/#view/Microsoft_AAD_IAM/RiskyUsersBlade"
         });
 
-        var nonCompliantDevices = await db.SecurityAlerts.AsNoTracking().CountAsync(a => a.AlertType == "NonCompliantDevice" && !a.IsResolved, ct);
+        var nonCompliantDevices = Open("NonCompliantDevice");
         list.Add(new SecurityRecommendation
         {
             Id = "rec-device-compliance",
@@ -86,7 +92,7 @@ public static class RecommendationsEngine
             PortalDeepLink = "https://security.microsoft.com/quarantine"
         });
 
-        var staleDevices = await db.SecurityAlerts.AsNoTracking().CountAsync(a => a.AlertType == "StaleDevice" && !a.IsResolved, ct);
+        var staleDevices = Open("StaleDevice");
         list.Add(new SecurityRecommendation
         {
             Id = "rec-stale-devices",

@@ -63,8 +63,8 @@ public sealed class RouteAuthorizationTests
     /// <summary>
     /// Of the anonymous routes, the SIEM ones take an API token in the handler, and /consented
     /// is Microsoft's redirect back, checked against the one-time nonce in the consent link.
-    /// "SignedIn" means any role, Viewer included, so a write there is a deliberate choice:
-    /// the Power Platform evaluation stores nothing, and is open so a Viewer can use that page.
+    /// "SignedIn" means any role, Viewer included, so it is for reads only: every write needs
+    /// Analyst or Admin.
     /// </summary>
     private const string Expected = """
 GET /api/admin/audit-log = RequireAdmin
@@ -141,8 +141,6 @@ PUT /api/notification-settings = RequireAdmin
 POST /api/notification-settings/test = RequireAdmin
 GET /api/posture = SignedIn
 GET /api/posture/report.html = SignedIn
-POST /api/power-platform/inventory/evaluate = SignedIn
-GET /api/power-platform/settings = SignedIn
 GET /api/purview-audit/status = SignedIn
 GET /api/recommendations = SignedIn
 GET /api/report-schedules = RequireAnalyst
@@ -210,8 +208,7 @@ GET /health = Anonymous
         Assert.Equal(
             ["GET /api/auth/config", "GET /api/siem/alerts", "GET /api/siem/health", "GET /consented", "GET /health"],
             routes.Where(r => r.EndsWith(" = Anonymous")).Select(r => r[..^" = Anonymous".Length]).Order(StringComparer.Ordinal));
-        Assert.Equal(
-            ["POST /api/power-platform/inventory/evaluate"],
-            routes.Where(r => r.EndsWith(" = SignedIn") && !r.StartsWith("GET ")).Select(r => r[..^" = SignedIn".Length]));
+        // Every write needs a role: Viewers only read.
+        Assert.Empty(routes.Where(r => r.EndsWith(" = SignedIn") && !r.StartsWith("GET ")));
     }
 }

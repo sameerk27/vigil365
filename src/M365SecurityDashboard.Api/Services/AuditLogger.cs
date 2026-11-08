@@ -6,6 +6,7 @@ using M365SecurityDashboard.Api.Data;
 using M365SecurityDashboard.Api.Data.Tenancy;
 using M365SecurityDashboard.Api.Models;
 using Microsoft.EntityFrameworkCore;
+using M365SecurityDashboard.Api.Services.Common;
 
 namespace M365SecurityDashboard.Api.Services;
 
@@ -204,6 +205,7 @@ public sealed class AuditLogger(
     /// </summary>
     private static string? GetClientIp(HttpContext? ctx) => Truncate(ctx?.Connection.RemoteIpAddress?.ToString(), 45);
 
+    // Empty becomes null so optional audit columns stay NULL rather than ''.
     private static string? Truncate(string? value, int max) =>
-        string.IsNullOrEmpty(value) ? null : value.Length <= max ? value : value[..max];
+        string.IsNullOrEmpty(value) ? null : TextLimits.Truncate(value, max);
 }

@@ -312,7 +312,7 @@ HTTPS URL (e.g. `https://vigil365.yourcompany.com`).
 | `GET` | `/api/dashboard/ca-gaps` | Conditional Access gap analysis |
 | `GET` | `/api/dashboard/sharing-posture` | SharePoint/OneDrive sharing posture |
 | `GET` | `/api/dashboard/signin-locations` | Sign-in locations |
-| `GET` | `/api/audit-events` | Tenant directory audit events |
+| `GET` | `/api/audit-events` | Tenant audit events: Entra directory audit (`source=entra`), or Purview audit for Copilot and Power Platform (`source=purviewAudit` or one product) |
 | `GET` | `/api/entity/{kind}/{id}` | Entity investigation timeline (user/device) |
 | `GET` | `/api/setup/status` | First-run setup progress |
 | `GET` | `/api/setup/permissions` | Graph permission reference + status |
@@ -331,7 +331,7 @@ HTTPS URL (e.g. `https://vigil365.yourcompany.com`).
 ### What is in scope by design
 
 - **Read-only, least privilege.** Nearly every Graph permission requested is `*.Read.All`. The one exception is `AttackSimulation.ReadWrite.All`, which Microsoft Graph offers with no read-only variant — the app only reads with it and never launches simulations, though whoever holds the app's secret could. Admin consent grants it with the rest; if you don't use the attack-simulation view, revoke it afterwards. The app **cannot modify** users, devices, policies, or tenant settings. Its only Graph POST starts a Purview audit search (the optional, read-only `AuditLogsQuery.Read.All`, for the Copilot agent and Power Platform alerts); the search job changes nothing in the tenant, and the Graph client refuses a POST to any other path.
-- **Power Platform inventory is read with your own sign-in.** The Power Platform page reads Microsoft's Power Platform inventory in your browser with *your* Microsoft access (Global Administrator, Power Platform Administrator, Dynamics 365 Administrator or Global Reader), through a Microsoft sign-in popup. Your token never reaches the Vigil365 server, which only evaluates what the browser read and names owners through Graph. Vigil365's app gets no Power Platform access: Microsoft would only allow that with Power Platform Administrator rights.
+- **Power Platform alerts come from the audit log.** The Power Platform page shows alerts and activity for Copilot Studio agents, Power Automate, Power Apps and Power Platform admin changes, read by the server from the Purview audit log with the same `AuditLogsQuery.Read.All`. Admin changes come from a third audit search that asks by operation name; it is the same POST and changes nothing in the tenant. Your browser talks only to Vigil365 and Microsoft sign-in. Vigil365's app gets no Power Platform API access: Microsoft would only allow that with Power Platform Administrator rights.
 - **Recommends, never remediates.** The Recommendations view and "Fix in M365 Portal →" links tell you what to change and deep-link you to the right blade, but the app makes **no** changes itself — every remediation happens in Microsoft's tooling, by you.
 - **No inbound exposure by default.** In development the API binds to `localhost`. A production deployment (`deploy.ps1`) runs behind Kestrel with a TLS certificate; anything beyond localhost is a deliberate choice you make.
 - **App-only collection** via MSAL (`Azure.Identity`) using a client secret or certificate; **user sign-in** via Entra with in-app RBAC. Standard Microsoft auth, not a homegrown scheme. All Graph traffic is HTTPS/TLS.

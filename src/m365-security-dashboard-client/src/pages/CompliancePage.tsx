@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from "react";
-import { Shield, FileText, Star, Search, ShieldAlert, ShieldCheck, Flag, ExternalLink, CheckCircle2, XCircle } from "lucide-react";
+import { Shield, FileText, Star, Search, ShieldAlert, ShieldCheck, ExternalLink } from "lucide-react";
 import { SecureScore, Overview, DlpAlertsData, PurviewData, McasAlertsData, InsiderRiskData, AttackSimulationData, DlpAlert, McasAlert, InsiderRiskAlert, AttackSim, Tone, IdentityData, DevicesData, ConditionalAccessData, SecurityIncidentsData, PrivilegedRolesData, EmailProtectionData } from "../services/types";
-import { fmtDate, relTime, pctTone, sevTone } from "../services/utils";
-import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, ProgressBar, ExportDropdown, StatBox, SectHdr, rowActivation, SeverityFilter} from "../components/SharedComponents";
+import { fmtDate, pctTone, filterAlerts, defenderAlertUrl } from "../services/utils";
+import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, ProgressBar, ExportDropdown, StatBox, SectHdr, rowActivation, SeverityFilter, AlertRow, SeverityStatRow } from "../components/SharedComponents";
 import { FilterPresets } from "../components/FilterPresets";
 
 export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcasAlerts, insiderRisk, attackSimulation, identity, devices, ca, securityIncidents, privilegedRoles, emailProtection }: {
@@ -19,26 +19,11 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
   const [alertSearch, setAlertSearch] = useState("");
   const [alertSev, setAlertSev] = useState("");
 
-  const filteredDlp = useMemo(() => {
-    let items = dlpAlerts?.alerts ?? [];
-    if (alertSev) items = items.filter(a=>a.severity.toLowerCase()===alertSev);
-    if (alertSearch) { const q=alertSearch.toLowerCase(); items=items.filter(a=>(a.title??'').toLowerCase().includes(q)||(a.description??'').toLowerCase().includes(q)); }
-    return items;
-  }, [dlpAlerts, alertSev, alertSearch]);
+  const filteredDlp = useMemo(() => filterAlerts(dlpAlerts?.alerts, alertSev, alertSearch, a => [a.title, a.description]), [dlpAlerts, alertSev, alertSearch]);
 
-  const filteredMcas = useMemo(() => {
-    let items = mcasAlerts?.alerts ?? [];
-    if (alertSev) items = items.filter(a=>a.severity.toLowerCase()===alertSev);
-    if (alertSearch) { const q=alertSearch.toLowerCase(); items=items.filter(a=>(a.title??'').toLowerCase().includes(q)||(a.category??'').toLowerCase().includes(q)); }
-    return items;
-  }, [mcasAlerts, alertSev, alertSearch]);
+  const filteredMcas = useMemo(() => filterAlerts(mcasAlerts?.alerts, alertSev, alertSearch, a => [a.title, a.category]), [mcasAlerts, alertSev, alertSearch]);
 
-  const filteredIrm = useMemo(() => {
-    let items = insiderRisk?.alerts ?? [];
-    if (alertSev) items = items.filter(a=>a.severity.toLowerCase()===alertSev);
-    if (alertSearch) { const q=alertSearch.toLowerCase(); items=items.filter(a=>(a.title??'').toLowerCase().includes(q)||(a.description??'').toLowerCase().includes(q)); }
-    return items;
-  }, [insiderRisk, alertSev, alertSearch]);
+  const filteredIrm = useMemo(() => filterAlerts(insiderRisk?.alerts, alertSev, alertSearch, a => [a.title, a.description]), [insiderRisk, alertSev, alertSearch]);
 
   const hasAlertFilter = !!(alertSearch || alertSev);
 
@@ -134,7 +119,7 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
       {selectedMcas && (
         <DetailModal title={selectedMcas.title ?? "Cloud App Alert"} subtitle={`${selectedMcas.severity} · MCAS`}
           onClose={()=>setSelectedMcas(null)}
-          portalUrl={selectedMcas.alertWebUrl ?? (selectedMcas.id ? `https://security.microsoft.com/alerts/${selectedMcas.id}` : "https://security.microsoft.com/alerts")}
+          portalUrl={defenderAlertUrl(selectedMcas)}
           portalLabel="View in Defender XDR">
           <DetailField label="Alert ID" value={selectedMcas.id}/>
           <DetailField label="Severity" value={selectedMcas.severity}/>
@@ -147,7 +132,7 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
       {selectedIrm && (
         <DetailModal title={selectedIrm.title ?? "Insider Risk Alert"} subtitle={`${selectedIrm.severity} · IRM`}
           onClose={()=>setSelectedIrm(null)}
-          portalUrl={selectedIrm.alertWebUrl ?? (selectedIrm.id ? `https://security.microsoft.com/alerts/${selectedIrm.id}` : "https://security.microsoft.com/alerts")}
+          portalUrl={defenderAlertUrl(selectedIrm)}
           portalLabel="View in Defender XDR">
           <DetailField label="Alert ID" value={selectedIrm.id}/>
           <DetailField label="Severity" value={selectedIrm.severity}/>
@@ -318,25 +303,14 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
       <div className="two-col">
         <Card title="DLP Alerts" badge={<Badge label={`${filteredDlp.length} / ${dlpAlerts?.total??0} violations`} tone={(dlpAlerts?.total??0)>0?"error":"good"}/>}>
           {dlpAlerts?.error
-            ?<EmptyState icon={<ShieldAlert size={28}/>} message="Needs SecurityAlert.Read.All"/>
+            ?<EmptyState icon={<ShieldAlert size={28}/>} message={dlpAlerts.error}/>
             :(dlpAlerts?.total??0)===0
               ?<EmptyState icon={<ShieldCheck size={28}/>} message="No DLP violations detected"/>
               :(
                 <div className="alert-list">
                   {filteredDlp.length===0&&<div className="td-empty" data-inline-style="inline-43eb55eaea">No violations match the filter.</div>}
                   {filteredDlp.slice(0,8).map((a,i)=>(
-                    <div key={a.id??i} className="al-item" onClick={()=>setSelectedDlp(a)}>
-                      <span className={`sev-dot sev-${a.severity.toLowerCase()}`}/>
-                      <div className="al-body">
-                        <div className="al-title">{a.title}</div>
-                        <div className="row-meta">
-                          <Badge label={a.status} tone={a.status==="resolved"?"good":"warning"}/>
-                          {a.category&&<span className="row-meta-item">{a.category}</span>}
-                          <span className="row-meta-item">{relTime(a.createdDateTime)}</span>
-                        </div>
-                      </div>
-                      <Badge label={a.severity} tone={sevTone(a.severity)}/>
-                    </div>
+                    <AlertRow key={a.id??i} alert={a} onClick={()=>setSelectedDlp(a)}/>
                   ))}
                 </div>
               )
@@ -345,7 +319,7 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
 
         <Card title="Sensitivity Labels" badge={<Badge label={`${purview?.labelCount??0} labels`} tone={(purview?.labelCount??0)>0?"info":"neutral"}/>}>
           {purview?.error
-            ?<EmptyState icon={<FileText size={28}/>} message="Needs InformationProtectionPolicy.Read permission"/>
+            ?<EmptyState icon={<FileText size={28}/>} message={purview.error}/>
             :(purview?.labelCount??0)===0
               ?<EmptyState icon={<FileText size={28}/>} message="No sensitivity labels configured"/>
               :(
@@ -367,33 +341,19 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
       <div className="two-col">
         <Card title="Cloud App Anomalies" badge={<Badge label={`${filteredMcas.length} / ${mcasAlerts?.total??0} alerts`} tone={(mcasAlerts?.total??0)>0?"error":"good"}/>}>
           {mcasAlerts?.error
-            ?<EmptyState icon={<ShieldAlert size={28}/>} message="Needs SecurityAlert.Read.All"/>
+            ?<EmptyState icon={<ShieldAlert size={28}/>} message={mcasAlerts.error}/>
             :(mcasAlerts?.total??0)===0
               ?<EmptyState icon={<ShieldCheck size={28}/>} message="No Cloud App anomalies — no impossible travel, mass downloads, or suspicious OAuth detected"/>
               :(
                 <>
                   <div className="stat-row4" data-inline-style="inline-8d16d0ba00">
-                    <StatBox value={mcasAlerts!.bySeverity?.["high"]??0} label="High" color={(mcasAlerts!.bySeverity?.["high"]??0)>0?"var(--status-error-text)":undefined}/>
-                    <StatBox value={mcasAlerts!.bySeverity?.["medium"]??0} label="Medium" color={(mcasAlerts!.bySeverity?.["medium"]??0)>0?"var(--status-warn-text)":undefined}/>
-                    <StatBox value={mcasAlerts!.bySeverity?.["low"]??0} label="Low"/>
-                    <StatBox value={mcasAlerts!.bySeverity?.["informational"]??0} label="Info"/>
+                    <SeverityStatRow counts={mcasAlerts!.bySeverity}/>
                   </div>
                   <div className="alert-list">
                     <SectHdr>CLOUD APP ALERTS — {filteredMcas.length} shown</SectHdr>
                     {filteredMcas.length===0&&<div className="td-empty" data-inline-style="inline-43eb55eaea">No alerts match the filter.</div>}
                     {filteredMcas.slice(0,8).map((a,i)=>(
-                      <div key={a.id??i} className="al-item" onClick={()=>setSelectedMcas(a)}>
-                        <span className={`sev-dot sev-${a.severity.toLowerCase()}`}/>
-                        <div className="al-body">
-                          <div className="al-title">{a.title}</div>
-                          <div className="row-meta">
-                            {a.category&&<span className="row-meta-item">{a.category}</span>}
-                            <Badge label={a.status} tone={a.status==="resolved"?"good":"warning"}/>
-                            <span className="row-meta-item">{relTime(a.createdDateTime)}</span>
-                          </div>
-                        </div>
-                        <Badge label={a.severity} tone={sevTone(a.severity)}/>
-                      </div>
+                      <AlertRow key={a.id??i} alert={a} onClick={()=>setSelectedMcas(a)}/>
                     ))}
                   </div>
                 </>
@@ -403,32 +363,20 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
 
         <Card title="Insider Risk Management" badge={<Badge label={`${filteredIrm.length} / ${insiderRisk?.total??0} alerts`} tone={(insiderRisk?.total??0)>0?"error":"good"}/>}>
           {insiderRisk?.error
-            ?<EmptyState icon={<ShieldAlert size={28}/>} message="Needs SecurityAlert.Read.All — IRM alerts available if Purview IRM is licensed"/>
+            ?<EmptyState icon={<ShieldAlert size={28}/>} message={insiderRisk.error}/>
             :(insiderRisk?.total??0)===0
-              ?<EmptyState icon={<ShieldCheck size={28}/>} message="No Insider Risk alerts — no data exfiltration or policy violations detected"/>
+              ?<EmptyState icon={<ShieldCheck size={28}/>} message={insiderRisk?.note ?? "No Insider Risk alerts found in Defender alerts."}/>
               :(
                 <>
                   <div className="stat-row3" data-inline-style="inline-8d16d0ba00">
-                    <StatBox value={insiderRisk!.bySeverity?.["high"]??0} label="High" color={(insiderRisk!.bySeverity?.["high"]??0)>0?"var(--status-error-text)":undefined}/>
-                    <StatBox value={insiderRisk!.bySeverity?.["medium"]??0} label="Medium" color={(insiderRisk!.bySeverity?.["medium"]??0)>0?"var(--status-warn-text)":undefined}/>
-                    <StatBox value={insiderRisk!.bySeverity?.["low"]??0} label="Low"/>
+                    <SeverityStatRow counts={insiderRisk!.bySeverity} levels={["high", "medium", "low"]}/>
                   </div>
+                  {insiderRisk!.note && <div className="td-empty">{insiderRisk!.note}</div>}
                   <div className="alert-list">
                     <SectHdr>IRM ALERTS — {filteredIrm.length} shown</SectHdr>
                     {filteredIrm.length===0&&<div className="td-empty" data-inline-style="inline-43eb55eaea">No alerts match the filter.</div>}
                     {filteredIrm.slice(0,8).map((a,i)=>(
-                      <div key={a.id??i} className="al-item" onClick={()=>setSelectedIrm(a)}>
-                        <span className={`sev-dot sev-${a.severity.toLowerCase()}`}/>
-                        <div className="al-body">
-                          <div className="al-title">{a.title}</div>
-                          <div className="row-meta">
-                            {a.category&&<span className="row-meta-item">{a.category}</span>}
-                            <Badge label={a.status} tone={a.status==="resolved"?"good":"warning"}/>
-                            <span className="row-meta-item">{relTime(a.createdDateTime)}</span>
-                          </div>
-                        </div>
-                        <Badge label={a.severity} tone={sevTone(a.severity)}/>
-                      </div>
+                      <AlertRow key={a.id??i} alert={a} onClick={()=>setSelectedIrm(a)}/>
                     ))}
                   </div>
                 </>
@@ -439,7 +387,7 @@ export function CompliancePage({ secureScore, overview, dlpAlerts, purview, mcas
 
       <Card title="Attack Simulation & Training" badge={<Badge label={`${attackSimulation?.total??0} simulations`} tone="neutral"/>}>
         {attackSimulation?.error
-          ?<EmptyState icon={<ShieldAlert size={28}/>} message="Needs AttackSimulation.ReadWrite.All — add permission in Azure App Registration"/>
+          ?<EmptyState icon={<ShieldAlert size={28}/>} message={attackSimulation.error}/>
           :(attackSimulation?.total??0)===0
             ?<EmptyState icon={<ShieldCheck size={28}/>} message="No attack simulations configured — consider running phishing tests to measure user resilience"/>
             :(

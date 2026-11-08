@@ -1,4 +1,5 @@
 using System.Text.Json;
+using static M365SecurityDashboard.Api.Services.Common.JsonRead;
 
 namespace M365SecurityDashboard.Api.Services;
 
@@ -69,6 +70,25 @@ public static class PurviewAuditNormalizer
         ["microsoftFlow", "powerAppsApp", "powerAppsResource", "powerPlatformAdminDlp", "powerPlatformAdminEnvironment", "powerPlatformServiceActivity"];
 
     /// <summary>
+    /// Power Platform admin operations Microsoft logs under the record type
+    /// PowerPlatformAdministratorActivity: DLP policies in their current format, environment
+    /// groups and their rules (sharing limits for apps and flows), an admin taking System
+    /// Administrator, and Customer Lockbox. Graph's auditLogRecordType has no member for that
+    /// type, so the record-type search can't ask for it; a third search asks by these
+    /// documented operation names instead.
+    /// </summary>
+    public static IReadOnlyList<string> PowerPlatformAdminOperations { get; } =
+    [
+        "GovernanceApiPolicyOperation",
+        "NewEnvironmentGroup", "UpdateEnvironmentGroup", "DeleteEnvironmentGroup",
+        "EnvironmentAddedToEnvironmentGroup", "EnvironmentRemovedFromEnvironmentGroup",
+        "CreateRuleSetOperation", "UpdateRuleSetOperation", "DeleteRuleSetOperation",
+        "CreateRuleBasedPolicyOperation", "UpdateRuleBasedPolicyOperation", "DeleteRuleBasedPolicyOperation",
+        "CreateRuleBasedPolicyAssignmentOperation", "DeleteRuleBasedPolicyAssignmentOperation",
+        "ApplyAdminRole", "LockboxRequestOperation",
+    ];
+
+    /// <summary>
     /// The record as an operator should see it, or null when it is not one of ours or
     /// is not worth storing (usage, trials, launches).
     /// </summary>
@@ -77,24 +97,27 @@ public static class PurviewAuditNormalizer
     public static NormalizedAuditEvent? Normalize(JsonElement record, IReadOnlyCollection<string> highRiskConnectors, Func<string, bool> isExternal)
     {
         if (record.ValueKind != JsonValueKind.Object) return null;
-        var operation = Str(record, "operation") ?? "";
-        var recordType = Str(record, "auditLogRecordType") ?? "";
+        var operation = NonBlank(record, "operation") ?? "";
+        var recordType = NonBlank(record, "auditLogRecordType") ?? "";
         var data = record.TryGetProperty("auditData", out var d) && d.ValueKind == JsonValueKind.Object ? d : default;
-        var actor = Str(record, "userPrincipalName") ?? Field(data, "UserUPN");
+        var actor = NonBlank(record, "userPrincipalName") ?? Field(data, "UserUPN");
         var result = ResultOf(Field(data, "ResultStatus"));
 
         foreach (var (label, activity) in CopilotStudioLabels)
         {
             if (!operation.Contains(label, StringComparison.OrdinalIgnoreCase)) continue;
             if (activity is null) return null;
-            var agent = Field(data, "BotName") ?? Field(data, "BotSchemaName") ?? Field(data, "BotId") ?? Str(record, "objectId");
+            var agent = Field(data, "BotName") ?? Field(data, "BotSchemaName") ?? Field(data, "BotId") ?? NonBlank(record, "objectId");
             return new(CopilotAgents, activity, actor, agent, result);
         }
 
+        if (PowerPlatformAdminOperations.FirstOrDefault(o => o.Equals(operation, StringComparison.OrdinalIgnoreCase)) is { } adminOperation)
+            return Admin(record, data, adminOperation, actor, result);
+
         if (Is(recordType, "powerPlatformAdminDlp"))
-            return new(PowerPlatformAdmin, $"Power Platform DLP policy changed ({Readable(operation)})", actor, Field(data, "PolicyName") ?? Str(record, "objectId"), result);
+            return new(PowerPlatformAdmin, result == "failure" ? AdminFailed(operation) : DlpActivity(operation), actor, Field(data, "PolicyName") ?? NonBlank(record, "objectId"), result);
         if (Is(recordType, "powerPlatformAdminEnvironment"))
-            return new(PowerPlatformAdmin, EnvironmentActivity(operation), actor, Field(data, "EnvironmentName") ?? Str(record, "objectId"), result);
+            return new(PowerPlatformAdmin, EnvironmentActivity(operation, PropertyCollection(data)), actor, Field(data, "EnvironmentName") ?? NonBlank(record, "objectId"), result);
 
         if (Is(recordType, "microsoftFlow") || Field(data, "FlowConnectorNames") is not null || Field(data, "FlowDetailsUrl") is not null)
             return Flow(record, data, operation, actor, result, highRiskConnectors, isExternal);
@@ -107,12 +130,91 @@ public static class PurviewAuditNormalizer
         return null;
     }
 
-    private static string EnvironmentActivity(string operation)
+    // Microsoft documents friendly names only for environment events ("Changed property on
+    // environment", "Copied", "Restored"), so they are told apart by keyword. Order matters:
+    // "recover deleted" is a recovery, not a delete. The security group shows up in the
+    // properties of a "changed property" record, not in its operation (assumed; check live).
+    private static string EnvironmentActivity(string operation, Dictionary<string, string> props)
     {
         var op = Squash(operation);
+        if (op.Contains("copy") || op.Contains("copied")) return "Environment copied";
+        if (op.Contains("recover")) return "Environment recovered";
+        if (op.Contains("restore")) return "Environment restored";
+        if (op.Contains("move")) return "Environment moved";
+        if (op.Contains("convert")) return "Environment type converted";
+        if (op.Contains("reset")) return "Environment reset";
+        if (op.Contains("backup") || op.Contains("backedup")) return "Environment backed up";
         if (op.Contains("delete")) return "Environment deleted";
         if (op.Contains("create") || op.Contains("provision")) return "Environment created";
+        // After the lifecycle checks and only on a property change: a record for a new or
+        // deleted environment can list its security group without having changed it.
+        if (op.Contains("securitygroup")
+            || (op.Contains("property") && props.Any(p => Squash(p.Key).Contains("securitygroup") || Squash(p.Value).Contains("securitygroup"))))
+            return "Environment security group changed";
         return $"Environment changed ({Readable(operation)})";
+    }
+
+    // Named so no "deleted" or "changed" rule fires for something that didn't happen.
+    private static string AdminFailed(string operation) => $"Power Platform admin action failed ({Readable(operation)})";
+
+    /// <summary>A DLP policy change named by what it did; deleting one is what weakens protection most.</summary>
+    private static string DlpActivity(string operation)
+    {
+        var op = Squash(operation);
+        if (op.Contains("connector") || op.Contains("pattern") || op.Contains("exempt"))
+            return $"Power Platform connector policy changed ({Readable(operation)})";
+        if (op.Contains("delete") || op.Contains("remove")) return "Power Platform DLP policy deleted";
+        if (op.Contains("create") || op.Contains("new")) return "Power Platform DLP policy created";
+        return $"Power Platform DLP policy changed ({Readable(operation)})";
+    }
+
+    /// <summary>
+    /// Records Microsoft logs as PowerPlatformAdministratorActivity. Their detail sits in
+    /// PropertyCollection: the DLP sub-operation (for example "DeleteDlpPolicy") and the
+    /// resource's display name. Keys are from Microsoft's examples; anything missing falls back
+    /// to the operation name, so a record is never dropped for an unexpected shape.
+    /// </summary>
+    private static NormalizedAuditEvent Admin(JsonElement record, JsonElement data, string operation, string? actor, string? result)
+    {
+        var props = PropertyCollection(data);
+        actor ??= props.GetValueOrDefault("enduser.principal_name");
+        var target = props.GetValueOrDefault("powerplatform.analytics.resource.display_name")
+            ?? props.GetValueOrDefault("powerplatform.analytics.resource.environment.name")
+            ?? Field(data, "PolicyName") ?? Field(data, "EnvironmentName")
+            ?? props.GetValueOrDefault("powerplatform.analytics.resource.id")
+            ?? NonBlank(record, "objectId");
+        var op = Squash(operation);
+        var detail = operation;
+
+        string activity;
+        if (op == "governanceapipolicyoperation")
+        {
+            var sub = props.GetValueOrDefault("powerplatform.analytics.resource.tenant.governance.api_policy.operation_name")
+                ?? props.GetValueOrDefault("powerplatform.analytics.activity.name")
+                ?? Field(data, "Operation") ?? operation;
+            detail = sub;
+            activity = DlpActivity(sub);
+        }
+        else if (op.Contains("ruleset") || op.Contains("rulebasedpolicy"))
+            activity = $"Environment group rules changed ({operation})";
+        else if (op.Contains("environmentgroup"))
+            activity = $"Environment group changed ({operation})";
+        else if (op == "applyadminrole")
+        {
+            activity = "Admin took System Administrator in an environment";
+            target = props.GetValueOrDefault("powerplatform.analytics.resource.environment.name")
+                ?? props.GetValueOrDefault("powerplatform.analytics.resource.environment.id") ?? target;
+        }
+        else
+        {
+            // Lockbox: the request's state key isn't documented, so take whichever property says it.
+            var state = props.FirstOrDefault(p => p.Key.EndsWith(".status", StringComparison.OrdinalIgnoreCase)
+                || p.Key.EndsWith(".state", StringComparison.OrdinalIgnoreCase)).Value;
+            activity = $"Customer Lockbox request ({(string.IsNullOrWhiteSpace(state) ? "updated" : state.Trim())})";
+        }
+        result ??= ResultOf(props.GetValueOrDefault("powerplatform.analytics.resource.tenant.governance.api_policy.operation_result"))
+            ?? ResultOf(props.GetValueOrDefault("powerplatform.analytics.operation.is_successful"));
+        return new(PowerPlatformAdmin, result == "failure" ? AdminFailed(detail) : activity, actor, target, result);
     }
 
     private static NormalizedAuditEvent? Flow(JsonElement record, JsonElement data, string operation, string? actor, string? result,
@@ -121,7 +223,7 @@ public static class PurviewAuditNormalizer
         var op = Squash(operation);
         if (op.Contains("trial")) return null; // licence trials, not a change to anything
 
-        var flow = Field(data, "FlowDisplayName") ?? Field(data, "FlowName") ?? FlowIdFromUrl(Field(data, "FlowDetailsUrl")) ?? Str(record, "objectId");
+        var flow = Field(data, "FlowDisplayName") ?? Field(data, "FlowName") ?? FlowIdFromUrl(Field(data, "FlowDetailsUrl")) ?? NonBlank(record, "objectId");
         var recipient = Field(data, "RecipientUPN");
         var risky = Connectors(Field(data, "FlowConnectorNames")).Where(c => IsHighRisk(c, highRiskConnectors)).ToList();
         var qualifier = risky.Count > 0 ? $" (high-risk connector: {string.Join(", ", risky)})" : "";
@@ -166,7 +268,7 @@ public static class PurviewAuditNormalizer
     {
         var name = props.GetValueOrDefault("powerplatform.analytics.activity.name") ?? operation;
         var op = Squash(name);
-        var app = props.GetValueOrDefault("powerplatform.analytics.resource.power_app.display_name") ?? Str(record, "objectId");
+        var app = props.GetValueOrDefault("powerplatform.analytics.resource.power_app.display_name") ?? NonBlank(record, "objectId");
         actor ??= props.GetValueOrDefault("enduser.principal_name");
 
         string? activity = null;
@@ -284,27 +386,15 @@ public static class PurviewAuditNormalizer
     private static string Squash(string s) => new(s.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
 
     private static string Readable(string operation) => string.IsNullOrWhiteSpace(operation) ? "unknown operation" : operation.Trim();
-
-    private static string? Str(JsonElement e, string name) =>
-        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(v.GetString())
-            ? v.GetString() : null;
-
     /// <summary>A top-level property of an object, matched ignoring case, as text.</summary>
     private static string? Field(JsonElement e, string name)
     {
-        if (e.ValueKind != JsonValueKind.Object) return null;
-        foreach (var p in e.EnumerateObject())
+        var text = GetIgnoreCase(e, name) switch
         {
-            if (!p.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) continue;
-            var text = p.Value.ValueKind switch
-            {
-                JsonValueKind.String => p.Value.GetString(),
-                JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False => p.Value.GetRawText(),
-                JsonValueKind.Array => p.Value.GetRawText(),
-                _ => null,
-            };
-            return string.IsNullOrWhiteSpace(text) ? null : text;
-        }
-        return null;
+            { ValueKind: JsonValueKind.String } v => v.GetString(),
+            { ValueKind: JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False or JsonValueKind.Array } v => v.GetRawText(),
+            _ => null,
+        };
+        return string.IsNullOrWhiteSpace(text) ? null : text;
     }
 }

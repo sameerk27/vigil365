@@ -1,5 +1,10 @@
+using System.Net;
+using System.Text;
 using System.Text.Json;
+using Azure.Core;
+using M365SecurityDashboard.Api.Models;
 using M365SecurityDashboard.Api.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace M365SecurityDashboard.Api.Tests;
 
@@ -105,5 +110,93 @@ public sealed class CopilotUsageSummaryTests
         Assert.Null(s.UnusedSeats);
         Assert.Equal(0, s.LicensedUsers);
         Assert.Null(s.ReportRefreshDate);
+    }
+
+    // ── Reading from Graph: a short read is flagged, never shown as the whole tenant ──
+
+    private sealed class FixedToken : TokenCredential
+    {
+        public override AccessToken GetToken(TokenRequestContext c, CancellationToken ct) => new("token", DateTimeOffset.MaxValue);
+        public override ValueTask<AccessToken> GetTokenAsync(TokenRequestContext c, CancellationToken ct) => new(GetToken(c, ct));
+    }
+
+    private sealed class FakeGraph(Func<string, HttpResponseMessage> respond) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
+            Task.FromResult(respond(Uri.UnescapeDataString(request.RequestUri!.ToString())));
+    }
+
+    private const string GraphBase = "https://graph.test";
+    private const string CopilotSku = """{"skuPartNumber":"Microsoft_365_Copilot","capabilityStatus":"Enabled","prepaidUnits":{"enabled":60},"consumedUnits":48}""";
+
+    private static HttpResponseMessage Json(string body) => new(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+    private static HttpResponseMessage Code(HttpStatusCode code, string body = "{}") => new(code) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+
+    private static string Page(string items, string? next = null) =>
+        next is null ? $$"""{"value":[{{items}}]}""" : $$"""{"value":[{{items}}],"@odata.nextLink":"{{GraphBase}}{{next}}"}""";
+
+    private static readonly string Priya = JsonSerializer.Serialize(Row("priya@contoso.com", "Priya Shah", "2026-10-16", teams: "2026-10-16"));
+
+    private static Task<CopilotUsageReader.Reading> Read(Func<string, HttpResponseMessage> respond) =>
+        CopilotUsageReader.ReadAsync(
+            new GraphApiClient(new HttpClient(new FakeGraph(respond)),
+                new GraphOptions { TenantId = "11111111-1111-1111-1111-111111111111", ClientId = "c", ClientSecret = "s", BaseUrl = GraphBase },
+                new FixedToken(), new GraphMetrics()),
+            Now, NullLogger.Instance, CancellationToken.None);
+
+    [Fact]
+    public async Task A_full_read_is_not_flagged_and_counts_seats()
+    {
+        var r = await Read(url => url.Contains("subscribedSkus") ? Json(Page(CopilotSku)) : Json(Page(Priya)));
+
+        Assert.False(r.Partial);
+        Assert.Null(r.SeatsError);
+        Assert.Equal((60, 12), (r.Summary.Seats, r.Summary.UnusedSeats));
+    }
+
+    [Fact]
+    public async Task A_usage_report_missing_a_page_is_flagged_partial()
+    {
+        var r = await Read(url =>
+            url.Contains("skiptoken") ? Code(HttpStatusCode.ServiceUnavailable)
+            : url.Contains("subscribedSkus") ? Json(Page(CopilotSku))
+            : Json(Page(Priya, "/beta/reports/getMicrosoft365CopilotUsageUserDetail?$skiptoken=2")));
+
+        Assert.True(r.Partial);
+        Assert.Equal(1, r.Summary.LicensedUsers); // only the users that were read
+    }
+
+    [Fact]
+    public async Task Unreadable_licences_leave_seats_unknown_with_the_reason()
+    {
+        var r = await Read(url => url.Contains("subscribedSkus")
+            ? Code(HttpStatusCode.Forbidden, """{"error":{"code":"Authorization_RequestDenied","message":"Insufficient privileges."}}""")
+            : Json(Page(Priya)));
+
+        Assert.False(r.Partial);
+        Assert.Contains("Directory.Read.All", r.SeatsError);
+        Assert.Null(r.Summary.Seats);
+        Assert.Null(r.Summary.UnusedSeats);
+    }
+
+    [Fact]
+    public async Task Licences_missing_a_page_are_not_taken_as_the_whole_list()
+    {
+        // The Copilot seats may be on the page that failed, so even the seats read aren't summed.
+        var r = await Read(url =>
+            url.Contains("skiptoken") ? Code(HttpStatusCode.InternalServerError)
+            : url.Contains("subscribedSkus") ? Json(Page(CopilotSku, "/v1.0/subscribedSkus?$skiptoken=2"))
+            : Json(Page(Priya)));
+
+        Assert.Equal(CopilotUsageReader.SeatsPartMessage, r.SeatsError);
+        Assert.Null(r.Summary.Seats);
+    }
+
+    [Fact]
+    public async Task A_report_that_cannot_be_read_at_all_throws_for_the_page_to_explain()
+    {
+        await Assert.ThrowsAsync<HttpRequestException>(() => Read(url => url.Contains("subscribedSkus")
+            ? Json(Page(CopilotSku))
+            : Code(HttpStatusCode.BadRequest, """{"error":{"code":"BadRequest","message":"The period value 'RL30' is not supported with version 'v2'."}}""")));
     }
 }

@@ -3,33 +3,43 @@ using M365SecurityDashboard.Api.Data;
 using M365SecurityDashboard.Api.Services;
 using M365SecurityDashboard.Api.Services.Posture;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace M365SecurityDashboard.Api.Endpoints;
 
 /// <summary>
 /// Licence posture (docs/LICENSE_POSTURE_PLAN.md): what the current tenant's licences
 /// allow, what is set up, what is paid for but unused, and what would need another
-/// licence. Evaluated live from Graph on each request; read-only.
+/// licence. Evaluated from Graph and kept for a few minutes per tenant; read-only.
 /// </summary>
 public static class PostureEndpoints
 {
+    /// <summary>
+    /// How long one read is reused. A read is nine Graph calls, one of them the whole
+    /// tenant's MFA registration report, so every page visit and every report download
+    /// re-reading it made large tenants slow. The page shows when it was read and
+    /// "Read again" (?refresh=true) skips the cache after a fix.
+    /// </summary>
+    public static readonly TimeSpan CacheFor = TimeSpan.FromMinutes(5);
+
     public static void MapPostureEndpoints(this WebApplication app)
     {
-        app.MapGet("/api/posture", async (TenantGraphCredentials creds, PostureCollector collector, CancellationToken ct) =>
+        app.MapGet("/api/posture", async (TenantGraphCredentials creds, PostureCollector collector, AppDbContext db, IMemoryCache cache, bool? refresh, CancellationToken ct) =>
         {
             if (!await creds.IsConfiguredAsync(ct)) return Results.Ok(new { configured = false });
             var catalog = PostureCatalog.Default;
-            var result = PostureEvaluator.Evaluate(await collector.CollectAsync(catalog, ct), catalog);
+            var result = await ReadAsync(collector, db, cache, catalog, refresh == true, ct);
             return Results.Ok(ToDto(result, catalog));
         });
 
         // A self-contained HTML file for the client. White-label: the client's brand
         // name and colour when the MSP set them, else Vigil365's.
-        app.MapGet("/api/posture/report.html", async (TenantGraphCredentials creds, PostureCollector collector, AppDbContext db, CancellationToken ct) =>
+        // Uses the cached read, so the report matches what the page just showed.
+        app.MapGet("/api/posture/report.html", async (TenantGraphCredentials creds, PostureCollector collector, AppDbContext db, IMemoryCache cache, CancellationToken ct) =>
         {
             if (!await creds.IsConfiguredAsync(ct)) return Results.BadRequest(new { error = "Connect Microsoft Graph in Setup first." });
             var catalog = PostureCatalog.Default;
-            var result = PostureEvaluator.Evaluate(await collector.CollectAsync(catalog, ct), catalog);
+            var result = await ReadAsync(collector, db, cache, catalog, refresh: false, ct);
             var tenant = db.CurrentTenantIdOrNull is Guid id
                 ? await db.ClientTenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id, ct)
                 : null;
@@ -38,6 +48,22 @@ public static class PostureEndpoints
             var file = $"licence-posture-{Slug(client)}-{DateTimeOffset.UtcNow:yyyy-MM-dd}.html";
             return Results.File(Encoding.UTF8.GetBytes(html), "text/html; charset=utf-8", file);
         });
+    }
+
+    /// <summary>
+    /// The tenant's posture, from the cache when it was read in the last <see cref="CacheFor"/>.
+    /// Keyed by tenant so one client's posture is never served to another. A read with an
+    /// error isn't kept: the next visit tries again rather than repeating the failure.
+    /// </summary>
+    private static async Task<PostureResult> ReadAsync(PostureCollector collector, AppDbContext db, IMemoryCache cache,
+        PostureCatalog catalog, bool refresh, CancellationToken ct)
+    {
+        var key = $"posture:{db.CurrentTenantIdOrNull?.ToString() ?? "install"}";
+        if (!refresh && cache.TryGetValue(key, out PostureResult? cached) && cached is not null) return cached;
+        var result = PostureEvaluator.Evaluate(await collector.CollectAsync(catalog, ct), catalog);
+        if (result.Error is null) cache.Set(key, result, CacheFor);
+        else cache.Remove(key);
+        return result;
     }
 
     private static object ToDto(PostureResult r, PostureCatalog catalog)

@@ -1,4 +1,4 @@
-export type NavPage = "overview" | "recommendations" | "trends" | "reports" | "identity" | "devices" | "email" | "incidents" | "alertcenter" | "activityfeed" | "compliance" | "servicehealth" | "network" | "licenses" | "conditionalaccess" | "signinmap" | "users" | "setup" | "clients" | "copilot" | "powerplatform";
+export type NavPage = "overview" | "recommendations" | "trends" | "reports" | "identity" | "devices" | "email" | "incidents" | "alertcenter" | "activityfeed" | "compliance" | "servicehealth" | "network" | "licenses" | "conditionalaccess" | "signinmap" | "users" | "setup" | "clients" | "copilot" | "powerplatform" | "posture";
 export type AlertSeverity = "Informational" | "Low" | "Medium" | "High" | "Critical";
 export type ServiceArea = "EntraId" | "Intune" | "DefenderXdr" | "ExchangeOnline" | "ServiceHealth";
 export type Tone = "good" | "warning" | "error" | "neutral" | "info";
@@ -93,13 +93,18 @@ export type SecurityIncidentsData = {
 
 export type PrivilegedRole = { roleId?: string; roleName?: string; memberCount: number; members: { displayName?: string; userPrincipalName?: string }[] };
 export type PrivilegedRolesData = { configured: boolean; error?: string; roles: PrivilegedRole[]; totalPrivilegedUsers: number };
-export type DlpAlert = { id?: string; title?: string; severity: string; status: string; category?: string; serviceSource?: string; createdDateTime?: string; description?: string; alertWebUrl?: string };
+/** Shape of every alerts_v2-backed section (server: Endpoints/AlertV2Row.cs). Severity and status are never null. */
+export type GraphSecurityAlert = {
+  id?: string; title?: string; severity: string; status: string; category?: string; serviceSource?: string;
+  createdDateTime?: string; description?: string; alertWebUrl?: string; mitreTechniques?: string[];
+};
+export type DlpAlert = GraphSecurityAlert;
 export type DlpAlertsData = { configured: boolean; error?: string; total: number; bySeverity: Record<string,number>; bySource: Record<string,number>; alerts: DlpAlert[] };
-export type MdeAlert = { id?: string; title?: string; severity: string; status: string; category?: string; createdDateTime?: string; description?: string; alertWebUrl?: string; mitreTechniques: string[] };
+export type MdeAlert = GraphSecurityAlert & { mitreTechniques: string[] };
 export type MdeVulnerabilitiesData = { configured: boolean; error?: string; total: number; bySeverity: Record<string,number>; byCategory: Record<string,number>; alerts: MdeAlert[] };
 export type PimActivation = { id?: string; action?: string; status?: string; createdDateTime?: string; justification?: string; principalDisplayName?: string; principalUpn?: string; roleName?: string };
 export type PimData = { configured: boolean; error?: string; total: number; activations: PimActivation[] };
-export type EmailProtectionAlert = { id?: string; title?: string; severity: string; status: string; category?: string; createdDateTime?: string; description?: string; alertWebUrl?: string };
+export type EmailProtectionAlert = GraphSecurityAlert & { userPrincipalName?: string };
 export type EmailProtectionData = { 
   configured: boolean; error?: string; total: number; 
   byCategory: Record<string,number>; bySeverity: Record<string,number>; 
@@ -110,7 +115,7 @@ export type EmailProtectionData = {
 export type PurviewLabel = { id?: string; name?: string; description?: string; color?: string; sensitivity: number; isActive: boolean };
 export type PurviewData = { configured: boolean; error?: string; labelCount: number; labels: PurviewLabel[] };
 
-export type MdiAlert = { id?: string; title?: string; severity: string; status: string; category?: string; createdDateTime?: string; description?: string; alertWebUrl?: string; mitreTechniques: string[] };
+export type MdiAlert = MdeAlert;
 // Defender for IDENTITY (MDI) — distinct from Defender for Office 365 (MDO).
 // A partial rename to "Mdo*" left this referencing a type that never existed
 // and orphaned from every consumer; main.tsx and IdentityPage both want MDI.
@@ -122,11 +127,11 @@ export type MdiAlertsData = {
   trend?: { date: string; value: number }[];
 };
 
-export type McasAlert = { id?: string; title?: string; severity: string; status: string; category?: string; createdDateTime?: string; description?: string; alertWebUrl?: string };
+export type McasAlert = GraphSecurityAlert;
 export type McasAlertsData = { configured: boolean; error?: string; total: number; bySeverity: Record<string,number>; byCategory: Record<string,number>; alerts: McasAlert[] };
 
-export type InsiderRiskAlert = { id?: string; title?: string; severity: string; status: string; category?: string; createdDateTime?: string; description?: string; alertWebUrl?: string };
-export type InsiderRiskData = { configured: boolean; error?: string; total: number; bySeverity: Record<string,number>; alerts: InsiderRiskAlert[] };
+export type InsiderRiskAlert = GraphSecurityAlert;
+export type InsiderRiskData = { configured: boolean; error?: string; note?: string | null; total: number; bySeverity: Record<string,number>; alerts: InsiderRiskAlert[] };
 
 export type RiskDetection = { id?: string; riskEventType?: string; riskLevel: string; riskState: string; userDisplayName?: string; userPrincipalName?: string; lastUpdatedDateTime?: string; activityDateTime?: string; ipAddress?: string; city?: string; country?: string };
 export type RiskDetectionsData = { configured: boolean; error?: string; total: number; byType: Record<string,number>; byLevel: Record<string,number>; detections: RiskDetection[] };

@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { Inbox, ShieldAlert, Archive, Send, XCircle, ShieldCheck, Search, Flag } from "lucide-react";
 import { SecurityAlert, EmailProtectionData, EmailProtectionAlert } from "../services/types";
-import { fmtDate, relTime, fmtFullTime } from "../services/utils";
+import { fmtDate, fmtFullTime, defenderAlertUrl } from "../services/utils";
 import { consumeNavSeed } from "../services/api";
-import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, ExportDropdown, SectHdr , SeverityFilter, LineChart } from "../components/SharedComponents";
+import { DetailModal, DetailField, KpiTile, Card, Badge, EmptyState, ExportDropdown, SectHdr, SeverityFilter, LineChart, AlertRow } from "../components/SharedComponents";
 
 export function EmailPage({ alerts, emailProtection, onAlertClick }:
   { alerts: SecurityAlert[]; emailProtection: EmailProtectionData|null; onAlertClick:(a:SecurityAlert)=>void }) {
@@ -51,7 +51,7 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
           title={selectedMdo.title ?? "MDO Alert"}
           subtitle={`${selectedMdo.severity} · ${selectedMdo.category ?? "Defender for Office 365"}`}
           onClose={()=>setSelectedMdo(null)}
-          portalUrl={selectedMdo.alertWebUrl ?? (selectedMdo.id ? `https://security.microsoft.com/alerts/${selectedMdo.id}` : "https://security.microsoft.com/alerts")}
+          portalUrl={defenderAlertUrl(selectedMdo)}
           portalLabel="View in Defender XDR"
         >
           <DetailField label="Alert ID" value={selectedMdo.id} copy/>
@@ -192,7 +192,7 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
           </div>
         ) : undefined}>
         {emailProtection?.error
-          ?<EmptyState icon={<ShieldAlert size={28}/>} message="Needs SecurityAlert.Read.All for Defender for Office 365"/>
+          ?<EmptyState icon={<ShieldAlert size={28}/>} message={emailProtection.error}/>
           :(emailProtection?.total??0)===0
             ?<EmptyState icon={<ShieldCheck size={28}/>} message="No Defender for Office 365 alerts"/>
             :(
@@ -212,18 +212,7 @@ export function EmailPage({ alerts, emailProtection, onAlertClick }:
                   <SectHdr>MDO ALERTS — {filteredMdo.length} shown</SectHdr>
                   {filteredMdo.length===0&&<div className="td-empty" data-inline-style="inline-43eb55eaea">No alerts match the filter.</div>}
                   {filteredMdo.slice(0,10).map((a,i)=>(
-                    <div key={a.id??i} className="al-item" onClick={()=>setSelectedMdo(a)}>
-                      <span className={`sev-dot sev-${a.severity.toLowerCase()}`}/>
-                      <div className="al-body">
-                        <div className="al-title">{a.title}</div>
-                        <div className="row-meta">
-                          {a.category&&<span className="row-meta-item">{a.category}</span>}
-                          <Badge label={a.status} tone={a.status==="resolved"?"good":"warning"}/>
-                          <span className="row-meta-item">{fmtFullTime(a.createdDateTime)}</span>
-                        </div>
-                      </div>
-                      <Badge label={a.severity} tone={a.severity==="high"||a.severity==="High"?"error":"warning"}/>
-                    </div>
+                    <AlertRow key={a.id??i} alert={a} onClick={()=>setSelectedMdo(a)}/>
                   ))}
                   {filteredMdo.length>10&&<div className="more-link">{filteredMdo.length-10} more — use filters to narrow</div>}
                 </div>

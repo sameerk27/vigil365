@@ -1,4 +1,5 @@
 using System.Text.Json;
+using static M365SecurityDashboard.Api.Services.Common.JsonRead;
 
 namespace M365SecurityDashboard.Api.Services;
 
@@ -89,18 +90,8 @@ public static class SharingPostureAnalyzer
     /// <summary>Parses the raw Graph sharepoint settings object into the analysis view.</summary>
     public static SharingView Parse(JsonElement e)
     {
-        static string? Str(JsonElement el, string name) =>
-            el.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
-        static List<string> Arr(JsonElement el, string name) =>
-            el.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Array
-                ? v.EnumerateArray().Select(x => x.GetString() ?? "").Where(s => s.Length > 0).ToList()
-                : [];
-
-        int? expiry = null;
-        if (e.TryGetProperty("sharingLinkExpirationInDays", out var exp) && exp.ValueKind == JsonValueKind.Number)
-            expiry = exp.GetInt32();
-
-        var reshare = e.TryGetProperty("isResharingByExternalUsersEnabled", out var rs) && rs.ValueKind == JsonValueKind.True;
+        var expiry = Int(e, "sharingLinkExpirationInDays");
+        var reshare = IsTrue(e, "isResharingByExternalUsersEnabled");
 
         return new SharingView(
             SharingCapability: Str(e, "sharingCapability"),
@@ -108,7 +99,7 @@ public static class SharingPostureAnalyzer
             DefaultSharingLinkType: Str(e, "sharingDefaultLinkType") ?? Str(e, "defaultSharingLinkType"),
             AnonymousLinkExpirationDays: expiry,
             ResharingByExternalUsersEnabled: reshare,
-            AllowedDomains: Arr(e, "sharingAllowedDomainList"),
-            BlockedDomains: Arr(e, "sharingBlockedDomainList"));
+            AllowedDomains: Strings(e, "sharingAllowedDomainList"),
+            BlockedDomains: Strings(e, "sharingBlockedDomainList"));
     }
 }

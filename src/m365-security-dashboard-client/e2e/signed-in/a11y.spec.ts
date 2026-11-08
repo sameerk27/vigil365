@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { createRequire } from 'node:module';
-import { signIn, tenantA, tenantB, rosterRow, rollupRow } from './fixtures';
+import { signIn, tenantA, tenantB, rosterRow, rollupRow, postureSample, copilotSample, powerPlatformApi, purviewStatus } from './fixtures';
 
 /**
  * MSP_V12_PLAN.md T3: axe over the real, rendered MSP screens (with the app's
@@ -144,11 +144,36 @@ test('Trends with snapshots', async ({ page }) => {
   expect(await axeViolations(page, 'main')).toBe('');
 });
 
-test('Power Platform: reading with your own sign-in', async ({ page }) => {
-  await signIn(page, single({
-    'GET /api/power-platform/settings': { configured: true, tenantId: 't', powerPlatformApi: 'https://api.powerplatform.com', graphApi: 'https://graph.microsoft.com', maxEnvironments: 50 },
-  }));
+test('Copilot usage with users, and with a part-read report', async ({ page }) => {
+  await signIn(page, single({ 'GET /api/dashboard/copilot': copilotSample() }));
+  await page.goto('/#/copilot');
+  await expect(page.getByRole('table').locator('tbody tr')).toHaveCount(4);
+  expect(await axeViolations(page, 'main')).toBe('');
+});
+
+test('Copilot usage notices', async ({ page }) => {
+  await signIn(page, single({ 'GET /api/dashboard/copilot': copilotSample({ partial: true, namesConcealed: true, seatsError: 'The tenant’s licences couldn’t be read, so seat numbers aren’t shown.', seats: null, unusedSeats: null }) }));
+  await page.goto('/#/copilot');
+  await expect(page.locator('main .notice-warn')).toHaveCount(3); // part read, seats, hidden names
+  expect(await axeViolations(page, 'main')).toBe('');
+});
+
+test('Licence posture with findings and a check open', async ({ page }) => {
+  await signIn(page, single({ 'GET /api/posture': postureSample() }));
+  await page.goto('/#/posture');
+  await expect(page.getByRole('table').locator('tbody tr')).toHaveCount(5);
+  expect(await axeViolations(page, 'main')).toBe('');
+
+  await page.getByRole('button', { name: 'Conditional Access requires MFA for all users' }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  expect(await axeViolations(page, 'main')).toBe('');
+});
+
+test('Power Platform alerts, activity and rules, with a permission missing', async ({ page }) => {
+  await signIn(page, single(powerPlatformApi({ status: purviewStatus('Ok', { powerPlatformAdmin: 'NeedsPermission' }) })));
   await page.goto('/#/powerplatform');
-  await expect(page.getByRole('button', { name: 'Read with Microsoft sign-in' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open Flow uses a high-risk connector in the Alert Center' })).toBeVisible();
+  await expect(page.getByText('Would alert: Flow uses a high-risk connector')).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: 'need one more permission' })).toBeVisible();
   expect(await axeViolations(page, 'main')).toBe('');
 });

@@ -3,6 +3,7 @@ using System.Text;
 using M365SecurityDashboard.Api.Data;
 using M365SecurityDashboard.Api.Models;
 using Microsoft.EntityFrameworkCore;
+using M365SecurityDashboard.Api.Services.Common;
 
 namespace M365SecurityDashboard.Api.Services;
 
@@ -88,6 +89,15 @@ public sealed class TenantRollupService(AppDbContext db, TenantGraphCredentials 
             .ToList();
     }
 
+    /// <summary>All open alerts of the permitted clients, so a capped queue can say how many it left out.</summary>
+    public async Task<int> CountOpenAcrossAsync(IReadOnlyList<ClientTenant> tenants, CancellationToken ct)
+    {
+        if (tenants.Count == 0) return 0;
+        var ids = tenants.Select(t => t.Id).ToList();
+        return await db.CrossTenant<TriggeredAlert>()
+            .CountAsync(t => ids.Contains(t.TenantId) && (t.Status == "new" || t.Status == "acknowledged"), ct);
+    }
+
     public static string HealthOf(bool configured, ClientTenant t, Open o) =>
         !configured ? "neutral"
         : t.LastCollectionStatus is "Failed" or "Unreadable" ? "error"
@@ -142,7 +152,7 @@ public sealed class TenantRollupService(AppDbContext db, TenantGraphCredentials 
             sb.Append($"<td style=\"border-bottom:1px solid #eee;{(r.OpenAlerts.High > 0 ? "color:#d97706;font-weight:600" : "")}\">{r.OpenAlerts.High}</td>");
             sb.Append($"<td style=\"border-bottom:1px solid #eee\">{r.OpenAlerts.Medium}</td><td style=\"border-bottom:1px solid #eee\">{r.OpenAlerts.Low}</td>");
             sb.Append($"<td style=\"border-bottom:1px solid #eee\">{r.UnresolvedCritical} / {r.UnresolvedHigh}</td>");
-            sb.Append($"<td style=\"border-bottom:1px solid #eee\">{last}{(r.LastError is not null ? $"<br><span style=\"color:#dc2626\">{WebUtility.HtmlEncode(Truncate(r.LastError, 120))}</span>" : "")}</td>");
+            sb.Append($"<td style=\"border-bottom:1px solid #eee\">{last}{(r.LastError is not null ? $"<br><span style=\"color:#dc2626\">{WebUtility.HtmlEncode(TextLimits.Ellipsize(r.LastError, 120))}</span>" : "")}</td>");
             sb.Append("</tr>");
         }
         sb.Append("</tbody></table>");
@@ -152,5 +162,4 @@ public sealed class TenantRollupService(AppDbContext db, TenantGraphCredentials 
         return sb.ToString();
     }
 
-    private static string Truncate(string s, int n) => s.Length <= n ? s : s[..(n - 1)] + "…";
 }

@@ -49,10 +49,13 @@ public static class PlatformEndpoints
             var since = DateTimeOffset.UtcNow.AddDays(-Math.Clamp(days, 1, 90));
 
             var q = db.AuditEvents.AsNoTracking().Where(e => e.OccurredAt >= since);
-            // "entra" = the directory audit; a product name ("Power Automate") = that
-            // product's Purview audit events. Anything else is ignored, not an error.
+            // "entra" = the directory audit; "purviewAudit" = every Purview audit product (the
+            // Power Platform page); a product name ("Power Automate") = that product's Purview
+            // audit events. Anything else is ignored, not an error.
             if (string.Equals(source, "entra", StringComparison.OrdinalIgnoreCase))
                 q = q.Where(e => e.Source == "directoryAudit");
+            else if (string.Equals(source, PurviewAuditNormalizer.Source, StringComparison.OrdinalIgnoreCase))
+                q = q.Where(e => e.Source == PurviewAuditNormalizer.Source);
             else if (PurviewAuditNormalizer.Products.FirstOrDefault(p => p.Equals(source, StringComparison.OrdinalIgnoreCase)) is { } product)
                 q = q.Where(e => e.Source == PurviewAuditNormalizer.Source && e.Category == product);
             if (!string.IsNullOrWhiteSpace(activity))

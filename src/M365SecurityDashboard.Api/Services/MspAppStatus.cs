@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.Json;
+using M365SecurityDashboard.Api.Services.Common;
 
 namespace M365SecurityDashboard.Api.Services;
 
@@ -56,7 +57,7 @@ public static class MspAppStatus
     /// <param name="graphServicePrincipal">Graph's own service principal (appRoles) to map permission names to ids.</param>
     public static Result Evaluate(JsonElement application, JsonElement graphServicePrincipal, IEnumerable<string> requiredPermissions, string expectedRedirect)
     {
-        var audience = application.TryGetProperty("signInAudience", out var a) ? a.GetString() : null;
+        var audience = JsonRead.Str(application, "signInAudience");
         var multiTenant = audience is "AzureADMultipleOrgs" or "AzureADandPersonalMicrosoftAccount";
 
         var redirects = application.TryGetProperty("web", out var web) && web.TryGetProperty("redirectUris", out var uris) && uris.ValueKind == JsonValueKind.Array

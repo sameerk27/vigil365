@@ -418,6 +418,50 @@ public sealed class InstallPlanTests
         Assert.True(secretCalls[0].Index > files, "CreateCollectorSecret must run after InstallApplicationFiles");
     }
 
+    private static readonly string[] ServicesOnThisPc = ["MSSQL$SQLEXPRESS", "MSSQLSERVER", "postgresql-x64-16", "RpcSs", "W32Time"];
+
+    [Theory]
+    // What the GUI installer itself writes, for a new Express and a detected instance.
+    [InlineData(DbEngine.SqlServer, @"Server=.\SQLEXPRESS;Database=Vigil365;Trusted_Connection=True;TrustServerCertificate=True", "MSSQL$SQLEXPRESS")]
+    [InlineData(DbEngine.SqlServer, "Server=.;Database=Vigil365;Trusted_Connection=True", "MSSQLSERVER")]
+    // Other ways of naming this computer, a protocol prefix and a port.
+    [InlineData(DbEngine.SqlServer, @"Data Source=(local)\sqlexpress;Initial Catalog=M365SecurityDashboard;Integrated Security=True", "MSSQL$SQLEXPRESS")]
+    [InlineData(DbEngine.SqlServer, @"Server=tcp:localhost\SQLEXPRESS,1433;Database=Vigil365;User Id=vigil;Password=x", "MSSQL$SQLEXPRESS")]
+    [InlineData(DbEngine.SqlServer, @"Server=VIGILHOST\SQLEXPRESS;Database=Vigil365", "MSSQL$SQLEXPRESS")]
+    [InlineData(DbEngine.SqlServer, @"Server=vigilhost\MSSQLSERVER;Database=Vigil365", "MSSQLSERVER")]
+    [InlineData(DbEngine.SqlServer, "Server=127.0.0.1,1433;Database=Vigil365", "MSSQLSERVER")]
+    // Not a service on this computer: no dependency.
+    [InlineData(DbEngine.SqlServer, @"Server=sql01.contoso.com\SQLEXPRESS;Database=Vigil365", null)]
+    [InlineData(DbEngine.SqlServer, "Server=tcp:vigil.database.windows.net,1433;Database=Vigil365", null)]
+    [InlineData(DbEngine.SqlServer, @"Server=(localdb)\MSSQLLocalDB;Database=Vigil365", null)]
+    [InlineData(DbEngine.SqlServer, @"Server=.\OTHER;Database=Vigil365", null)]   // not installed: depending on it would stop Vigil365 starting
+    [InlineData(DbEngine.SqlServer, "Database=Vigil365", null)]
+    [InlineData(DbEngine.SqlServer, "not a connection string", null)]
+    [InlineData(DbEngine.SqlServer, null, null)]
+    [InlineData(DbEngine.Postgres, "Host=localhost;Database=vigil365;Username=vigil;Password=x", "postgresql-x64-16")]
+    [InlineData(DbEngine.Postgres, "Host=127.0.0.1:5432;Database=vigil365", "postgresql-x64-16")]
+    [InlineData(DbEngine.Postgres, "Host=pg.contoso.com;Database=vigil365", null)]
+    [InlineData(DbEngine.Postgres, "Host=localhost,pg2.contoso.com;Database=vigil365", null)]
+    public void The_service_waits_only_for_a_database_service_on_this_computer(DbEngine engine, string? connectionString, string? expected)
+        => Assert.Equal(expected, InstallPlan.LocalDatabaseService(engine, connectionString, "VIGILHOST", ServicesOnThisPc));
+
+    [Fact]
+    public void Two_postgres_services_cannot_be_told_apart_so_neither_is_chosen()
+        => Assert.Null(InstallPlan.LocalDatabaseService(DbEngine.Postgres, "Host=localhost;Database=vigil365", "VIGILHOST",
+            ["postgresql-x64-15", "postgresql-x64-16"]));
+
+    [Fact]
+    public void The_installer_sets_the_dependency_between_creating_and_starting_the_service()
+    {
+        var source = MainWindowSource();
+        var create = source.IndexOf("RunSc($\"create {serviceName}", StringComparison.Ordinal);
+        var lookup = source.IndexOf("InstallPlan.LocalDatabaseService(plannedEngine, sqlConnectionString,", StringComparison.Ordinal);
+        var depend = source.IndexOf("RunSc($\"config {serviceName} depend= {dbService}\")", StringComparison.Ordinal);
+        var start = source.IndexOf("RunSc($\"start {serviceName}\")", StringComparison.Ordinal);
+        Assert.True(create >= 0 && create < lookup && lookup < depend && depend < start,
+            "SetupService: create the service, find its database service, depend on it, then start");
+    }
+
     private static string MainWindowSource()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

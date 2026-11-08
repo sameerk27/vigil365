@@ -24,22 +24,19 @@ $installerCsprojPath = Join-Path $repo "src/M365SecurityDashboard.GuiInstaller/M
 $packagePath = Join-Path $repo "src/m365-security-dashboard-client/package.json"
 
 # Targeted replacements - a full XML/JSON round-trip would reformat the files.
-$csproj = Get-Content $csprojPath -Raw
-$updated = [regex]::Replace($csproj, '<Version>[^<]*</Version>', "<Version>$Version</Version>", 1)
-if ($updated -eq $csproj) { throw "No <Version> element found in $csprojPath" }
-Set-Content $csprojPath $updated -NoNewline
+function Set-FirstMatch([string]$Path, [string]$Pattern, [string]$Replacement, [string]$What) {
+  $text = Get-Content $Path -Raw
+  $new = [regex]::Replace($text, $Pattern, $Replacement, 1)
+  if ($new -eq $text) { throw "No $What found in $Path" }
+  Set-Content $Path $new -NoNewline
+}
+Set-FirstMatch $csprojPath '<Version>[^<]*</Version>' "<Version>$Version</Version>" '<Version> element'
 
 # The installer exe carries its own <Version> (shown in the file's Properties);
 # keep it in step so the shipped Vigil365-Setup.exe reports the release version.
-$installer = Get-Content $installerCsprojPath -Raw
-$updatedInstaller = [regex]::Replace($installer, '<Version>[^<]*</Version>', "<Version>$Version</Version>", 1)
-if ($updatedInstaller -eq $installer) { throw "No <Version> element found in $installerCsprojPath" }
-Set-Content $installerCsprojPath $updatedInstaller -NoNewline
+Set-FirstMatch $installerCsprojPath '<Version>[^<]*</Version>' "<Version>$Version</Version>" '<Version> element'
 
-$package = Get-Content $packagePath -Raw
-$updatedPkg = [regex]::Replace($package, '"version":\s*"[^"]*"', """version"": ""$Version""", 1)
-if ($updatedPkg -eq $package) { throw "No version field found in $packagePath" }
-Set-Content $packagePath $updatedPkg -NoNewline
+Set-FirstMatch $packagePath '"version":\s*"[^"]*"' """version"": ""$Version""" 'version field'
 
 # package-lock.json repeats the version twice (top level and the root package
 # entry); left alone it drifts from package.json until the next npm install.

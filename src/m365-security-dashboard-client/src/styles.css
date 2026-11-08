@@ -2498,36 +2498,32 @@ button.countdown-chip:hover { color: var(--color-text); }
 .copilot-upn { display: block; font-size: 11px; color: var(--color-muted); }
 .mono-cell { font-family: var(--font-mono); font-size: 12px; }
 
-/* ── Power Platform inventory page ── */
-.stat-row-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--gap-card); margin-bottom: var(--gap-card); }
-@media (max-width: 1100px) { .stat-row-5 { grid-template-columns: repeat(3, 1fr); } }
-@media (max-width: 700px) { .stat-row-5 { grid-template-columns: repeat(2, 1fr); } }
+/* ── Power Platform alerts page ── */
 .pp-muted { margin: 0; font-size: 12.5px; color: var(--color-muted); }
-.pp-flags { display: flex; flex-wrap: wrap; gap: 4px; }
-.pp-toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0 0 var(--gap-card); }
-.pp-toolbar .pp-muted { margin-left: auto; }
-.pp-note { margin-bottom: 10px; }
+.pp-note { margin-bottom: 12px; }
 .pp-truncated { margin-top: 8px; }
-.pp-footer { margin-top: 4px; }
-.pp-footer code, .pp-turnon code { font-family: var(--font-mono); font-size: 12px; }
 .pp-center { display: flex; justify-content: center; margin-top: 12px; }
-.pp-turnon { display: flex; flex-direction: column; gap: 12px; font-size: 13px; line-height: 1.6; max-width: 780px; }
-.pp-turnon p { margin: 0; }
-.pp-why { display: flex; gap: 10px; align-items: flex-start; }
-.pp-why svg { flex-shrink: 0; margin-top: 3px; color: var(--accent); }
-.pp-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
-.pp-command { display: flex; gap: 6px; align-items: flex-start; justify-content: space-between; margin-top: 6px; padding: 8px 10px; background: var(--color-raised); border: 1px solid var(--color-border); border-radius: var(--r-inset); }
-.pp-command code { overflow-wrap: anywhere; }
-.pp-actions { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
-.pp-link { display: inline-flex; gap: 4px; align-items: center; font-size: 12.5px; color: var(--accent); }
-.pp-step { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--color-border); border-radius: var(--r-inset); background: var(--color-raised); }
-.pp-step strong { font-size: 13px; }
-.pp-ok { margin: 0; font-size: 12.5px; color: var(--status-good-icon); font-weight: 600; }
-.pp-error { margin: 0; font-size: 12.5px; color: var(--status-error-icon); }
-.pp-progress { display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--color-text); }
-.pp-spin { animation: pp-spin 1.2s linear infinite; }
-@keyframes pp-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .pp-spin { animation: none; } }
-.pp-alt summary { cursor: pointer; font-size: 12.5px; color: var(--color-muted); }
-.pp-alt[open] summary { margin-bottom: 8px; }
-.pp-footer { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.pp-check { display: inline-flex; gap: 6px; align-items: center; font-size: 12.5px; color: var(--color-text); }
+
+/* ── Licence posture page ── */
+.posture-toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0 0 var(--gap-card); }
+.posture-read { margin-right: auto; font-size: 12.5px; color: var(--color-muted); }
+.posture-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; font-size: 12.5px; }
+.posture-list li { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.posture-muted { margin: 0; font-size: 12.5px; color: var(--color-muted); text-align: right; }
+.posture-sub { display: block; font-size: 11.5px; color: var(--color-muted); margin-top: 2px; }
+.posture-features { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 12px; }
+.posture-upgrade .posture-muted { max-width: 60%; }
+.posture-check { padding: 0; border: 0; background: none; font: inherit; font-weight: 600; color: var(--color-text); text-align: left; cursor: pointer; }
+.posture-check:hover, .posture-check:focus-visible { color: var(--accent); text-decoration: underline; }
+.posture-id { display: block; font-family: var(--font-mono); font-size: 11px; color: var(--color-muted); }
+.posture-finding { max-width: 380px; line-height: 1.5; }
+.posture-detail h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--color-muted); margin: 14px 0 4px; }
+.posture-detail h3:first-child { margin-top: 0; }
+.posture-detail p, .posture-detail ol { margin: 0; font-size: 13px; line-height: 1.55; }
+.posture-detail ol { padding-left: 20px; }
+.posture-detail a { color: var(--accent); }
+@media (max-width: 700px) { .posture-list li { flex-direction: column; gap: 4px; } .posture-muted, .posture-upgrade .posture-muted { text-align: left; max-width: none; } }
+
+/* Cross-client queue cut at the server cap */
+.queue-capped { margin: 0 0 10px; font-size: 12.5px; color: var(--color-muted); }

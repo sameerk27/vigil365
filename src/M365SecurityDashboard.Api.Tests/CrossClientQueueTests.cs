@@ -72,6 +72,18 @@ public sealed class CrossClientQueueTests
     }
 
     [Fact]
+    public async Task Counts_every_open_alert_of_the_permitted_clients_so_a_capped_list_can_say_so()
+    {
+        var (dbName, tenants) = await SeedAsync();
+        await using var db = Open(dbName, null);
+        var permitted = tenants.Where(t => t.Id != C).ToList();
+
+        Assert.Equal(3, await Service(db).CountOpenAcrossAsync(permitted, CancellationToken.None)); // resolved and C's excluded
+        Assert.Single(await Service(db).OpenAlertsAcrossAsync(permitted, 1, CancellationToken.None));
+        Assert.Equal(0, await Service(db).CountOpenAcrossAsync([], CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Respects_the_limit()
     {
         var (dbName, tenants) = await SeedAsync();
