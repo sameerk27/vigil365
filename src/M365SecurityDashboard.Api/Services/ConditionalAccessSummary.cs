@@ -22,7 +22,7 @@ public static class ConditionalAccessSummary
     [
         ("signInFrequency", "Sign-in frequency"), ("persistentBrowser", "Persistent browser"),
         ("applicationEnforcedRestrictions", "App enforced restrictions"), ("cloudAppSecurity", "Conditional Access App Control"),
-        ("continuousAccessEvaluation", "Continuous access evaluation"), ("disableResilienceDefaults", "Resilience defaults off"),
+        ("continuousAccessEvaluation", "Continuous access evaluation"),
     ];
 
     public static CaPolicySummary Summarize(JsonElement p)
@@ -68,6 +68,8 @@ public static class ConditionalAccessSummary
             var c = Obj(session, key);
             if (c is JsonElement e && !(e.TryGetProperty("isEnabled", out var on) && on.ValueKind == JsonValueKind.False)) controls.Add(label);
         }
+        // Unlike the other session controls, Graph sends this one as a plain true or false.
+        if (session is JsonElement sc && sc.TryGetProperty("disableResilienceDefaults", out var off) && off.ValueKind == JsonValueKind.True) controls.Add("Resilience defaults off");
         return new CaPolicySummary(name, state, inclUsers, exclUsers, apps, controls.ToArray());
     }
 

@@ -54,6 +54,14 @@ public class ConditionalAccessSummaryTests
     }
 
     [Fact]
+    public void Resilience_defaults_off_is_read_from_a_boolean()
+    {
+        // Graph sends disableResilienceDefaults as true or false, not as an object like the other session controls.
+        Assert.Equal(new[] { "Resilience defaults off" }, Of("""{"sessionControls":{"disableResilienceDefaults":true}}""").Controls);
+        Assert.Empty(Of("""{"sessionControls":{"disableResilienceDefaults":false}}""").Controls);
+    }
+
+    [Fact]
     public void A_single_user_and_named_apps_keep_the_previous_wording()
     {
         var s = Of("""{"conditions":{"users":{"includeUsers":["u1"]},"applications":{"includeApplications":["a1","a2"]}},"grantControls":{"builtInControls":["block"]}}""");
