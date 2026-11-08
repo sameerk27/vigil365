@@ -28,6 +28,11 @@ describe("fmtCaControl", () => {
     expect(fmtCaControl("passthrough")).toBe("Passthrough");
   });
 
+  it("keeps the capitals of a label the API already wrote out", () => {
+    expect(fmtCaControl("Auth strength: Phishing-resistant MFA")).toBe("Auth strength: Phishing-resistant MFA");
+    expect(fmtCaControl("Conditional Access App Control")).toBe("Conditional Access App Control");
+  });
+
   it("never renders empty for a missing value", () => {
     expect(fmtCaControl("")).toBe("—");
   });
