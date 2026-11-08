@@ -127,6 +127,19 @@ version lives in exactly two places — the API's `<Version>` and the client's
   Enterprise applications. Nothing else to do.
 
 ### Fixed
+- **Device compliance no longer counts compliant devices as non-compliant.** Microsoft ignored
+  the old filter on some tenants, so compliant devices opened alerts. Vigil365 now asks for
+  non-compliant devices only and drops anything else. Devices in the `error` or `conflict` state
+  no longer raise this alert.
+- **Licences leave out free and self-service plans.** They are no longer counted as purchased
+  or as waste. A bought licence with more than 10,000 seats stays counted, however little it
+  is used.
+- **Guests are grouped by their own domain,** not your tenant's, and the active count no longer
+  equals the total when sign-in activity is available.
+- **Conditional Access names what a policy really targets:** groups, roles, guests, user actions
+  and authentication contexts, plus authentication strength and session controls. A policy that
+  targets nobody now says "No users".
+- **PIM rows name the person or app** instead of "Unknown".
 - **Vigil365 now starts after a reboot when its database is on the same server.** SQL Server
   Express starts a couple of minutes after boot, and Vigil365 started first, waited for its
   database, and was left stopped by Windows. The Setup wizard and `enterprise-install.ps1` now
