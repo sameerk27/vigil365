@@ -22,6 +22,9 @@ A self-hosted Microsoft 365 security monitoring dashboard that aggregates alerts
 | **Email** | MDO protection alerts by category (malware, phish, spam), threat breakdown |
 | **Incidents & Alerts** | Unified Defender XDR incidents + alerts, severity KPI tiles, date-range filter |
 | **Compliance** | DLP alerts, MCAS alerts, IRM insider risk alerts, attack simulations |
+| **Licence Posture** | Checks your settings against the licences you own: what is set up, what is paid for but unused, and what needs another licence |
+| **Copilot** | Microsoft 365 Copilot seats and usage (needs a Copilot licence) |
+| **Power Platform** | Copilot Studio agent, Power Automate, Power Apps and admin activity with built-in alert rules (needs the optional `AuditLogsQuery.Read.All` permission) |
 | **Alert Center** | Custom alert policies, policy templates, triggered alert history, acknowledge/resolve workflow |
 | **Service Health** | M365 service advisories and incidents, per-service health status |
 | **M365 Connectivity** | Sign-in health, connectivity issues |
@@ -43,7 +46,7 @@ A self-hosted Microsoft 365 security monitoring dashboard that aggregates alerts
 - **Global Search** — Ctrl+K palette across alerts, users, devices, and pages.
 - **Detail Panels** — click any alert, user, device, or policy for all fields and a direct "View in M365 Portal →" deep link.
 - **Search, Filter, Export** — full-text search, dropdown filters, and CSV export on every page (sortable columns on the active-alert queue).
-- **Dark Mode**, **collapsible sidebar**, **toast notifications**, **saved filter presets**, and a **responsive layout**.
+- **Collapsible sidebar**, **toast notifications**, **saved filter presets**, and a **responsive layout**.
 
 ---
 
@@ -151,6 +154,10 @@ to MSP) keeps settings it does not manage, such as `Retention` and `Graph` tunin
 and saves the previous configuration as `appsettings.Production.json.bak`.
 
 ### Install for an MSP (multi-tenant)
+
+> **Preview in v1.2.0.** The MSP edition has automated tests, including tenant isolation on both
+> database engines, but has not yet been through a full walkthrough on a real client tenant. Try it
+> on a test client first. The Single organisation edition is the supported path.
 
 The wizard asks **Single organisation** or **MSP**. Pick MSP to watch many client
 tenants from one install. The differences:
@@ -326,7 +333,7 @@ HTTPS URL (e.g. `https://vigil365.yourcompany.com`).
 
 ## Security & Maturity
 
-> **Read this before relying on Vigil365.** This is an open-source **read-only visibility aggregator**, currently ready for production (v1.0.0). It surfaces signals that already exist across your Microsoft 365 admin centers in one place. It is **not** a replacement for native Microsoft security tooling (Defender XDR, Entra ID Protection, Purview), and it does **not** make security decisions or change configuration for you. Treat its output as a convenience view, verify findings in the source portal before acting, and do your own review of the code before deploying it in a sensitive environment.
+> **Read this before relying on Vigil365.** This is an open-source **read-only visibility aggregator**, currently at v1.2.0. It surfaces signals that already exist across your Microsoft 365 admin centers in one place. It is **not** a replacement for native Microsoft security tooling (Defender XDR, Entra ID Protection, Purview), and it does **not** make security decisions or change configuration for you. Treat its output as a convenience view, verify findings in the source portal before acting, and do your own review of the code before deploying it in a sensitive environment.
 
 ### What is in scope by design
 
