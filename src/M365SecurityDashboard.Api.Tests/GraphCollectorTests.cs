@@ -146,6 +146,49 @@ public sealed class GraphCollectorTests
         Assert.False(await IsResolvedAsync(db, "dev-2"));
     }
 
+    private static void SeedMfaRow(AppDbContext db, string id, bool registered)
+    {
+        db.SecurityAlerts.Add(new SecurityAlert
+        {
+            Service = M365ServiceArea.EntraId, AlertType = "MfaStatus", ExternalId = id, Severity = AlertSeverity.Informational,
+            Title = id, IsResolved = registered, DetectedAt = DateTimeOffset.UtcNow.AddDays(-1), LastUpdatedAt = DateTimeOffset.UtcNow.AddDays(-1),
+        });
+        db.SaveChanges();
+    }
+
+    [Fact]
+    public async Task Someone_who_left_the_MFA_report_is_not_counted_as_registered_and_guests_are_left_out()
+    {
+        using var db = TestAppDbContextFactory.Create();
+        SeedMfaRow(db, "left", registered: true);
+        SeedMfaRow(db, "guest", registered: false);
+        var graph = new ScriptedGraph(new()
+        {
+            ["userRegistrationDetails"] = () => Json("""
+                {"value":[
+                  {"id":"m1","userPrincipalName":"a@x.com","userType":"member","isMfaRegistered":true},
+                  {"id":"m2","userPrincipalName":"b@x.com","userType":"member","isMfaRegistered":false},
+                  {"id":"guest","userPrincipalName":"c@y.com","userType":"guest","isMfaRegistered":false}]}
+                """),
+        });
+
+        await Collector(db, graph).CollectAsync(CancellationToken.None);
+
+        var ids = await db.SecurityAlerts.AsNoTracking().Where(a => a.AlertType == "MfaStatus").Select(a => a.ExternalId).ToListAsync();
+        Assert.Equal(new[] { "m1", "m2" }, ids.OrderBy(i => i));
+    }
+
+    [Fact]
+    public async Task An_empty_MFA_report_removes_nobody()
+    {
+        using var db = TestAppDbContextFactory.Create();
+        SeedMfaRow(db, "m1", registered: true);
+
+        await Collector(db, new ScriptedGraph(new())).CollectAsync(CancellationToken.None);
+
+        Assert.True(await db.SecurityAlerts.AnyAsync(a => a.ExternalId == "m1"));
+    }
+
     [Fact]
     public async Task A_remediated_or_dismissed_risky_user_is_not_counted_as_risky()
     {

@@ -274,7 +274,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
           )}
         </Card>
         <Card title="Device Compliance"
-          badge={devNonCompliant>0?<Badge label={`${devNonCompliant} non-compliant`} tone={devNonCompliant>3?"error":"warning"}/>:<Badge label="All compliant" tone="good"/>}>
+          badge={devNonCompliant>0?<Badge label={`${devNonCompliant} non-compliant`} tone={devNonCompliant>3?"error":"warning"}/>:devices&&devEffectiveTotal===0?<Badge label="No devices" tone="neutral"/>:<Badge label="All compliant" tone="good"/>}>
           <div className="device-hero">
             <CircleGauge pct={devices ? devComplPct : 0} size={70} color={devices && (devices.totalDevices??0)>0 ? undefined : "var(--color-muted)"}/>
             <div className="stat-col">
@@ -296,7 +296,7 @@ export function OverviewPage({ overview, secureScore, identity, devices, service
             !devices
               ?<EmptyState message="Run a collection to load device data"/>
               :devNonCompliant===0
-                ?<EmptyState message="All devices are compliant"/>
+                ?<EmptyState message={devEffectiveTotal===0 ? "No managed devices found. Enrol devices in Intune to see compliance here." : "All devices are compliant"}/>
                 :<EmptyState message={`${devNonCompliant} non-compliant reported by Intune summary`}/>
           )}
         </Card>

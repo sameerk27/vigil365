@@ -73,7 +73,11 @@ public sealed class GraphCollector(
                     // Most feeds are filtered (non-compliant, unresolved, inside the
                     // lookback), so a row that stops coming back has cleared. Only a
                     // complete read proves that; a truncated one proves nothing.
-                    if (read.Complete) await ResolveMissingAsync(source, returned, ct);
+                    if (read.Complete)
+                    {
+                        if (source.RemoveMissing) await RemoveMissingAsync(source, returned, ct);
+                        else await ResolveMissingAsync(source, returned, ct);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -237,7 +241,7 @@ public sealed class GraphCollector(
             new("Risky users", "/v1.0/identityProtection/riskyUsers?$top=50", M365ServiceArea.EntraId, "RiskyUser", MapRiskyUser),
             new("Risky sign-ins", WithFilter("/v1.0/auditLogs/signIns?$top=50", $"riskState ne 'none' and createdDateTime ge {signInCutoff}"), M365ServiceArea.EntraId, "RiskySignIn", MapRiskySignIn),
             new("Failed sign-ins", WithFilter("/v1.0/auditLogs/signIns?$top=50", $"status/errorCode ne 0 and createdDateTime ge {signInCutoff}"), M365ServiceArea.EntraId, "FailedSignIn", MapFailedSignIn),
-            new("MFA registration", "/v1.0/reports/authenticationMethods/userRegistrationDetails?$top=100", M365ServiceArea.EntraId, "MfaStatus", MapMfaStatus),
+            new("MFA registration", "/v1.0/reports/authenticationMethods/userRegistrationDetails?$top=100", M365ServiceArea.EntraId, "MfaStatus", MapMfaStatus, IsNotGuest, RemoveMissing: true),
             // managedDevices does not apply "complianceState ne 'compliant'" (in a real tenant it returned the
             // compliant devices); eq is applied, and Keep drops any other state Graph still returns.
             new("Non-compliant devices", WithFilter("/v1.0/deviceManagement/managedDevices?$top=50", "complianceState eq 'noncompliant'"), M365ServiceArea.Intune, "NonCompliantDevice", MapNonCompliantDevice, IsNonCompliant),
@@ -272,6 +276,20 @@ public sealed class GraphCollector(
             alert.IsResolved = true;
             alert.LastUpdatedAt = DateTimeOffset.UtcNow;
         }
+    }
+
+    /// <summary>
+    /// For per-user state rather than events. An MFA row marked resolved means "registered", so
+    /// resolving someone who has left the report counted them as registered for ever.
+    /// </summary>
+    private async Task RemoveMissingAsync(GraphSource source, HashSet<string> returned, CancellationToken ct)
+    {
+        // An empty report says nothing about who has left.
+        if (returned.Count == 0) return;
+        var rows = await db.SecurityAlerts
+            .Where(a => a.Service == source.Service && a.AlertType == source.AlertType && a.ExternalId != null)
+            .ToListAsync(ct);
+        db.SecurityAlerts.RemoveRange(rows.Where(a => !returned.Contains(a.ExternalId!)));
     }
 
     private async Task UpsertAlertAsync(SecurityAlert next, CancellationToken ct)
@@ -504,5 +522,9 @@ public sealed class GraphCollector(
         row.TryGetProperty("complianceState", out var cs) && cs.ValueKind == JsonValueKind.String &&
         string.Equals(cs.GetString(), "noncompliant", StringComparison.OrdinalIgnoreCase);
 
-    private sealed record GraphSource(string Name, string Path, M365ServiceArea Service, string AlertType, Func<JsonElement, SecurityAlert> Map, Func<JsonElement, bool>? Keep = null);
+    // A guest's MFA is set up in their home organisation, so the Posture check leaves guests out too.
+    private static bool IsNotGuest(JsonElement row) =>
+        !string.Equals(Text(row, "userType"), "guest", StringComparison.OrdinalIgnoreCase);
+
+    private sealed record GraphSource(string Name, string Path, M365ServiceArea Service, string AlertType, Func<JsonElement, SecurityAlert> Map, Func<JsonElement, bool>? Keep = null, bool RemoveMissing = false);
 }
